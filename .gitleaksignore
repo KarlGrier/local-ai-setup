@@ -1,0 +1,4 @@
+# gitleaks false positives, reviewed and approved by the owner 2026-11-10: the generic-api-key rule on line 60 of the
+# DeepSeek sweep script, where the matched text is the engine's program name, not a key. History form, then tree form.
+e525325aa036ca9afcf75ed1f7b1f56e327c0dce:strata-compare/work/sweep/sweep-gap.sh:generic-api-key:60
+strata-compare/work/sweep/sweep-gap.sh:generic-api-key:60

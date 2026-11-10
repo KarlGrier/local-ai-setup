@@ -1,0 +1,407 @@
+--- /dev/null
++++ b/local_deep_research/research_library/downloaders/extraction/fetch_guard.py
+@@ -0,0 +1,194 @@
++"""Fetch guard (deep-research workspace patch 0006, 2026-11-03): skip pathological web pages before they are parsed.
++
++Why: 11-03, run shop-7e-deep-p7dx/s2 stalled 3.6 h on https://www.teamgroupinc.com/en/support/compatibility/by-product/result/
++- 264 MB of HTML (one table of 165,933 rows) sent as 5.5 MB of gzip. LDR's extraction pipeline (pipeline.py:
++BeautifulSoup html.parser, then trafilatura, then newspaper4k) is super-linear on it (newspaper4k about quadratic in
++the rows: lxml drop_tag and getpath walk the siblings) and needs ~70-100 KB of RAM per table row (16.9 GB peak).
++The parse ran while holding ContentFetcher's one-page-at-a-time lock (patch 0004), so the research stopped with it.
++LDR's only size limit was SafeSession's 1 GiB on the compressed body.
++
++What it does, for every HTML page LDR's HTMLDownloader fetches (the agents' fetch_content tool and the deep
++background reader both go through it), and for direct callers of extraction/pipeline.py:
++  * download: the body is read streamed and the read stops once the decompressed body passes MAX_BYTES
++    (LDR_FETCH_GUARD_MAX_MB, default 16 MiB); a Content-Length above it is refused before reading -> skipped.
++  * before parsing: more than MAX_TAGS '<' characters (LDR_FETCH_GUARD_MAX_TAGS, default 400,000, about 200,000
++    elements; the 11-03 page had 3.7 M, its first 16 MiB 188 k) or more than MAX_BYTES characters -> skipped.
++  * while parsing: a watchdog logs "[FETCH-GUARD] still extracting" once one page's extraction passes SLOW_S
++    (LDR_FETCH_GUARD_SLOW_S, default 60 s) and counts it. It cannot stop the parse (a Python thread cannot interrupt
++    lxml, and letting a second page parse beside it would bring back the 10-18 heap corruption); the caps bound it.
++A skip is a failed download whose reason starts with "[FETCH-GUARD] skipped"; the fetch tool returns it to the agent
++("Failed to fetch <url>: [FETCH-GUARD] skipped: ...") and the agent moves on. Each event is logged
++("[FETCH-GUARD] skipped <url>: <reason>, <size>, <seconds>"), counted in-process (counts()) and appended to LOG_PATH
++(LDR_FETCH_GUARD_LOG, default logs/fetch-guard.jsonl), which tools/ldr-client.py counts into the bench run's
++summary.json ("fetch_guard"). With LDR_FETCH_GUARD_PAGES=1 (default) every page also gets one small record (host,
++size, '<' count, extraction seconds - no path) so the caps can be re-checked from data.
++LDR_FETCH_GUARD=0 turns the skips off (the watchdog and the page records stay).
++Only stdlib + loguru: safe to import from html.py, pipeline.py and content_fetcher without import cycles.
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import threading
++import time
++from collections import Counter
++from typing import Any, Optional
++from urllib.parse import urlparse
++
++from loguru import logger
++
++
++def _env_float(name: str, default: float) -> float:
++    try:
++        v = float(os.environ.get(name, "") or default)
++        return v if v > 0 else default
++    except ValueError:
++        return default
++
++
++ENABLED = os.environ.get("LDR_FETCH_GUARD", "1").strip().lower() not in ("0", "off", "false", "no")
++MAX_BYTES = int(_env_float("LDR_FETCH_GUARD_MAX_MB", 16.0) * 1024 * 1024)
++MAX_TAGS = int(_env_float("LDR_FETCH_GUARD_MAX_TAGS", 400_000))
++SLOW_S = _env_float("LDR_FETCH_GUARD_SLOW_S", 60.0)
++LOG_PATH = os.environ.get("LDR_FETCH_GUARD_LOG") or "/home/USER/ai/deep-research/logs/fetch-guard.jsonl"
++PAGE_RECORDS = os.environ.get("LDR_FETCH_GUARD_PAGES", "1").strip().lower() not in ("0", "off", "false", "no")
++READ_CHUNK = 64 * 1024
++
++_lock = threading.Lock()
++_counts: Counter = Counter()
++
++
++class PageSkipped(Exception):
++    """A page the guard refused to download in full or to parse."""
++
++    def __init__(self, url: str, reason: str, size: Optional[int] = None, tags: Optional[int] = None,
++                 seconds: Optional[float] = None):
++        self.url, self.reason, self.size, self.tags, self.seconds = url, reason, size, tags, seconds
++        super().__init__(str(self))
++
++    def __str__(self) -> str:
++        return f"[FETCH-GUARD] skipped: {self.reason} ({_describe(self.size, self.tags, self.seconds)})"
++
++
++def _mb(n: Optional[int]) -> str:
++    return "?" if n is None else f"{n / 1048576:.1f} MB"
++
++
++def _describe(size: Optional[int], tags: Optional[int], seconds: Optional[float]) -> str:
++    parts = [_mb(size)]
++    if tags is not None:
++        parts.append(f"{tags} tags")
++    if seconds is not None:
++        parts.append(f"{seconds:.1f} s")
++    return ", ".join(parts)
++
++
++def _append(rec: dict[str, Any]) -> None:
++    try:
++        line = json.dumps(rec, ensure_ascii=False) + "\n"
++        with _lock, open(LOG_PATH, "a", encoding="utf-8") as f:
++            f.write(line)
++    except OSError:
++        logger.debug("fetch guard: could not append to {}", LOG_PATH)
++
++
++def _event(kind: str, url: str, reason: str = "", size: Optional[int] = None, tags: Optional[int] = None,
++           seconds: Optional[float] = None) -> None:
++    with _lock:
++        _counts[kind] += 1
++    _append({"t": round(time.time(), 3), "pid": os.getpid(), "kind": kind, "url": url, "reason": reason,
++             "bytes": size, "tags": tags, "s": None if seconds is None else round(seconds, 2)})
++
++
++def counts() -> dict[str, int]:
++    """Events since this process started: skipped / slow / pages."""
++    with _lock:
++        return dict(_counts)
++
++
++def skip(url: str, reason: str, size: Optional[int] = None, tags: Optional[int] = None,
++         seconds: Optional[float] = None) -> PageSkipped:
++    """Log + count + record a skip; returns the exception for the caller to raise."""
++    exc = PageSkipped(url, reason, size, tags, seconds)
++    logger.warning(f"[FETCH-GUARD] skipped {url}: {reason}, {_describe(size, tags, seconds)}")
++    _event("skipped", url, reason, size, tags, seconds)
++    return exc
++
++
++def read_body(response: Any, url: str, t0: Optional[float] = None) -> bytes:
++    """The body of a ``stream=True`` requests response, read up to MAX_BYTES decoded bytes; PageSkipped beyond.
++
++    Decompression happens in iter_content, so the cap is on the HTML that would be parsed, not on the gzip.
++    """
++    t0 = time.monotonic() if t0 is None else t0
++    if not ENABLED:
++        return response.content
++    try:
++        declared = int(response.headers.get("Content-Length") or -1)
++    except (TypeError, ValueError):
++        declared = -1
++    if declared > MAX_BYTES:   # compressed size above the cap -> decompressed is too
++        response.close()
++        raise skip(url, f"Content-Length {_mb(declared)} > {_mb(MAX_BYTES)} cap (not downloaded)", declared,
++                   seconds=time.monotonic() - t0)
++    buf = bytearray()
++    for chunk in response.iter_content(READ_CHUNK):
++        buf += chunk
++        if len(buf) > MAX_BYTES:
++            response.close()
++            raise skip(url, f"page larger than the {_mb(MAX_BYTES)} cap (download stopped)", len(buf),
++                       seconds=time.monotonic() - t0)
++    return bytes(buf)
++
++
++def check_html(html: str, url: str) -> None:
++    """Raise PageSkipped (logged, counted) if this HTML is over the size or tag cap. ~5 ms for 16 MB."""
++    if not ENABLED or not html:
++        return
++    n = len(html)
++    if n > MAX_BYTES:
++        raise skip(url, f"HTML larger than the {_mb(MAX_BYTES)} cap (not parsed)", n)
++    tags = html.count("<")
++    if tags > MAX_TAGS:
++        raise skip(url, f"{tags} tags > {MAX_TAGS} cap (not parsed)", n, tags)
++
++
++class watch:
++    """Context manager around one page's extraction: a watchdog warning at SLOW_S, a page record at the end."""
++
++    def __init__(self, url: str, html: str):
++        self.url, self.size = url, len(html or "")
++        self.tags = (html or "").count("<")
++        self.t0 = 0.0
++        self._timer: Optional[threading.Timer] = None
++        self.fired = False
++
++    def _fire(self) -> None:
++        self.fired = True
++        s = time.monotonic() - self.t0
++        logger.warning(f"[FETCH-GUARD] still extracting {self.url} after {s:.0f} s "
++                       f"({_describe(self.size, self.tags, None)}); it holds the fetch lock, other fetches wait")
++        _event("slow", self.url, f"extraction still running after {SLOW_S:.0f} s", self.size, self.tags, s)
++
++    def __enter__(self) -> "watch":
++        self.t0 = time.monotonic()
++        self._timer = threading.Timer(SLOW_S, self._fire)
++        self._timer.daemon = True
++        self._timer.start()
++        return self
++
++    def __exit__(self, *exc: Any) -> bool:
++        if self._timer is not None:
++            self._timer.cancel()
++        s = time.monotonic() - self.t0
++        with _lock:
++            _counts["pages"] += 1
++        if self.fired:
++            logger.warning(f"[FETCH-GUARD] slow page {self.url}: extraction took {s:.1f} s "
++                           f"({_describe(self.size, self.tags, None)})")
++            _event("slow_done", self.url, "extraction finished", self.size, self.tags, s)
++        elif PAGE_RECORDS:
++            _append({"t": round(time.time(), 3), "pid": os.getpid(), "kind": "page",
++                     "host": urlparse(self.url).netloc, "bytes": self.size, "tags": self.tags, "s": round(s, 3)})
++        return False
+--- a/local_deep_research/research_library/downloaders/extraction/pipeline.py
++++ b/local_deep_research/research_library/downloaders/extraction/pipeline.py
+@@ -23,6 +23,7 @@
+ from .justext_extractor import JustextExtractor
+ from .newspaper_extractor import NewspaperExtractor
+ from .metadata_extractor import extract_metadata, metadata_to_text
++from . import fetch_guard as _fetch_guard  # deep-research patch 0006 (2026-11-03)
+ 
+ 
+ # --- Pipeline thresholds ---
+@@ -126,6 +127,12 @@
+     """
+     if not html or not html.strip():
+         return None
++    # patch 0006: callers that do not come through HTMLDownloader (Wayback engine, full-content search) get the
++    # fetch guard's size/tag caps here; a skip is logged + counted by the guard and looks like "nothing extracted"
++    try:
++        _fetch_guard.check_html(html, url or "(extract_content)")
++    except _fetch_guard.PageSkipped:
++        return None
+ 
+     # Run trafilatura and newspaper4k in parallel, pick the better result.
+     # newspaper4k is strong on news front pages and multi-answer threads
+@@ -270,6 +277,11 @@
+     """
+     if not html or not html.strip():
+         return None
++    # patch 0006: the same guard before the BeautifulSoup parse below (HTMLDownloader has checked already)
++    try:
++        _fetch_guard.check_html(html, "(extract_content_with_metadata)")
++    except _fetch_guard.PageSkipped:
++        return None
+ 
+     # Single parse for metadata (title, description, og:*)
+     soup = BeautifulSoup(html, "html.parser")
+--- a/local_deep_research/research_library/downloaders/html.py
++++ b/local_deep_research/research_library/downloaders/html.py
+@@ -5,6 +5,7 @@
+ Extraction is handled by the shared pipeline in extraction/pipeline.py.
+ """
+ 
++import time
+ from typing import Optional, Dict, Any
+ from urllib.parse import urlparse
+ from loguru import logger
+@@ -12,6 +13,7 @@
+ 
+ from .base import BaseDownloader, ContentType, DownloadResult
+ from .extraction.pipeline import extract_content_with_metadata
++from .extraction import fetch_guard as _fetch_guard  # deep-research patch 0006 (2026-11-03): fetch guard
+ from ...constants import BROWSER_USER_AGENT
+ from ...security import sanitize_error_for_client
+ 
+@@ -58,6 +60,7 @@
+             logger.warning(f"HTML downloader cannot download PDFs: {url}")
+             return None
+ 
++        self._guard_skip = None
+         try:
+             html_content = self._fetch_html(url)
+             if not html_content:
+@@ -70,6 +73,10 @@
+ 
+             return None
+ 
++        except _fetch_guard.PageSkipped as e:
++            # patch 0006: already logged + counted by the guard; no traceback, no JS-rendering retry
++            self._guard_skip = e
++            return None
+         except Exception:
+             logger.exception(f"Failed to download HTML from {url}")
+             return None
+@@ -83,6 +90,7 @@
+                 skip_reason="HTML downloader does not support PDF downloads"
+             )
+ 
++        self._guard_skip = None
+         try:
+             html_content = self._fetch_html(url)
+             if not html_content:
+@@ -105,6 +113,10 @@
+                 is_success=True,
+             )
+ 
++        except _fetch_guard.PageSkipped as e:
++            # patch 0006: the reason ("[FETCH-GUARD] skipped: ...") reaches the agent via ContentFetcher's error
++            self._guard_skip = e
++            return DownloadResult(skip_reason=sanitize_error_for_client(str(e)))
+         except Exception as e:
+             logger.exception(f"Failed to download HTML from {url}")
+             # skip_reason propagates to the browser via the download SSE
+@@ -123,40 +135,55 @@
+         wait_time = self.rate_tracker.apply_rate_limit(engine_type)
+ 
+         try:
++            # patch 0006: streamed, so the fetch guard can stop reading a huge body (11-03: 264 MB of HTML)
++            t0 = time.monotonic()
+             response = self.session.get(
+                 url,
+                 timeout=self.timeout,
+                 allow_redirects=True,
++                stream=True,
+             )
+-
+-            if response.status_code == 200:
+-                content_type = response.headers.get("content-type", "").lower()
+-                if (
+-                    "text/html" in content_type
+-                    or "application/xhtml" in content_type
+-                ):
+-                    self.rate_tracker.record_outcome(
+-                        engine_type=engine_type,
+-                        wait_time=wait_time,
+-                        success=True,
+-                        retry_count=1,
+-                        search_result_count=1,
++            try:
++                if response.status_code == 200:
++                    content_type = response.headers.get("content-type", "").lower()
++                    if (
++                        "text/html" in content_type
++                        or "application/xhtml" in content_type
++                    ):
++                        ok = dict(
++                            engine_type=engine_type,
++                            wait_time=wait_time,
++                            success=True,
++                            retry_count=1,
++                            search_result_count=1,
++                        )
++                        try:
++                            # at most the guard's cap; .text then decodes it exactly as before
++                            response._content = _fetch_guard.read_body(response, url, t0)
++                        except _fetch_guard.PageSkipped:
++                            # the server answered: a skip is not a rate-limit failure
++                            self.rate_tracker.record_outcome(**ok)
++                            raise
++                        self.rate_tracker.record_outcome(**ok)
++                        return response.text
++                    logger.warning(
++                        f"Unexpected content type for HTML download: {content_type}"
+                     )
+-                    return response.text
+-                logger.warning(
+-                    f"Unexpected content type for HTML download: {content_type}"
++                    return None
++                logger.warning(f"HTTP {response.status_code} fetching {url}")
++                self.rate_tracker.record_outcome(
++                    engine_type=engine_type,
++                    wait_time=wait_time,
++                    success=False,
++                    retry_count=1,
++                    error_type=f"HTTP_{response.status_code}",
+                 )
+                 return None
+-            logger.warning(f"HTTP {response.status_code} fetching {url}")
+-            self.rate_tracker.record_outcome(
+-                engine_type=engine_type,
+-                wait_time=wait_time,
+-                success=False,
+-                retry_count=1,
+-                error_type=f"HTTP_{response.status_code}",
+-            )
+-            return None
++            finally:
++                response.close()
+ 
++        except _fetch_guard.PageSkipped:
++            raise
+         except Exception as e:
+             logger.exception(f"Error fetching HTML from {url}")
+             self.rate_tracker.record_outcome(
+@@ -174,8 +201,12 @@
+         Delegates to the shared extraction pipeline which handles
+         trafilatura, readability, justext, and metadata enrichment.
+         """
++        # patch 0006: refuse a page over the guard's size/tag caps before any parser sees it (raises PageSkipped,
++        # handled by download()/download_with_result()); time the extraction (watchdog warning at SLOW_S)
++        _fetch_guard.check_html(html, url)
+         try:
+-            result = extract_content_with_metadata(html, language=self.language)
++            with _fetch_guard.watch(url, html):
++                result = extract_content_with_metadata(html, language=self.language)
+             if not result:
+                 return None
+ 
+--- a/local_deep_research/research_library/downloaders/playwright_html.py
++++ b/local_deep_research/research_library/downloaders/playwright_html.py
+@@ -1310,6 +1310,10 @@
+         logger.debug(f"Auto: trying static fetch for {url}")
+         result = super().download(url, content_type)
+ 
++        # deep-research patch 0006 (2026-11-03): a page the fetch guard skipped is not retried with JS rendering
++        if getattr(self, "_guard_skip", None) is not None:
++            return result
++
+         if result and len(result) >= self.min_content_length:
+             logger.debug(
+                 f"Auto: static fetch succeeded ({len(result)} bytes) for {url}"
+@@ -1355,6 +1359,10 @@
+         logger.debug(f"Auto: trying static fetch for {url}")
+         result = super().download_with_result(url, content_type)
+ 
++        # deep-research patch 0006 (2026-11-03): a page the fetch guard skipped is not retried with JS rendering
++        if getattr(self, "_guard_skip", None) is not None:
++            return result
++
+         if (
+             result.is_success
+             and result.content

@@ -1,0 +1,13 @@
+work/r11/ldrscreen.sh F0-a configs/R11F.json
+work/r11/ldrscreen.sh C0-a configs/R11-C121.json
+work/r11/ldrscreen.sh C0-b configs/R11-C121.json
+work/r11/ldrscreen.sh F0-b configs/R11F.json
+.venv/bin/python work/r11/ldr_table.py C121=C0-a,C0-b fixes=F0-a,F0-b | tee results/r11/ldr-fixes-vs-c121.md
+work/r11/decscreen.sh F0d-a configs/R11F.json
+work/r11/decscreen.sh C0d-a configs/R11-C121.json
+work/r11/decscreen.sh C0d-b configs/R11-C121.json
+work/r11/decscreen.sh F0d-b configs/R11F.json
+.venv/bin/python work/r11/ab_table.py C121=C0d-a,C0d-b fixes=F0d-a,F0d-b | tee results/r11/dec-fixes-vs-c121.md
+work/r11/tagcheck.sh "Phase 0 end"; work/r11/basecheck.sh
+work/r11/phase_end.sh p0 keep
+echo "=== $(date -Is) MARK q0d"

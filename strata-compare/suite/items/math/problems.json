@@ -1,0 +1,102 @@
+[
+ {
+  "id": "m01",
+  "prompt": "Find the number of ordered pairs (a, b) of positive integers with a ≤ b such that 1/a + 1/b = 1/360.",
+  "answer": 53
+ },
+ {
+  "id": "m02",
+  "prompt": "How many integers n with 1 ≤ n ≤ 5000 can be written as x² − y² for some non-negative integers x and y?",
+  "answer": 3750
+ },
+ {
+  "id": "m03",
+  "prompt": "Let s(k) denote the sum of the decimal digits of k. For how many positive integers n ≤ 3000 is s(n) = s(7n)?",
+  "answer": 446
+ },
+ {
+  "id": "m04",
+  "prompt": "A frog starts at 0 on the number line. Each jump moves it forward by exactly 1 or exactly 2. How many different sequences of jumps take it to land exactly on 19 without ever landing on a positive multiple of 4 along the way?",
+  "answer": 48
+ },
+ {
+  "id": "m05",
+  "prompt": "Two fair ten-sided dice, each with faces numbered 1 through 10, are rolled. The probability that the product of the two numbers rolled is a perfect square is m/n, where m and n are relatively prime positive integers. Find m + n.",
+  "answer": 59
+ },
+ {
+  "id": "m06",
+  "prompt": "How many points (x, y) with integer coordinates lie strictly inside the circle x² + y² = 250?",
+  "answer": 777
+ },
+ {
+  "id": "m07",
+  "prompt": "Find the remainder when 3^2026 + 7^2026 is divided by 1000.",
+  "answer": 978
+ },
+ {
+  "id": "m08",
+  "prompt": "How many positive integers with at least two digits have decimal digits that strictly increase from left to right, with every two adjacent digits differing by at least 2, and are divisible by 3?",
+  "answer": 27
+ },
+ {
+  "id": "m09",
+  "prompt": "Compute the sum of ⌊k²/2027⌋ over k = 1, 2, …, 2026, where ⌊x⌋ is the greatest integer not exceeding x.",
+  "answer": 1367561
+ },
+ {
+  "id": "m10",
+  "prompt": "In how many ways can a 3 × 9 rectangle be tiled completely by 1 × 3 rectangles, each placed horizontally or vertically?",
+  "answer": 19
+ },
+ {
+  "id": "m11",
+  "prompt": "Find the smallest positive integer n such that n! (n factorial) ends in exactly 1003 zeros.",
+  "answer": 4020
+ },
+ {
+  "id": "m12",
+  "prompt": "How many subsets of {1, 2, …, 16}, including the empty set, have a sum of elements divisible by 5?",
+  "answer": 13112
+ },
+ {
+  "id": "m13",
+  "prompt": "Triangle ABC has AB = 25, BC = 39 and CA = 56. Find the length of the altitude from B to line CA.",
+  "answer": 15
+ },
+ {
+  "id": "m14",
+  "prompt": "How many positive divisors of 30^6 are perfect cubes but not perfect squares?",
+  "answer": 19
+ },
+ {
+  "id": "m15",
+  "prompt": "Find the largest six-digit palindrome that is divisible by both 7 and 13 and whose digits sum to 30.",
+  "answer": 717717
+ },
+ {
+  "id": "m16",
+  "prompt": "A lattice path from (0, 0) to (9, 9) consists of unit steps right, from (x, y) to (x + 1, y), or up, from (x, y) to (x, y + 1). How many such paths never pass through a point (x, y) with y > x + 1?",
+  "answer": 16796
+ },
+ {
+  "id": "m17",
+  "prompt": "How many integers x with 0 ≤ x < 1105 satisfy x³ ≡ x (mod 1105)?",
+  "answer": 27
+ },
+ {
+  "id": "m18",
+  "prompt": "For some integer m, the polynomial x³ − 2083x + m has three integer roots a, b and c. Find |a| + |b| + |c|.",
+  "answer": 102
+ },
+ {
+  "id": "m19",
+  "prompt": "A bag contains 4 red and 6 blue marbles. Marbles are drawn one at a time at random without replacement until both colours have appeared. The expected number of marbles drawn is m/n, where m and n are relatively prime positive integers. Find m + n.",
+  "answer": 132
+ },
+ {
+  "id": "m20",
+  "prompt": "How many triples (a, b, c) of positive integers with a ≤ b ≤ c satisfy a · b · c = 12^5?",
+  "answer": 240
+ }
+]

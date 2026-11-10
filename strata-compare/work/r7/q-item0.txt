@@ -1,0 +1,36 @@
+work/r7/tagcheck.sh "item0 engine checks start"
+work/r7/run.sh i0-c6-math-a configs/Cstar6.json math 1024 --adapt-swaps 0 --suffix-draft 0
+work/r7/run.sh i0-r7-math-a configs/R7c-helper.json math 1024 --adapt-swaps 0 --suffix-draft 0
+work/r7/run.sh i0-c6-code-a configs/Cstar6.json code 1024 --adapt-swaps 0 --suffix-draft 0
+work/r7/run.sh i0-r7-code-a configs/R7c-helper.json code 1024 --adapt-swaps 0 --suffix-draft 0
+work/r7/run.sh i0-r7-math-b configs/R7c-helper.json math 1024 --adapt-swaps 0 --suffix-draft 0
+work/r7/run.sh i0-c6-math-b configs/Cstar6.json math 1024 --adapt-swaps 0 --suffix-draft 0
+work/r7/run.sh i0-r7-code-b configs/R7c-helper.json code 1024 --adapt-swaps 0 --suffix-draft 0
+work/r7/run.sh i0-c6-code-b configs/Cstar6.json code 1024 --adapt-swaps 0 --suffix-draft 0
+ENVX="STRATA_GR_OLD=1" work/r7/run.sh i0-r7grold-math configs/R7c-helper.json math 1024 --adapt-swaps 0 --suffix-draft 0
+ENVX="STRATA_GR_OLD=1" work/r7/run.sh i0-r7grold-code configs/R7c-helper.json code 1024 --adapt-swaps 0 --suffix-draft 0
+work/r7/run.sh i0-c6-32k-a configs/Cstar6.json 32k 16
+work/r7/run.sh i0-r7-32k-a configs/R7c-helper.json 32k 16
+ENVX="STRATA_MTP_BATCH=0" work/r7/run.sh i0-r7mtp0-32k-a configs/R7c-helper.json 32k 16
+ENVX="STRATA_GR_UNFUSED=1" work/r7/run.sh i0-r7grunf-32k-a configs/R7c-helper.json 32k 16
+ENVX="STRATA_GROUP_COPY=1" work/r7/run.sh i0-r7gcopy-32k-a configs/R7c-helper.json 32k 16
+work/r7/run.sh i0-r7-32k-b configs/R7c-helper.json 32k 16
+work/r7/run.sh i0-c6-32k-b configs/Cstar6.json 32k 16
+ENVX="STRATA_MTP_BATCH=0" work/r7/run.sh i0-r7mtp0-32k-b configs/R7c-helper.json 32k 16
+ENVX="STRATA_GR_UNFUSED=1" work/r7/run.sh i0-r7grunf-32k-b configs/R7c-helper.json 32k 16
+ENVX="STRATA_GROUP_COPY=1" work/r7/run.sh i0-r7gcopy-32k-b configs/R7c-helper.json 32k 16
+ENVX="STRATA_PREFILL_TIMING=1" work/r7/run.sh i0-r7tim-32k configs/R7c-helper.json 32k 16
+work/r7/run.sh i0-c6-112k-a configs/Cstar6.json tf-long112k.prompt 16
+work/r7/run.sh i0-r7-112k-a configs/R7c-helper.json tf-long112k.prompt 16
+ENVX="STRATA_MTP_BATCH=0" work/r7/run.sh i0-r7mtp0-112k configs/R7c-helper.json tf-long112k.prompt 16
+work/r7/run.sh i0-r7-112k-b configs/R7c-helper.json tf-long112k.prompt 16
+work/r7/run.sh i0-c6-112k-b configs/Cstar6.json tf-long112k.prompt 16
+work/r7/run.sh i0-r7voc-math configs/R7c-helper.json math 1024
+work/r7/run.sh i0-r7cjk-math configs/R7c-helper-cjk.json math 1024
+work/r7/run.sh i0-r7voc-code configs/R7c-helper.json code 1024
+work/r7/run.sh i0-r7cjk-code configs/R7c-helper-cjk.json code 1024
+work/r7/run.sh i0-r7cjk-math-b configs/R7c-helper-cjk.json math 1024
+work/r7/run.sh i0-r7voc-math-b configs/R7c-helper.json math 1024
+work/r7/run.sh i0-r7cjk-code-b configs/R7c-helper-cjk.json code 1024
+work/r7/run.sh i0-r7voc-code-b configs/R7c-helper.json code 1024
+work/r7/tagcheck.sh "item0 engine checks done"

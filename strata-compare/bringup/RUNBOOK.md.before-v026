@@ -1,0 +1,104 @@
+# Bring-up runbook — a new model (or a new Strata release) on this PC
+
+Written in Round 13 for the day Qwen4 Flash (or any new `qwen4exp` file) appears. Everything here runs from this
+workspace, writes only into `bringup/out/<RUN>/`, and follows the standing rules: no sudo, stock clocks, 127.0.0.1, one
+model server at a time, the memory guard on every load (MemAvailable ≥ 20 GB, ≥ 300 MiB free on the 5080), model files
+read-only.
+
+**Round 18 standing rule (your 2026-10-10 message):** every config of yours that runs on ONE GPU gets
+`STRATA_ROUTE_TAIL_SKIP=0` when it moves to v0.1.42 or later. v0.1.42 turns the tail skip on by default for CUDA serve on
+one GPU or a layer split, and it changes the output (not lossless). Check the engine log: no
+`STRATA_ROUTE_TAIL_SKIP=7 is ON` line may appear. Two-card configs with the helper are not affected today.
+
+```
+bringup/runbook.sh RUN all              # every stage below, in order (stops at the first that cannot continue)
+bringup/runbook.sh RUN inspect fitplan  # or any stages by name
+cat bringup/out/RUN/runbook.log bringup/out/RUN/times.tsv
+```
+
+Inputs go into `bringup/out/RUN/run.env` (sourced first):
+
+```
+RB_TAG=v0.2.0                                   # the release that supports the new model
+RB_REPO=https://github.com/Niko1221/Strata      # or the local mirror (strata/), fetched first
+RB_GGUF=/path/Qwen4-Flash-...-00001-of-0000N.gguf
+RB_MTP=/path/mtp/rt                             # the drafter: setup's tools/mtp_fetch.py output for this model
+RB_REF=                                          # empty on a new model (stock's exact7 becomes the reference)
+RB_KQUANTS=1                                     # only when the inspector asks (K-quant experts)
+export RB_CACHE=$WS/tmp/rNN                      # round 14: every tool cache / temp dir of the run (your rule: tmp/rNN)
+```
+
+Round 14 (first real use, a new release): `RB_BUILDS=stock` builds the release alone while the series is resolved by
+hand, `RB_STOCK_REF=<label>` names the stock exact7's reference (e.g. the previous release's stock run, to see what
+the release itself changed). clone now links llama.cpp before it applies the series, so a stop at clone leaves
+the stock tree buildable: `RB_BUILDS=stock runbook.sh RUN inspect fitplan pack build stock`.
+
+## Stages
+
+| # | stage | what it does | stops when | typical time |
+|---|---|---|---|---|
+| 1 | `clone` | clean clones of `RB_TAG`: *stock* (as released), *patched* (+ `patches/r13c39` via `git am`), *twin* (+ `patches/r13-meas`, the teacher-force / force hooks) | our series does not apply → **manual: resolve** (below) | 1 min |
+| 2 | `inspect` | `bringup/inspect_model.py` (headers only, < 1 s): tensor roles and formats, trunk vs MTP block, tokenizer / template / control tokens, n-gram table; then upstream's fixed geometry and formats and each guarded patch's assumption (constants parsed from the patched tree's source) | **NEEDS UPSTREAM SUPPORT** (it names exactly what) | < 1 min |
+| 3 | `fitplan` | `bringup/fitplan.py`: bytes for experts / dense / n-gram / KV, predicted 5080 and helper slots (± 2.5 % on every file and rehearsal here), RAM vs the 20 GB floor, a conservative starting config. **Experts too big for RAM → one GPU + `--resident-budget-gib N` (+100 MiB reserve)**: v0.1.39 / 0.1.40 refuse a RAM budget beside a helper cache, and the only both-GPU placement (`--mmap-experts`) decoded 2.1× slower on the Q4 file | the inspector refuses | < 1 min |
+| 4 | `pack` | the release's `tools/iq_pack.py` (+ `--compat-bf16` when the hyper-connection weights are not BF16, as setup does for UD-Q4_K_XL), the tokenizer exported; the harness's prompts re-encoded with this model's tokenizer (`PROMPT_DIR`) | the packer refuses a tensor | 2–15 min |
+| 5 | `build` | engine-stock, engine-patched, engine-twin (sm_89 + sm_120; `RB_KQUANTS=1` adds `-DSTRATA_MMQ_KQUANTS=ON`) | a build fails → **manual** | 3–10 min |
+| 6 | `stock` | the stock release with my config's flags (minus our own: `--chat-cache*`, `web_search`, the local switches): exact7 **twice** → the reference hashes and whether stock repeats itself (experts read from the files — a RAM budget or `--mmap-experts` — never repeat reliably: `state/nonrepeat`); upstream's server tests | not all seven outputs | 10–17 min |
+| 7 | `patched` | the patched build with every local switch off: **exact7 must equal stock 7/7** (every always-on patch is exact); not repeatable: twice, and `bringup/lib/repeat_gate.py` (the first differing token vs stock no earlier than half of stock vs stock's; B.1/B.2's rounding change fails it at tokens 3–98); the patch-guard line and the server's model-check line are logged | not 7/7 / repeat gate FAIL → a re-applied patch changed the computation: bisect the series | 5–17 min |
+| 8 | `patches` | the local switches in order of measured value (patches/LEDGER.md): helper-aware tier, B.2, B.1, exact sampling, A.2, B.3, side mixer, landing — each with its one-command gate (`bringup/patchtest.sh NAME`: exact pair / TF bound / chi-square; not repeatable: every exact pair becomes a TF bound, after a `tf_noise` row); then all on vs `RB_REF` | a gate fails → leave that switch off (its guard may already have) | 20–35 min |
+| 9 | `calib` | bounded calibration (`RB_CALIB_MIN`, 90 min): the old value vs one justified alternative each — helper slots (the planner's maximum − 3 %), cache reserve (−100 MiB), resident KV (½), prompt chunk (`auto:32768`, TTFT screen), draft floor (0.4) | – (decide by hand: an alternative needs ≥ +2 % beyond the noise) | ≤ 90 min |
+| 10 | `b3table` | B.3's rows-a-warp table re-derived (`mmvq_il_parity --bench` + `bringup/lib/b3_table.py`, Round 11's rule) | – (a differing table → paste it into native_mmvq.cu, rebuild; speed only) | 5 min |
+| 11 | `screens` | LDR + decode screens A B B A, the candidate vs `RB_PROMOTED` | – (read screen-*.md) | 37 min (IQ3_S) |
+| 12 | `accept` | `bringup/acceptance.sh` (Part 5): ids, TF NLL, needles, round trips, samplers, stop / tool / control-text probes vs llama.cpp on the same file | a FAIL row | 57 min |
+| 13 | `soak` | 2 hours on 8080, your traffic shape (`RB_SOAK=1`) | errors, memory floor | 2 h |
+| 14 | `promote` | prints the promotion steps (launchers + a real rollback test; `work/r13/promote-c131.sh` is the pattern) | – (**manual**, your decision) | – |
+
+## Manual steps you should expect on day one
+
+1. **Our series on a new release** (`clone` stops): `cd bringup/out/RUN/strata-patched && git am -3 ../../../../patches/r13c39/*.patch`,
+   resolve each conflict, `git am --continue`; then `git format-patch $RB_TAG..HEAD -o patches/<new>/` and set
+   `RB_PATCHES`. The ledger says per patch what it touches; the serve patches (web app, web search, chat cache) and the
+   transplanted PRs that upstream has merged meanwhile are the likely conflicts. A transplant that upstream merged:
+   drop it from the series (the ledger names its PR).
+2. **A kernel patch whose compile-time geometry no longer fits** (B.1's `static_assert`s on N / HC / LR, B.2's HD / G):
+   the build fails with the assert's message. Either adapt the constants (then its gate in stage 8) or drop the patch
+   for now — its guard would have turned it off at run time anyway.
+3. **The drafter**: setup's `tools/mtp_fetch.py` for the new checkpoint; the inspector checks its width and draft
+   vocabulary against the model. A file with its own nextn block (#619) still drafts with `--mtp`.
+4. **Model-specific test inputs** (generated, not shipped): the needle documents (`bringup/lib/needle2.py build` with
+   `STRATA_TOKENIZER_DIR` = the new pack's tokenizer), the sampler near-ties (`work/r5/tie_probe` + `sampling_probe.py
+   prepare`), the round trip's forced tokens (`bringup/lib/roundtrip.py gen`), B.3's bench shapes (mmvq_il_parity.cu's
+   list = the model's projection sizes).
+5. **Calibration choices** (stage 9) and **promotion** (stage 14) are yours to confirm.
+6. **What the two rehearsals needed by hand (all fixed in the scripts since):** the v0.1.15 tree's relative llama.cpp
+   link (clone now writes an absolute one); two table scripts' Round 11 import; the shared chat settings missing from
+   generated configs (the screens compared T 0.6 against T 1.0); the planner's RAM budget beside the helper (refused by
+   the engine); a bit-identity gate on a placement that does not repeat. **Do not edit `runbook.sh` while it runs** (bash
+   reads it by offset): queue the change for after the run.
+7. **A new release (Round 14, v0.1.40.1): the ledger pass is the work.** `git cherry-pick` the old series in ledger
+   order onto the tag in a worktree (bringup/lib/pick.sh skips dropped rows, bringup/lib/resolve.py lists / resolves
+   conflict blocks); for each row first check whether upstream carries it (diff the PR's commit against ours), drop a
+   conflicting row that is neither a fix nor worth >= 1 %, keep an overlapping row beside upstream's switch for the
+   A/B; `git format-patch` the result as the new RB_PATCHES and the twin's MEASUREMENT commits as RB_MEAS. Round 14:
+   53 -> 40 commits in about 25 minutes of hand work; the side mixer had to be rewritten on upstream's new window.
+8. **llama.cpp's long-text NLL moves by ~0.11 nats per text between identical runs** — read the acceptance suite's
+   long-TF row as one sample of a noisy reference (Strata's own NLL files are bit-identical run to run on IQ3_S).
+
+## What each guard does if the new model is different
+
+The engine logs one line per guard at start (`strata patch guards: 8 checked, N off [...]`); a mismatch turns that patch
+off and upstream's path runs (patches/LEDGER.md, column "guard"). The server logs `[strata] model check: ...` for every
+template string it writes or parses itself that the model's tokenizer or template lacks, and turns web search and
+#700's parser off when the template does not write Qwen XML tool calls.
+
+## Files
+
+| file | role |
+|---|---|
+| `bringup/runbook.sh` | the stages above |
+| `bringup/gguf_head.py` | GGUF header reader (standard library) |
+| `bringup/inspect_model.py`, `bringup/fitplan.py`, `bringup/synth_header.py` | Part 3: inspector, fit planner, synthetic headers for their tests |
+| `bringup/patchtest.sh` | one-command exactness test per ledger row |
+| `bringup/acceptance.sh`, `bringup/lib/accept_*.py`, `bringup/lib/split_probe.py` | Part 5: the acceptance suite |
+| `bringup/lib/` | the harness (engine runs, memory guard, test server, exact7, screens, soak, probes) — copies of Round 13's `work/r13` scripts with outputs under `bringup/out/` |
+| `bringup/prompts/` | the harness's prompts as text (re-encoded per model by stage 4) |
+| `patches/LEDGER.md` | every local patch: what, where, switch, class, gate, gain, upstream PR, model assumptions, guard |

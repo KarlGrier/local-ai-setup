@@ -1,0 +1,416 @@
+#!/usr/bin/env python3
+"""web-mcp.py - an MCP server (stdio) that gives Jan web search and page reading (2026-10-19, the user's request).
+
+Jan starts it (Settings > MCP Servers: "web-search", command <deep-research venv python> -I <this file>).
+
+Tools:
+  web_search  SearXNG first (the chat page's instance on 127.0.0.1:8888, never LDR's 8889/8890); when it fails or
+              returns fewer than 5 results, the fallback chain adds results: Exa Lite, then Tavily
+              (tools/search_fallback.py); never 8889. `source` = "auto"
+              (default) or "searxng" / "exa" / "tavily" to ask one service only. Every result says which service
+              answered.
+  fetch_page  A page's main text (trafilatura; PDFs through pdftotext), up to max_chars (default 25,000, at most
+              30,000) from character `start` - or, for a page that a web_search result got from Exa, Exa's highlights for
+              that search (full: true opens the page instead). 10-28 (Karl: full-page reading): a longer page says
+              where to continue ("call fetch_page with start=N"); the page's text is kept 15 min, so reading on does
+              not load it again, and a slice ends at a paragraph or sentence break.
+              Only public http(s) addresses are opened (local and private addresses are refused, redirects included).
+              Jan does not show the chat to the server, so unlike the chat page's tool it cannot limit pages to those
+              the user or a search named.
+
+Exa and Tavily are dormant until their key files exist (~/.config/deep-research/exa.key, tavily.key); the monthly
+counters are the same files LDR and the chat page use. The keys are read only by exa_fallback.py / tavily_fallback.py
+when a request is sent; nothing here prints or logs them. Jan stops a tool call after 30 s, so each step has a
+shorter limit (SearXNG 8 s, Exa 9 s, Tavily 9 s; a page 20 s).
+Log: logs/web-mcp.log (tool, query or URL, which services answered, result counts).
+"""
+from __future__ import annotations
+
+import http.client
+import ipaddress
+import json
+import os
+import re
+import socket
+import ssl
+import subprocess
+import sys
+import tempfile
+import time
+import traceback
+import urllib.parse
+import urllib.request
+import zlib
+from pathlib import Path
+
+sys.path.insert(0, "/home/USER/ai/deep-research/tools")
+import exa_fallback  # noqa: E402
+import search_fallback  # noqa: E402
+import tavily_fallback  # noqa: E402
+from tool_choice import PAST_REPORTS, RESEARCH_FAILED, TOOL_CHOICE  # noqa: E402
+
+WS = Path("/home/USER/ai/deep-research")
+LOG = WS / "logs" / "web-mcp.log"
+# the chat page's SearXNG, never LDR's (8889/8890 are for research and measurements only: Jan's lookups must not trip
+# rate limits or get engines suspended there during a measurement run) - the user, 2026-10-19
+SEARXNG = os.environ.get("WEB_MCP_SEARXNG", "http://127.0.0.1:8888")
+SEARXNG_TIMEOUT_S = 8.0
+FALLBACK_BELOW = 5                  # fewer SearXNG results than this -> the fallback chain
+exa_fallback.TIMEOUT_S = 9.0
+tavily_fallback.TIMEOUT_S = 9.0
+PAGE_TIMEOUT_S = 20.0
+PAGE_CACHE: dict[str, tuple[float, str, str, str]] = {}   # URL -> (time, final URL, title, text), for "continue from"
+PAGE_CACHE_S, PAGE_CACHE_N = 900.0, 16
+PAGE_MAX_BYTES = 15_000_000
+UA = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"
+LABEL = {"searxng": "SearXNG", "exa": "Exa", "tavily": "Tavily"}
+SEEN: dict[str, dict] = {}          # normalised URL -> {"source", "title", "query", "content"} from web_search results
+
+INSTRUCTIONS = (
+    TOOL_CHOICE + " " + PAST_REPORTS + " " + RESEARCH_FAILED + " web_search returns results in seconds (title, address, a short excerpt and which service answered). "
+    "Search with source \"exa\", \"tavily\" or \"searxng\" only when the user asks for that service.")
+
+TOOLS = [
+    {"name": "web_search",
+     "description": "Search the web. Returns up to max_results results, each with the service that answered "
+                    "(SearXNG, the local search; Exa or Tavily, used automatically when the local search fails or "
+                    "finds fewer than 5 results). " + TOOL_CHOICE,
+     "inputSchema": {"type": "object", "properties": {
+         "query": {"type": "string", "description": "What to search for."},
+         "max_results": {"type": "integer", "description": "How many results (1-10, default 8)."},
+         "source": {"type": "string", "enum": ["auto", "searxng", "exa", "tavily"],
+                    "description": "auto (default): local search, then Exa, then Tavily if needed. Or one service "
+                                   "only, when the user asks for it."}},
+         "required": ["query"]}},
+    {"name": "fetch_page",
+     "description": "Read a web page: its main text (no scripts, menus or ads), with its address. Long pages come in "
+                    "parts: the reply says where to continue (start). For a result that came from Exa it returns "
+                    "Exa's highlights for that search (the relevant passages); set full to true to read the page.",
+     "inputSchema": {"type": "object", "properties": {
+         "url": {"type": "string", "description": "The page's address (http or https)."},
+         "start": {"type": "integer", "description": "Character offset to read from (default 0); use the value "
+                                                     "the previous part gave to read on."},
+         "max_chars": {"type": "integer", "description": "How much text to return (1000-30000, default 25000)."},
+         "full": {"type": "boolean", "description": "Open the page even if Exa's highlights are available."}},
+         "required": ["url"]}},
+]
+
+
+class WebError(Exception):
+    pass
+
+
+def log(msg: str) -> None:
+    try:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {msg}\n")
+    except OSError:
+        pass
+
+
+def _norm(url: str) -> str:
+    u = urllib.parse.urlsplit(url.strip())
+    host = (u.netloc or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    return host + ((u.path or "/").rstrip("/") or "/") + (f"?{u.query}" if u.query else "")
+
+
+# ------------------------------------------------------------------------------------------------ search
+def searxng(query: str) -> list[dict]:
+    if urllib.parse.urlsplit(SEARXNG).port in (8889, 8890):
+        raise WebError("8889/8890 are LDR's SearXNG instances, for research and measurements only")
+    url = f"{SEARXNG}/search?" + urllib.parse.urlencode({"q": query, "format": "json", "safesearch": 0, "pageno": 1})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # local instance: no proxy
+    req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "web-mcp"})
+    with opener.open(req, timeout=SEARXNG_TIMEOUT_S) as r:
+        data = json.loads(r.read(5_000_000))
+    return [{"title": str(x.get("title") or ""), "url": str(x["url"]), "content": str(x.get("content") or ""),
+             "published_date": x.get("publishedDate"), "engine": "searxng"}
+            for x in data.get("results") or [] if isinstance(x, dict) and x.get("url")]
+
+
+def t_search(args: dict) -> str:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        raise WebError("the query is empty")
+    try:
+        n = max(1, min(10, int(args.get("max_results") or 8)))
+    except (TypeError, ValueError):
+        n = 8
+    source = str(args.get("source") or "auto").lower()
+    if source not in ("auto", "searxng", "exa", "tavily"):
+        raise WebError('source must be "auto", "searxng", "exa" or "tavily"')
+    notes, results = [], []
+    if source in ("auto", "searxng"):
+        try:
+            results = searxng(query)
+        except Exception as e:  # noqa: BLE001
+            notes.append(f"the local search (SearXNG) did not answer ({type(e).__name__})")
+            if source == "searxng":
+                raise WebError(notes[-1]) from None
+    if source == "auto" and len(results) < min(FALLBACK_BELOW, n):
+        why = "searxng error" if notes else f"searxng returned {len(results)}"
+        seen = {_norm(r["url"]) for r in results}
+        extra = [x for x in search_fallback.search(query, max_results=n, client="jan", reason=why)
+                 if _norm(x["url"]) not in seen]
+        if extra:
+            results += extra
+        elif not search_fallback.available():
+            notes.append("no fallback service is set up yet (no Exa or Tavily key)")
+        else:
+            notes.append("the fallback services found nothing or are over their monthly limit")
+    elif source in ("exa", "tavily"):
+        mod = exa_fallback if source == "exa" else tavily_fallback
+        if not mod.available():
+            raise WebError(f"{LABEL[source]} is not set up (no key file ~/.config/deep-research/{source}.key)")
+        got = mod.search(query, max_results=n, client="jan", reason=f"asked for {source}")
+        if got is None:
+            raise WebError(f"{LABEL[source]} did not answer or is over its monthly limit (see logs/{source}-fallback.jsonl)")
+        results = [dict(x, engine=source) for x in got]
+    results = results[:n]
+    for r in results:
+        SEEN[_norm(r["url"])] = {"source": r["engine"], "title": r["title"], "query": query, "content": r["content"]}
+    while len(SEEN) > 2000:
+        SEEN.pop(next(iter(SEEN)))
+    counts = {}
+    for r in results:
+        counts[LABEL[r["engine"]]] = counts.get(LABEL[r["engine"]], 0) + 1
+    log(f"web_search source={source} q={query[:200]!r} -> {counts or 'nothing'}" + (f" ({'; '.join(notes)})" if notes else ""))
+    lines = [f"Search results for: {query}",
+             "Answered by: " + (", ".join(f"{k} ({v})" for k, v in counts.items()) if counts else "nobody")]
+    if notes:
+        lines.append("Note: " + "; ".join(notes) + ".")
+    for i, r in enumerate(results, 1):
+        title = re.sub(r"\s+", " ", r["title"]).strip() or "(no title)"
+        snippet = re.sub(r"\s+", " ", r["content"]).strip()[:400]
+        date = str(r.get("published_date") or "")[:10]
+        lines.append(f"\n{i}. {title}\n   {r['url']}" + (f"\n   {snippet}" if snippet else "")
+                     + f"\n   (source: {LABEL[r['engine']]}" + (f"; published {date}" if date and date != "None" else "") + ")")
+    if not results:
+        lines.append("No results.")
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------------------------------------ pages
+def _public_ip(host: str, port: int) -> str:
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise WebError(f"cannot resolve {host}: {e}") from None
+    ips = []
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        if not ip.is_global or ip.is_multicast:
+            raise WebError(f"{host} is a local or private address; only public web pages can be opened")
+        ips.append(str(ip))
+    if not ips:
+        raise WebError(f"cannot resolve {host}")
+    return ips[0]
+
+
+class _PinnedHTTP(http.client.HTTPConnection):
+    def __init__(self, host, port, ip, timeout):
+        super().__init__(host, port, timeout=timeout)
+        self._ip = ip
+
+    def connect(self):
+        self.sock = socket.create_connection((self._ip, self.port), self.timeout)
+
+
+class _PinnedHTTPS(http.client.HTTPSConnection):
+    def __init__(self, host, port, ip, timeout):
+        super().__init__(host, port, timeout=timeout, context=ssl.create_default_context())
+        self._ip = ip
+
+    def connect(self):
+        sock = socket.create_connection((self._ip, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+def fetch(url: str) -> tuple[str, str, bytes]:
+    """GET a public http(s) URL -> (final URL, content type, body); each redirect is checked like the URL."""
+    deadline = time.monotonic() + PAGE_TIMEOUT_S
+    for _ in range(6):
+        u = urllib.parse.urlsplit(url)
+        if u.scheme not in ("http", "https") or not u.hostname:
+            raise WebError("only http:// and https:// addresses can be opened")
+        if u.username or u.password:
+            raise WebError("addresses with a user name or password are not opened")
+        port = u.port or (443 if u.scheme == "https" else 80)
+        ip = _public_ip(u.hostname, port)
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise WebError("timed out")
+        conn = (_PinnedHTTPS if u.scheme == "https" else _PinnedHTTP)(u.hostname, port, ip, timeout=min(15.0, left))
+        try:
+            conn.request("GET", (u.path or "/") + (f"?{u.query}" if u.query else ""),
+                         headers={"User-Agent": UA, "Accept-Language": "en;q=1.0, *;q=0.5", "Connection": "close",
+                                  "Accept": "text/html,application/xhtml+xml,application/pdf,text/plain;q=0.9,*/*;q=0.3",
+                                  "Accept-Encoding": "gzip, deflate"})
+            r = conn.getresponse()
+            if r.status in (301, 302, 303, 307, 308) and r.getheader("Location"):
+                url = urllib.parse.urljoin(url, r.getheader("Location"))
+                continue
+            if r.status >= 400:
+                raise WebError(f"the page answered HTTP {r.status} {r.reason}")
+            ctype = (r.getheader("Content-Type") or "").lower()
+            body = bytearray()
+            while len(body) <= PAGE_MAX_BYTES:
+                if time.monotonic() > deadline:
+                    raise WebError("timed out")
+                chunk = r.read(65536)
+                if not chunk:
+                    break
+                body += chunk
+            if (r.getheader("Content-Encoding") or "").lower() in ("gzip", "deflate"):
+                try:
+                    body = zlib.decompressobj(zlib.MAX_WBITS | 32).decompress(bytes(body), PAGE_MAX_BYTES * 4)
+                except zlib.error:
+                    raise WebError("the page's compressed data is damaged") from None
+            return url, ctype, bytes(body)
+        except (OSError, http.client.HTTPException) as e:
+            raise WebError(f"could not load the page: {e}") from None
+        finally:
+            conn.close()
+    raise WebError("too many redirects")
+
+
+def page_text(final: str, ctype: str, body: bytes) -> tuple[str, str]:
+    """(title, main text)."""
+    if "pdf" in ctype or body[:5] == b"%PDF-":
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
+            f.write(body)
+            f.flush()
+            r = subprocess.run(["pdftotext", "-l", "60", f.name, "-"], capture_output=True, timeout=20)
+        text = re.sub(r"[ \t]+", " ", r.stdout.decode("utf-8", "replace"))
+        return "PDF document", re.sub(r"\n{3,}", "\n\n", text).strip()
+    m = re.search(r"charset=([\w-]+)", ctype) or re.search(rb"<meta[^>]+charset=[\"']?([\w-]+)", body[:4096], re.I)
+    cs = m.group(1) if m else "utf-8"
+    cs = cs.decode("ascii", "replace") if isinstance(cs, bytes) else cs
+    try:
+        html = body.decode(cs, "replace")
+    except LookupError:
+        html = body.decode("utf-8", "replace")
+    if "html" not in ctype and not re.search(r"<html|<body|<p[\s>]", html[:5000], re.I):
+        return "", html
+    title = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+    title = re.sub(r"\s+", " ", title.group(1)).strip() if title else ""
+    import trafilatura                      # imported on first use (about 1 s)
+    text = trafilatura.extract(html, url=final, include_comments=False, include_tables=True, favor_recall=True) or ""
+    if not text:                            # no main text found: the visible text
+        text = re.sub(r"(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>", " ", html)
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        text = re.sub(r"[ \t\r\f\v]+", " ", text)
+    return title, re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def t_fetch(args: dict) -> str:
+    url = str(args.get("url") or "").strip()
+    if not url:
+        raise WebError("the url is empty")
+    try:
+        max_chars = max(1000, min(30_000, int(args.get("max_chars") or 25_000)))
+    except (TypeError, ValueError):
+        max_chars = 25_000
+    try:
+        start = max(0, int(args.get("start") or 0))
+    except (TypeError, ValueError):
+        start = 0
+    hit = SEEN.get(_norm(url))
+    if hit and hit["source"] == "exa" and not args.get("full") and hit["content"] and not start:
+        log(f"fetch_page {url[:300]} -> Exa highlights ({len(hit['content'])} chars)")
+        return (f"{hit['title'] or url}\n{url}\n(source: Exa's highlights for the search \"{hit['query']}\" - the "
+                f"passages of the page that match it, not the whole page; call fetch_page with full: true to read "
+                f"the page)\n\n{hit['content'][:max_chars]}")
+    key = _norm(url)
+    c = PAGE_CACHE.get(key)
+    if c and time.monotonic() - c[0] < PAGE_CACHE_S:
+        _, final, title, text = c
+    else:
+        final, ctype, body = fetch(url)
+        title, text = page_text(final, ctype, body)
+        PAGE_CACHE.pop(key, None)
+        PAGE_CACHE[key] = (time.monotonic(), final, title, text)
+        while len(PAGE_CACHE) > PAGE_CACHE_N:
+            PAGE_CACHE.pop(next(iter(PAGE_CACHE)))
+    head = f"{title or final}\n{final}\n(source: the page itself"
+    if text and start >= len(text):
+        log(f"fetch_page {url[:300]} start {start} -> past the end ({len(text)} chars)")
+        return head + f"; {len(text):,} characters - start {start:,} is past the end of the page)"
+    end = min(len(text), start + max_chars)
+    if end < len(text):                     # end the part at a paragraph or sentence break near the limit
+        brk = max(text.rfind("\n", start + max_chars // 2, end), text.rfind(". ", start + max_chars // 2, end))
+        if brk > start:
+            end = brk + 1
+    log(f"fetch_page {url[:300]} start {start} -> chars {start}-{end} of {len(text)}")
+    if start or end < len(text):
+        head += f"; characters {start + 1:,}-{end:,} of {len(text):,}"
+        head += f"; to read on, call fetch_page with start={end}" if end < len(text) else "; this part ends the page"
+    return head + ")\n\n" + (text[start:end] if text else "(no readable text on this page)")
+
+
+HANDLERS = {"web_search": t_search, "fetch_page": t_fetch}
+
+
+# ------------------------------------------------------------------------------------------------ MCP (stdio)
+def reply(msg_id, result=None, error=None) -> None:
+    out = {"jsonrpc": "2.0", "id": msg_id}
+    if error is not None:
+        out["error"] = error
+    else:
+        out["result"] = result
+    sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+def handle(msg: dict) -> None:
+    method, mid = msg.get("method"), msg.get("id")
+    if method == "initialize":
+        pv = (msg.get("params") or {}).get("protocolVersion") or "2025-06-18"
+        return reply(mid, {"protocolVersion": pv, "capabilities": {"tools": {"listChanged": False}},
+                           "serverInfo": {"name": "web-search", "version": "1.0"}, "instructions": INSTRUCTIONS})
+    if method in ("notifications/initialized", "notifications/cancelled") or (mid is None and method):
+        return None
+    if method == "ping":
+        return reply(mid, {})
+    if method == "tools/list":
+        return reply(mid, {"tools": TOOLS})
+    if method == "tools/call":
+        p = msg.get("params") or {}
+        name, args = p.get("name"), p.get("arguments") or {}
+        fn = HANDLERS.get(name)
+        if not fn:
+            return reply(mid, {"content": [{"type": "text", "text": f"Unknown tool {name}"}], "isError": True})
+        try:
+            return reply(mid, {"content": [{"type": "text", "text": fn(args)}], "isError": False})
+        except WebError as e:
+            log(f"{name}: {e}")
+            return reply(mid, {"content": [{"type": "text", "text": str(e)}], "isError": True})
+        except Exception as e:  # noqa: BLE001
+            log(f"{name} error:\n" + traceback.format_exc())
+            return reply(mid, {"content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}], "isError": True})
+    if mid is not None:
+        return reply(mid, error={"code": -32601, "message": f"Method not found: {method}"})
+    return None
+
+
+def main() -> None:
+    log(f"started (pid {os.getpid()})")
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            log(f"bad input: {line[:200]}")
+            continue
+        for m in msg if isinstance(msg, list) else [msg]:
+            handle(m)
+
+
+if __name__ == "__main__":
+    main()

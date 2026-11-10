@@ -1,0 +1,146 @@
+--- a/local_deep_research/deep/codetool.py
++++ b/local_deep_research/deep/codetool.py
+@@ -27,6 +27,10 @@
+     core (60 an hour) and search (10 a minute) limits are tracked apart (one counter mixed them: the "6 left" on 10-27
+     was the search minute, the hourly core limit never went below 39); per run at most LDR_DEEP_CODE_API_MAX core calls
+     (50) and LDR_DEEP_CODE_SEARCH_MAX searches (30), and 10 core calls are always left for other programs.
++
++10-29 (engine scope, deep/enginescope.py; LDR_DEEP_FIX version): when the task is about one engine of a multi-engine
++project (Strata's DeepSeek engine), a read of a file or doc part of another engine (Strata's Qwen engine) says so above
++its lines, and search hits in such files carry [OTHER ENGINE ...]. The evidence keeps the plain text.
+ """
+ from __future__ import annotations
+ 
+@@ -665,6 +669,40 @@
+     return f"CODE TOOL: {e}" if isinstance(e, CodeToolError) else f"CODE TOOL: failed ({type(e).__name__}: {e})"
+ 
+ 
++def _enginescope():
++    """deep/enginescope.py (10-29 engine-scope labels): inside LDR's package, else from its file next to this one (this
++    file is also loaded on its own by tools/code-mcp.py); None when it cannot be loaded."""
++    try:
++        from . import enginescope as es
++        return es
++    except ImportError:
++        import importlib.util
++        import sys
++        es = sys.modules.get("deep_enginescope")
++        if es is None:
++            try:
++                spec = importlib.util.spec_from_file_location("deep_enginescope",
++                                                              Path(__file__).with_name("enginescope.py"))
++                es = importlib.util.module_from_spec(spec)
++                sys.modules["deep_enginescope"] = es        # (dataclasses need the module registered)
++                spec.loader.exec_module(es)
++            except (OSError, ImportError, AttributeError):
++                sys.modules.pop("deep_enginescope", None)
++                return None
++        return es
++
++
++def _file_text(r: Repo, rel: str) -> str | None:
++    """A file of a clone as text (the engine-scope labels place a doc by all of it), or None."""
++    try:
++        p = r._path(rel)
++        if not p.is_file() or p.stat().st_size > TEXT_MAX_BYTES:
++            return None
++        return p.read_text(encoding="utf-8", errors="replace")
++    except (OSError, CodeToolError):
++        return None
++
++
+ def make_tools(collector: Any, rid: str, log_dir: str | Path | None = None, task: str = "",
+                profile: str = "") -> list:
+     """The code tools for one research; the clones are deleted by close(collector) when it ends. `task` and `profile`
+@@ -692,6 +730,47 @@
+         if store is not None:
+             store.add_fetch(idx, url, title, focus, text, text)
+         return idx
++
++    # 10-29 engine-scope labels (LDR_DEEP_FIX version): a file or doc part of another engine of the task's project
++    es = _enginescope()
++    verdicts: dict = {}
++
++    def engine_of(r: Repo, rel: str):
++        """The engine verdict of one file of a clone (by its path; a doc by all of its text), cached for the run."""
++        store = getattr(collector, "deep_store", None)
++        if es is None or not es.scopes_of(store):
++            return None
++        key = (str(r.root), rel)
++        if key not in verdicts:
++            folder = es.content_dir(None, rel)
++            readme = _file_text(r, folder + "README.md") if folder and rel != folder + "README.md" else None
++            if readme is not None:             # a config / script / note of a bench run: placed by the run's README
++                v = es.classify(r.url(rel), "", readme, es.scopes_of(store), whole=readme, pins=es.pins_of(store))
++                verdicts[key] = v if v is not None and v.engine else None
++            else:
++                whole = _file_text(r, rel) if es._is_doc(rel) or folder else None
++                verdicts[key] = es.classify(r.url(rel), "", whole or "", es.scopes_of(store), whole=whole,
++                                            pins=es.pins_of(store))
++        return verdicts[key]
++
++    def hit_lines(r: Repo, hits: list[dict]) -> tuple[list[str], str]:
++        """The search hits as 'file:line: text' - a hit in another engine's file or doc part with [OTHER ENGINE ...] -
++        and the legend line ('' when no hit is marked)."""
++        out, first, n = [], None, 0
++        for h in hits:
++            try:
++                v = engine_of(r, h["file"])
++            except Exception:  # noqa: BLE001 - a label never breaks the search
++                v = None
++            tag = es.short(v) if v is not None and (v.engine or v.part_at(h["line"])) else ""
++            if tag:
++                first, n = first or v, n + 1
++            out.append(f"{h['file']}:{h['line']}: {tag + ' ' if tag else ''}{h['text']}")
++        if first is None:
++            return out, ""
++        proj, other, own = es._names(first)
++        return out, (f"\n({n} hit(s) marked [OTHER ENGINE: {proj}'s {other}] are in that engine's files or doc parts; "
++                     f"the task is about its {own} - not evidence for the {own}'s flags or settings.)")
+ 
+     @tool(description=(
+         "Search the source code of a public GitHub project at a given version (grep, extended regex). `repo` is "
+@@ -708,9 +787,9 @@
+             return _fmt_err(e)
+         if not g["total"]:
+             return f"No hits for /{pattern}/ in {r.label}{' under ' + path if path else ''}."
+-        lines = [f"{h['file']}:{h['line']}: {h['text']}" for h in g["hits"]]
++        lines, legend = hit_lines(r, g["hits"])
+         more = f"\n({g['more']} more hits - narrow with path or file_glob, or a more specific pattern.)" if g["more"] else ""
+-        return f"{g['total']} hit(s) for /{pattern}/ in {r.label}:\n" + "\n".join(lines) + more
++        return f"{g['total']} hit(s) for /{pattern}/ in {r.label}:\n" + "\n".join(lines) + more + legend
+ 
+     @tool(description=(
+         "Read lines of one file of a GitHub project at a given version (at most 120 lines; numbered). `repo` as in "
+@@ -730,7 +809,15 @@
+         idx = cite(d["url"], title, d["text"], focus or file)
+         logger.info(f"deep: code_read {r.name}@{r.ref} {d['file']}:{d['start']}-{d['end']} -> [{idx}]")
+         rest = f"\n({d['file']} has {d['lines_total']} lines.)" if d["end"] < d["lines_total"] or d["start"] > 1 else ""
+-        return f"[{idx}] Title: {title}\nURL: {d['url']}\n\n{d['text']}{rest}"
++        text, label = d["text"], ""
++        try:                                   # 10-29: another engine's file or doc part (the evidence keeps the text)
++            v = engine_of(r, d["file"])
++            n = es.note(v, (d["start"], d["end"])) if v is not None else ""
++            if n:
++                label, text = f"[{n}]\n", es.mark_lines(text, v)
++        except Exception:  # noqa: BLE001 - a label never breaks the read
++            pass
++        return f"[{idx}] Title: {title}\nURL: {d['url']}\n{label}\n{text}{rest}"
+ 
+     @tool(description=(
+         "The layout of a GitHub project at a given version: the folders and files under `path` (default the top), "
+@@ -767,7 +854,13 @@
+                                   for c in i["comments"]))
+                 title = f"{name} {i['kind']} #{i['number']}: {i['title']}"
+                 idx = cite(i["url"], title, text, query or title)
+-                return f"[{idx}] Title: {title}\nURL: {i['url']}\n\n{text}"
++                label = ""
++                try:                           # 10-29: an issue / PR about another engine of the task's project
++                    v = es.for_source(getattr(collector, "deep_store", None), i["url"], title, text) if es else None
++                    label = f"[{es.note(v)}]\n" if v is not None and es.note(v) else ""
++                except Exception:  # noqa: BLE001
++                    label = ""
++                return f"[{idx}] Title: {title}\nURL: {i['url']}\n{label}\n{text}"
+             if not query:
+                 return "CODE TOOL: give `query` (search words) or `number` (one issue / PR)."
+             s = ct.api.search(name, query, kind=kind if kind in ("issue", "pr") else "any")

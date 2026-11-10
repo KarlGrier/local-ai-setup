@@ -1,0 +1,15 @@
+work/r10/tagcheck.sh "Phase E final gates"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+WEB=1 work/r10/with_server.sh BR12 configs/BR12.json -- ".venv/bin/python work/r5/browser_test.py --engine-log \$ELOG --tag b12 --web"
+work/r10/fallback_test12.sh
+work/r10/soak12.sh 120
+.venv/bin/python work/r6/webreplay.py replay --base http://127.0.0.1:8080 --label WR12
+work/r10/soakdec.sh SOAKD12 configs/Cstar12.json
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r10/decscreen.sh FRESHD12 configs/C12.json
+.venv/bin/python work/r10/ab_table.py fresh=FRESHD12 soaked=SOAKD12 | tee results/r10/ab-c12-soaked-vs-fresh.md
+work/r10/tagcheck.sh "Phase E final gates done"
+work/r10/basecheck.sh
+work/r10/phase_end.sh pE2 keep
+work/r10/hold.sh promote

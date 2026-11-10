@@ -1,0 +1,5 @@
+=== 2026-10-24 20:17:49 B.1 DS4_AHEAD=2 - DS4.1 arm ahead2 (/home/USER/ai-speed-testing/strata-compare/configs/DS41-tune-ahead2.json, server /home/USER/ai-speed-testing/strata-compare/strata-v024/serve/server.py, 1 passes): --max-context 32768 --eos 1 --dspark auto --dspark-conf 0.65 --tp 2 --ssd-cache 70 --prefill-chunk 2048 --expert-profile /home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX4060TI,GPU-UUID-RTX5080', 'STRATA_DS4_PROMPT_SKIP': '0', 'DS4_STORE_FLOOR_GB': '16', 'DS4_SPLIT': '10,30', 'DS4_RING_MB': '128', 'DS4_AHEAD': '2'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/ahead2-1024-2017
+=== 2026-10-24 20:17:49 cool-down before the arm: 0 s, drive 41 -> 41 C
+dropcache: 7 model files dropped from the page cache in 0.6 s
+=== 2026-10-24 20:17:50 before: MemAvailable 86.4 GB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-24 20:18:02 ready after 12 s: MemAvailable 30.6 GB, engine RSS 56879 MB; vram 0, 15371 MiB, 563 MiB;1, 7287 MiB, 603 MiB;

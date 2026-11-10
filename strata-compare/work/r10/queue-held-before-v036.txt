@@ -1,0 +1,95 @@
+work/r10/tagcheck.sh "Phase B start"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v36b453 engine-v36b453
+BDIR=build work/r10/build.sh strata-v36b453m engine-v36b453m
+BDIR=build work/r10/build.sh strata-v36b413 engine-v36b413
+BDIR=build work/r10/build.sh strata-v36b443 engine-v36b443
+.venv/bin/python work/r10/buildrec.py B453 configs/B453.json "B.1 #453 transplant (v36-b453 = v36-c11 + efd79ba)"
+.venv/bin/python work/r10/buildrec.py B413 configs/B413.json "B.2 #413 transplant (v36-b413 = v36-c11 + c4436ec fbc399c 8405a04 8badd17)"
+work/r10/exact7.sh b453 configs/B453.json
+work/r10/exact7.sh b453off configs/B453off.json
+work/r10/with_server.sh B453m configs/B453m.json -- ".venv/bin/python work/r10/b453state.py new"
+work/r10/with_server.sh B453moff configs/B453moff.json -- ".venv/bin/python work/r10/b453state.py old"
+.venv/bin/python work/r10/b453state.py --compare new old | tee results/r10/b453-state.txt
+work/r10/screen.sh B453-a configs/B453.json
+work/r10/screen.sh B453off-a configs/B453off.json
+work/r10/screen.sh B453off-b configs/B453off.json
+work/r10/screen.sh B453-b configs/B453.json
+.venv/bin/python work/r10/ab_table.py old=B453off-a,B453off-b new=B453-a,B453-b | tee results/r10/ab-B453.md
+work/r10/tagcheck.sh "B.1 done"
+work/r10/basecheck.sh
+work/r10/b413parity.sh
+work/r10/exact7.sh b413 configs/B413.json
+work/r10/exact7.sh b413off configs/B413off.json
+work/r10/screen.sh B413-a configs/B413.json
+work/r10/screen.sh B413off-a configs/B413off.json
+work/r10/screen.sh B413off-b configs/B413off.json
+work/r10/screen.sh B413-b configs/B413.json
+.venv/bin/python work/r10/ab_table.py old=B413off-a,B413off-b new=B413-a,B413-b | tee results/r10/ab-B413.md
+work/r10/tagcheck.sh "B.2 done"
+work/r10/basecheck.sh
+work/r10/grbench35.sh
+work/r10/b443tests.sh
+work/r10/tagcheck.sh "B.3 tests done"
+work/r10/basecheck.sh
+BDIR=build work/r10/build.sh strata-v36b4 engine-v36b4
+.venv/bin/python work/r10/buildrec.py B4 configs/B4on.json "B.4 (v36-b4 = base + STRATA_NO_PCIE_CALL)"
+work/r10/exact7.sh b4on configs/B4on.json
+work/r10/ldrscreen.sh B4on-a configs/B4on.json
+work/r10/ldrscreen.sh B4off-a configs/B4off.json
+work/r10/ldrscreen.sh B4off-b configs/B4off.json
+work/r10/ldrscreen.sh B4on-b configs/B4on.json
+.venv/bin/python work/r10/ldr_table.py off=B4off-a,B4off-b on=B4on-a,B4on-b | tee results/r10/ab-B4-ldr.md
+work/r10/decscreen.sh B4ond-a configs/B4on.json
+work/r10/decscreen.sh B4offd-a configs/B4off.json
+work/r10/decscreen.sh B4offd-b configs/B4off.json
+work/r10/decscreen.sh B4ond-b configs/B4on.json
+.venv/bin/python work/r10/ab_table.py off=B4offd-a,B4offd-b on=B4ond-a,B4ond-b | tee results/r10/ab-B4-decode.md
+work/r10/tagcheck.sh "B.4 done"
+work/r10/basecheck.sh
+work/r10/phase_end.sh pB1 keep
+work/r10/hold.sh phaseA2
+work/r10/tagcheck.sh "Phase A part 2"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v36a2 engine-v36a2
+BDIR=build work/r10/build.sh strata-v36a2h engine-v36a2h
+BDIR=build work/r10/build.sh strata-v36a3 engine-v36a3
+.venv/bin/python work/r10/buildrec.py A2v36 configs/A2-0.json "A.2 on v0.1.36 (v36-a2 = v36-c11 + STRATA_ADAPT_HELPER)"
+.venv/bin/python work/r10/buildrec.py A3v36 configs/A3off.json "A.3 on v0.1.36 (v36-a3 = v36-a2 + STRATA_HELPER_ADAPT)"
+work/r10/exact7.sh a2off36 configs/A2-0.json
+work/r10/exact7.sh a3off36 configs/A3off.json
+BDIR=build work/r10/build.sh strata-v36a2m engine-v36a2m
+BDIR=build work/r10/build.sh strata-v36a3h engine-v36a3h
+.venv/bin/python work/r10/buildrec.py A2m configs/A2m1-tf-helper.json "A.2 measurement twin (v36-a2m = v36-a2 + the TF MEASUREMENT commits)"
+.venv/bin/python work/r10/buildrec.py A3h configs/A3h-1.json "A.3 counting build (v36-a3h = v36-a3 + the R10A MEASUREMENT line)"
+work/r10/tf.sh A2m1tf-helper configs/A2m1-tf-helper.json engine-v36a2m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r10/tf_compare9.py A2m1tf-helper=R11mtf3500-helper | tee results/r10/tf-A2-mode1.txt
+work/r10/with_server.sh NA21 configs/A2-1n.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label SA21 --temperature 1.0"
+work/r10/repeat3.sh rep-a21 configs/A2-1.json
+work/r10/with_server.sh A1c1 configs/A2h-1.json -- "work/r10/a1count.sh A1c1 20"
+.venv/bin/python work/r10/a1_counts.py A1c1 logs/engine-A2h-1.log > results/r10/a1-counts-mode1.md; grep -E '^\*\*' results/r10/a1-counts-mode1.md
+work/r10/with_server.sh A3c configs/A3h-1.json -- "work/r10/a1count.sh A3c 20"
+.venv/bin/python work/r10/a1_counts.py A3c logs/engine-A3h-1.log > results/r10/a1-counts-a3.md; grep -E '^\*\*' results/r10/a1-counts-a3.md; grep 'CUDA1 tier' logs/engine-A3h-1.log | tail -3
+work/r10/ldrscreen.sh A31o-a configs/A31-only.json
+work/r10/ldrscreen.sh A3on-a configs/A3-1.json
+work/r10/ldrscreen.sh A3on-b configs/A3-1.json
+work/r10/ldrscreen.sh A31o-b configs/A31-only.json
+.venv/bin/python work/r10/ldr_table.py fix=A31o-a,A31o-b fix+A3=A3on-a,A3on-b | tee results/r10/ab-A3-ldr.md
+work/r10/decscreen.sh A31od-a configs/A31-only.json
+work/r10/decscreen.sh A3ond-a configs/A3-1.json
+work/r10/decscreen.sh A3ond-b configs/A3-1.json
+work/r10/decscreen.sh A31od-b configs/A31-only.json
+.venv/bin/python work/r10/ab_table.py fix=A31od-a,A31od-b fix+A3=A3ond-a,A3ond-b | tee results/r10/ab-A3-decode.md
+for i in 1 2 3; do work/r10/with_server.sh repA3-$i configs/A3-1.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r10/repeat3s.py A3-1"; done; cat results/r10/repeat3s-A3-1.txt
+work/r10/with_server.sh Ag0-a configs/A2-0.json -- "work/r10/a1count.sh Ag0-a 30"
+work/r10/with_server.sh Ag1-a configs/A2-1.json -- "work/r10/a1count.sh Ag1-a 30"
+work/r10/with_server.sh Ag1-b configs/A2-1.json -- "work/r10/a1count.sh Ag1-b 30"
+work/r10/with_server.sh Ag0-b configs/A2-0.json -- "work/r10/a1count.sh Ag0-b 30"
+.venv/bin/python work/r10/ldr_table.py A2-0=Ag0-a-aged,Ag0-b-aged A2-1=Ag1-a-aged,Ag1-b-aged | tee results/r10/ab-A2-aged.md
+.venv/bin/python work/r10/ldr_table.py A2-0=Ag0-a-pool,Ag0-b-pool A2-1=Ag1-a-pool,Ag1-b-pool | tee results/r10/ab-A2-agingtraffic.md
+work/r10/tagcheck.sh "Phase A part 2 done"
+work/r10/basecheck.sh
+work/r10/phase_end.sh pA2 keep
+work/r10/hold.sh phaseA3

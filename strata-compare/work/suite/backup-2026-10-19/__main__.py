@@ -1,0 +1,162 @@
+"""Command line: see suite/README.md.  Normally called through suite/run.sh."""
+from __future__ import annotations
+
+import argparse
+import sys
+
+from .common import RESULTS, check_label
+
+
+def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    sub = argv[0] if argv and not argv[0].startswith("-") else "run"
+    if sub != "run" and argv and argv[0] == sub:
+        argv = argv[1:]
+
+    if sub == "selftest":
+        from . import selftest
+        return selftest.main()
+
+    if sub == "compare":
+        ap = argparse.ArgumentParser(prog="run.sh compare")
+        ap.add_argument("a")
+        ap.add_argument("b")
+        a = ap.parse_args(argv)
+        from . import report, blind
+        p1 = report.write_compare(check_label(a.a), check_label(a.b))
+        p2 = blind.write_blind(a.a, a.b)
+        p3 = report.write_table([a.a, a.b])
+        print(p1.read_text())
+        print(f"comparison: {p1.relative_to(RESULTS.parent.parent)}\nblind page: {p2.relative_to(RESULTS.parent.parent)}\nside by side: {p3.relative_to(RESULTS.parent.parent)}")
+        return 0
+
+    if sub == "table":
+        from . import report
+        p = report.write_table([check_label(x) for x in argv] or None)
+        print(p.read_text())
+        return 0
+
+    if sub == "regrade":
+        ap = argparse.ArgumentParser(prog="run.sh regrade")
+        ap.add_argument("label")
+        ap.add_argument("--no-render", action="store_true")
+        a = ap.parse_args(argv)
+        from . import runner, report
+        runner.grade_label(check_label(a.label), render=not a.no_render)
+        report.write_label_report(a.label)
+        from . import privacy
+        from .common import label_dir
+        f = privacy.check_paths([label_dir(a.label)])
+        (label_dir(a.label) / "privacy.txt").write_text("\n".join(f) + "\n" if f else "CLEAN\n")
+        print("privacy check: " + ("CLEAN" if not f else f"{len(f)} findings"))
+        print((RESULTS / a.label / "scores.md").read_text())
+        return 0
+
+    if sub == "estimate":
+        ap = argparse.ArgumentParser(prog="run.sh estimate")
+        ap.add_argument("endpoint", help="claude:<model-id> or openrouter:<model-id>[@<endpoint slug>]")
+        ap.add_argument("--mode", default="quick", choices=["quick", "full"])
+        ap.add_argument("--from", dest="base", default=None, help="local label to take token counts from")
+        a = ap.parse_args(argv)
+        from . import cost, runner
+        from .common import CATEGORIES, RUNS
+        if a.endpoint.startswith("openrouter:"):
+            from .backend_openrouter import estimate as or_estimate
+            model, _, slug = a.endpoint.split(":", 1)[1].partition("@")
+            or_estimate(model, runner.load_items(CATEGORIES), RUNS[a.mode], base_label=a.base, provider=slug or None)
+        else:
+            cost.estimate(a.endpoint.split(":", 1)[1], runner.load_items(CATEGORIES), RUNS[a.mode], base_label=a.base)
+        return 0
+
+    if sub == "ratings":
+        ap = argparse.ArgumentParser(prog="run.sh ratings")
+        ap.add_argument("action", choices=["import"])
+        ap.add_argument("file", help="the JSON the blind page's 'Copy my picks' gave you, saved to a file")
+        a = ap.parse_args(argv)
+        import json
+        from .common import label_dir, read_json, write_json
+        data = json.loads(open(a.file, encoding="utf-8").read())
+        n = 0
+        for card, by_label in (data.get("ratings") or {}).items():
+            for label, v in by_label.items():
+                f = label_dir(check_label(label)) / "ratings.json"
+                cur = read_json(f) if f.exists() else {}
+                cur[card] = {"rating": int(v), "pair": data.get("pair")}
+                write_json(f, cur)
+                n += 1
+        if data.get("picks"):
+            pa, _, pb = str(data.get("pair", "a|b")).partition("|")
+            write_json(RESULTS / f"blind-picks-{check_label(pa)}-vs-{check_label(pb)}.json", data["picks"])
+        print(f"imported {n} research ratings and {len(data.get('picks') or {})} visual picks")
+        return 0
+
+    if sub == "webcache":
+        ap = argparse.ArgumentParser(prog="run.sh webcache")
+        ap.add_argument("action", choices=["status", "expand", "freeze"])
+        a = ap.parse_args(argv)
+        import json
+        from . import web
+        if a.action == "expand":
+            print(web.expand())
+        elif a.action == "freeze":
+            web.freeze()
+        print(json.dumps(web.status(), indent=1))
+        return 0
+
+    if sub == "privacy":
+        from . import privacy
+        paths = argv or [str(RESULTS)]
+        f = privacy.check_paths(paths)
+        for x in f:
+            print("FINDING", x)
+        print("privacy check: " + ("CLEAN" if not f else f"{len(f)} findings"))
+        return 1 if f else 0
+
+    if sub == "run":
+        ap = argparse.ArgumentParser(prog="run.sh", description="Run the model test suite against one endpoint.")
+        ap.add_argument("--label", required=True)
+        ap.add_argument("--endpoint", required=True, help="http://127.0.0.1:PORT (OpenAI-compatible), claude:<model-id> or "
+                                                          "openrouter:<model-id>[@<endpoint slug>]")
+        ap.add_argument("--mode", choices=["quick", "full"], default="quick")
+        ap.add_argument("--only", help="comma-separated categories (default: all)")
+        ap.add_argument("--items", help="comma-separated item ids (e.g. research/r04_strata_release or r04_strata_release); default: every item of --only's categories (diagnostics)")
+        ap.add_argument("--runs", type=int, help="override runs per item")
+        ap.add_argument("--model", help="model id to request (default: the first one /v1/models lists)")
+        ap.add_argument("--max-tokens", type=int, default=81920, help="local: max_tokens per answer (fit to the context)")
+        ap.add_argument("--ctx", type=int, help="local: context length if /v1/models does not report it")
+        ap.add_argument("--tokenizer", help="local: tokenizer dir (vocab.json, merges.txt, token_type.json) for the "
+                                            "reasoning/answer split")
+        ap.add_argument("--extra-body", help="local: JSON merged into every request (e.g. chat_template_kwargs)")
+        ap.add_argument("--sampling", help="local: JSON over the standard sampling (temperature 1.0, top_p 0.95, top_k 20, "
+                                           "min_p 0.05), e.g. '{\"min_p\": 0}'; recorded in meta as sent")
+        ap.add_argument("--budget", type=float, default=None,
+                        help="hard stop in dollars (default: Claude 40, OpenRouter 15)")
+        ap.add_argument("--max-estimate", type=float, default=None,
+                        help="refuse to start when the estimate is above this (default: Claude 25, OpenRouter = the "
+                             "hard stop)")
+        ap.add_argument("--concurrency", type=int, default=None, help="OpenRouter: parallel requests (default 6)")
+        ap.add_argument("--effort", default="xhigh", help="OpenRouter: reasoning.effort sent with every request "
+                                                         "(default xhigh; 2026-10-17)")
+        ap.add_argument("--estimate-from", help="Claude: local label to estimate from (default: the latest)")
+        ap.add_argument("--batch-chunk", type=int, default=40, help="Claude: requests per batch")
+        ap.add_argument("--yes", action="store_true", help="Claude: run even if the estimate is over --max-estimate")
+        ap.add_argument("--no-grade", action="store_true", help="collect answers only; grade later with `regrade`")
+        ap.add_argument("--web-capture", action="store_true",
+                        help="research: allow live web fetches into the cache before it is frozen (the capture run)")
+        ap.add_argument("--collect-only", action="store_true",
+                        help="API runs beside a local run: send and save only (no agentic items, no grading); run "
+                             "the same command again without it to add the agentic items and grade")
+        a = ap.parse_args(argv)
+        check_label(a.label)
+        cap = 15.0 if a.endpoint.startswith("openrouter:") else 40.0
+        if a.budget is not None and a.budget > cap and not a.yes:
+            raise SystemExit(f"--budget above ${cap:.0f} needs --yes")
+        from . import runner
+        return runner.cmd_run(a)
+
+    print(f"unknown command {sub!r}; see suite/README.md", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

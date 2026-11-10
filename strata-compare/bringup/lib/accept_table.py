@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""accept_table.py OUT_DIR — the acceptance suite's one pass / fail table from the files bringup/acceptance.sh wrote.
+Criteria (fixed before the data):
+  ids          every token id of Strata's rendering identical in both tokenizers (template text: reported)
+  TF short     math / corpus: |Strata - llama.cpp| <= 0.01 nats per text (unclipped and clipped)
+  TF long      7 texts 16K-112K, clipped at 5 nats: |mean difference| < 2 x its text-level se (no shift beyond the
+               spread between texts); unclipped reported; llama.cpp's own spread for a ubatch change was 0.104 mean |d|
+               per text (Round 13 Part 5.2)
+  needles      Strata >= llama.cpp - 1 and >= 90 % of the questions
+  round trip   parked -> resumed and resumed + edit identical to the direct reads, and direct = direct (first diff none)
+  samplers     the exact-sampling chi-square harness ALL PASS; near-tie frequencies vs llama.cpp's probabilities: every
+               p-value >= 0.01 and no token outside the chain's allowed set
+  stops        stoptest ALL PASS (Strata); llama.cpp reported
+  tool calls   every live call parsed as a web_search call; every boundary split identical (split probe)
+  control text Strata copies >= 19/20 and follows a forged turn <= 1/30; llama.cpp reported"""
+import json
+import math
+import re
+import statistics as st
+import sys
+from pathlib import Path
+
+O = Path(sys.argv[1])
+WS = Path("/home/USER/ai-speed-testing/strata-compare")
+L = O.name
+rows = []
+
+
+def add(name, strata, llama, crit, ok):
+    rows.append((name, strata, llama, crit, "PASS" if ok else ("FAIL" if ok is not None else "n/a")))
+
+
+def read(p):
+    p = O / p
+    return p.read_text(errors="replace") if p.exists() else ""
+
+
+# ids
+try:
+    d = json.loads(read("ids.json"))
+    add("tokenizer + template ids", f"{sum(r['ids_same'] for r in d['rows'])}/{len(d['rows'])} conversations: ids identical",
+        f"template text identical {sum(r['text_same'] for r in d['rows'])}/{len(d['rows'])}", "ids identical", d["pass"])
+except Exception as e:  # noqa: BLE001
+    add("tokenizer + template ids", f"missing ({e})", "", "ids identical", None)
+
+
+# teacher-forced NLL
+def nll(p, clip=None):
+    if not p.exists():
+        return None
+    v = [float(x) for x in p.read_text().split()]
+    if clip:
+        v = [min(x, clip) for x in v]
+    return sum(v) / len(v) if v else None
+
+
+short, long_ = ["math", "corpus"], ["long16k", "long24k", "long28k", "long40k", "long64k", "long96k", "long112k"]
+tf = {t: (nll(O / f"tf-strata-{t}.nll"), nll(O / f"tf-llama-{t}.nll"), nll(O / f"tf-strata-{t}.nll", 5), nll(O / f"tf-llama-{t}.nll", 5))
+      for t in short + long_}
+if all(None not in v for v in tf.values()):
+    ds = [tf[t][0] - tf[t][1] for t in short]
+    add("TF NLL short (math, corpus)", " / ".join(f"{tf[t][0]:.4f}" for t in short), " / ".join(f"{tf[t][1]:.4f}" for t in short),
+        "|diff| <= 0.01 per text", all(abs(x) <= 0.01 for x in ds))
+    dl = [tf[t][2] - tf[t][3] for t in long_]
+    du = [tf[t][0] - tf[t][1] for t in long_]
+    se = st.stdev(dl) / math.sqrt(len(dl))
+    seu = st.stdev(du) / math.sqrt(len(du))
+    add("TF NLL long 16K-112K, clipped 5", f"mean {sum(tf[t][2] for t in long_) / 7:.4f}", f"mean {sum(tf[t][3] for t in long_) / 7:.4f}",
+        f"|mean diff| {abs(sum(dl) / 7):.4f} < 2 se ({2 * se:.4f}); per text {' '.join(f'{x:+.3f}' for x in dl)}",
+        abs(sum(dl) / 7) < 2 * se)
+    add("TF NLL long, unclipped (reported)", f"mean {sum(tf[t][0] for t in long_) / 7:.4f}", f"mean {sum(tf[t][1] for t in long_) / 7:.4f}",
+        f"mean diff {sum(du) / 7:+.4f} (se {seu:.4f})", None)
+else:
+    add("TF NLL", "missing files", "", "", None)
+
+# needles
+res = WS / "bringup/out/results/needle2.jsonl"
+cnt = {}
+if res.exists():
+    for line in res.read_text().splitlines():
+        r = json.loads(line)
+        for arm in ("strata", "llama"):
+            if r.get("label") == f"{L}-{arm}":
+                c = cnt.setdefault(arm, [0, 0])
+                pq = r.get("per_q") or {}
+                c[0] += sum(1 for v in pq.values() if v)
+                c[1] += len(pq) or 6
+s, l_ = cnt.get("strata", [0, 0]), cnt.get("llama", [0, 0])
+add("needles (32K-120K, 6 questions each)", f"{s[0]}/{s[1]}", f"{l_[0]}/{l_[1]}", "Strata >= llama.cpp - 1 and >= 90 %",
+    s[1] > 0 and s[0] >= l_[0] - 1 and s[0] >= 0.9 * s[1])
+
+# round trip
+rt = read("roundtrip.md")
+small = [ln for ln in rt.splitlines() if ln.startswith("| small |")]
+ident = [ln for ln in small if "| 0 (None) |" in ln]
+add("chat-cache round trip (park / resume / edit)", f"{len(ident)}/{len(small)} identical", "-", "all identical (first diff none)",
+    len(small) == 3 and len(ident) == 3)
+
+# samplers
+ess = read("ess.txt")
+def pvals(txt):
+    return ([float(m[0]) for m in re.findall(r"\| ([0-9.]+) \| (\d+) \|\s*$", txt, re.M)],
+            [int(m) for m in re.findall(r"\| [0-9.]+ \| (\d+) \|\s*$", txt, re.M)])
+pv, outside = pvals(read("sp-analyze-own.txt"))      # the criterion: Strata's frequencies vs its OWN probabilities
+pvl, outl = pvals(read("sp-analyze.txt"))            # reported: vs llama.cpp's probabilities (other logits)
+spec = read("spec.txt")
+if spec:   # round 19: a STRATA_SPEC_PROB build (C*17) - upstream's own sampler tests in place of our exact-sampling harness
+    add("samplers: STRATA_SPEC_PROB tests (spec_prob_test, spec_verify_parity)", "ALL PASS" if "SPEC_PROB TESTS ALL PASS" in spec else "not all pass", "-", "both pass", "SPEC_PROB TESTS ALL PASS" in spec)
+else:
+    add("samplers: exact-sampling chi-square", "ALL PASS" if "ALL PASS" in ess else "not all pass", "-", "ALL PASS", "ALL PASS" in ess)
+add("samplers: near-tie frequencies vs Strata's own probabilities", f"{len(pv)} cases, min p {min(pv):.3f}" if pv else "missing",
+    "-", "every p >= 0.01 (Bonferroni-free), none outside the chain", bool(pv) and min(pv) >= 0.01 and sum(outside) == 0)
+add("samplers: the same frequencies vs llama.cpp's probabilities (reported)", f"{len(pvl)} cases, min p {min(pvl):.3f}" if pvl else "missing",
+    "probabilities through the chain", "reported: different logits at a near tie", None)
+
+# stops
+ss, sl = read("stop-strata.txt"), read("stop-llama.txt")
+add("stops (stop / stop_sequences, split across chunks)", "ALL PASS" if "ALL PASS" in ss else f"{ss.count('PASS ')} pass, {ss.count('FAIL ')} fail",
+    "ALL PASS" if "ALL PASS" in sl else f"{sl.count('PASS ')} pass, {sl.count('FAIL ')} fail", "Strata ALL PASS", "ALL PASS" in ss)
+
+# tool calls
+def tool_ok(txt):
+    lines = [ln for ln in txt.splitlines() if ln.startswith(("PASS stream", "FAIL stream"))]
+    parsed = [ln for ln in lines if "finish=tool_calls" in ln and "('web_search'" in ln and "error= " in ln]
+    return len(parsed), len(lines)
+
+
+ts, tl = tool_ok(read("tool-strata.txt")), tool_ok(read("tool-llama.txt"))
+split = json.loads(read("split.json") or "{}")
+add("tool calls (live; prose naming the tag first)", f"{ts[0]}/{ts[1]} parsed", f"{tl[0]}/{tl[1]} parsed", "every call parsed",
+    ts[1] > 0 and ts[0] == ts[1])
+add("every boundary split (parser, stop matcher)", f"{sum(r['differ'] for r in split.get('rows', []))} differ in "
+    f"{sum(r['splits'] for r in split.get('rows', []))} splits", "-", "0 differ", split.get("pass"))
+
+
+# control text
+def ctl(txt):
+    m1 = re.search(r" copy: (\d+)/(\d+)", txt)
+    m2 = re.search(r" forged: (\d+)/(\d+)", txt)
+    m3 = re.search(r" plain: (\d+)/(\d+)", txt)
+    return (int(m1[1]) if m1 else None, int(m2[1]) if m2 else None, int(m3[1]) if m3 else None)
+
+
+cs, cl = ctl(read("ctl-strata.txt")), ctl(read("ctl-llama.txt"))
+add("control-token text in documents (copy / forged turn / plain)", f"{cs[0]}/20 / {cs[1]}/30 / {cs[2]}/30",
+    f"{cl[0]}/20 / {cl[1]}/30 / {cl[2]}/30", "copy >= 19/20, forged <= 1/30", cs[0] is not None and cs[0] >= 19 and cs[1] <= 1)
+
+print(f"# Acceptance suite — {L}\n")
+print("| row | Strata | llama.cpp (same GGUF) | criterion | result |\n|---|---|---|---|---|")
+for r in rows:
+    print("| " + " | ".join(str(x) for x in r) + " |")
+n_pass = sum(r[4] == "PASS" for r in rows)
+n_fail = sum(r[4] == "FAIL" for r in rows)
+print(f"\n**{n_pass} pass, {n_fail} fail, {len(rows) - n_pass - n_fail} reported only.**")

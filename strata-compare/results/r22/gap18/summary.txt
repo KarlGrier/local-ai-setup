@@ -1,0 +1,334 @@
+=== 2026-11-03 09:23:01 GAP 18 (work/r22/gap18.sh): the measuring gap + the screen of the four bitwise switches (Karl 11-03)
+2026-11-03 09:23:01 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 3367276 (engine 3367298)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-03 12:13:55 port_gap4: gap open: test lock held (pid 3417876), 8080 stopped
+=== 2026-11-03 12:13:55 1 P028x on the 5080 alone with its timing logs (x28h-solo + STRATA_DECODE_TIMING=1, + STRATA_VERIFY_PROFILE=1)
+=== 2026-11-03 12:13:55 screen SOLOt (x28h-solo-dtime.json)
+server ready (guard pid 3418117, server pid 3418141) load_time_s 13.322577743 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-SOLOt_20261103T121356.log
+engine pid 3418146: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+SOLOtn W1-think r0: prompt 110 ttft 0.298 s, 3072 tokens, 154.42 tok/s, length
+SOLOtn W2-code r0: prompt 126 ttft 0.331 s, 3072 tokens, 141.75 tok/s, length
+SOLOtn W3-research r0: prompt 26727 ttft 6.029 s, 2048 tokens, 135.4 tok/s, length
+SOLOta A-edit r0: prompt 2676 ttft 1.027 s, 1136 tokens, 126.71 tok/s, tool_calls
+SOLOta B-write r0: prompt 1370 ttft 0.845 s, 2224 tokens, 136.16 tok/s, tool_calls
+SOLOtr R1-verify20k r0: prompt 24239 ttft 5.534 s, 3671 tokens, 135.23 tok/s, stop
+SOLOtr R2-report54k r0: prompt 54069 ttft 12.013 s, 2461 tokens, 122.33 tok/s, stop
+SOLOtr R3-extract5k r0: prompt 5013 ttft 1.423 s, 964 tokens, 146.38 tok/s, stop
+SOLOtr R4-agent33k r0: prompt 33416 ttft 7.831 s, 369 tokens, 112.89 tok/s, tool_calls
+=== 2026-11-03 12:17:51 screen SOLOv (x28h-solo-vprof.json)
+server ready (guard pid 3421803, server pid 3421818) load_time_s 13.328409888 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-SOLOv_20261103T121752.log
+engine pid 3421823: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+SOLOvn W1-think r0: prompt 109 ttft 0.3 s, 3072 tokens, 164.77 tok/s, length
+SOLOvn W2-code r0: prompt 123 ttft 0.313 s, 3072 tokens, 138.15 tok/s, length
+SOLOvn W3-research r0: prompt 26728 ttft 6.033 s, 2048 tokens, 138.48 tok/s, length
+SOLOva A-edit r0: prompt 2678 ttft 1.025 s, 241 tokens, 105.27 tok/s, tool_calls
+SOLOva B-write r0: prompt 1370 ttft 0.857 s, 4096 tokens, 128.9 tok/s, length
+SOLOvr R1-verify20k r0: prompt 24239 ttft 5.539 s, 3514 tokens, 127.2 tok/s, stop
+SOLOvr R2-report54k r0: prompt 54069 ttft 12.011 s, 2518 tokens, 123.08 tok/s, stop
+SOLOvr R3-extract5k r0: prompt 5011 ttft 1.432 s, 1250 tokens, 156.19 tok/s, stop
+SOLOvr R4-agent33k r0: prompt 33417 ttft 7.835 s, 376 tokens, 113.61 tok/s, tool_calls
+=== 2026-11-03 12:21:57 2 exact7 at pin 2500: the base, its repeat, and each switch arm against the base
+=== 2026-11-03 12:21:57 exact7 g18-base (base)
+g18-base-x-math   out 6b251415 (C*13 a46e2e9f) DIFFERENT  ms/round 32.77  prompt ms 461
+g18-base-s-math   out 8c25c022 (C*13 ea6fbe6c) DIFFERENT  ms/round 32.15  prompt ms 450
+g18-base-x-code   out 3585ad6f (C*13 3748f95d) DIFFERENT  ms/round 24.74  prompt ms 448
+g18-base-s-code   out 2fe9fd9e (C*13 94953719) DIFFERENT  ms/round 23.51  prompt ms 478
+g18-base-x-p2000  out 3e219376 (C*13 3e219376) =  ms/round 37.31  prompt ms 1074
+g18-base-x-32k    out 651f56c8 (C*13 651f56c8) =  ms/round 39.21  prompt ms 7572
+g18-base-x-112k   out a393ca0a (C*13 a944c147) DIFFERENT  ms/round 31.99  prompt ms 25649
+exact7 g18-base: 2/7 identical to C*13
+exact7-slots g18-base: 3238+3300 slots (5080 + 4060 Ti); C*13: ? -> DIFFER
+=== 2026-11-03 12:25:12 exact7 g18-base2 (base)
+g18-base2-x-math   out 6b251415 (g18-base 6b251415) =  ms/round 32.99  prompt ms 534
+g18-base2-s-math   out 8c25c022 (g18-base 8c25c022) =  ms/round 32.37  prompt ms 531
+g18-base2-x-code   out 3585ad6f (g18-base 3585ad6f) =  ms/round 24.91  prompt ms 531
+g18-base2-s-code   out 2fe9fd9e (g18-base 2fe9fd9e) =  ms/round 23.52  prompt ms 526
+g18-base2-x-p2000  out 3e219376 (g18-base 3e219376) =  ms/round 38.27  prompt ms 1120
+g18-base2-x-32k    out 651f56c8 (g18-base 651f56c8) =  ms/round 38.88  prompt ms 7573
+g18-base2-x-112k   out a393ca0a (g18-base a393ca0a) =  ms/round 32.23  prompt ms 25588
+exact7 g18-base2: 7/7 identical to g18-base
+exact7-slots g18-base2: 3238+3300 slots (5080 + 4060 Ti); g18-base: 3238+3300 -> MATCHED
+=== 2026-11-03 12:28:28 exact7 g18-pdl (STRATA_DF_PDL=1)
+g18-pdl-x-math   out 6b251415 (g18-base 6b251415) =  ms/round 32.97  prompt ms 525
+g18-pdl-s-math   out 8c25c022 (g18-base 8c25c022) =  ms/round 32.43  prompt ms 532
+g18-pdl-x-code   out 3585ad6f (g18-base 3585ad6f) =  ms/round 24.76  prompt ms 514
+g18-pdl-s-code   out 2fe9fd9e (g18-base 2fe9fd9e) =  ms/round 23.42  prompt ms 482
+g18-pdl-x-p2000  out 3e219376 (g18-base 3e219376) =  ms/round 40.18  prompt ms 1094
+g18-pdl-x-32k    out 651f56c8 (g18-base 651f56c8) =  ms/round 38.92  prompt ms 7497
+g18-pdl-x-112k   out a393ca0a (g18-base a393ca0a) =  ms/round 32.19  prompt ms 25559
+exact7 g18-pdl: 7/7 identical to g18-base
+exact7-slots g18-pdl: 3238+3300 slots (5080 + 4060 Ti); g18-base: 3238+3300 -> MATCHED
+=== 2026-11-03 12:31:43 exact7 g18-gather (STRATA_IQ_GATHER=1)
+g18-gather-x-math   out 6b251415 (g18-base 6b251415) =  ms/round 32.87  prompt ms 458
+g18-gather-s-math   out 8c25c022 (g18-base 8c25c022) =  ms/round 32.18  prompt ms 462
+g18-gather-x-code   out 3585ad6f (g18-base 3585ad6f) =  ms/round 24.85  prompt ms 458
+g18-gather-s-code   out 2fe9fd9e (g18-base 2fe9fd9e) =  ms/round 23.55  prompt ms 515
+g18-gather-x-p2000  out 3e219376 (g18-base 3e219376) =  ms/round 40.70  prompt ms 1114
+g18-gather-x-32k    out 651f56c8 (g18-base 651f56c8) =  ms/round 39.21  prompt ms 7487
+g18-gather-x-112k   out a393ca0a (g18-base a393ca0a) =  ms/round 32.36  prompt ms 25570
+exact7 g18-gather: 7/7 identical to g18-base
+exact7-slots g18-gather: 3238+3300 slots (5080 + 4060 Ti); g18-base: 3238+3300 -> MATCHED
+=== 2026-11-03 12:34:58 exact7 g18-prio (STRATA_GRAPH_PRIO=1)
+g18-prio-x-math   out 6b251415 (g18-base 6b251415) =  ms/round 33.09  prompt ms 505
+g18-prio-s-math   out 8c25c022 (g18-base 8c25c022) =  ms/round 32.09  prompt ms 461
+g18-prio-x-code   out 3585ad6f (g18-base 3585ad6f) =  ms/round 24.77  prompt ms 520
+g18-prio-s-code   out 2fe9fd9e (g18-base 2fe9fd9e) =  ms/round 23.50  prompt ms 519
+g18-prio-x-p2000  out 3e219376 (g18-base 3e219376) =  ms/round 40.45  prompt ms 1107
+g18-prio-x-32k    out 651f56c8 (g18-base 651f56c8) =  ms/round 39.15  prompt ms 7505
+g18-prio-x-112k   out a393ca0a (g18-base a393ca0a) =  ms/round 32.00  prompt ms 25590
+exact7 g18-prio: 7/7 identical to g18-base
+exact7-slots g18-prio: 3238+3300 slots (5080 + 4060 Ti); g18-base: 3238+3300 -> MATCHED
+=== 2026-11-03 12:38:14 exact7 g18-fwait (STRATA_FUSE_WAIT=2)
+g18-fwait-x-math   out 6b251415 (g18-base 6b251415) =  ms/round 32.99  prompt ms 523
+g18-fwait-s-math   out 8c25c022 (g18-base 8c25c022) =  ms/round 32.24  prompt ms 494
+g18-fwait-x-code   out 3585ad6f (g18-base 3585ad6f) =  ms/round 24.75  prompt ms 470
+g18-fwait-s-code   out 2fe9fd9e (g18-base 2fe9fd9e) =  ms/round 23.53  prompt ms 466
+g18-fwait-x-p2000  out 3e219376 (g18-base 3e219376) =  ms/round 40.69  prompt ms 1090
+g18-fwait-x-32k    out 651f56c8 (g18-base 651f56c8) =  ms/round 38.89  prompt ms 7496
+g18-fwait-x-112k   out a393ca0a (g18-base a393ca0a) =  ms/round 32.00  prompt ms 25571
+exact7 g18-fwait: 7/7 identical to g18-base
+exact7-slots g18-fwait: 3238+3300 slots (5080 + 4060 Ti); g18-base: 3238+3300 -> MATCHED
+=== 2026-11-03 12:41:29 exact7 g18-all (STRATA_DF_PDL=1 STRATA_IQ_GATHER=1 STRATA_GRAPH_PRIO=1 STRATA_FUSE_WAIT=2)
+g18-all-x-math   out 6b251415 (g18-base 6b251415) =  ms/round 32.96  prompt ms 481
+g18-all-s-math   out 8c25c022 (g18-base 8c25c022) =  ms/round 32.10  prompt ms 500
+g18-all-x-code   out 3585ad6f (g18-base 3585ad6f) =  ms/round 24.77  prompt ms 476
+g18-all-s-code   out 2fe9fd9e (g18-base 2fe9fd9e) =  ms/round 23.44  prompt ms 503
+g18-all-x-p2000  out 3e219376 (g18-base 3e219376) =  ms/round 40.51  prompt ms 1088
+g18-all-x-32k    out 651f56c8 (g18-base 651f56c8) =  ms/round 38.69  prompt ms 7531
+g18-all-x-112k   out a393ca0a (g18-base a393ca0a) =  ms/round 32.19  prompt ms 25568
+exact7 g18-all: 7/7 identical to g18-base
+exact7-slots g18-all: 3238+3300 slots (5080 + 4060 Ti); g18-base: 3238+3300 -> MATCHED
+=== 2026-11-03 12:44:44 3 the 9-workload screen: B (x28h) and the five switch arms, 3 passes in turned order
+=== 2026-11-03 12:44:44 screen B1 (x28h.json)
+server ready (guard pid 3436712, server pid 3436727) load_time_s 14.334559324 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-B1_20261103T124445.log
+engine pid 3436732: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+B1n W1-think r0: prompt 112 ttft 0.306 s, 3072 tokens, 170.49 tok/s, length
+B1n W2-code r0: prompt 124 ttft 0.319 s, 3072 tokens, 157.71 tok/s, length
+B1n W3-research r0: prompt 26730 ttft 6.031 s, 2048 tokens, 165.28 tok/s, length
+B1a A-edit r0: prompt 2679 ttft 1.012 s, 538 tokens, 133.8 tok/s, tool_calls
+B1a B-write r0: prompt 1370 ttft 0.849 s, 2010 tokens, 157.48 tok/s, tool_calls
+B1r R1-verify20k r0: prompt 24240 ttft 5.531 s, 3905 tokens, 154.23 tok/s, stop
+B1r R2-report54k r0: prompt 54070 ttft 12.013 s, 3524 tokens, 154.27 tok/s, stop
+B1r R3-extract5k r0: prompt 5012 ttft 1.446 s, 910 tokens, 169.87 tok/s, stop
+B1r R4-agent33k r0: prompt 33416 ttft 7.831 s, 304 tokens, 127.54 tok/s, tool_calls
+=== 2026-11-03 12:48:24 screen pdl1 (x28h-sw-pdl.json)
+server ready (guard pid 3440299, server pid 3440314) load_time_s 14.355465634 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-pdl1_20261103T124825.log
+engine pid 3440326: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+pdl1n W1-think r0: prompt 111 ttft 0.308 s, 3072 tokens, 170.56 tok/s, length
+pdl1n W2-code r0: prompt 124 ttft 0.322 s, 3072 tokens, 153.38 tok/s, length
+pdl1n W3-research r0: prompt 26728 ttft 6.029 s, 2048 tokens, 164.03 tok/s, length
+pdl1a A-edit r0: prompt 2678 ttft 1.014 s, 173 tokens, 127.16 tok/s, tool_calls
+pdl1a B-write r0: prompt 1370 ttft 0.85 s, 2636 tokens, 156.26 tok/s, tool_calls
+pdl1r R1-verify20k r0: prompt 24241 ttft 5.53 s, 3838 tokens, 155.21 tok/s, stop
+pdl1r R2-report54k r0: prompt 54069 ttft 12.005 s, 4005 tokens, 156.26 tok/s, stop
+pdl1r R3-extract5k r0: prompt 5010 ttft 1.443 s, 1287 tokens, 176.35 tok/s, stop
+pdl1r R4-agent33k r0: prompt 33416 ttft 7.828 s, 311 tokens, 130.98 tok/s, tool_calls
+=== 2026-11-03 12:52:10 screen gather1 (x28h-sw-gather.json)
+server ready (guard pid 3443943, server pid 3443958) load_time_s 14.330113592 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-gather1_20261103T125211.log
+engine pid 3443963: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+gather1n W1-think r0: prompt 110 ttft 0.294 s, 3072 tokens, 189.92 tok/s, length
+gather1n W2-code r0: prompt 123 ttft 0.318 s, 3072 tokens, 165.49 tok/s, length
+gather1n W3-research r0: prompt 26725 ttft 6.021 s, 2048 tokens, 156.79 tok/s, length
+gather1a A-edit r0: prompt 2679 ttft 1.015 s, 190 tokens, 128.02 tok/s, tool_calls
+gather1a B-write r0: prompt 1370 ttft 0.849 s, 1136 tokens, 183.37 tok/s, tool_calls
+gather1r R1-verify20k r0: prompt 24238 ttft 5.534 s, 3737 tokens, 155.23 tok/s, stop
+gather1r R2-report54k r0: prompt 54066 ttft 12.006 s, 2733 tokens, 153.45 tok/s, stop
+gather1r R3-extract5k r0: prompt 5011 ttft 1.412 s, 1306 tokens, 186.26 tok/s, stop
+gather1r R4-agent33k r0: prompt 33417 ttft 7.829 s, 332 tokens, 133.06 tok/s, tool_calls
+=== 2026-11-03 12:55:33 screen prio1 (x28h-sw-prio.json)
+server ready (guard pid 3447207, server pid 3447222) load_time_s 14.336552813 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-prio1_20261103T125534.log
+engine pid 3447227: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+prio1n W1-think r0: prompt 110 ttft 0.295 s, 3072 tokens, 166.68 tok/s, length
+prio1n W2-code r0: prompt 124 ttft 0.318 s, 3072 tokens, 155.35 tok/s, length
+prio1n W3-research r0: prompt 26728 ttft 6.027 s, 2048 tokens, 159.45 tok/s, length
+prio1a A-edit r0: prompt 2679 ttft 1.012 s, 624 tokens, 131.97 tok/s, tool_calls
+prio1a B-write r0: prompt 1371 ttft 0.899 s, 2311 tokens, 163.75 tok/s, tool_calls
+prio1r R1-verify20k r0: prompt 24240 ttft 5.528 s, 3766 tokens, 153.92 tok/s, stop
+prio1r R2-report54k r0: prompt 54072 ttft 12.011 s, 3518 tokens, 156.02 tok/s, stop
+prio1r R3-extract5k r0: prompt 5013 ttft 1.443 s, 1182 tokens, 181.15 tok/s, stop
+prio1r R4-agent33k r0: prompt 33416 ttft 7.825 s, 342 tokens, 136.77 tok/s, tool_calls
+=== 2026-11-03 12:59:16 screen fwait1 (x28h-sw-fwait.json)
+server ready (guard pid 3450800, server pid 3450815) load_time_s 14.329743007 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-fwait1_20261103T125917.log
+engine pid 3450820: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+fwait1n W1-think r0: prompt 112 ttft 0.299 s, 3072 tokens, 167.19 tok/s, length
+fwait1n W2-code r0: prompt 124 ttft 0.316 s, 3072 tokens, 154.65 tok/s, length
+fwait1n W3-research r0: prompt 26730 ttft 6.028 s, 2048 tokens, 161.05 tok/s, length
+fwait1a A-edit r0: prompt 2678 ttft 1.026 s, 187 tokens, 127.83 tok/s, tool_calls
+fwait1a B-write r0: prompt 1372 ttft 0.849 s, 2668 tokens, 157.13 tok/s, tool_calls
+fwait1r R1-verify20k r0: prompt 24239 ttft 5.532 s, 4087 tokens, 154.2 tok/s, stop
+fwait1r R2-report54k r0: prompt 54070 ttft 12.008 s, 2898 tokens, 151.17 tok/s, stop
+fwait1r R3-extract5k r0: prompt 5011 ttft 1.413 s, 1584 tokens, 183.59 tok/s, stop
+fwait1r R4-agent33k r0: prompt 33417 ttft 7.834 s, 383 tokens, 133.39 tok/s, tool_calls
+=== 2026-11-03 13:02:59 screen all1 (x28h-sw-all.json)
+server ready (guard pid 3454398, server pid 3454420) load_time_s 14.338891536 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-all1_20261103T130300.log
+engine pid 3454425: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+all1n W1-think r0: prompt 109 ttft 0.302 s, 3072 tokens, 170.54 tok/s, length
+all1n W2-code r0: prompt 125 ttft 0.318 s, 3072 tokens, 159.54 tok/s, length
+all1n W3-research r0: prompt 26729 ttft 6.038 s, 2048 tokens, 167.34 tok/s, length
+all1a A-edit r0: prompt 2679 ttft 1.015 s, 704 tokens, 143.96 tok/s, tool_calls
+all1a B-write r0: prompt 1370 ttft 0.839 s, 3106 tokens, 162.18 tok/s, tool_calls
+all1r R1-verify20k r0: prompt 24239 ttft 5.53 s, 3667 tokens, 154.41 tok/s, stop
+all1r R2-report54k r0: prompt 54071 ttft 12.014 s, 3483 tokens, 155.26 tok/s, stop
+all1r R3-extract5k r0: prompt 5012 ttft 1.441 s, 1321 tokens, 183.28 tok/s, stop
+all1r R4-agent33k r0: prompt 33417 ttft 7.827 s, 474 tokens, 131.92 tok/s, tool_calls
+=== 2026-11-03 13:06:46 screen all2 (x28h-sw-all.json)
+server ready (guard pid 3458050, server pid 3458065) load_time_s 14.335424860 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-all2_20261103T130647.log
+engine pid 3458070: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+all2n W1-think r0: prompt 111 ttft 0.304 s, 3072 tokens, 171.69 tok/s, length
+all2n W2-code r0: prompt 124 ttft 0.32 s, 3072 tokens, 159.55 tok/s, length
+all2n W3-research r0: prompt 26729 ttft 6.028 s, 2048 tokens, 164.36 tok/s, length
+all2a A-edit r0: prompt 2676 ttft 1.013 s, 518 tokens, 136.11 tok/s, tool_calls
+all2a B-write r0: prompt 1371 ttft 0.84 s, 1616 tokens, 165.44 tok/s, tool_calls
+all2r R1-verify20k r0: prompt 24237 ttft 5.531 s, 3954 tokens, 154.61 tok/s, stop
+all2r R2-report54k r0: prompt 54069 ttft 12.009 s, 2275 tokens, 148.79 tok/s, stop
+all2r R3-extract5k r0: prompt 5012 ttft 1.441 s, 1129 tokens, 178.82 tok/s, stop
+all2r R4-agent33k r0: prompt 33415 ttft 7.828 s, 323 tokens, 126.8 tok/s, tool_calls
+=== 2026-11-03 13:10:16 screen fwait2 (x28h-sw-fwait.json)
+server ready (guard pid 3461488, server pid 3461503) load_time_s 14.333852508 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-fwait2_20261103T131017.log
+engine pid 3461508: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+fwait2n W1-think r0: prompt 111 ttft 0.296 s, 3072 tokens, 190.56 tok/s, length
+fwait2n W2-code r0: prompt 124 ttft 0.308 s, 3072 tokens, 162.82 tok/s, length
+fwait2n W3-research r0: prompt 26727 ttft 6.034 s, 2048 tokens, 159.48 tok/s, length
+fwait2a A-edit r0: prompt 2679 ttft 1.013 s, 458 tokens, 140.02 tok/s, tool_calls
+fwait2a B-write r0: prompt 1368 ttft 0.832 s, 1502 tokens, 161.84 tok/s, tool_calls
+fwait2r R1-verify20k r0: prompt 24241 ttft 5.531 s, 3664 tokens, 157.1 tok/s, stop
+fwait2r R2-report54k r0: prompt 54071 ttft 12.012 s, 2555 tokens, 146.5 tok/s, stop
+fwait2r R3-extract5k r0: prompt 5011 ttft 1.416 s, 1100 tokens, 181.12 tok/s, stop
+fwait2r R4-agent33k r0: prompt 33418 ttft 7.823 s, 269 tokens, 120.69 tok/s, tool_calls
+=== 2026-11-03 13:13:43 screen prio2 (x28h-sw-prio.json)
+server ready (guard pid 3464779, server pid 3464794) load_time_s 14.338722503 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-prio2_20261103T131344.log
+engine pid 3464799: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+prio2n W1-think r0: prompt 109 ttft 0.296 s, 3072 tokens, 191.74 tok/s, length
+prio2n W2-code r0: prompt 123 ttft 0.307 s, 3072 tokens, 155.42 tok/s, length
+prio2n W3-research r0: prompt 26729 ttft 6.038 s, 2048 tokens, 164.99 tok/s, length
+prio2a A-edit r0: prompt 2677 ttft 1.014 s, 560 tokens, 132.09 tok/s, tool_calls
+prio2a B-write r0: prompt 1369 ttft 0.84 s, 1648 tokens, 170.85 tok/s, tool_calls
+prio2r R1-verify20k r0: prompt 24238 ttft 5.536 s, 3736 tokens, 154.13 tok/s, stop
+prio2r R2-report54k r0: prompt 54070 ttft 12.011 s, 2417 tokens, 149.89 tok/s, stop
+prio2r R3-extract5k r0: prompt 5012 ttft 1.414 s, 1098 tokens, 175.28 tok/s, stop
+prio2r R4-agent33k r0: prompt 33418 ttft 7.825 s, 290 tokens, 132.81 tok/s, tool_calls
+=== 2026-11-03 13:17:10 screen gather2 (x28h-sw-gather.json)
+server ready (guard pid 3468172, server pid 3468187) load_time_s 14.348627067 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-gather2_20261103T131711.log
+engine pid 3468192: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+gather2n W1-think r0: prompt 111 ttft 0.302 s, 3072 tokens, 184.88 tok/s, length
+gather2n W2-code r0: prompt 126 ttft 0.312 s, 3072 tokens, 163.84 tok/s, length
+gather2n W3-research r0: prompt 26730 ttft 6.022 s, 2048 tokens, 158.79 tok/s, length
+gather2a A-edit r0: prompt 2679 ttft 1.014 s, 326 tokens, 125.67 tok/s, tool_calls
+gather2a B-write r0: prompt 1371 ttft 0.861 s, 3447 tokens, 154.25 tok/s, tool_calls
+gather2r R1-verify20k r0: prompt 24240 ttft 5.532 s, 3864 tokens, 154.14 tok/s, stop
+gather2r R2-report54k r0: prompt 54072 ttft 12.017 s, 3648 tokens, 155.91 tok/s, stop
+gather2r R3-extract5k r0: prompt 5010 ttft 1.443 s, 1009 tokens, 179.19 tok/s, stop
+gather2r R4-agent33k r0: prompt 33418 ttft 7.831 s, 278 tokens, 128.09 tok/s, tool_calls
+=== 2026-11-03 13:20:57 screen pdl2 (x28h-sw-pdl.json)
+server ready (guard pid 3471790, server pid 3471805) load_time_s 14.330193229 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-pdl2_20261103T132058.log
+engine pid 3471810: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+pdl2n W1-think r0: prompt 110 ttft 0.294 s, 3072 tokens, 194.56 tok/s, length
+pdl2n W2-code r0: prompt 124 ttft 0.312 s, 3072 tokens, 167.76 tok/s, length
+pdl2n W3-research r0: prompt 26729 ttft 6.069 s, 2048 tokens, 161.14 tok/s, length
+pdl2a A-edit r0: prompt 2679 ttft 1.013 s, 871 tokens, 146.68 tok/s, tool_calls
+pdl2a B-write r0: prompt 1369 ttft 0.85 s, 1814 tokens, 170.26 tok/s, tool_calls
+pdl2r R1-verify20k r0: prompt 24240 ttft 5.54 s, 3835 tokens, 155.45 tok/s, stop
+pdl2r R2-report54k r0: prompt 54071 ttft 12.011 s, 3044 tokens, 146.06 tok/s, stop
+pdl2r R3-extract5k r0: prompt 5012 ttft 1.418 s, 1229 tokens, 181.92 tok/s, stop
+pdl2r R4-agent33k r0: prompt 33417 ttft 7.832 s, 247 tokens, 124.65 tok/s, tool_calls
+=== 2026-11-03 13:24:31 screen B2 (x28h.json)
+server ready (guard pid 3475201, server pid 3475216) load_time_s 14.338537320 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-B2_20261103T132432.log
+engine pid 3475223: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+B2n W1-think r0: prompt 109 ttft 0.295 s, 3072 tokens, 185.65 tok/s, length
+B2n W2-code r0: prompt 124 ttft 0.306 s, 3072 tokens, 173.44 tok/s, length
+B2n W3-research r0: prompt 26729 ttft 6.012 s, 2048 tokens, 162.18 tok/s, length
+B2a A-edit r0: prompt 2677 ttft 1.016 s, 574 tokens, 130.83 tok/s, tool_calls
+B2a B-write r0: prompt 1371 ttft 0.847 s, 2120 tokens, 167.15 tok/s, tool_calls
+B2r R1-verify20k r0: prompt 24238 ttft 5.535 s, 3759 tokens, 153.06 tok/s, stop
+B2r R2-report54k r0: prompt 54071 ttft 12.011 s, 3766 tokens, 154.73 tok/s, stop
+B2r R3-extract5k r0: prompt 5012 ttft 1.415 s, 1225 tokens, 176.64 tok/s, stop
+B2r R4-agent33k r0: prompt 33413 ttft 7.83 s, 333 tokens, 127.1 tok/s, tool_calls
+=== 2026-11-03 13:28:11 screen gather3 (x28h-sw-gather.json)
+server ready (guard pid 3478723, server pid 3478738) load_time_s 14.336274173 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-gather3_20261103T132812.log
+engine pid 3478743: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+gather3n W1-think r0: prompt 111 ttft 0.298 s, 3072 tokens, 164.33 tok/s, length
+gather3n W2-code r0: prompt 123 ttft 0.313 s, 3072 tokens, 154.73 tok/s, length
+gather3n W3-research r0: prompt 26727 ttft 6.03 s, 2048 tokens, 164.82 tok/s, length
+gather3a A-edit r0: prompt 2677 ttft 1.01 s, 429 tokens, 123.1 tok/s, tool_calls
+gather3a B-write r0: prompt 1371 ttft 0.834 s, 1111 tokens, 175.87 tok/s, tool_calls
+gather3r R1-verify20k r0: prompt 24238 ttft 5.538 s, 3594 tokens, 154.67 tok/s, stop
+gather3r R2-report54k r0: prompt 54072 ttft 12.01 s, 4096 tokens, 156.36 tok/s, length
+gather3r R3-extract5k r0: prompt 5012 ttft 1.417 s, 1118 tokens, 185.71 tok/s, stop
+gather3r R4-agent33k r0: prompt 33418 ttft 7.83 s, 354 tokens, 140.74 tok/s, tool_calls
+=== 2026-11-03 13:31:47 screen B3 (x28h.json)
+server ready (guard pid 3482214, server pid 3482230) load_time_s 14.334990054 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-B3_20261103T133148.log
+engine pid 3482235: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+B3n W1-think r0: prompt 109 ttft 0.291 s, 3072 tokens, 188.58 tok/s, length
+B3n W2-code r0: prompt 123 ttft 0.31 s, 3072 tokens, 152.9 tok/s, length
+B3n W3-research r0: prompt 26730 ttft 6.022 s, 2048 tokens, 162.23 tok/s, length
+B3a A-edit r0: prompt 2679 ttft 1.016 s, 270 tokens, 134.02 tok/s, tool_calls
+B3a B-write r0: prompt 1370 ttft 0.86 s, 2738 tokens, 161.11 tok/s, tool_calls
+B3r R1-verify20k r0: prompt 24239 ttft 5.53 s, 3644 tokens, 152.34 tok/s, stop
+B3r R2-report54k r0: prompt 54069 ttft 12.007 s, 2819 tokens, 150.74 tok/s, stop
+B3r R3-extract5k r0: prompt 5012 ttft 1.413 s, 959 tokens, 171.12 tok/s, stop
+B3r R4-agent33k r0: prompt 33418 ttft 7.828 s, 298 tokens, 139.78 tok/s, tool_calls
+=== 2026-11-03 13:35:23 screen all3 (x28h-sw-all.json)
+server ready (guard pid 3485702, server pid 3485724) load_time_s 14.340035833 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-all3_20261103T133524.log
+engine pid 3485729: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+all3n W1-think r0: prompt 110 ttft 0.309 s, 3072 tokens, 190.44 tok/s, length
+all3n W2-code r0: prompt 124 ttft 0.318 s, 3072 tokens, 156.82 tok/s, length
+all3n W3-research r0: prompt 26727 ttft 6.025 s, 2048 tokens, 164.73 tok/s, length
+all3a A-edit r0: prompt 2678 ttft 1.013 s, 174 tokens, 126.01 tok/s, tool_calls
+all3a B-write r0: prompt 1369 ttft 0.862 s, 2637 tokens, 159.91 tok/s, tool_calls
+all3r R1-verify20k r0: prompt 24239 ttft 5.527 s, 3637 tokens, 154.43 tok/s, stop
+all3r R2-report54k r0: prompt 54069 ttft 12.009 s, 3201 tokens, 151.35 tok/s, stop
+all3r R3-extract5k r0: prompt 5010 ttft 1.413 s, 827 tokens, 173.07 tok/s, stop
+all3r R4-agent33k r0: prompt 33416 ttft 7.819 s, 303 tokens, 131.34 tok/s, tool_calls
+=== 2026-11-03 13:38:58 screen pdl3 (x28h-sw-pdl.json)
+server ready (guard pid 3489147, server pid 3489162) load_time_s 14.335631293 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-pdl3_20261103T133859.log
+engine pid 3489167: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+pdl3n W1-think r0: prompt 110 ttft 0.296 s, 3072 tokens, 173.7 tok/s, length
+pdl3n W2-code r0: prompt 124 ttft 0.322 s, 3072 tokens, 162.59 tok/s, length
+pdl3n W3-research r0: prompt 26729 ttft 6.03 s, 2048 tokens, 156.12 tok/s, length
+pdl3a A-edit r0: prompt 2677 ttft 1.015 s, 456 tokens, 127.56 tok/s, tool_calls
+pdl3a B-write r0: prompt 1370 ttft 0.85 s, 1970 tokens, 168.83 tok/s, tool_calls
+pdl3r R1-verify20k r0: prompt 24239 ttft 5.529 s, 3574 tokens, 152.66 tok/s, stop
+pdl3r R2-report54k r0: prompt 54070 ttft 12.012 s, 3881 tokens, 152.37 tok/s, stop
+pdl3r R3-extract5k r0: prompt 5012 ttft 1.416 s, 1297 tokens, 184.4 tok/s, stop
+pdl3r R4-agent33k r0: prompt 33417 ttft 7.825 s, 256 tokens, 128.32 tok/s, tool_calls
+=== 2026-11-03 13:42:38 screen fwait3 (x28h-sw-fwait.json)
+server ready (guard pid 3492678, server pid 3492693) load_time_s 14.328112880 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-fwait3_20261103T134239.log
+engine pid 3492698: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+fwait3n W1-think r0: prompt 112 ttft 0.298 s, 3072 tokens, 167.36 tok/s, length
+fwait3n W2-code r0: prompt 125 ttft 0.325 s, 3072 tokens, 166.03 tok/s, length
+fwait3n W3-research r0: prompt 26728 ttft 6.028 s, 2048 tokens, 159.26 tok/s, length
+fwait3a A-edit r0: prompt 2675 ttft 1.018 s, 331 tokens, 120.13 tok/s, tool_calls
+fwait3a B-write r0: prompt 1370 ttft 0.849 s, 3164 tokens, 156.71 tok/s, tool_calls
+fwait3r R1-verify20k r0: prompt 24240 ttft 5.535 s, 3782 tokens, 156.58 tok/s, stop
+fwait3r R2-report54k r0: prompt 54070 ttft 12.014 s, 3261 tokens, 148.1 tok/s, stop
+fwait3r R3-extract5k r0: prompt 5012 ttft 1.414 s, 902 tokens, 174.14 tok/s, stop
+fwait3r R4-agent33k r0: prompt 33417 ttft 7.827 s, 307 tokens, 141.81 tok/s, tool_calls
+=== 2026-11-03 13:46:21 screen prio3 (x28h-sw-prio.json)
+server ready (guard pid 3496268, server pid 3496283) load_time_s 14.348160123 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g18-prio3_20261103T134622.log
+engine pid 3496288: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+prio3n W1-think r0: prompt 109 ttft 0.292 s, 3072 tokens, 164.75 tok/s, length
+prio3n W2-code r0: prompt 125 ttft 0.322 s, 3072 tokens, 162.91 tok/s, length
+prio3n W3-research r0: prompt 26728 ttft 6.035 s, 2048 tokens, 155.16 tok/s, length
+prio3a A-edit r0: prompt 2679 ttft 1.014 s, 850 tokens, 147.29 tok/s, tool_calls
+prio3a B-write r0: prompt 1367 ttft 0.855 s, 1965 tokens, 158.55 tok/s, tool_calls
+prio3r R1-verify20k r0: prompt 24239 ttft 5.541 s, 3775 tokens, 158.33 tok/s, stop
+prio3r R2-report54k r0: prompt 54070 ttft 12.012 s, 3211 tokens, 147.2 tok/s, stop
+prio3r R3-extract5k r0: prompt 5012 ttft 1.447 s, 841 tokens, 170.9 tok/s, stop
+prio3r R4-agent33k r0: prompt 33417 ttft 7.834 s, 305 tokens, 130.31 tok/s, tool_calls
+=== 2026-11-03 13:50:00 4 build the v0.2.10 port (work/r22/build-port0210.sh -> engine-r22p0210)
+v0.2.10 + 28 commits (branch r22-port0210 fdd2fffa8b24ab6f3de46f38831b2964fd455fc5), tree 3ff34c525669be8b332cb55d3ead8ee25981f8b9
+89379c28f3614544c85b22a79e5424d2d0f8f735d0e8b20870688791ba7492fa  /home/USER/ai-speed-testing/strata-compare/engine-r22p0210/strata
+=== 2026-11-03 13:53:48 v0.2.10 port built: 89379c28f361
+base repeat exact7: 7/7 (MATCHED)
+B: decode 155.97 (spread 2.6 %), prompt 2,107 (spread 0.9 %)
+pdl: exact7 7/7 (MATCHED); decode 156.19 (+0.15 %, noise 3.9 %), prompt 2,101 (-0.29 %, noise 0.9 %) -> PASS
+gather: exact7 7/7 (MATCHED); decode 157.21 (+0.80 %, noise 3.2 %), prompt 2,108 (+0.03 %, noise 0.9 %) -> PASS
+prio: exact7 7/7 (MATCHED); decode 155.86 (-0.06 %, noise 2.6 %), prompt 2,101 (-0.31 %, noise 1.1 %) -> PASS
+fwait: exact7 7/7 (MATCHED); decode 154.61 (-0.87 %, noise 2.6 %), prompt 2,111 (+0.16 %, noise 0.9 %) -> PASS
+all: exact7 7/7 (MATCHED); decode 156.27 (+0.20 %, noise 2.6 %), prompt 2,098 (-0.47 %, noise 0.9 %) -> PASS
+=== 2026-11-03 13:53:48 P028x back on 8080 (port_gap4.sh end)
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-03 13:54:12 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-03 13:54:12 gap 18 done (100 min with 8080 down)

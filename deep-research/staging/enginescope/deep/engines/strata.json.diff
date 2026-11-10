@@ -1,0 +1,194 @@
+--- /dev/null
++++ b/local_deep_research/deep/engines/strata.json
+@@ -0,0 +1,191 @@
++{
++  "_about": "Engine-scope table for one project (deep/enginescope.py reads every deep/engines/*.json; the file name is the project key). Per project: its engines (code folders, doc files, content markers) and its shared folders. A GitHub page of the project is placed by its path (the longest folder / file prefix wins); docs, bench results, release notes, issues and other sites by the markers in the text. Shared folders are never 'another engine'. Markers are Python regular expressions; 'markers_cs' are case-sensitive. 'content_dirs': folders whose files (not only docs) are placed by their words - by the folder's README.md when the code tool has it.",
++  "name": "Strata",
++  "repo_names": [
++    "strata"
++  ],
++  "repos": [
++    "Niko1221/Strata"
++  ],
++  "name_re": "\\bStrata\\b",
++  "checked_at": "v0.2.4 (git tree of the local clone, 10-29): strata-dsv41 is built from src/dsv41 only and links its own kernels (strata_dsv41_kernels) plus headers from include/strata/kernels/cpu; the strata program (src/program/generate.cpp) links strata_engine (src/core), strata_kernels, strata_prefill, src/spec and strata_qwen35 (src/qwen35, the Qwen3.6 family switch). src/core / src/platform / src/prefill / src/ngram: per version, see folders_by_version (Karl 10-29: keep the map per version). sycl/ and metal/ are the Intel and Mac ports of the Qwen engine (no DeepSeek code at v0.2.4): their program / prefill / ngram / engine folders are listed under qwen, the rest of sycl/ and metal/ stays shared. A file in bench/results/<run>/ that is not a doc (configs, scripts) is placed by its run's README (content_dirs).",
++  "engines": {
++    "dsv41": {
++      "label": "DeepSeek engine",
++      "long": "its DeepSeek-V4.1 engine (strata-dsv41, src/dsv41)",
++      "task_markers": [
++        "deep\\s?-?seek",
++        "\\bDSV4",
++        "\\bdsv41\\b",
++        "\\bV4\\.1-Flash"
++      ],
++      "markers": [
++        "deep\\s?-?seek",
++        "\\bdsv4",
++        "\\bds4[_-]",
++        "\\bV4\\.1-Flash",
++        "\\bengram\\b",
++        "\\bdspark\\b",
++        "\\bmaya-ds4\\b"
++      ],
++      "markers_cs": [
++        "\\bDS4\\b"
++      ],
++      "folders": [
++        "src/dsv41/",
++        "include/strata/dsv41/",
++        "tools/dsv41/",
++        "tools/dsv41_lab/",
++        "data/dsv41/"
++      ],
++      "docs": [
++        "docs/DEEPSEEK41.md"
++      ]
++    },
++    "qwen": {
++      "label": "Qwen engine",
++      "long": "its Qwen engine (the strata program: Qwen3.8-Flash-Next and Qwen3.6)",
++      "task_markers": [
++        "\\bqwen",
++        "flash-next"
++      ],
++      "markers": [
++        "\\bqwen",
++        "flash-next",
++        "\\bq36",
++        "--ple-gguf",
++        "\\bdraft layer\\b",
++        "\\bverify windows?\\b",
++        "--mtp\\b",
++        "--spec\\b(?!-)"
++      ],
++      "markers_cs": [
++        "\\bCoder\\b",
++        "\\bSwift(?: 1\\.5)?\\b",
++        "\\bGyro(?:-[SM])?\\b",
++        "\\bMTP\\b",
++        "\\bPLE\\b",
++        "\\bIQ3_(?:S|XXS)\\b",
++        "\\bQ2_0\\b"
++      ],
++      "folders": [
++        "src/program/",
++        "include/strata/program/",
++        "src/qwen35/",
++        "include/strata/qwen35/",
++        "tools/qwen35/",
++        "src/spec/",
++        "include/strata/spec/",
++        "tests/program/",
++        "sycl/src/program/",
++        "sycl/src/prefill/",
++        "sycl/src/ngram/",
++        "sycl/include/strata/prefill/",
++        "metal/src/engine/"
++      ],
++      "docs": [
++        "docs/QWEN36.md",
++        "docs/GYRO.md"
++      ]
++    }
++  },
++  "shared": [
++    "src/core/",
++    "include/strata/core/",
++    "src/kernels/",
++    "include/strata/kernels/",
++    "src/platform/",
++    "src/ngram/",
++    "src/prefill/",
++    "include/strata/platform/",
++    "include/strata/ngram/",
++    "include/strata/prefill/",
++    "src/artifact/",
++    "include/strata/artifact/",
++    "src/plan/",
++    "include/strata/plan/",
++    "include/strata/hip_compat/",
++    "serve/",
++    "strata_control/",
++    "strata_cli/",
++    "apps/",
++    "integrations/",
++    "packaging/",
++    "docker/",
++    "cmake/",
++    "bin/",
++    "metal/",
++    "sycl/",
++    "third_party/",
++    "tools/",
++    "tests/",
++    "data/",
++    "setup.py",
++    "setup.sh",
++    "strata.py",
++    "chat.py",
++    "CMakeLists.txt",
++    "START-HERE.bat",
++    "SETUP.bat",
++    "UPDATE.bat",
++    "update.sh",
++    "Dockerfile"
++  ],
++  "content_dirs": [
++    "bench/results/*/"
++  ],
++  "folders_by_version": {
++    "_rule": "The user's pinned version (the version labels' pins: derive_pins on the task, else the profile) picks the entry of the newest tag at or below it; that entry's folders replace the same entries of the base map above. No pin, an unparseable one or one below every entry: the base map, which is the conservative one (src/core, src/platform, src/prefill, src/ngram and their include/strata/ folders shared: some version links them into the DeepSeek engine). Checked read-only in the local clone (git show / git grep at the tag) on 10-29: the strata-dsv41 target in CMakeLists.txt and the #includes of src/dsv41 and include/strata/dsv41.",
++    "v0.2.4": {
++      "found": "strata-dsv41 links strata_dsv41_kernels (src/dsv41/vendor), the GPU runtime and BLAS; strata_kernels_cpu (src/kernels/cpu) with STRATA_NATIVE_EXPERTS; strata_core only `if(WIN32 AND STRATA_ENABLE_HIP)`, for src/core/device.cu's hip_compat::mem_get_info (include/strata/hip_compat/cuda_runtime.h maps cudaMemGetInfo to it on Windows). src/dsv41 and include/strata/dsv41 include only strata/dsv41/ and strata/kernels/ headers. strata_core (src/core/*, src/platform/memory.cpp), strata_kernels (with src/platform/direct_file.cpp, src/ngram/ple_reader.cpp), strata_engine (src/core) and strata_prefill (src/prefill) are linked by the strata program (the Qwen engine), strata_qwen35, the strata-device / -load / -concurrent / -overlap tools and tests only. So: src/core, src/platform, src/prefill, src/ngram (+ include/strata/) are the Qwen engine's; src/core/device.cu and include/strata/hip_compat/ stay shared (the Windows HIP build of the DeepSeek engine links them). v0.2.4.1, v0.2.4.2 and v0.2.5: the same link line. sycl/src/platform (the Intel port's direct_file.cpp) and tests/platform (host_limits / direct_file_async / aux_cpus tests of src/platform) are the Qwen engine's too: no DeepSeek reference in either, not in the strata-dsv41 build (checked at v0.2.4, v0.2.5 and v0.2.6).",
++      "qwen": [
++        "src/core/",
++        "include/strata/core/",
++        "src/platform/",
++        "include/strata/platform/",
++        "src/prefill/",
++        "include/strata/prefill/",
++        "src/ngram/",
++        "include/strata/ngram/",
++        "sycl/src/platform/",
++        "tests/platform/"
++      ],
++      "shared": [
++        "src/core/device.cu",
++        "include/strata/hip_compat/"
++      ]
++    },
++    "v0.2.6": {
++      "found": "The same as v0.2.4: strata-dsv41 links strata_dsv41_kernels, the runtime, BLAS, strata_kernels_cpu with STRATA_NATIVE_EXPERTS and strata_core only on Windows HIP (device.cu's mem_get_info); src/dsv41 includes only strata/dsv41/ and strata/kernels/. src/core and src/platform are NOT shared at v0.2.6. sycl/src/platform (the Intel port's direct_file.cpp) and tests/platform (host_limits / direct_file_async / aux_cpus tests of src/platform) are the Qwen engine's too: no DeepSeek reference in either, not in the strata-dsv41 build (checked at v0.2.4, v0.2.5 and v0.2.6).",
++      "qwen": [
++        "src/core/",
++        "include/strata/core/",
++        "src/platform/",
++        "include/strata/platform/",
++        "src/prefill/",
++        "include/strata/prefill/",
++        "src/ngram/",
++        "include/strata/ngram/",
++        "sycl/src/platform/",
++        "tests/platform/"
++      ],
++      "shared": [
++        "src/core/device.cu",
++        "include/strata/hip_compat/"
++      ]
++    },
++    "v0.2.7": {
++      "found": "strata-dsv41 now links strata_prefill on every build (the RDNA3 WMMA dense GEMM, src/prefill/wmma_gemm.cu; src/prefill on its include path), and strata_prefill links strata_engine PUBLIC -> strata_core and strata_kernels (src/platform/direct_file.cpp, src/ngram/ple_reader.cpp). So src/core, src/platform, src/prefill and src/ngram are shared from v0.2.7 (v0.2.7.1: the same link line) - the base map. (sycl/src/platform and tests/platform: left shared with the rest of the v0.2.7 map.)",
++      "shared": [
++        "src/core/",
++        "include/strata/core/",
++        "src/platform/",
++        "include/strata/platform/",
++        "src/prefill/",
++        "include/strata/prefill/",
++        "src/ngram/",
++        "include/strata/ngram/"
++      ]
++    }
++  }
++}

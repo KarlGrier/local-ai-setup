@@ -1,0 +1,562 @@
+#!/usr/bin/env python3
+"""h2h.py - 10-25 (the user: "Go on the Maya head-to-head, but build and run it only after the round's last measurement, so
+the build doesn't disturb any timing. Follow the plan as written: review first, offline build with unshare -rn, our pinned
+llama.cpp copy, three engines. For quality, add Strata's scoring function to the local Maya build so all three engines are
+checked with the same KL method"). The plan: results/ds41/maya-catchup.md (item 2); the review: security-review.md here.
+User unit ds41-h2h; resumes from results/ds41/h2h/state.json. H2H_DRY=1: print the plan and write the configs only.
+  0. wait until the tuning round has finished cleanly (ds41-tune inactive 3 checks in a row, tune.log "round finished
+     after" and "8080 back on P021m"); a round that stopped otherwise: one alert, then keep waiting (nothing starts)
+  1. gap: port_gap4.sh begin in its own scope (queue held, test lock, 8080 stopped), LDR + SearXNG 8889/8890 stopped,
+     drive-temperature log on
+  1b. pinpoint (10-26, the user: "yes, report only. Run it after the last end test and before the Maya head-to-head"):
+     skipcheck.py pin - the ship config built up from the final check's base one change at a time, teacher-forced, on
+     the round's engine; which change moves the KL percentiles most -> results/ds41/tuning/pinpoint.md (feeds IQ_Q8K)
+  2. source: `git archive v1.1.28` of the reviewed clone -> ext/maya-v1.1.28-src (+ maya-score.patch: Strata's score());
+     our llama.cpp (strata/third_party/llama.cpp, 3cf03257, clean) copied -> ext/llama.cpp-3cf03257, pin checked
+  3. build under `unshare -rn`, nice 19: the review's configure flags, `--target maya-ds4` only
+  4. pack under `unshare -rn`: pack_gguf.py (python -I, cwd outside the tree) --out ext/maya-pack-ds41, the 4 IQ2_XXS
+     shards + the Engram file; ds4.txt must say 6 experts per token
+  5. configs: S = the round's ship config (state "final") on the round's engine; M1 = Maya with Strata's arithmetic; M2 =
+     Maya's defaults minus anything lossy or not repeatable (PCIe lane off). Strata-only settings are not carried
+     (DS4_SETTLE_MS: Maya has no settle); --ssd-cache N -> DS4_WARM_CAP_GB N (both engines start with up to N GB of hot
+     experts in RAM). Effort: the integer 62 for every arm (Strata renders it byte-identical to "medium", checked 10-25)
+  6. speed: S1 M1 S2 M2 S3, full protocol (3 passes; maya-speed3.py for all); Maya arms inside maya-netns.sh (server,
+     engine, client, guards on the namespace's own 127.0.0.1, no network)
+  7. follow-ups: maya-ckpt_client.py on M1 and M2 (Jan's format; S = the round's ckpt end test on the same engine)
+  8. KL: M1 and M2 scored by the patched maya-ds4 and judged exactly as the round's final check (skipcheck "final":
+     against teacher/final-base with final-R1-chunk4096 / final-R2-cpu-share as rounding references; S = final-cand-final)
+  9. results/ds41/h2h/summary.md; port_gap4 end (P021m back); services back; alert
+Kernel rule: any kernel event or failed kernel check stops here with 8080 left stopped and an alert (stricter than the
+page-allocation-failure drop rule: this run has no triage of its own). Memory: tunearm's guards (12 GB hard, 15 soft,
+swap guard v2); a "failed: memory" arm is recorded and the next one runs.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+SC = "/home/USER/ai-speed-testing/strata-compare"
+T = f"{SC}/work/ds41/tune"
+MY = f"{SC}/work/ds41/maya"
+R = f"{SC}/results/ds41/h2h"
+PY = f"{SC}/.venv/bin/python"
+CLONE = f"{SC}/ext/project-maya"
+SRC = f"{SC}/ext/maya-v1.1.28-src"
+BUILD = f"{SRC}/build"
+GGML = f"{SC}/ext/llama.cpp-3cf03257"
+GGML_FROM = f"{SC}/strata/third_party/llama.cpp"
+GGML_PIN = "3cf03257f219afbe7334045ff7c6a06ac68c627d"
+PACK = f"{SC}/ext/maya-pack-ds41"
+MODEL = f"{SC}/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF"
+SHARDS = [f"DeepSeek-V4.1-Flash-1017-GSQ-RCO-IQ2_XXS-0000{i}-of-00004.gguf" for i in range(1, 5)] + \
+         ["DeepSeek-V4.1-Flash-Engram-IQ4_NL.gguf"]
+MPROF = f"{SC}/tmp/ds41-profile-maya.bin"
+TUNELOG = f"{SC}/results/ds41/tuning/tune-summary-1024.txt"   # tune.py's say() lines (10-26 fix: logs/ds41/tune.log is tunearm's)
+DRY = os.environ.get("H2H_DRY") == "1"
+STATE = f"{R}/state-dry.json" if DRY else f"{R}/state.json"   # (a dry run never marks real steps done)
+LOG = f"{R}/h2h-dry.log" if DRY else f"{R}/h2h.log"
+CUDA = "/usr/local/cuda-13.3"
+
+sys.path.insert(0, T)
+import tune  # noqa: E402  (mkcfg, ENGINES, gpu_uuids, SHIPPED, PROF; never tune.run/save: they write the round's state)
+import skipcheck  # noqa: E402
+
+# M1: Maya with Strata v0.2.6's arithmetic; M2: Maya's own defaults (all rounding-level by Maya's account; the KL step
+# checks them) minus the PCIe lane (not repeatable run to run). Lossy switches are never set (DS4_YOCO_KEEP,
+# *_DISK_SKIP_W, *_RAM_SKIP_W, DS4_INDEX_TC); MAYA_DS4_PROMPT_SKIP explicit in both (a STRATA_ name would leak in).
+M_COMMON = {"MAYA_DS4_SLOT_KEEP": "0", "MAYA_DS4_STREAM": "0", "STRATA_SERVER_LOG": "0", "DS4_LANE_CAL": "none",
+            "DS4_FLOW_STATS": "1"}
+M_ARMS = {"M1": {"MAYA_DS4_PROMPT_SKIP": "0", "DS4_FAT_ROWS": "0", "DS4_ATTN_MMA": "0", "DS4_ATTN_SLAB_MB": "8",
+                 "DS4_W16_MB": "16", "DS4_IQ_Q8K": "0"},
+          "M2": {"MAYA_DS4_PROMPT_SKIP": "1"}}
+CARRY = ("DS4_SPLIT", "DS4_CACHE_DECAY", "DS4_ENGRAM_CACHE_MB", "DS4_ENGRAM_THREADS", "DS4_CACHE_THREADS",
+         "DS4_CACHE_MARGIN", "DS4_CACHE_INFLIGHT", "STRATA_IQ_PREFETCH")   # same name and meaning in Maya (10-25 read)
+SERVER_ENV_M = f"STRATA_GLM_THINK_RESERVE=512 MAYA_UPDATE_CHECK=0 TMPDIR={R}/tmp"
+MAYA_COPY_GB = "50"   # 10-26 (Karl): the copy capped at ~50 GB (see m_cfg)
+
+
+def say(msg):
+    line = f"=== {time.strftime('%F %T')} {msg}"
+    print(line, flush=True)
+    with open(LOG, "a") as f:
+        f.write(line + "\n")
+
+
+def notify(title, body, crit=False):
+    if DRY:
+        print(f"  DRY notify: {title}: {body[:200]}")
+        return
+    subprocess.run(["notify-send", "-a", "DeepSeek-V4.1"] + (["-u", "critical"] if crit else []) + [title, body[:400]],
+                   stderr=subprocess.DEVNULL)
+
+
+def load():
+    try:
+        return json.load(open(STATE))
+    except (OSError, ValueError):
+        return {"steps": {}}
+
+
+def save(st):
+    json.dump(st, open(STATE + ".tmp", "w"), indent=1)
+    os.replace(STATE + ".tmp", STATE)
+
+
+def sh(cmd, log=None, **kw):
+    """run a command (a list); DRY: print it only"""
+    if DRY:
+        print("  DRY:", " ".join(cmd)[:400])
+        return 0
+    with open(log or LOG, "a") as lf:
+        return subprocess.run(cmd, stdout=lf, stderr=lf, **kw).returncode
+
+
+def stop(st, why):
+    """kernel rule / anything unexpected: stop with 8080 left stopped, alert"""
+    st["stopped"] = why
+    save(st)
+    say(f"STOPPED: {why} - 8080 left stopped, the gap held; nothing else runs")
+    notify("Maya head-to-head stopped", f"{why}. 8080 is NOT restarted.", True)
+    sys.exit(1)
+
+
+def clean_env(**extra):
+    """the environment for an arm: no STRATA_* / MAYA_* / DS4_* from ours (Maya reads STRATA_ names itself)"""
+    e = {k: v for k, v in os.environ.items() if not k.startswith(("STRATA_", "MAYA_", "DS4_"))}
+    e.update({k: str(v) for k, v in extra.items()})
+    return e
+
+
+# ---------- 0. wait for the round ----------------------------------------------------------------------------------------
+def wait_round(st):
+    if st.get("round_done"):
+        return
+    say("waiting for the tuning round to finish (its last measurement, then 8080 back on P021m)")
+    inactive, alerted = 0, False
+    while True:
+        act = subprocess.run(["systemctl", "--user", "is-active", "--quiet", "ds41-tune.service"]).returncode == 0
+        inactive = 0 if act else inactive + 1
+        if inactive >= 3:
+            tail = open(TUNELOG, errors="replace").read()[-30000:]
+            if "round finished after" in tail and "8080 back on P021m" in tail:
+                st["round_done"] = time.strftime("%F %T")
+                save(st)
+                say("the round has finished: " + [l for l in tail.splitlines() if "round finished after" in l][-1][-120:])
+                return
+            if not alerted:
+                notify("Maya head-to-head waiting", "the tuning round is not running but did not finish cleanly - nothing starts")
+                say("the round is not running but has no clean finish line - waiting (nothing starts)")
+                alerted = True
+        time.sleep(60)
+
+
+# ---------- 1. gap -------------------------------------------------------------------------------------------------------
+def open_gap(st):
+    if st.get("gap_open"):
+        return
+    if sh(["bash", f"{SC}/bringup/lib/kcheck.sh", "h2h-before"]) != 0:
+        stop(st, "kernel check failed before the head-to-head")
+    rc = sh(["systemd-run", "--user", "--scope", "--unit", "ds41-h2h-gaplock", "--collect", "bash",
+             f"{SC}/work/r22/port_gap4.sh", "begin", "Maya head-to-head (the user, 10-25; lock in its own scope)"])
+    if rc != 0:
+        stop(st, f"port_gap4 begin failed (rc {rc})")
+    sh(["/home/USER/ai/deep-research/run-ldr.sh", "stop"])
+    sh(["systemctl", "--user", "stop", "searxng-watch.service", "searxng-ldr.service", "searxng-ldr-baseline.service"])
+    if os.path.exists(f"{SC}/tmp/ds41-nvmetemp.stop") and not DRY:
+        os.remove(f"{SC}/tmp/ds41-nvmetemp.stop")
+    if subprocess.run(["systemctl", "--user", "is-active", "--quiet", "ds41-nvmetemp.service"]).returncode:
+        sh(["systemd-run", "--user", "--unit", "ds41-nvmetemp", "--collect", "bash", f"{SC}/work/ds41/nvmetemp.sh", "16"])
+    st["gap_open"] = time.strftime("%F %T")
+    save(st)
+    say("gap open: queue held, test lock, 8080 stopped, LDR + SearXNG 8889/8890 stopped, drive log on")
+
+
+def pinpoint(st):
+    """1b. report only (the user, 10-26): a fail or a run that could not finish is recorded and the head-to-head goes on"""
+    if st.get("pinpoint") or not st["final"]:
+        return
+    say("pinpoint: the ship config built up one change at a time (skipcheck.py pin, ~25-30 min)")
+    rc = sh([PY, f"{T}/skipcheck.py", "pin", json.dumps(st["final"])], f"{R}/pinpoint.log")
+    if rc == 3:
+        stop(st, "kernel error in the pinpoint check")
+    if DRY:
+        return
+    md = f"{tune.R}/pinpoint.md"
+    most = [l for l in open(md).read().splitlines() if l.startswith("Moves the percentiles most")] if rc == 0 and os.path.exists(md) else []
+    st["pinpoint"] = f"rc {rc}: " + (most[0] if most else f"see {R}/pinpoint.log")
+    save(st)
+    say(f"pinpoint {st['pinpoint']} ({md})")
+
+
+def close_gap(st):
+    rc = sh(["bash", f"{SC}/work/r22/port_gap4.sh", "end"])
+    sh(["systemctl", "--user", "start", "searxng-ldr.service", "searxng-ldr-baseline.service", "searxng-watch.service"])
+    if not DRY:
+        open(f"{SC}/tmp/ds41-nvmetemp.stop", "w").close()
+    k = sh(["bash", f"{SC}/bringup/lib/kcheck.sh", "h2h-after"])
+    st["gap_closed"] = time.strftime("%F %T")
+    save(st)
+    say(("8080 back on P021m" if rc == 0 else "port_gap4 end FAILED - check 8080") + ("; kcheck clean" if k == 0 else "; KCHECK FAILED"))
+    return rc
+
+
+# ---------- 2-4. source, build, pack -------------------------------------------------------------------------------------
+def build(st):
+    if st.get("built"):
+        return
+    free_gb = shutil.disk_usage(SC).free / 1e9
+    if free_gb < 110:
+        stop(st, f"only {free_gb:.0f} GB free (the 100 GB rule + the build)")
+    blog = f"{R}/build.log"
+    if not os.path.exists(f"{SRC}/CMakeLists.txt"):
+        if os.path.exists(SRC) and os.listdir(SRC):
+            stop(st, f"{SRC} exists and is not an exported tree")
+        if not DRY:
+            os.makedirs(SRC, exist_ok=True)
+        if sh(["bash", "-c", f"git -C {CLONE} archive v1.1.28 | tar -x -C {SRC}"], blog) != 0:
+            stop(st, "git archive v1.1.28 failed")
+        if sh(["patch", "-p1", "-d", SRC, "-i", f"{MY}/maya-score.patch"], blog) != 0:
+            stop(st, "maya-score.patch did not apply")
+    if not os.path.exists(f"{GGML}/ggml/CMakeLists.txt"):
+        if sh(["cp", "-a", GGML_FROM, GGML], blog) != 0:
+            stop(st, "the llama.cpp copy failed")
+    if not DRY:
+        head = subprocess.run(["git", "-C", GGML, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        dirty = subprocess.run(["git", "-C", GGML, "status", "--porcelain"], capture_output=True, text=True).stdout.strip()
+        if head != GGML_PIN or dirty:
+            stop(st, f"the llama.cpp copy is at {head[:12]} (want {GGML_PIN[:12]}) or not clean")
+    conf = ["unshare", "-rn", "nice", "-n", "19", "cmake", "-S", SRC, "-B", BUILD, "-DCMAKE_BUILD_TYPE=Release",
+            "-DSTRATA_ENABLE_CUDA=ON", "-DCMAKE_CUDA_ARCHITECTURES=89;120", "-DSTRATA_BUILD_TESTS=OFF",
+            f"-DSTRATA_GGML_DIR={GGML}", "-DGGML_CCACHE=OFF", "-DFETCHCONTENT_FULLY_DISCONNECTED=ON",
+            f"-DCMAKE_CUDA_COMPILER={CUDA}/bin/nvcc", f"-DCUDAToolkit_ROOT={CUDA}"]
+    t0 = time.time()
+    if sh(conf, blog) != 0:
+        stop(st, "cmake configure failed (build.log)")
+    if sh(["unshare", "-rn", "nice", "-n", "19", "cmake", "--build", BUILD, "--target", "maya-ds4", "-j", "16"], blog) != 0:
+        stop(st, "the maya-ds4 build failed (build.log)")
+    exe = next((os.path.join(dp, "maya-ds4") for dp, _, fs in os.walk(BUILD) if "maya-ds4" in fs
+                and os.access(os.path.join(dp, "maya-ds4"), os.X_OK)), None) if not DRY else f"{BUILD}/maya-ds4"
+    if not exe:
+        stop(st, "no maya-ds4 binary after the build")
+    st["exe"] = exe
+    st["built"] = f"{time.strftime('%F %T')} in {(time.time() - t0) / 60:.0f} min"
+    save(st)
+    say(f"maya-ds4 built ({st['built']}): {exe}")
+
+
+def pack(st):
+    if st.get("packed"):
+        return
+    if not DRY:
+        os.makedirs(PACK, exist_ok=True)
+    cmd = ["unshare", "-rn", "python3", "-I", f"{SRC}/tools/ds4/pack_gguf.py", "--model", MODEL, "--out", PACK,
+           "--shards"] + [f"{MODEL}/{s}" for s in SHARDS]
+    if sh(cmd, f"{R}/pack.log", cwd=R) != 0:
+        stop(st, "pack_gguf.py failed (pack.log)")
+    if not DRY:
+        kv = dict(l.split(" ", 1) for l in open(f"{PACK}/ds4.txt").read().splitlines() if " " in l)
+        if kv.get("num_experts_per_tok", "").strip() != "6":
+            stop(st, f"the pack says {kv.get('num_experts_per_tok')} experts per token (want 6)")
+    st["packed"] = time.strftime("%F %T")
+    save(st)
+    say(f"pack written: {PACK} (6 experts per token)")
+
+
+# ---------- 5. configs ---------------------------------------------------------------------------------------------------
+def tune_state():
+    return json.load(open(tune.STATE))
+
+
+def s_cfg(final, eng):
+    return tune.mkcfg("h2h-S", dict(final, engine=eng, DS4_FLOW_STATS=1))
+
+
+def m_cfg(st, arm, final, s_path):
+    s = json.load(open(s_path))
+    a = s["args"]
+    store = a[a.index("--ssd-cache") + 1] if "--ssd-cache" in a else "70"
+    chunk = a[a.index("--prefill-chunk") + 1] if "--prefill-chunk" in a else "8192"
+    # 10-26 (Karl): Maya's default here (experts read in place through the page cache) swapped its own engine memory
+    # (M1 1,089 MB, M2 544 MB) - "failed: memory". Maya has no RAM store with unbuffered reads like Strata's, only the
+    # static copy of the hottest experts (--mmap-experts off, anonymous memory, not pinned): capped at 50 GB
+    # (DS4_COPY_GB; DS4_WARM_CAP_GB caps it too) - "Never let it copy all that fits" (a copy of all that fits left the
+    # page cache no room on 10-25: the page allocation failure)
+    env = {"CUDA_VISIBLE_DEVICES": s["env"]["CUDA_VISIBLE_DEVICES"], "DS4_WARM_CAP_GB": MAYA_COPY_GB, "DS4_COPY_GB": MAYA_COPY_GB}
+    env.update({k: str(v) for k, v in s["env"].items() if k in CARRY})
+    env.update(M_COMMON)
+    env.update(M_ARMS[arm])
+    left = sorted(k for k in final if k not in CARRY and k not in ("order", "profile", "engine"))
+    c = {"exe": st.get("exe", f"{BUILD}/maya-ds4"), "cwd": SRC,
+         "args": ["--pack", PACK, "--max-context", "32768", "--eos", "1", "--dspark", "none", "--vision", "off",
+                  "--tp", "2", "--prefill-chunk", chunk, "--mmap-experts", "off", "--expert-profile", MPROF],
+         "tokenizer": f"{PACK}/tokenizer", "model_name": "deepseek-v4.1-flash", "lib_dirs": [f"{CUDA}/lib64"],
+         "host": "127.0.0.1", "fit_max_tokens": True, "thinking_budget": 32768,
+         "sampling": {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.05},
+         "log": f"{R}/logs/engine-maya-{arm}.log", "env": env,
+         "_comment": f"10-25 h2h {arm} from the ship config {json.dumps(final)}; not carried (Strata-only): {left}"}
+    os.makedirs(f"{R}/cfg-{arm}", exist_ok=True)   # (its own folder: Maya's admin POSTs write next to the config)
+    p = f"{R}/cfg-{arm}/maya-{arm}.json"
+    json.dump(c, open(p, "w"), indent=1)
+    return p
+
+
+# ---------- 6-7. arms ----------------------------------------------------------------------------------------------------
+def arm(st, key, kind, cfg, note, prof_src, client=None, passes=3):
+    if key in st["steps"]:
+        return st["steps"][key]
+    if kind == "S":
+        if not DRY:   # (DRY: never touch the round's live profile file)
+            shutil.copy(prof_src, tune.PROF)
+        eng = st["engine"]
+        cmd = ["bash", f"{T}/tunearm.sh", key, cfg]
+        env = clean_env(ARM_NOTE=note, PROFILE=tune.PROF, COOL_MIN=60, PASSES=passes, NPROMPT=passes,
+                        DS_SERVER=tune.ENGINES[eng]["server"],
+                        CLIENT=client or f"ENGINE_NAME=strata-dsv41 EFFORT=62 {PY} {MY}/maya-speed3.py $URL $OUT 3 3")
+        if tune.ENGINES[eng]["server_env"]:
+            env["SERVER_ENV"] = tune.ENGINES[eng]["server_env"]
+    else:
+        if not DRY:
+            shutil.copy(prof_src, MPROF)
+        sj = f"{cfg}.shared-settings.json"
+        if os.path.exists(sj):
+            stop(st, f"{sj} exists (it would override the sampling for every client)")
+        cmd = ["bash", f"{MY}/maya-netns.sh", "bash", f"{MY}/maya-tunearm.sh", key, cfg]
+        env = clean_env(ARM_NOTE=note, PROFILE=MPROF, COOL_MIN=60, PASSES=passes, NPROMPT=passes, ENGINE_NAME="maya-ds4",
+                        MAYA_ROOT=SRC, DS_SERVER=f"{SRC}/serve/server.py", SERVER_ENV=SERVER_ENV_M, EFFORT=62)
+        if client:
+            env["CLIENT"] = client
+    say(f"{key}: {note}")
+    t0 = time.time()
+    if DRY:
+        sh(cmd)
+        return {"dir": None}
+    with open(LOG, "a") as lf:
+        subprocess.run(cmd, env=env, stdout=lf, stderr=lf)
+    d = open(f"{SC}/tmp/ds41-arm-out").read().strip()
+    g = open(f"{d}/GUARD").read().strip() if os.path.exists(f"{d}/GUARD") else ""
+    s = open(f"{d}/summary.txt").read() if os.path.exists(f"{d}/summary.txt") else ""
+    if "kernel" in g.lower() or re.search(r"KCHECK FAILED|kernel check failed", s, re.I):
+        st["steps"][key] = {"dir": d, "guard": g or "kernel check failed"}
+        stop(st, f"{key}: kernel event ({g or 'kcheck failed'}) - {d}")
+    try:
+        a = json.load(open(f"{d}/arm.json"))
+    except (OSError, ValueError):
+        a = {}
+    dev = [json.loads(l) for l in open(f"{d}/disk.jsonl")] if os.path.exists(f"{d}/disk.jsonl") else []
+    dec = [x for x in dev if x["id"].startswith(("W1", "W2", "W3")) and x.get("device_read_gb") is not None]
+    p20 = [x["device_read_gb"] for x in dev if x["id"] == "P20K" and x.get("device_read_gb") is not None]
+    res = {"dir": d, "note": note, "min": round((time.time() - t0) / 60, 1), "guard": g or None,
+           "softstop": os.path.exists(f"{d}/SOFTSTOP"),
+           "decode": (a.get("decode") or {}).get("mean"), "P4K": (a.get("P4K") or {}).get("mean"),
+           "P20K": (a.get("P20K") or {}).get("mean"), "lowest_mem": a.get("lowest_memavail_gb"),
+           "vram_experts": [c["vram_experts"] for c in a.get("cards", [])],
+           "drive_gb_per_token": round(sum(x["device_read_gb"] for x in dec) / max(1, sum(x.get("completion_tokens") or 0 for x in dec)), 4) if dec else None,
+           "drive_gb_P20K": round(sum(p20) / len(p20), 1) if p20 else None,
+           "nvme": next((l.strip() for l in s.splitlines() if l.startswith("nvme0")), None)}
+    st["steps"][key] = res
+    save(st)
+    say(f"{key}: decode {res['decode']} tok/s, P4K {res['P4K']}, P20K {res['P20K']} tok/s, drive {res['drive_gb_per_token']} "
+        f"GB/token, P20K {res['drive_gb_P20K']} GB, VRAM experts {res['vram_experts']}, lowest {res['lowest_mem']} GB, "
+        f"{res['min']} min" + (f"; {g}" if g else "") + ("; SOFT STOP" if res["softstop"] else ""))
+    return res
+
+
+def cmp(a, b):
+    return json.loads(subprocess.run(["python3", f"{T}/compare.py", a, b], capture_output=True, text=True).stdout or "{}")
+
+
+# ---------- 8. KL --------------------------------------------------------------------------------------------------------
+def kl(st, final, mcfgs):
+    if st.get("kl"):
+        return st["kl"]
+    O = skipcheck.OUT
+    need = ("final-base", "final-R1-chunk4096", "final-R2-cpu-share", "final-cand-final")
+    if not all(os.path.exists(f"{O}/{n}/score.tsv") for n in need):
+        say("KL: the round's final check is missing - running it (skipcheck.py final)")
+        rc = sh([PY, f"{T}/skipcheck.py", "final", json.dumps(final)], f"{R}/kl.log")
+        if rc == 3:
+            stop(st, "kernel error in the final check")
+    for m, cfg in mcfgs.items():
+        if not os.path.exists(f"{O}/h2h-{m}/score.tsv"):
+            if not DRY:
+                shutil.copy(st["prof_src"], MPROF)
+            rc = sh([PY, f"{MY}/maya-score.py", "run", f"h2h-{m}", cfg], f"{R}/kl.log", env=clean_env())
+            if rc == 3:
+                stop(st, f"kernel error in the {m} scoring run")
+    if DRY:
+        return {}
+    base = f"{O}/final-base"
+    def cmp_kl(n):   # (skipcheck.compare exits on a target mismatch: recorded as None, not a stop)
+        try:
+            return skipcheck.compare(base, f"{O}/{n}") if os.path.exists(f"{O}/{n}/score.tsv") else None
+        except SystemExit as e:
+            say(f"KL {n}: {e}")
+            return None
+    res = {k: cmp_kl(n) for k, n in (("R1", "final-R1-chunk4096"), ("R2", "final-R2-cpu-share"),
+                                     ("S", "final-cand-final"), ("M1", "h2h-M1"), ("M2", "h2h-M2"))}
+    res = {k: v for k, v in res.items() if v}
+    r1, r2 = res.get("R1"), res.get("R2")
+    out = {"res": res}
+    for k in ("S", "M1", "M2"):
+        c = res.get(k)
+        if not (c and r1 and r2):
+            out[k] = "not run"
+            continue
+        checks = {"mean": c["kl_mean"] <= 1.10 * max(r1["kl_mean"], r2["kl_mean"]),
+                  "p90": c["kl_p90"] <= 1.10 * max(r1["kl_p90"], r2["kl_p90"]),   # (10-26, the user: as the mean)
+                  "gt1": c["kl_gt1"] <= max(r1["kl_gt1"], r2["kl_gt1"]) + 1,
+                  "top1": c["top1_agree"] >= min(r1["top1_agree"], r2["top1_agree"]) - 1}
+        out[k] = ("PASS (rounding-level)" if all(checks.values()) else "FAIL: " + ", ".join(x for x, v in checks.items() if not v))
+    st["kl"] = out
+    save(st)
+    say("KL vs the round's reference config (final-base; references R1 chunk 4096, R2 CPU share): " +
+        "; ".join(f"{k} {out[k]}" for k in ("S", "M1", "M2")))
+    return out
+
+
+def maya_check(st, cfg, prof):
+    """10-26 (Karl): "the ~10-minute one ... If Maya's own memory stays out of swap, rerun the rest of the head-to-head
+    (~2.5 h), including decode, the follow-ups and the quality check. If not, count Maya as failed on this PC and go to the
+    ports." One screen of M1's config (the 50 GB copy): one P4K, one P20K, W1-W3 once. Fails on any guard (the new swap
+    rule: any engine swap, a 4 MB swap-in streak, a later swap-out burst over 4 MB) or engine VmSwap > 0 in swap.tsv."""
+    if st.get("maya_failed"):
+        return False
+    if st.get("maya_check_ok"):
+        return True
+    r = arm(st, "Mcheck", "M", cfg, f"h2h Maya check: M1's config with the {MAYA_COPY_GB} GB copy, one screen", prof, passes=1)
+    if DRY:
+        return True
+    d = r.get("dir")
+    es = 0
+    if d and os.path.exists(f"{d}/swap.tsv"):
+        for l in list(open(f"{d}/swap.tsv"))[1:]:
+            f = l.split()
+            if len(f) >= 6 and f[5].isdigit():
+                es = max(es, int(f[5]))
+    if r.get("guard") or es > 0 or r.get("decode") is None:
+        st["maya_failed"] = (f"Maya check: {r.get('guard') or ''} engine swap max {es} kB, decode {r.get('decode')} "
+                             f"(the {MAYA_COPY_GB} GB copy) - Maya counted as failed on this PC").strip()
+        save(st)
+        say(st["maya_failed"])
+        return False
+    st["maya_check_ok"] = f"engine swap 0, decode {r.get('decode')}, P4K {r.get('P4K')}, P20K {r.get('P20K')}, lowest {r.get('lowest_mem')} GB"
+    save(st)
+    say(f"Maya check passed: {st['maya_check_ok']} - the rest of the head-to-head runs")
+    return True
+
+
+# ---------- 9. summary ---------------------------------------------------------------------------------------------------
+def summary(st, tst):
+    S = st["steps"]
+    L = [f"# Maya v1.1.28 vs our tuned Strata ({st['engine']}) - head-to-head, {time.strftime('%F')}", "",
+         f"Ship config: `{json.dumps(st['final'])}`. Build: {st.get('built')}. Effort 62 (= medium) for every arm; "
+         f"T 1.0 / 0.95 / 20 / min-p 0.05.", "",
+         f"Maya's memory: --mmap-experts off with the copy capped at {MAYA_COPY_GB} GB (DS4_COPY_GB) after the first try - "
+         "Maya's default (in place through the page cache) swapped its own engine memory: M1 1,089 MB (P4K 399.2, P20K "
+         "693.2 before it), M2 544 MB (P4K 480.5, P20K 899.5); S2 failed on 1 MB of swap-ins (the guard then had no "
+         "volume floor); the first S1 (27.64 / 308.2 / 514.1) fails the new guard's later-burst rule (12 MB).",
+         f"Maya check: {st.get('maya_check_ok') or st.get('maya_failed') or 'not run'}", "",
+         "| Arm | decode tok/s | P4K tok/s | P20K tok/s | drive GB/token | P20K drive GB | VRAM experts | lowest MemAvail | drive temp |",
+         "|---|---|---|---|---|---|---|---|---|"]
+    for k in ("S1", "M1", "S2", "M2", "S3"):
+        x = S.get(k) or {}
+        L.append(f"| {k} | {x.get('decode')} | {x.get('P4K')} | {x.get('P20K')} | {x.get('drive_gb_per_token')} | "
+                 f"{x.get('drive_gb_P20K')} | {x.get('vram_experts')} | {x.get('lowest_mem')} | {(x.get('nvme') or '')[:90]} |"
+                 + (f" {x['guard']}" if x.get("guard") else ""))
+    L += ["", "A/B/A (compare.py: gain vs noise):"]
+    for m, (a1, a2) in (("M1", ("S1", "S2")), ("M2", ("S2", "S3"))):
+        for a in (a1, a2):
+            if S.get(a, {}).get("dir") and S.get(m, {}).get("dir"):
+                L.append(f"- {m} vs {a}: {tune.gains(cmp(S[a]['dir'], S[m]['dir']))}")
+    L += ["", "Follow-ups (Jan's format; read = tokens the engine read for the follow-up, target = last answer + new message):"]
+    for k in ("ckpt-M1", "ckpt-M2"):
+        d = (S.get(k) or {}).get("dir")
+        if d and os.path.exists(f"{d}/ckpt.json"):
+            L.append(f"- {k}: " + json.dumps(json.load(open(f"{d}/ckpt.json")))[:600])
+    sk = [k for k in tst if k.startswith("test-ckpt-") and k.endswith("keep0") and st["engine"] in k]
+    for k in sk:
+        L.append(f"- S (the round's {k}): " + (tst[k] or "")[-600:].replace("\n", " "))
+    kl_ = st.get("kl") or {}
+    L += ["", "Quality (teacher-forced KL, 8 x 256 positions after a 12,000-token prefix, vs the round's reference config):"]
+    for k in ("S", "M1", "M2"):
+        r = (kl_.get("res") or {}).get(k)
+        L.append(f"- {k}: {kl_.get(k)}" + (f" (KL mean {r['kl_mean']:.5f}, p90 {r['kl_p90']:.5f}, KL>1 {r['kl_gt1']}, "
+                                           f"top-1 agree {r['top1_agree']}/{r['positions']})" if r else ""))
+    for k in ("R1", "R2"):
+        r = (kl_.get("res") or {}).get(k)
+        if r:
+            L.append(f"- reference {k}: KL mean {r['kl_mean']:.5f}, p90 {r['kl_p90']:.5f}, KL>1 {r['kl_gt1']}, top-1 {r['top1_agree']}")
+    if st.get("pinpoint"):
+        L += ["", f"Pinpoint (report only, before the head-to-head): {st['pinpoint']} - results/ds41/tuning/pinpoint.md"]
+    L += ["", "Decision rule (maya-catchup.md): switch only if Maya is ahead beyond noise on decode and prompts with no quality "
+          "loss and our clients work (Jan tool calls, deep research, /v1/responses, numeric effort); otherwise port the list. "
+          "The user decides."]
+    open(f"{R}/summary.md", "w").write("\n".join(L) + "\n")
+    say(f"summary: {R}/summary.md")
+
+
+def main():
+    os.makedirs(f"{R}/logs", exist_ok=True)
+    os.makedirs(f"{R}/tmp", exist_ok=True)
+    st = load()
+    if st.get("stopped") and not DRY:
+        say(f"not resuming: stopped earlier ({st['stopped']}) - clear 'stopped' in state.json to go on")
+        return 1
+    if not DRY:
+        wait_round(st)
+    tst = tune_state()
+    st["final"] = tst.get("final") or {}
+    st["engine"] = tst.get("engine", "v024")
+    st["prof_src"] = st["final"].get("profile", tune.SHIPPED)
+    save(st)
+    say(f"head-to-head: S = ship config {json.dumps(st['final'])} on {st['engine']}")
+    open_gap(st)
+    pinpoint(st)
+    build(st)
+    pack(st)
+    s = s_cfg(st["final"], st["engine"])
+    mc = {m: m_cfg(st, m, st["final"], s) for m in ("M1", "M2")}
+    say(f"configs: S {s}; M1 {mc['M1']}; M2 {mc['M2']}")
+    p = st["prof_src"]
+    # 10-26 (Karl): the first try's S1 / M1 / S2 / M2 are kept aside (M1, M2 failed on their own swap, S2 on 1 MB of
+    # swap-ins; S1 fails the new guard's later-burst rule) - all rerun after a ~10-minute Maya check
+    if not st.get("rerun_reset"):
+        st["steps_first_try"] = st.get("steps", {})
+        st["steps"] = {}
+        st["rerun_reset"] = time.strftime("%F %T")
+        save(st)
+    if not maya_check(st, mc["M1"], p):
+        for f, a in ((summary, (st, tst)),):
+            try:
+                f(*a)
+            except Exception as e:   # noqa: BLE001
+                say(f"{f.__name__} failed: {type(e).__name__}: {e} - going on to close the gap")
+        rc = close_gap(st) if not DRY else 0
+        notify("Maya head-to-head: Maya failed on this PC", f"{st.get('maya_failed')}; 8080 {'back on P021m' if rc == 0 else 'NOT restored'}")
+        return 0
+    arm(st, "S1", "S", s, "h2h S1: our tuned Strata (ship config), effort 62", p)
+    arm(st, "M1", "M", mc["M1"], "h2h M1: Maya v1.1.28 with Strata's arithmetic", p)
+    arm(st, "S2", "S", s, "h2h S2: our tuned Strata again", p)
+    arm(st, "M2", "M", mc["M2"], "h2h M2: Maya v1.1.28 defaults minus lossy / not repeatable", p)
+    arm(st, "S3", "S", s, "h2h S3: our tuned Strata again", p)
+    for m in ("M1", "M2"):
+        log = json.load(open(mc[m]))["log"]
+        arm(st, f"ckpt-{m}", "M", mc[m], f"h2h follow-ups on {m} (Jan's format, maya-ckpt_client, SLOTS=1: Maya always pins)", p,
+            client=f"EFFORT=62 {PY} {MY}/maya-ckpt_client.py $URL $OUT {log} 1")
+    for f, a in ((kl, (st, st["final"], mc)), (summary, (st, tst))):   # (a bug here must not keep 8080 down)
+        if f is summary and DRY:
+            continue
+        try:
+            f(*a)
+        except Exception as e:   # noqa: BLE001
+            say(f"{f.__name__} failed: {type(e).__name__}: {e} - going on to close the gap")
+    rc = close_gap(st) if not DRY else 0
+    notify("Maya head-to-head done", f"summary: {R}/summary.md; 8080 {'back on P021m' if rc == 0 else 'NOT restored'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,58 @@
+{
+ "version": "dayone.py 2026-11-05",
+ "name": "ud31-hcoff",
+ "label": "UD-IQ3_XXS v3.1, STRATA_HC_Q8=0",
+ "mode": "swap",
+ "config": "/home/USER/ai-speed-testing/strata-compare/work/qwen4-kit/hcoff/configs/ud31-U-hcoff.json",
+ "config_sha256": {
+  "/home/USER/ai-speed-testing/strata-compare/work/qwen4-kit/hcoff/configs/ud31-U-hcoff.json": "03a8bd73683830bf83cf2c357a481d06c916e2ec19166a9a4a5eb6606b4fb0b6"
+ },
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata",
+ "ngpu": 2,
+ "files": [
+  "/home/USER/ai-speed-testing/strata-compare/models/unsloth-v31/UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf",
+  "/home/USER/ai-speed-testing/strata-compare/models/unsloth-v31/UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00004.gguf",
+  "/home/USER/ai-speed-testing/strata-compare/models/unsloth-v31/UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00004.gguf",
+  "/home/USER/ai-speed-testing/strata-compare/models/unsloth-v31/UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00004-of-00004.gguf"
+ ],
+ "pack": "/home/USER/ai-speed-testing/strata-compare/bringup/out/ud31/pack-u",
+ "hc_q8": true,
+ "hc_q8_switch": "off",
+ "expert_cache_auto_ok": "the v3.1 gap's U config as it ran (auto; exact7 pins 2500)",
+ "prompt_dir": "/home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/prompts",
+ "retok_needed": false,
+ "pin": 2500,
+ "slots": {
+  "main": 0,
+  "helper": null
+ },
+ "dl": {
+  "n": 1,
+  "items": [
+   {
+    "dest": "/home/USER/ai-speed-testing/strata-compare/models/unsloth-v31/UD-IQ3_XXS",
+    "tree": "/home/USER/ai-speed-testing/strata-compare/work/qwen4-kit/unsloth-v31/dl/tree.json",
+    "paths_csv": "UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf,UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00004.gguf,UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00004.gguf,UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00004-of-00004.gguf"
+   }
+  ]
+ },
+ "drafter_rt": null,
+ "minutes": {
+  "e7": 4,
+  "smoke": 2,
+  "q": 7,
+  "qr": 12,
+  "pfy": 9,
+  "pfyr": 14,
+  "scr": 5,
+  "cmp": 10
+ },
+ "target": [
+  40,
+  60
+ ],
+ "hcoff": {
+  "ud31": "/home/USER/ai-speed-testing/strata-compare/results/r23/ud31",
+  "rule": "Karl 11-06 (u_exact_state)"
+ }
+}

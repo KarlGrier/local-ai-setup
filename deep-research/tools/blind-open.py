@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""blind-open.py - phase 3 blind grading of the open-ended questions (2026-10-18): the final reports of two or more
+setups for one question, relabelled A/B/(C) in a random order, with the setup cues taken out, so I can grade them
+against results/bench2/my-research/ before I know which is which.
+
+  blind-open.py ID RUNSDIR RUNSDIR [...]     e.g.  blind-open.py o01 screen-baseline screen-deep
+      -> results/bench2/blind/<ID>/A.md, B.md, ...; the key goes to results/bench2/blind/KEY-do-not-open-before-grading.json
+  blind-open.py --reveal ID                  print the key for ID (after the grades are written to blind/grades.jsonl)
+
+Taken out (10-27: also the phase 4 fixes' inline marks - [Check: ...], [Arithmetic check: ...], [Version check: ...],
+[Consistency check: ...], [Citation check: ...]; put their sections in BLIND_DROP): the deep report's title line, "Key findings" label kept, "## Citation check" section, the inline citation-
+check marks (*[... supported ...]*), the setup check's inline notes (**[Setup check: ...]**), LDR's "## Research
+Metrics" section and "(source nr: N)" tags; "## Answer: X" becomes "## Answer" + X; source lists are rewritten to one format ("[n] title - URL") and cut to the cited entries. Not hideable: length and depth.
+"""
+import json
+import os
+import random
+import re
+import sys
+from pathlib import Path
+
+B = Path("/home/USER/ai/deep-research/results/bench2")
+OUT = Path(os.environ.get("BLIND_OUT", B / "blind"))   # phase 4: results/bench2/blind-p4 (phase 3's packets stay)
+# phase 4 (10-23): sections taken out of the graded text and kept apart in <ID>/items/<label>.md, judged after the
+# grades are written (they exist only on the runs with the items, so they would give the setup away)
+DROP = [s for s in os.environ.get("BLIND_DROP", "").split(",") if s]
+KEY = OUT / "KEY-do-not-open-before-grading.json"
+
+
+def report_of(run: Path) -> str:
+    for p in (run / "deep" / "report.md", run / "report.md"):
+        if p.exists():
+            return p.read_text(encoding="utf-8", errors="replace")
+    raise SystemExit(f"no report in {run}")
+
+
+def drop_section(t: str, title: str) -> str:
+    return re.sub(rf"(?ms)^## {re.escape(title)}\s*\n.*?(?=^## |\Z)", "", t)
+
+
+def sources(t: str) -> str:
+    m = re.search(r"(?ms)^## Sources\s*\n(.*?)(?=^## |\Z)", t)
+    if not m:
+        return t
+    body, items = m.group(1), []
+    for n, title, url in re.findall(r"(?m)^\[(\d+)\]\s*(.*?)\s*(?:\(source nr: \d+\))?\s*\n\s*URL:\s*(\S+)", body):
+        items.append(f"[{n}] {title} - {url}")
+    if not items:                                    # another list format: keep "[n] ... URL" lines as they are
+        items = [re.sub(r"\s*\(source nr: \d+\)", "", l).strip().replace(" — http", " - http")
+                 for l in body.splitlines() if l.strip()]
+    return t[:m.start()] + "## Sources\n\n" + "\n".join(items) + "\n" + t[m.end():]
+
+
+def cited_sources_only(t: str) -> str:
+    """Keep only the source entries the text cites (LDR lists every source it saw - thousands - which gave the setup
+    away by itself; 2026-10-19)."""
+    m = re.search(r"(?ms)^## Sources\s*\n(.*?)(?=^## |\Z)", t)
+    if not m:
+        return t
+    body = t[:m.start()] + t[m.end():]
+    cited = {int(n) for n in re.findall(r"\[\[?(\d{1,4})\]", body)}
+    keep = [l for l in m.group(1).splitlines()
+            if l.strip() and (not re.match(r"\s*\[(\d+)\]", l) or int(re.match(r"\s*\[(\d+)\]", l).group(1)) in cited)]
+    return t[:m.start()] + "## Sources\n\n" + "\n".join(keep) + "\n" + t[m.end():]
+
+
+def clean(t: str) -> str:
+    t = re.sub(r"\A# [^\n]*\n+", "", t)                                  # deep's title line
+    t = re.sub(r"(?m)^## Answer:\s*(.+)$", r"## Answer\n\n\1", t)       # LDR's "## Answer: X"
+    for s in ("Citation check", "Research Metrics", *DROP):
+        t = drop_section(t, s)
+    # first (10-27), so the older pattern below cannot leave a stray '**': the phase 4 fixes' marks (10-27): [Check: ...], [Arithmetic check: ...], [Version check: ...], [Consistency check:
+    # ...], [Citation check: ...] and the citation check's noted flags - one pattern, as deep/checks.py writes them
+    t = re.sub(r"[ \t]*(\*{1,2})?\[(?:\u26a0[^\]\n]*|(?:Check|Arithmetic check|Version check|Consistency check|"
+               r"Citation check)\b[^\]\n]*)\](?(1)\1)", "", t)
+    t = re.sub(r"\s*\*\[[^\]]*?(supported|unverified|not checked|contradicted)[^\]]*\]\*", "", t)
+    # the setup check's inline notes, **[Setup check: ...]** (the user, 10-23: strip them before grading - phase 4's
+    # packets kept them in four reports, which gave those setups away)
+    t = re.sub(r"[ \t]*(\*{1,2})?\[(?i:setup check|fresh check)[: ][^\n]*?\](?(1)\1)", "", t)   # + item 2's (10-23)
+    # item 4 (10-24): the report writer cites the tried list by its prompt tag ("[tried_list: X]", "the tried_list"), which
+    # gave the item run away (45 times in o01) - the tag becomes "project notes"; prose such as "Strata's tried list" stays
+    t = re.sub(r"<?/?\btried_list\b>?", "project notes", t)
+    t = sources(t)
+    t = cited_sources_only(t)
+    return re.sub(r"\n{3,}", "\n\n", t).strip() + "\n"
+
+
+def main() -> None:
+    a = sys.argv[1:]
+    keys = json.loads(KEY.read_text()) if KEY.exists() else {}
+    if a[:1] == ["--reveal"]:
+        grades = OUT / "grades.jsonl"
+        done = {json.loads(l)["id"] for l in grades.open()} if grades.exists() else set()
+        if a[1] not in done:
+            raise SystemExit(f"no grade for {a[1]} in {grades} yet - grade first")
+        print(json.dumps(keys[a[1]], indent=1))
+        return
+    qid, runs = a[0], a[1:]
+    order = runs[:]
+    random.SystemRandom().shuffle(order)
+    d = OUT / qid
+    d.mkdir(parents=True, exist_ok=True)
+    labels = "ABCD"[:len(order)]
+    for lab, r in zip(labels, order):
+        raw = report_of(B / "runs" / r / qid)
+        (d / f"{lab}.md").write_text(clean(raw))
+        kept = [m.group(0).strip() for s in DROP
+                for m in [re.search(rf"(?ms)^## {re.escape(s)}\s*\n.*?(?=^## |\Z)", raw)] if m]
+        if kept:
+            (d / "items").mkdir(exist_ok=True)
+            (d / "items" / f"{lab}.md").write_text("\n\n".join(kept) + "\n")
+    keys[qid] = dict(zip(labels, order))
+    KEY.write_text(json.dumps(keys, indent=1))
+    print(f"{qid}: {', '.join(f'{lab}.md ({len((d / f"{lab}.md").read_text())} chars)' for lab in labels)} in {d}")
+
+
+if __name__ == "__main__":
+    main()

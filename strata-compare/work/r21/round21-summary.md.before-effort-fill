@@ -1,0 +1,62 @@
+# Round 21 summary: the 10-16 morning queue → C\*18t on 8080, your sampling everywhere, NVFP4 vs IQ3_S, reasoning effort
+
+2026-10-16 06:50 → 10-17 morning. Desktop on the iGPU for every run. Details: REPORT.md "Round 21", NOTES.md
+(2026-10-16 / 10-17 entries); raw results in results/r21/.
+
+## What is on 8080
+
+**C\*18t** = C\*18 + the think-tag fix (one server commit), same engine and settings (`configs/Cstar18t.json`). Since
+10-16 21:53 the config's fallback and OpenCode both use your sampling: T 1.0, top-p 0.95, top-k 20, min-p 0.05.
+Rollback: stop 8080, `STRATA_CONFIG=configs/Cstar18.json ./switch-model.sh strata`.
+
+## Queue items
+
+| item | result |
+|---|---|
+| 1 health | display on the iGPU; only Xorg (4 MiB) on each NVIDIA card; RAM 91.96 GiB, 88.1 available idle; kernel clean |
+| 2 reserve | the desktop's ~0.2 GiB went to the expert cache by itself (4,463 → 4,586 slots). Reserve 512: decode −5.0 / −1.9 %, 5080 under the 300 MiB floor → **kept at 713** |
+| 3 guard | warn60: warns at once, stops Strata after 60 s under the floor; follows restarts. No warning since |
+| 4 think fix | 7 lost calls recovered, 0 other changes in 503 turns; bug-fix task 4/4 green → **C\*18t promoted** |
+| 5 issue | posted: Niko1221/Strata#2794 |
+| 6 small items | Jan shell tool off; tmp/usability deleted; no /usr/bin/rg |
+| 7 FP4-Local | exact conversion; not better than GPTQ (see below); Q5 deleted, Q8_0 kept |
+
+## NVFP4 vs IQ3_S (A B B A, T 1.0)
+
+| | C\*18t IQ3_S | GPTQ NVFP4 |
+|---|---|---|
+| decode | 143-144 tok/s | 100 tok/s (−30 %) |
+| TTFT 32K / 64K / 120K | 7.7 / 15.4 / 29.8 s | 9.3 / 17.1 / 31.6 s |
+| yardstick top-1 vs Q8_0 | 87.4 % | 91.7 % (FP4-Local 91.2; UD-Q4_K_XL 92.4) |
+| suite quick | 90.7 | 86.8 (FP4-Local 91.0; all within noise) |
+
+**IQ3_S stays the daily model.**
+
+## Reasoning effort (C\*18t, 3 samples each)
+
+| | xhigh (default; "high" = xhigh) | medium |
+|---|---|---|
+| honesty h03 / h05 / h07 / h12 | 4 of 12 UNKNOWN | **12 of 12** |
+| c14 (hidden tests) | 2 of 3 | **3 of 3** |
+| reasoning per honesty answer | 13-52K tokens | 0.2-1K tokens |
+| time for 15 answers | 53 min | 3 min |
+
+The hosted Flash run also ran at xhigh (OpenRouter doesn't pass the effort on; the model's default is xhigh). Five
+items only: a suite run at medium would show what it costs elsewhere. Nothing changed.
+
+## Harness at T 1.0 (OpenCode vs dsh Minimal)
+
+HARNESS_SUMMARY_PENDING
+
+## The whole suite at medium and high (10-17)
+
+EFFORT_SUITE_SUMMARY_PENDING
+
+The Q8_0 honesty run was dropped (your call: the effort test answered it).
+
+## Needs your decision
+
+1. Reasoning effort default: keep xhigh, or test medium on the whole suite first.
+2. Xorg's 4 MiB on the NVIDIA cards: a root Xorg config removes it (sudo); then the guard could go log-only.
+3. dsh outgrows the context on the long task (its last request refused at 100K + 32K); `fit_max_tokens` would fix it.
+4. Disk 170 GB free: Q8_0 (176 GB) and the FP4-Local packs (67 GB) can go once you've read this.

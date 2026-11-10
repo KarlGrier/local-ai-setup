@@ -1,0 +1,134 @@
+{
+ "_comment": "Phase 5 holdout config - staging/post7d/phase5/p5.json, a filled copy of staging/phase5/p5.json (11-04). PROPOSED values, to be confirmed by Karl's adoption calls (item 7 parts, item 8, C3c, the engine): the final arm = today's deep default on P028x (p4s8's items, SearXNG only, flash-next). Use it with staging/phase5/p5.py --config <this file> (plan / check-engine / check-frozen / swap-mark / status / packets / tally). The queue plan built from it is results/bench2/queue-plan-p5-holdout.json; an adopted paid route (7b / 7d) or model profile (flash-next-c3c) is added to that plan's final-arm steps by hand (p5.py does not emit them) - see staging/post7d/README.md.",
+ "timing": {
+  "open_min": 171,
+  "checkable_min": 47,
+  "_from": "results/bench2/queue-plan-p4s7.json (both steps: open_min 171, checkable_min 47); p5.py plan checks they still match"
+ },
+ "arms": [
+  {
+   "name": "baseline",
+   "profile": "baseline",
+   "label": "p5",
+   "_comment": "pristine LDR 1.10.7 (run-ldr.sh LDR_PROFILE=baseline), as PLAN.md 10-18 'Phase 5 holdout ... on baseline and the final setup' and PHASE5-CHECKABLE-RULES.md item 3; runs folders <set>-baseline-p5"
+  },
+  {
+   "name": "final",
+   "profile": "deep",
+   "label": "p5final",
+   "effort": "medium",
+   "verify_effort": "xhigh",
+   "items": [
+    "setup",
+    "critic",
+    "code",
+    "fixes",
+    "read",
+    "claims",
+    "fix:steps"
+   ],
+   "_items_example": [
+    "setup",
+    "critic",
+    "code",
+    "fixes",
+    "read",
+    "claims"
+   ],
+   "_comment": "PROPOSED final setup = the deep default since p4s8 (setup critic code fixes read claims) + the subagent step fix (fix:steps = LDR_DEEP_FIX item steps, on for every plan after 7d, Karl 11-04), medium / xhigh, 171 / 47 min. p5.py plan's KNOWN_ITEMS does not know fix:steps: the plan file was built by p5.py and fix:steps added after (switch.sh does not rebuild it). Change after Karl's adoption calls."
+  }
+ ],
+ "engine": {
+  "config": "configs/P028x.json",
+  "sha12": "f4c4f654fb24",
+  "_comment": "the served build since 10-30 16:55 (P028x = v0.2.8 port, engine f4c4f654fb24; NOTES). If Karl switches 8080 (e.g. a v0.2.10 port after gap 17) before Phase 5, put the new config + sha12 here."
+ },
+ "include_o01": false,
+ "_include_o01": "o01 is not part of the holdout (o04-o06 are its open questions; o01 is in questions-screen.jsonl, FROZEN.txt). true = add o01 with the 8 GB wording as set p5-o01 (needs results/bench2/FROZEN-p5-o01.txt, staged as o01/; Karl's call).",
+ "lines": {
+  "checkable": {
+   "title": "checkable (25)",
+   "expect": 25,
+   "sets": [
+    {
+     "set": "holdout",
+     "kind": "checkable"
+    },
+    {
+     "set": "hard-holdout",
+     "kind": "checkable"
+    }
+   ]
+  },
+  "harder": {
+   "title": "harder checkable (4)",
+   "expect": 4,
+   "sets": [
+    {
+     "set": "p5-harder",
+     "kind": "checkable"
+    }
+   ]
+  },
+  "open": {
+   "title": "open (3)",
+   "expect": 3,
+   "sets": [
+    {
+     "set": "holdout",
+     "kind": "open"
+    }
+   ]
+  }
+ },
+ "o01_line": {
+  "set": "p5-o01",
+  "kind": "open"
+ },
+ "plan_order": [
+  "open",
+  "harder",
+  "checkable"
+ ],
+ "_plan_order": "most decisive first (Phase 5 is judged on the open reports, then the harder four; the 25 are the sanity line); within a block each set runs on the baseline, then on the final setup, so the two arms of a question are close in time",
+ "needs": {
+  "holdout": "FROZEN.txt",
+  "hard-holdout": "FROZEN-hard.txt",
+  "p5-harder": "FROZEN-p5-harder.txt",
+  "p5-o01": "FROZEN-p5-o01.txt"
+ },
+ "frozen_files": [
+  "FROZEN.txt",
+  "FROZEN-hard.txt",
+  "FROZEN-p5-harder.txt"
+ ],
+ "answer_files": [
+  "answers/answers.jsonl",
+  "answers/answers-hard.jsonl",
+  "answers/answers-p5-harder.jsonl"
+ ],
+ "open_refs": {
+  "o04": [
+   "o04-moe-projects.md",
+   5
+  ],
+  "o05": [
+   "o05-qwen4-flash.md",
+   5
+  ],
+  "o06": [
+   "o06-ups.md",
+   7
+  ],
+  "o01": [
+   "o01-moe-from-ram.md",
+   5
+  ]
+ },
+ "open_ref_notes": {},
+ "_open_ref_notes": "optional one-line note per open question for its grader prompt, e.g. o05 if Qwen4 Flash was released after the reference (10-18) was written",
+ "blind_drop": "Setup check,Check these,Version check,Arithmetic check,Consistency check",
+ "_blind_drop": "as blind-p4s7 (BLIND_DROP); add any section a newly adopted item writes into the report",
+ "out": "results/bench2/blind-p5",
+ "checkable_batch": 5
+}

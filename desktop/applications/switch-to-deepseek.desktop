@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Switch to DeepSeek
+Comment=Hold the research queue at its next clean boundary, stop Qwen, start DeepSeek (config A) and check it.
+Exec=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/deepseek-session.sh to-deepseek
+Icon=go-next
+Terminal=true
+Categories=Utility;

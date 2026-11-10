@@ -1,0 +1,504 @@
+#!/usr/bin/env python3
+"""ports.py PORT MODS_JSON [PORT MODS_JSON ...] - 10-26 (Karl: "Ports into Strata v0.2.6, only those with real gains, in this order: prompt skip
+across the split (#343); BORROW; IQ_Q8K. Each one: review Maya's code, port it, build offline, pass the KL gate
+(spread-based bounds, including the new p90 rule), then a 3-pass A/B/A against the ship config. Keep it only if it wins.
+... Finish with one A/B/A of the combined config ... take [8080] down only for runs").
+One gap per call for all the ports named (after.py's open_gap / close_gap, the test lock, 8080 back at the end), state
+results/ds41/ports/state-<PORT>.json, log results/ds41/ports/<PORT>.log. A PORT written "?a+b" runs only if every port in
+it was kept (the combined config). PORT = a build-variant.sh name (engine engine-v026<PORT>-ds41;
+"+" joins ports: the combined config); MODS_JSON = what the port turns on in the ship config (e.g. #343:
+{"STRATA_DS4_PROMPT_SKIP": "1"}).
+  1. KL gate (teacher-forced, skipcheck's method, 8 x 256 positions after a 12,000-token prefix): base = the ship config
+     on stock v0.2.6 (the round's teacher/eng-cand, copied to teacher/port-base), references on the same build R1 =
+     --prefill-chunk 4096, R2 = --reserve-mib 2600 (scored once, then shared by every port), candidate = the ship config
+     + MODS on the port's build. Rule: mean and p90 <= 1.10 x the larger reference's, KL>1 count <= the worse + 1, top-1
+     >= the lower - 1. A fail ends the port (no A/B/A).
+  2. A/B/A, 3 passes each (speed3.py, the full protocol, cool-down 60 s): A1 = the ship config on stock v0.2.6, B = +
+     MODS on the port's build, A2 = A again. compare.py B vs A1 and vs A2: kept only if it keeps against both (a gain
+     beyond noise, nothing lost beyond noise). The engine log's skip / borrow lines are counted (did it engage).
+     10-26: an A run that fails a guard (e.g. the swap rule) gets a replacement after A2 (A3, A4 at most), a failed B one
+     more try (B2) - B is compared with two clean A runs, never kept on one (the first p343 run printed "not kept" when
+     A1 failed: a driver flaw, not a result). IQ_Q8K (Karl): kept if the gate passes, decode / P4K / P20K are no worse
+     than -1 % against both A runs, and its placement test (iq_extra) says clearly less.
+Kernel rule and memory guards as after.py (any kernel event stops with 8080 left down)."""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, "/home/USER/ai-speed-testing/strata-compare/work/ds41/after")
+import after as A  # noqa: E402  (its gap, arm and guard code; its globals pointed at this run below)
+
+SC, T = A.SC, A.T
+R = f"{SC}/results/ds41/ports"
+A.R = R
+sk = A.skipcheck
+say, save = A.say, A.save
+PORT = PD = ENG = ""
+MODS = {}
+
+
+def set_port(port, mods):
+    """point the module (and after.py's state / log) at one port"""
+    global PORT, PD, ENG, MODS
+    PORT, PD, MODS = port, port.replace("+", "-"), mods
+    ENG = f"v026{PD}"
+    A.STATE = f"{R}/state-{PD}.json"
+    A.LOG = f"{R}/{PD}.log"
+    A.tune.ENGINES[ENG] = dict(A.tune.ENGINES["v026"], exe=f"{SC}/engine-v026{PD}-ds41/strata-dsv41")
+
+
+def cmp(a, b):
+    return json.loads(subprocess.run(["python3", f"{T}/compare.py", a, b], capture_output=True, text=True).stdout or "{}")
+
+
+def kl_gate(st):
+    if st.get("kl"):
+        return st["kl"]
+    ids = sk.ids_file()
+    env0 = {"DS4_SCORE_PREFIX": str(sk.PREFIX)}
+    base = dict(A.final(), engine="v026", **{"--expert-profile": A.tune.SHIPPED})
+    pb = f"{sk.OUT}/port-base"
+    if not os.path.exists(f"{pb}/score.tsv"):   # the ship config on stock v0.2.6 = the round's eng-cand (same build, mods)
+        shutil.copytree(f"{sk.OUT}/eng-cand", pb)
+    runs = {"R1": ("port-R1-chunk4096", dict(base, **{"--prefill-chunk": 4096})),
+            "R2": ("port-R2-cpu-share", dict(base, **{"--reserve-mib": 2600})),
+            "cand": (f"port-{PD}-cand", dict(base, engine=ENG, **{k: v for k, v in MODS.items() if k != "_A"}))}
+    dirs = {}
+    for k, (name, m) in runs.items():
+        try:
+            dirs[k] = sk.score(name, m, ids, env0)
+        except SystemExit as x:
+            if x.code == 3:
+                A.stop(st, f"kernel error in the scoring run {name}")
+            st["kl"] = {"verdict": f"could not run ({name}: {x})"}
+            save(st)
+            return st["kl"]
+    res = {k: sk.pct_row(pb, d) for k, d in dirs.items()}
+    r1, r2, c = res["R1"], res["R2"], res["cand"]
+    checks = sk.rounding_checks(c, r1, r2, dirs["cand"], dirs["R1"], dirs["R2"], pb)[0]   # (10-26 16:40: top-1 spread bound + text NLL)
+    same = open(f"{pb}/score.tsv", "rb").read() == open(f"{dirs['cand']}/score.tsv", "rb").read()
+    eng = ""
+    if os.path.exists(f"{dirs['cand']}/s0/engine.out"):
+        eng = " / ".join(l.strip()[:160] for l in open(f"{dirs['cand']}/s0/engine.out", errors="replace")
+                         if "prompt skip" in l or "borrow" in l.lower())[:600]
+    st["kl"] = {"res": res, "checks": checks, "pass": all(checks.values()), "identical_to_base": same, "engine_lines": eng,
+                "verdict": ("PASS (rounding-level)" if all(checks.values()) else "FAIL: " + ", ".join(k for k, v in checks.items() if not v))
+                + (" - byte-identical to the base: the port did not engage here" if same else "")}
+    save(st)
+    say(f"KL gate {PORT}: {st['kl']['verdict']}; cand mean {c['mean']:.5f} p90 {c['p90']:.5f} KL>1 {c['gt1']} top-1 {c['top1']} "
+        f"(R1 {r1['mean']:.5f}/{r1['p90']:.5f}/{r1['gt1']}/{r1['top1']}, R2 {r2['mean']:.5f}/{r2['p90']:.5f}/{r2['gt1']}/{r2['top1']})"
+        + (f"; engine: {eng}" if eng else ""))
+    return st["kl"]
+
+
+def iq_extra(st):
+    """IQ_Q8K only (Karl 10-26: "the placement-consistency test (the pinpoint steps with and without it) ... Keep it if ...
+    placement changes move the KL clearly less"). (1) DS4_IQ_Q8K=0 on the port's build must score the ship config byte
+    for byte as stock v0.2.6 (port-base): the port changes nothing else. (2) The pinpoint ladder (results/ds41/tuning/
+    pinpoint.md) with the rounding on: engine defaults with the profile the stock ladder's base read (the 01:12 profiled
+    run's profile-after.bin - scoring runs never write their profile: the shipped file's sha is unchanged) -> + the shipped
+    profile -> + GPU order and split -> + decay -> + the rest = the ship config. "Without" = the stock ladder already scored
+    (teacher/final-base, final-pin1..4), once the same base with DS4_IQ_Q8K=0 reproduces final-base byte for byte; else
+    the without ladder is scored here too. "Clearly less" (stated in advance): for the two steps that move experts between
+    the GPUs and the CPU lane (the profile, order + split), the KL against the step before at most half of without's
+    (mean and p90)."""
+    if st.get("iq_extra"):
+        return st["iq_extra"]
+    ids, env0 = sk.ids_file(), {"DS4_SCORE_PREFIX": str(sk.PREFIX)}
+    O = sk.OUT
+    shipped = A.tune.SHIPPED
+    p0 = f"{R}/pin-base-profile.bin"
+    if not os.path.exists(p0):
+        shutil.copy(f"{SC}/results/ds41/tuning/profiled-v026-1026-0112/profile-after.bin", p0)
+    fm = A.final()
+
+    def run(name, m):
+        try:
+            return sk.score(name, m, ids, env0)
+        except SystemExit as x:
+            if x.code == 3:
+                A.stop(st, f"kernel error in the scoring run {name}")
+            raise
+    same = lambda a, b: open(f"{a}/score.tsv", "rb").read() == open(f"{b}/score.tsv", "rb").read()
+    out = {}
+    off = run(f"port-{PD}-off", dict(fm, engine=ENG, DS4_IQ_Q8K="0", **{"--expert-profile": shipped}))
+    out["off_equals_stock"] = same(off, f"{O}/port-base")
+    ladder = [("base", {"--expert-profile": p0}),
+              ("pin1-profile", {"--expert-profile": shipped}),
+              ("pin2-placement", {"--expert-profile": shipped, "order": fm.get("order"), "DS4_SPLIT": fm.get("DS4_SPLIT")}),
+              ("pin3-decay", {"--expert-profile": shipped, "order": fm.get("order"), "DS4_SPLIT": fm.get("DS4_SPLIT"),
+                              "DS4_CACHE_DECAY": fm.get("DS4_CACHE_DECAY")}),
+              ("pin4-ship", dict(fm, **{"--expert-profile": shipped}))]
+    ladder = [(n, {k: v for k, v in m.items() if v is not None}) for n, m in ladder]
+    boff = run(f"port-{PD}-ladder-base-off", dict(ladder[0][1], engine=ENG, DS4_IQ_Q8K="0"))
+    out["ladder_base_off_equals_stock"] = same(boff, f"{O}/final-base")
+    stock = {"base": f"{O}/final-base", "pin1-profile": f"{O}/final-pin1-profile", "pin2-placement": f"{O}/final-pin2-placement",
+             "pin3-decay": f"{O}/final-pin3-decay", "pin4-ship": f"{O}/final-pin4-ship"}
+    if not out["ladder_base_off_equals_stock"]:   # (the stock ladder cannot stand for "without": score it here)
+        stock = {n: run(f"port-{PD}-ladder-{n}-off", dict(m, engine=ENG, DS4_IQ_Q8K="0")) for n, m in ladder}
+    on = {n: run(f"port-{PD}-ladder-{n}", dict(m, engine=ENG)) for n, m in ladder}
+    rows, prev = {}, None
+    for n, _ in ladder:
+        if prev:
+            rows[n] = {"without": sk.pct_row(stock[prev], stock[n]), "with": sk.pct_row(on[prev], on[n])}
+        prev = n
+    moving = ("pin1-profile", "pin2-placement")
+    clearly = all(rows[n]["with"]["mean"] <= 0.5 * rows[n]["without"]["mean"] and
+                  rows[n]["with"]["p90"] <= 0.5 * rows[n]["without"]["p90"] for n in moving)
+    out.update(rows=rows, clearly_less=clearly,
+               ship_vs_defaults={"without": sk.pct_row(stock["base"], stock["pin4-ship"]), "with": sk.pct_row(on["base"], on["pin4-ship"])})
+    L = [f"IQ_Q8K placement test: off == stock {out['off_equals_stock']}, ladder base off == stock base "
+         f"{out['ladder_base_off_equals_stock']}; KL against the step before (mean / p90), without -> with:"]
+    for n, r in rows.items():
+        L.append(f"  {n}: {r['without']['mean']:.5f} / {r['without']['p90']:.5f} -> {r['with']['mean']:.5f} / {r['with']['p90']:.5f}")
+    L.append(f"  clearly less on the steps that move experts between GPU and CPU (at most half, mean and p90): {clearly}")
+    out["line"] = "\n".join(L)
+    st["iq_extra"] = out
+    save(st)
+    say(out["line"])
+    return out
+
+
+def short8_ids():
+    """the 8 long segments' first 2,048 tokens each - all of them read in scoring windows (no long prefix first)"""
+    p = f"{sk.OUT}/short8.ids.json"
+    if not os.path.exists(p):
+        d = json.load(open(sk.ids_file()))
+        json.dump(dict(d, version="ds41-short8", seg_tokens=2048,
+                       segments=[dict(x, ids=x["ids"][:2048]) for x in d["segments"]]), open(p, "w"))
+    return p
+
+
+def score_w(st, name, mods, window):
+    """one teacher-forced run of short8 in windows of `window` tokens (scorearm's SCORE_WINDOW): every position through the
+    windowed path (n < the chunked pass's 96 tokens) - decode's and DSpark verify windows' path, where IQ_Q8K acts"""
+    os.environ["SCORE_WINDOW"] = str(window)
+    try:
+        return sk.score(name, mods, short8_ids(), {})
+    except SystemExit as x:
+        if x.code == 3:
+            A.stop(st, f"kernel error in the scoring run {name}")
+        raise
+    finally:
+        os.environ.pop("SCORE_WINDOW", None)
+
+
+def iq_w16(st, W=16):
+    """10-26 (Karl: "re-test IQ_Q8K in 16-token windows (gate, the switched-off check, the placement test)"): the usual
+    gate, the off check and the pinpoint ladder, all scored in W-token windows over short8 (2,048 tokens a segment, no
+    long prefix, so the prompt path's own placement sensitivity does not mask the windowed path's). References: R1 = the
+    same in W/2-token windows (the prompt chunk means nothing without a long prefix), R2 = --reserve-mib 2600 (the CPU
+    share). Kept-so-far if the gate passes, the off check is byte-identical and the ladder's two GPU/CPU-moving steps
+    (profile; order + split) move the KL at most half as much with it (mean and p90); its speed: the combined A/B/A.
+    W = 8 since 12:15: windows of 9-16 run synchronously (layer(): wp.async only up to DS4_ASYNC_T = 8), through mv_n's
+    GEMVs, not the expert kernels IQ_Q8K changes - W = 16 gave the candidate byte-identical to stock. A candidate
+    identical to the base ends the test at once (not reached: it says nothing)."""
+    key = f"iq_w{W}"
+    if st.get(key):
+        return st[key]
+    fm = A.final()
+    shipped = A.tune.SHIPPED
+    base = dict(fm, engine="v026", **{"--expert-profile": shipped})
+    out = {"window": W}
+    same = lambda a, b: open(f"{a}/score.tsv", "rb").read() == open(f"{b}/score.tsv", "rb").read()
+    d = {"base": score_w(st, f"w{W}-base", base, W), "cand": score_w(st, f"w{W}-{PD}-cand", dict(base, engine=ENG), W)}
+    if same(d["cand"], d["base"]):
+        out.update(gate=False, cand_identical_to_base=True, clearly_less=False,
+                   line=f"IQ_Q8K in {W}-token windows: the candidate is byte-identical to stock - its kernels were not reached")
+        st[key] = out
+        save(st)
+        say(out["line"])
+        return out
+    d.update({"R1": score_w(st, f"w{W}-R1-window{W // 2}", base, W // 2),
+              "R2": score_w(st, f"w{W}-R2-cpu-share", dict(base, **{"--reserve-mib": 2600}), W),
+              "off": score_w(st, f"w{W}-{PD}-off", dict(base, engine=ENG, DS4_IQ_Q8K="0"), W)})
+    res = {k: sk.pct_row(d["base"], d[k]) for k in ("R1", "R2", "cand")}
+    r1, r2, c = res["R1"], res["R2"], res["cand"]
+    checks = sk.rounding_checks(c, r1, r2, d["cand"], d["R1"], d["R2"], d["base"])[0]   # (10-26 16:40: top-1 spread bound + text NLL)
+    out.update(res=res, checks=checks, gate=all(checks.values()), cand_identical_to_base=same(d["cand"], d["base"]),
+               off_identical_to_base=same(d["off"], d["base"]))
+    p0 = f"{R}/pin-base-profile.bin"
+    if not os.path.exists(p0):
+        shutil.copy(f"{SC}/results/ds41/tuning/profiled-v026-1026-0112/profile-after.bin", p0)
+    ladder = [("base", {"--expert-profile": p0}), ("pin1-profile", {"--expert-profile": shipped}),
+              ("pin2-placement", {"--expert-profile": shipped, "order": fm.get("order"), "DS4_SPLIT": fm.get("DS4_SPLIT")}),
+              ("pin3-decay", {"--expert-profile": shipped, "order": fm.get("order"), "DS4_SPLIT": fm.get("DS4_SPLIT"),
+                              "DS4_CACHE_DECAY": fm.get("DS4_CACHE_DECAY")}),
+              ("pin4-ship", dict(fm, **{"--expert-profile": shipped}))]
+    ladder = [(n, {k: v for k, v in m.items() if v is not None}) for n, m in ladder]
+    without = {n: score_w(st, f"w{W}-{PD}-ladder-{n}-off", dict(m, engine=ENG, DS4_IQ_Q8K="0"), W) for n, m in ladder}
+    with_ = {n: score_w(st, f"w{W}-{PD}-ladder-{n}", dict(m, engine=ENG), W) for n, m in ladder}
+    rows, prev = {}, None
+    for n, _ in ladder:
+        if prev:
+            rows[n] = {"without": sk.pct_row(without[prev], without[n]), "with": sk.pct_row(with_[prev], with_[n])}
+        prev = n
+    moving = ("pin1-profile", "pin2-placement")
+    clearly = all(rows[n]["with"]["mean"] <= 0.5 * rows[n]["without"]["mean"] and
+                  rows[n]["with"]["p90"] <= 0.5 * rows[n]["without"]["p90"] for n in moving)
+    out.update(rows=rows, clearly_less=clearly)
+    L = [f"IQ_Q8K in {W}-token windows (short8): gate {'PASS' if out['gate'] else 'FAIL: ' + ', '.join(k for k, v in checks.items() if not v)}"
+         f" (cand mean {c['mean']:.5f} p90 {c['p90']:.5f} KL>1 {c['gt1']} top-1 {c['top1']}; R1 window {W // 2} {r1['mean']:.5f} / "
+         f"{r1['p90']:.5f} / {r1['gt1']} / {r1['top1']}; R2 CPU share {r2['mean']:.5f} / {r2['p90']:.5f} / {r2['gt1']} / {r2['top1']})"
+         f"; cand identical to base {out['cand_identical_to_base']}; off identical to base {out['off_identical_to_base']}",
+         "  placement (KL against the step before, mean / p90, without -> with):"]
+    for n, r in rows.items():
+        L.append(f"  {n}: {r['without']['mean']:.5f} / {r['without']['p90']:.5f} -> {r['with']['mean']:.5f} / {r['with']['p90']:.5f}"
+                 f" (top-1 {r['without']['top1']} -> {r['with']['top1']} of {r['with']['positions']})")
+    L.append(f"  clearly more consistent on the GPU/CPU-moving steps (at most half, mean and p90): {clearly}")
+    out["line"] = "\n".join(L)
+    st[key] = out
+    save(st)
+    say(out["line"])
+    return out
+
+
+def iq_decode(st):
+    """10-26 13:20 (Karl: if IQ_Q8K misses the placement bar, "before dropping it, run a direct decode check, Maya-style"):
+    3 short prompts (dec_prompts.py: 109 / 106 / 123 tokens, chat template, thinking on) decoded 100 tokens each with the
+    same seed (4242, T 1.0 - the CLI's sampler: top-k 64, no top-p / min-p) under two expert placements - the ship config
+    with Strata's stock profile file (SHIPPED) and with ours (the profiled one, pin-base-profile.bin) - on the IQ_Q8K
+    build with it on and off; the tokens that match before the first divergence. Decided on the prompt read as the
+    server reads it (one feed: the prompt path); the same in 8-token windows (all of it on IQ_Q8K's path) is report only.
+    Control: the stock placement with it on run twice for p1 (must match all 100). "Clearly raises" (set before the
+    runs): with IQ_Q8K >= 2 of 3 prompts match all 100 tokens, without it at most 1, and more matched tokens in all."""
+    if st.get("iq_decode"):
+        return st["iq_decode"]
+    fm = A.final()
+    p0 = f"{R}/pin-base-profile.bin"
+    places = {"stock": A.tune.SHIPPED, "ours": p0}
+    D = f"{R}/decode"
+    N = 100
+
+    def run(label, prof, on, p, window):
+        d = f"{D}/{label}"
+        tf = f"{d}/tokens.txt"
+        if not os.path.exists(tf):
+            # (14:00 fix: the CLI's exit writes the learned profile back to --expert-profile (save_profile) - the
+            # 13:50 runs got the files themselves, so each run moved the next one's placement and rewrote Strata's
+            # stock profile file (restored from git). Each run now reads its own copy, as skipcheck.decode does.)
+            os.makedirs(d, exist_ok=True)
+            shutil.copy(prof, f"{d}/profile.bin")
+            m = dict(fm, engine=ENG, **{"--expert-profile": f"{d}/profile.bin", "--temperature": "1.0", "--seed": "4242"},
+                     DS4_NO_EOS="1")
+            if not on:
+                m["DS4_IQ_Q8K"] = "0"
+            cfg = A.tune.mkcfg(f"dec-{label}", m)
+            env = dict(os.environ, SCORE_WINDOW=str(window))
+            rc = subprocess.run(["bash", f"{A.tune.T}/scorearm.sh", d, cfg, f"decode:{D}/{p}.ids:{N}"], env=env).returncode
+            if rc == 3:
+                A.stop(st, f"kernel error in the decode run {label}")
+            txt = open(f"{d}/engine.out", errors="replace").read() if os.path.exists(f"{d}/engine.out") else ""
+            # (the tokens are stdout's "%d," flushed one by one; its closing newline is not flushed before stderr's
+            # "dspark: ..." line, which lands on the same line in engine.out - so the line's leading run of "N,")
+            row = [m.group(1) for m in (re.match(r"((?:\d+,)+)", l) for l in txt.splitlines()) if m]
+            ntok = len(row[-1].strip(",").split(",")) if row else 0
+            if rc != 0 or ntok != N:
+                raise RuntimeError(f"decode run {label}: rc {rc}, {ntok} tokens in its token line "
+                                   f"{open(d + '/GUARD').read().strip() if os.path.exists(d + '/GUARD') else ''}")
+            open(tf, "w").write(row[-1])
+        return [int(x) for x in open(tf).read().strip(",").split(",") if x]
+
+    def match(a, b):
+        n = 0
+        for x, y in zip(a, b):
+            if x != y:
+                break
+            n += 1
+        return n
+
+    out = {}
+    for feed, window in (("served", 4096), ("w8", 8)):
+        res = {}
+        for on in (True, False):
+            k = "on" if on else "off"
+            res[k] = []
+            for p in ("p1", "p2", "p3"):
+                t = {pl: run(f"{feed}-{k}-{pl}-{p}", prof, on, p, window) for pl, prof in places.items()}
+                res[k].append(match(t["stock"], t["ours"]))
+        if feed == "served":   # (the same placement twice, with it on and off: must match all N)
+            out["control"] = min(match(run(f"served-{k}-stock-p1", places["stock"], k == "on", "p1", 4096),
+                                       run(f"served-{k}-stock-p1-again", places["stock"], k == "on", "p1", 4096))
+                                 for k in ("on", "off"))
+        full = {k: sum(1 for x in v if x >= N) for k, v in res.items()}
+        out[feed] = {"matched": res, "full": full,
+                     "clearly": full["on"] >= 2 and full["off"] <= 1 and sum(res["on"]) > sum(res["off"])}
+    out["control_ok"] = out["control"] >= N
+    out["clearly_raises"] = out["control_ok"] and out["served"]["clearly"]
+    f = lambda v: " / ".join(map(str, v))
+    out["line"] = (f"IQ_Q8K decode check ({N} tokens, seed 4242, stock vs our profile; matched tokens before the first "
+                   f"divergence, p1 / p2 / p3): as served - with {f(out['served']['matched']['on'])}, without "
+                   f"{f(out['served']['matched']['off'])}; 8-token windows (report only) - with "
+                   f"{f(out['w8']['matched']['on'])}, without {f(out['w8']['matched']['off'])}; control (same placement "
+                   f"twice) {out['control']} of {N}; clearly raises it: {out['clearly_raises']}")
+    st["iq_decode"] = out
+    save(st)
+    say(out["line"])
+    return out
+
+
+def engaged(d, words=("prompt skip", "borrow")):
+    p = f"{d}/engine-run.log"
+    if not d or not os.path.exists(p):
+        return 0
+    return sum(1 for l in open(p, errors="replace") if any(w in l.lower() for w in words))
+
+
+def aba(st):
+    if st.get("aba"):
+        return st["aba"]
+    f = A.final()
+    ok = lambda x: bool(x.get("dir")) and not x.get("guard") and not x.get("softstop")
+
+    abase = MODS.get("_A")   # (10-26, Karl: the combined A/B/A "#343 + IQ_Q8K vs #343 alone": A on the #343 build)
+    bmods = {k: v for k, v in MODS.items() if k != "_A"}
+
+    def a_run(k):
+        if abase:
+            A.tune.ENGINES.setdefault(abase["engine"], dict(A.tune.ENGINES["v026"], exe=f"{SC}/engine-{abase['engine']}-ds41/strata-dsv41"))
+            return A.arm(st, k, dict(f, engine=abase["engine"], **abase.get("mods", {})), f"port {PORT}: {k} = {abase}", "",
+                         passes=3, nprompt=3, cool=60)
+        return A.arm(st, k, dict(f, engine="v026"), f"port {PORT}: {k} = the ship config, stock v0.2.6", "", passes=3,
+                     nprompt=3, cool=60)
+
+    def b_run(k):
+        return A.arm(st, k, dict(f, engine=ENG, **bmods), f"port {PORT}: {k} = the ship config + {json.dumps(bmods)} on {ENG}",
+                     "", passes=3, nprompt=3, cool=60)
+    runs = {"A1": a_run("A1"), "B": b_run("B"), "A2": a_run("A2")}
+    bk = "B" if ok(runs["B"]) else None
+    if bk is None:   # (one more B, bracketed by A2 and the replacement A after it)
+        runs["B2"] = b_run("B2")
+        bk = "B2" if ok(runs["B2"]) else None
+    clean = [k for k in ("A1", "A2") if ok(runs[k])] if bk == "B" else (["A2"] if ok(runs["A2"]) else [])
+    n = 3
+    while bk and len(clean) < 2 and n <= 4:   # (a replacement for an A run that failed a guard)
+        k = f"A{n}"
+        runs[k] = a_run(k)
+        n += 1
+        if ok(runs[k]):
+            clean.append(k)
+    out = {"B": bk, "A": clean, "B_engaged_lines": engaged(runs[bk].get("dir")) if bk else 0,
+           "guards": {k: x.get("guard") or ("SOFT STOP" if x.get("softstop") else None) for k, x in runs.items() if not ok(x)}}
+    for a in clean[:2]:
+        out[f"vs_{a}"] = cmp(runs[a]["dir"], runs[bk]["dir"])
+    comps = [out[f"vs_{a}"] for a in clean[:2]]
+    if abase:   # (Karl, 10-26: the combined A/B/A keeps IQ_Q8K if decode is no worse than -1 % against #343 alone)
+        keep = len(comps) == 2 and all(((c.get("decode") or {}).get("gain_pct", -99) >= -1.0) for c in comps)
+    elif "iqq8k" in PORT and "+" not in PORT:   # (Karl: speed within noise, no worse than -1 %)
+        keep = len(comps) == 2 and all(((c.get(m) or {}).get("gain_pct", -99) >= -1.0) for c in comps for m in ("decode", "P4K", "P20K"))
+    else:
+        keep = len(comps) == 2 and all(c.get("keep") for c in comps)
+    out["keep_speed"] = keep
+    out["line"] = (f"{PORT}: " + "; ".join(f"vs {a} " + A.tune.gains(out[f'vs_{a}']) for a in clean[:2])
+                   + f" -> speed {'KEPT' if keep else 'not kept'}" + (f" (failed runs: {out['guards']})" if out["guards"] else "")
+                   + f"; engine lines in {bk}: {out['B_engaged_lines']}" + ("" if len(comps) == 2 else " - fewer than two clean A runs: undecided"))
+    st["aba"] = out
+    save(st)
+    say(out["line"])
+    return out
+
+
+def kept(port):
+    """a port's verdict from its state: the gate, the speed A/B/A and (IQ_Q8K) the placement test"""
+    pd = port.replace("+", "-")
+    try:
+        st = json.load(open(f"{R}/state-{pd}.json"))
+    except (OSError, ValueError):
+        return False
+    k, a = st.get("kl") or {}, st.get("aba") or {}
+    ok = bool(k.get("pass")) and bool(a.get("keep_speed"))
+    if "iqq8k" in port and "+" not in port:
+        w = st.get("iq_w8") or st.get("iq_w16")
+        if w:   # (10-26: judged in 8-token windows (16 never reached it); its speed in the combined A/B/A; Karl 13:20:
+            # missing the placement bar, the decode check decides)
+            consistent = bool(w.get("clearly_less")) or bool((st.get("iq_decode") or {}).get("clearly_raises"))
+            return (bool(w.get("gate")) and bool(w.get("off_identical_to_base")) and consistent
+                    and not w.get("cand_identical_to_base"))
+        ok = ok and bool((st.get("iq_extra") or {}).get("clearly_less"))
+    return ok
+
+
+def one(port, mods):
+    if port.endswith("@dec"):   # (IQ_Q8K: the decode check, after the 8-token windows' tests)
+        set_port(port[:-4], mods)
+        st = A.load()
+        iq_decode(st)
+        st["done_dec"] = time.strftime("%F %T")
+        save(st)
+        say(f"{PORT} (decode check): {'passes so far - its speed in the combined A/B/A' if kept(PORT) else 'not kept'}")
+        return
+    W = int(port.split("@w")[1]) if "@w" in port else 0
+    port = port.split("@w")[0]
+    set_port(port, mods)
+    st = A.load()
+    if W:   # (IQ_Q8K: gate, off check and placement in W-token windows; its speed comes from the combined A/B/A)
+        iq_w16(st, W)
+        st[f"done_w{W}"] = time.strftime("%F %T")
+        save(st)
+        say(f"{PORT} ({W}-token windows): {'passes so far - its speed in the combined A/B/A' if kept(PORT) else 'not kept'}")
+        return
+    if not os.path.exists(A.tune.ENGINES[ENG]["exe"]):
+        say(f"{PORT}: the build is missing ({A.tune.ENGINES[ENG]['exe']}) - nothing runs")
+        return
+    k = kl_gate(st)
+    if k.get("pass") and not k.get("identical_to_base"):
+        if "iqq8k" in PORT and "+" not in PORT:
+            iq_extra(st)   # (Karl: the placement-consistency test - the pinpoint steps with and without it)
+        aba(st)
+    else:
+        say(f"{PORT}: no A/B/A ({k.get('verdict')})")
+    st["done"] = time.strftime("%F %T")
+    st["kept"] = kept(PORT)
+    save(st)
+    say(f"{PORT}: {'KEPT' if st['kept'] else 'not kept'}")
+
+
+def st_stopped():
+    """whether the current port's state says stopped (A.stop: a kernel event - 8080 stays down, nothing else runs)"""
+    try:
+        return json.load(open(A.STATE)).get("stopped")
+    except (OSError, ValueError):
+        return None
+
+
+def main():
+    os.makedirs(R, exist_ok=True)
+    args = sys.argv[1:]
+    specs = [(args[i], json.loads(args[i + 1]) if i + 1 < len(args) else {}) for i in range(0, len(args), 2)]
+    A.STATE, A.LOG = f"{R}/state-session.json", f"{R}/session.log"
+    ss = A.load()
+    if ss.get("stopped"):
+        say(f"not resuming: stopped earlier ({ss['stopped']})")
+        return 1
+    ss["gap_open"] = None   # (a new session: its own gap)
+    A.open_gap(ss)
+    lines = []
+    for port, mods in specs:
+        if port.startswith("?"):
+            port = port[1:]
+            if not all(kept(p) for p in port.split("+")):
+                A.STATE, A.LOG = f"{R}/state-session.json", f"{R}/session.log"
+                say(f"{port}: skipped - not every port in it was kept")
+                continue
+        try:
+            one(port, mods)
+            lines.append(f"{port}: {'KEPT' if kept(port.split('@')[0]) else 'not kept'}")
+        except (Exception, SystemExit) as e:   # noqa: BLE001  (a failed run must not keep 8080 down; a kernel error has
+            if isinstance(e, SystemExit) and str(st_stopped()) != "None":   # already stopped through A.stop)
+                raise
+            lines.append(f"{port}: could not finish ({type(e).__name__}: {e})")
+            A.STATE, A.LOG = f"{R}/state-session.json", f"{R}/session.log"
+            say(f"{port}: could not finish ({type(e).__name__}: {e}) - going on")
+    A.STATE, A.LOG = f"{R}/state-session.json", f"{R}/session.log"
+    rc = A.close_gap(ss)
+    say("session: " + "; ".join(lines))
+    A.notify("Ports measured", "; ".join(lines)[:300] + f"; 8080 {'back on P021m' if rc == 0 else 'NOT restored'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

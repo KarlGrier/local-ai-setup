@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+# AMENDMENT 2026-11-07 (Karl, 11-07, on results/r23/port-0211/HUNT-1107.md) - it applies from now on, not to finished gates:
+#   "Measurement rule: yes, as a dated amendment applying from now on. Per-workload prompt numbers exclude the
+#   chat-cache save. Time the save as its own line in every screen, and judge it separately against its own noise,
+#   taking its two-speed pattern into account, so a real regression in saving still shows."
+# This file's own screen code is the pre-amendment client clock of its finished gate(s) and is kept as it ran. A new
+# gate takes the amended numbers and the chat-cache save line from work/r22/g17_rules.py ("11-07 park amendment":
+# screen_rows / screen_passes / baseline_speed / wl_noloss / save_rule), not from a copy of this file's code.
+"""g16_rules.py - round 22 gap 16: Karl's switch rule (10-30, conditions 1-5), written down BEFORE the gap ran.
+
+  chk2 ANALYZE_OWN [--gate NAME --gates FILE] [--info]   check (2) from one `sampling_probe.py analyze own` file (case
+       arith-j3): the samples that reached the tie position, the tie token's observed vs expected share, p, and the
+       smallest difference the check could detect there. PASS = p >= 0.05 and nothing outside the allowed set (Karl's
+       rule). --info: the arm is reported, not judged (stock v0.2.8; the 3-token-window diagnostics).
+  chk1 COMPARE [--gate NAME --gates FILE]                 check (1) from neartie_compare.py's output: speculative vs
+       speculation-off samples on the same build, the same numbers. PASS = p >= 0.05.
+  speed TABLE                                             the speed screen (abreport's table; arms M = P021m's test form,
+       X = the port with the conversation cache off, Xc = with it on; 3 passes each)
+  bp90 DIR                                                Basalt's community-1 fixtures, cold, 3 passes (cold-M / cold-H
+       = the port): Karl 10-30, "use the per-test decode spread as the 3-pass decode check for the port decision"
+  toolcalls M.jsonl X.jsonl [--gate NAME --gates FILE]   the live tool-call test (work/r22/toolrecovery) on P021m (M)
+       and the port as served (X, recovery off): Karl 10-30 12:3x, added before gap 16's results - "the port as served
+       (recovery off) must not make more spurious calls or lose more real calls than P021m on that test". PASS = X's
+       responses with a spurious call <= M's and X's responses with a lost call <= M's (toolrecovery_live.py's own
+       counts: SPURIOUS verdicts or flags; LOST / LOST? verdicts).
+  decide GATES TABLE BP90DIR [--no-hook]                  SWITCH (exit 0) only if every required gate is PASS (or INFO
+       where only a measurement is required) and both speed rules PASS; anything else NO SWITCH (exit 1), with the reasons.
+       Inside the gap (tmp/port-gap.lockpid set) and with no toolcalls gate yet, it first runs gap16-toolcalls.sh (the
+       tool-call test came after gap16.sh had started; that script cannot be edited while it runs). --no-hook: never.
+
+Smallest detectable difference: two-sided alpha 0.05 at 80 % power (z 1.960 + 0.842), in percentage points of the tie
+token's share; check (2) one sample against the reference share, check (1) two samples.
+
+Speed rules (pre-registered):
+  screen  per pass, the geometric mean over the 9 workloads of the engine's decode tok/s and of prompt tok/s; X vs M =
+          the ratio of the pass means' geometric means; noise = the larger arm's pass-to-pass spread (max / min - 1).
+          PASS: X >= M - 1.0 % on decode and on prompts, and no workload's prompt rate (mean of its passes) more than
+          3 % below M's. Between -1.0 % and -noise: BORDERLINE (no switch, Karl: "if anything is borderline, leave P021m
+          serving"); below -noise: FAIL. Xc is reported (the price of 0.2.3's conversation cache), not judged.
+  bp90    cold, 3 passes: each fixture's decode (conv, struct, prose): X >= M - that fixture's spread (the larger of the
+          two builds'); the token-weighted blend X >= M - 1.0 %; 16K and 64K prompt X >= M - 1.0 %.
+
+Karl's exception (10-30, after the speed results and before the remaining ones): the bp90 rule failed only on the long
+cold prompts (16K -1.9 %, 64K -1.0 %; about 0.1 s per prompt) and Karl accepts exactly that miss: "If every remaining
+check passes, switch 8080 to the port with the fork on and v2 on ... This is an explicit exception to the prompt rule."
+decide therefore does not count the Basalt fixtures against the switch when the only failed lines are the 16K and 64K
+prompts and neither is lower than Karl's numbers (PROMPT_EXCEPTION: -1.9 % and -1.0 % at their rounding edges). Every
+decode line, the blend, the speed screen and every required gate still decide as before; "If any remaining check fails,
+or the fork has to be off, no switch."
+"""
+import argparse
+import json
+import math
+import re
+import statistics as st
+import sys
+from pathlib import Path
+
+Z = 1.959964 + 0.841621
+Z95 = 1.959964
+REQUIRED = [
+    # builds and tests
+    "build_x", "build_xm", "build_m21t", "build_s28t", "tests", "v2_unit",
+    # PREFILL_V2 bit-identical (condition 5)
+    "e7_v2", "e7_repeat", "logits_identical",
+    # quality gates unchanged (condition 4): both forms of the KL rule, and lossless
+    "lossless", "kl_rule2", "kl_rule3",
+    # check (2) with the 1-token reference for every build (condition 1); stock is measured, not judged
+    "chk2_m21t_nospec", "chk2_x_fork", "chk2_x_nofork", "chk2_s28t_nospec",
+    # the speculative path (condition 3), the port with the fork, and P021m the same way
+    "chk1_x_ess", "chk2_x_ess", "chk1_m21t_ess", "chk2_m21t_ess",
+    # the served form, as gap 10 checked P021m before its switch
+    "chatcache", "vision",
+    # the live tool-call test, P021m vs the port as served (Karl 10-30 12:3x)
+    "toolcalls",
+]
+# Karl 10-30: the long cold prompts' miss accepted for this switch, no lower than his numbers (see the docstring)
+PROMPT_EXCEPTION = {"16K prompt": -0.0195, "64K prompt": -0.0105}
+
+
+def gate(a, status, detail):
+    if a.gates and a.gate:
+        with open(a.gates, "a") as f:
+            f.write(f"{a.gate} {status} {detail}\n")
+
+
+def chk2(a):
+    row = None
+    for line in Path(a.file).read_text().splitlines() if Path(a.file).exists() else []:
+        if line.startswith("| arith-j3"):
+            row = [c.strip() for c in line.strip().strip("|").split("|")]
+            break
+    if not row:
+        print(f"{a.file}: no arith-j3 row")
+        gate(a, "FAIL", "no arith-j3 row")
+        return 1
+    n = int(row[2].split()[0])
+    m = re.match(r"'(.*?)': (\d+) vs ([\d.]+)", row[3])
+    obs, exp = int(m.group(2)), float(m.group(3))
+    p0 = exp / n
+    se = math.sqrt(p0 * (1 - p0) / n)
+    pval, outside = float(row[5]), int(row[6])
+    ok = pval >= 0.05 and outside == 0
+    line = (f"{n} of {row[1]} samples at the tie; '{m.group(1)}' {100 * obs / n:.1f} % vs {100 * p0:.1f} % expected "
+            f"({100 * (obs / n - p0):+.1f} points); chi-square {row[4]}, p {pval:.3f}, outside {outside}; 95 % +/- "
+            f"{100 * Z95 * se:.1f} points, smallest detectable {100 * Z * se:.1f} points")
+    status = "INFO" if a.info else ("PASS" if ok else "FAIL")
+    print(f"{line} -> {status}")
+    gate(a, status, line)
+    return 0
+
+
+def chk1(a):
+    txt = Path(a.file).read_text() if Path(a.file).exists() else ""
+    arms = re.findall(r"^(\S+): '.*?' (\d+) of (\d+)", txt, re.M)
+    v = re.search(r"([+-][\d.]+) points, z ([-\d.]+), two-sided p ([\d.]+)", txt)
+    if len(arms) < 2 or not v:
+        print(f"{a.file}: no comparison")
+        gate(a, "FAIL", "no comparison")
+        return 1
+    (l1, e1, n1), (l2, e2, n2) = [(x, int(y), int(z)) for x, y, z in arms[:2]]
+    pb = (e1 + e2) / (n1 + n2)
+    se = math.sqrt(pb * (1 - pb) * (1 / n1 + 1 / n2))
+    pval = float(v.group(3))
+    line = (f"{l2} {e2}/{n2} vs {l1} {e1}/{n1} at the tie: {v.group(1)} points, p {pval:.3f}; 95 % +/- "
+            f"{100 * Z95 * se:.1f} points, smallest detectable {100 * Z * se:.1f} points")
+    status = "PASS" if pval >= 0.05 else "FAIL"
+    print(f"{line} -> {status}")
+    gate(a, status, line)
+    return 0
+
+
+def gm(v):
+    return math.exp(sum(math.log(x) for x in v) / len(v))
+
+
+def speed_rule(table):
+    rows = {}
+    for line in Path(table).read_text().splitlines():
+        c = [x.strip() for x in line.split("|")[1:-1]]
+        if len(c) < 11:
+            continue
+        m = re.match(r"^(M|X|Xc)(\d)[nar]$", c[0])
+        if m:
+            rows.setdefault((m.group(1), int(m.group(2))), {})[c[1]] = (float(c[5]), float(c[8]))
+    out, ok, notes = [], True, []
+    passes = sorted({k for (arm, k) in rows if arm == "M"})
+    if not passes or any((x, k) not in rows for x in ("M", "X") for k in passes):
+        return False, ["speed screen: arms or passes missing"]
+    wl = sorted(rows[("M", passes[0])])
+    for idx, name in ((0, "decode"), (1, "prompt")):
+        g = {(arm, k): gm([rows[(arm, k)][w][idx] for w in wl]) for (arm, k) in rows if len(rows[(arm, k)]) == len(wl)}
+        mean = {arm: gm([g[(arm, k)] for k in passes if (arm, k) in g]) for arm in ("M", "X", "Xc")
+                if any((arm, k) in g for k in passes)}
+        spread = {arm: max(g[(arm, k)] for k in passes) / min(g[(arm, k)] for k in passes) - 1 for arm in ("M", "X")}
+        noise = max(spread.values())
+        d = mean["X"] / mean["M"] - 1
+        v = "PASS" if d >= -0.010 else ("BORDERLINE" if d >= -noise else "FAIL")
+        ok &= v == "PASS"
+        xc = f"; Xc {100 * (mean['Xc'] / mean['M'] - 1):+.1f} % (conversation cache on, reported)" if "Xc" in mean else ""
+        out.append(f"speed screen {name}: X {100 * d:+.2f} % vs M (M {mean['M']:.1f}, X {mean['X']:.1f} geometric means; "
+                   f"pass spread M {100 * spread['M']:.1f} %, X {100 * spread['X']:.1f} %){xc} -> {v}")
+    for w in wl:
+        pm = st.mean(rows[("M", k)][w][1] for k in passes)
+        px = st.mean(rows[("X", k)][w][1] for k in passes)
+        if px < 0.97 * pm:
+            ok = False
+            notes.append(f"speed screen prompt {w}: X {100 * (px / pm - 1):+.1f} % (more than 3 % below M) -> FAIL")
+    return ok, out + notes
+
+
+def bp90_rule(d):
+    d = Path(d)
+    load = lambda n: [json.loads(x) for x in (d / f"{n}.jsonl").read_text().splitlines() if x.strip()] \
+        if (d / f"{n}.jsonl").exists() else []
+    M, X = load("cold-M"), load("cold-H")
+    if not M or not X:
+        return False, ["Basalt fixtures: cold-M / cold-H missing"], {"missing": None}
+    out, ok, failed = [], True, {}
+
+    def per(recs, test, key):
+        return [r[key] for r in recs if r["test"] == test and r.get(key)]
+
+    def blends(recs):
+        b = []
+        for p in sorted({r["pass"] for r in recs}):
+            rs = [r for r in recs if r["pass"] == p and r["test"] in ("conv", "struct", "prose")]
+            if len(rs) == 3:
+                b.append(sum(r["predicted_n"] for r in rs) / (sum(r["predicted_ms"] for r in rs) / 1000))
+        return b
+    for t in ("conv", "struct", "prose"):
+        m, x = per(M, t, "decode_tps"), per(X, t, "decode_tps")
+        sp = max((max(v) - min(v)) / st.mean(v) for v in (m, x))
+        dd = st.mean(x) / st.mean(m) - 1
+        v = "PASS" if dd >= -sp else "FAIL"
+        ok &= v == "PASS"
+        if v == "FAIL":
+            failed[f"{t} decode"] = dd
+        out.append(f"Basalt {t} decode: X {st.mean(x):.1f} vs M {st.mean(m):.1f} ({100 * dd:+.1f} %; spread {100 * sp:.1f} %) -> {v}")
+    for name, m, x in (("blend", blends(M), blends(X)), ("16K prompt", per(M, "pp16k", "prompt_tps"), per(X, "pp16k", "prompt_tps")),
+                       ("64K prompt", per(M, "pp64k", "prompt_tps"), per(X, "pp64k", "prompt_tps"))):
+        dd = st.mean(x) / st.mean(m) - 1
+        v = "PASS" if dd >= -0.010 else "FAIL"
+        ok &= v == "PASS"
+        if v == "FAIL":
+            failed[name] = dd
+        out.append(f"Basalt {name}: X {st.mean(x):,.1f} vs M {st.mean(m):,.1f} ({100 * dd:+.1f} %) -> {v}")
+    return ok, out, failed
+
+
+def tool_counts(path):
+    rows = [json.loads(x) for x in Path(path).read_text().splitlines() if x.strip()]
+    spur = sum(1 for r in rows if r["verdict"].startswith("SPURIOUS") or any(f.startswith("SPURIOUS") for f in r["flags"]))
+    lost = sum(1 for r in rows if r["verdict"].startswith("LOST"))
+    err = sum(1 for r in rows if r["verdict"] == "ERROR")
+    per = {}
+    for r in rows:
+        k = f"{r['shape']} {'must call' if r['expect'] == 'call' else 'must not'}"
+        per.setdefault(k, {})[r["verdict"]] = per.setdefault(k, {}).get(r["verdict"], 0) + 1
+    return len(rows), spur, lost, err, per
+
+
+def toolcalls(a):
+    nm, sm, lm, em, pm = tool_counts(a.m)
+    nx, sx, lx, ex, px = tool_counts(a.x)
+    for k in sorted(set(pm) | set(px)):
+        print(f"  {k:22} P021m {dict(sorted(pm.get(k, {}).items()))}  port {dict(sorted(px.get(k, {}).items()))}")
+    ok = nm == nx and nm > 0 and sx <= sm and lx <= lm and ex == 0 and em == 0
+    line = (f"P021m {nm} responses: {sm} with a spurious call, {lm} with a lost call, {em} errors; port as served {nx}: "
+            f"{sx} spurious, {lx} lost, {ex} errors (rule: port spurious <= P021m's and port lost <= P021m's)")
+    status = "PASS" if ok else "FAIL"
+    print(f"{line} -> {status}")
+    gate(a, status, line)
+    return 0
+
+
+def decide(a):
+    import subprocess
+    gp = Path(a.gates)
+    have_tc = gp.exists() and any(x.startswith("toolcalls ") for x in gp.read_text().splitlines())
+    lockpid = Path("/home/USER/ai-speed-testing/strata-compare/tmp/port-gap.lockpid")
+    if not a.no_hook and not have_tc and lockpid.exists() and lockpid.read_text().strip():
+        hook = Path("/home/USER/ai-speed-testing/strata-compare/work/r22/gap16-toolcalls.sh")
+        log = gp.parent / "toolcalls-run.log"
+        with open(log, "a") as f:
+            rc = subprocess.run(["bash", str(hook)], stdout=f, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL).returncode
+        print(f"tool-call step (gap16-toolcalls.sh) rc {rc}")
+    g = {}
+    for line in Path(a.gates).read_text().splitlines() if Path(a.gates).exists() else []:
+        k, _, rest = line.partition(" ")
+        s, _, det = rest.partition(" ")
+        g[k] = (s, det)     # the last line of a gate counts
+    reasons = []
+    for k in REQUIRED:
+        s = g.get(k, ("MISSING", ""))[0]
+        if s not in ("PASS", "INFO") or (s == "INFO" and k != "chk2_s28t_nospec"):
+            reasons.append(f"{k}: {s} {g.get(k, ('', ''))[1]}".strip())
+    sok, sl = speed_rule(a.table)
+    bok, bl, bfail = bp90_rule(a.bp90)
+    exc = not bok and set(bfail) <= set(PROMPT_EXCEPTION) and all(bfail[k] >= PROMPT_EXCEPTION[k] for k in bfail)
+    for x in sl + bl:
+        print(x)
+    if not sok:
+        reasons.append("speed screen: not PASS")
+    if exc:
+        print("Basalt fixtures: only the long cold prompts miss (" + ", ".join(f"{k} {100 * v:+.2f} %" for k, v in bfail.items())
+              + ") - Karl's 10-30 exception, not counted against the switch")
+    elif not bok:
+        reasons.append("Basalt fixtures: not PASS" + (" (outside Karl's long-prompt exception: "
+                       + ", ".join(f"{k} {100 * v:+.2f} %" if v is not None else k for k, v in bfail.items()) + ")"))
+    print("DECISION: " + ("SWITCH" if not reasons else "NO SWITCH") + (" (with Karl's long-prompt exception)" if exc and not reasons else ""))
+    for r in reasons:
+        print(f"  - {r}")
+    return 0 if not reasons else 1
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    sp = ap.add_subparsers(dest="cmd", required=True)
+    for c in ("chk2", "chk1"):
+        p = sp.add_parser(c)
+        p.add_argument("file")
+        p.add_argument("--gate")
+        p.add_argument("--gates")
+        p.add_argument("--info", action="store_true")
+    p = sp.add_parser("speed")
+    p.add_argument("table")
+    p = sp.add_parser("bp90")
+    p.add_argument("dir")
+    p = sp.add_parser("toolcalls")
+    p.add_argument("m")
+    p.add_argument("x")
+    p.add_argument("--gate")
+    p.add_argument("--gates")
+    p.add_argument("--info", action="store_true")
+    p = sp.add_parser("decide")
+    p.add_argument("gates")
+    p.add_argument("table")
+    p.add_argument("bp90")
+    p.add_argument("--no-hook", action="store_true")
+    a = ap.parse_args()
+    if a.cmd == "chk2":
+        return chk2(a)
+    if a.cmd == "chk1":
+        return chk1(a)
+    if a.cmd == "toolcalls":
+        return toolcalls(a)
+    if a.cmd == "speed":
+        ok, lines = speed_rule(a.table)
+        print("\n".join(lines))
+        return 0 if ok else 1
+    if a.cmd == "bp90":
+        ok, lines, _ = bp90_rule(a.dir)
+        print("\n".join(lines))
+        return 0 if ok else 1
+    return decide(a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

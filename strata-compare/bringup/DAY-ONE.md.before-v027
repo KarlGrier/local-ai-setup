@@ -1,0 +1,68 @@
+# Day one — a new model or a new release on this PC (one page)
+
+**10-27 refresh for Strata v0.2.6** (what changed and why: `bringup/REFRESH-1027.md`; the old page: `DAY-ONE.md.before-v026`).
+Order (the user's): release summary and the go → headers → disk → pinned download → stock build + lossless config →
+speed screen + quick suite at medium → report and the go → only then our patch series.
+
+**Before anything is built (no GPU)**
+1. **Summary.** `git -C strata fetch --tags origin`; `bringup/out/RUN/run.env` (`RB_TAG`, `RB_GGUF`, `RB_MTP` for
+   qwen4exp, `export RB_CACHE=$WS/tmp/RUN`); `bringup/runbook.sh RUN summary` → `summary-raw.md` (diff vs the
+   baseline, new switches and flags, the "by default" / "bit-exact" lines, the release notes) and STOP. Send the user a
+   short summary - what changed on our path, new defaults, anything not bit-exact, concurrency - and **wait for the go**.
+2. **Headers before the download.** `strata-<tag>/tools/strata_inspect.py hf:<org>/<repo> <variant>` (upstream's own
+   check); `bringup/fetch_model.py pins` (repo at a commit: size + sha256 per file; edit down to the exact files) then
+   `fetch_model.py heads` (each GGUF's header only + `NAME.size`); `inspect_model.py <head shard 1> --tree strata-<tag>`
+   → **RUNS** / **RUNS WITH THESE PATCHES OFF** / **NEEDS UPSTREAM SUPPORT** (it names exactly what: the architecture,
+   a pinned key, a format, a dense model); `fitplan.py` and `placements.py` on the same head file: slots per card, RAM
+   against the 12 GB floor and the 20 GB relief line, `need_ram_mib`, the pack size, the disk after the download.
+3. **Disk.** `fetch_model.py plan`: >= 100 GB must stay free. Short → a list with sizes for the user; delete nothing.
+4. **Download as a user unit.** `fetch_model.py unit --name qwen4-download ...` prints the `systemd-run --user` line
+   (MemoryHigh 2G); never into ~/.cache; `models/<name>/fetch-done` = every file's sha256 matched its pin. The qwen4exp
+   path also needs the model's MTP drafter and an expert profile of its shape (layers x experts) from the release.
+
+**Phase A — the release alone (GPU; 8080 stopped first by your decision; P021m stays the rollback)**
+5. `RB_GO=1 bringup/runbook.sh RUN summary preflight clone inspect fitplan config` → **read `configs/stock.json`**:
+   upstream flags only, `STRATA_ROUTE_TAIL_SKIP=0 STRATA_ADAPT_ASYNC=0 STRATA_PREFILL_CPU_SHARE=0`, sampling 1.0 / 0.95 /
+   20 / min-p 0.05, effort medium (also its `.shared-settings.json`), conversation cache explicit with a 12 GB floor.
+   Then `bringup/runbook.sh RUN pack build stock screen suite`: the build in `bringup/out/RUN/` (pinned ggml, <= 16
+   jobs, memory guard); exact7 twice + a served greedy repeat (does it repeat?), the lossless log check, the decode
+   screen against P021m, the suite's quick run at medium. Every GPU stage: no other server, `kcheck.sh` before and
+   after, `tmp/gpu-test.lock`, MemAvailable >= 12 GB, the swap rule. Then `./switch-model.sh strata` (P021m on 8080).
+6. **Report phase A** (speed, repeatability, lossless check, suite, lowest memory) and **wait for the go**.
+
+**Phase B — our series (after the go)**
+7. `bringup/runbook.sh RUN series` (P021m's 30 commits from `r22-port021-cont2`; it stops where they do not apply - the
+   ledger pass: `bringup/lib/pick.sh` in ledger order, `resolve.py`, per row: upstream carries it → drop; neither a fix
+   nor >= 1 % → drop; model-specific parts refitted: `patches/LEDGER.md` "model assumptions", the guards the inspector
+   lists), `RB_PATCHES=<new series>`, then `bringup/runbook.sh RUN series-all`: patched-off = stock (MATCHED slots),
+   each switch's gate, calibration, screens, acceptance, soak. Promotion is the user's decision, with a rollback test.
+
+**Memory and the kernel** — floor MemAvailable 12 GB (never lower on our own; NVFP4 packs: 6), relief restart 20 GB;
+fail a run on the engine's VmSwap > 0 or a swap-in / swap-out streak (5 samples, >= 4 MB; swap-outs only after the first
+episode, which is logged only); `bringup/lib/kcheck.sh` after every run - a page-allocation-failure-only log under
+pressure: drop the run and go on (10-25), anything else: stop and tell the user; `stressapptest -M 80000 -s 3600 -W` once
+before the first run with more than 60 GiB page-locked (fitplan prints the note).
+
+**Known traps on this PC** (RTX 5080 16 GB Gen5 x16 + RTX 4060 Ti 8 GB on a Gen4 x4 link, 96 GB DDR5-6000, 9950X3D;
+the monitor on the iGPU since 10-23 - check `nvidia-smi`, don't assume): keep `--remote-expert-opt` out (−18 % here);
+`--pcie-frac` auto since 10-23 (no forced 0); helper slots 3,300 for IQ3_S; one model server at a time; don't edit
+`runbook.sh` while it runs (bash reads it by offset); `pkill -f` / `pgrep -f` can match your own shell - kill by PID,
+find engines by process name; the start line `STRATA_ROUTE_TAIL_SKIP=7 is ON (default)` prints on two cards without
+acting - the per-request `route tail skip: N` line is the evidence; P021m's own config sets neither `TAIL_SKIP=0` nor
+`ADAPT_ASYNC=0` (fine on its v0.2.1 engine, required from v0.2.5 on); serve-mode logs carry no `patch guards` line
+(read it from the CLI stage).
+
+**Older lessons, still true**
+* A shard the engine's reader rejects (Round 15: UD-Q5_K_XL shard 1 six bytes short of its aligned data section): the
+  inspector flags it; fallback: splice its experts into a file that loads (work/r15/splice.py).
+* Experts bigger than RAM: v0.1.45+ keep the helper card's cache beside `--resident-budget-gib N` (+100 MiB reserve,
+  `STRATA_UNBUFFERED_LOAD=1`: +15–48 % here); both cards + `--mmap-experts` was 2.1x slower (Q4 file, v0.1.40); size the
+  budget by a FULL run (parked chats add ~3 GiB an hour). Such placements do not repeat run to run: the runbook gates by
+  first-difference agreement and teacher-forced NLL.
+* A new default can change outputs without any of our patches (v0.1.41's CPU prompt share, v0.1.42's tail skip, v0.2.5's
+  asynchronous adaptive tier): run the release with its defaults AND with each such default off, gate with them off, and
+  decide each on its own. Rounding-level = within our two references' spread (the 10-26 yardstick rule).
+* exact7 compares builds only at MATCHED slot counts (pin 2500 since 10-22); a long-text NLL check must exercise what it
+  tests (work/r16/s1_tflong2.sh), with a known rounding-level switch as its control.
+* `STRATA_PREFILL_TIMING=1` (+ `STRATA_SPLIT_TIMING=1`) splits a prompt read by phase and stage; check
+  `bringup/out/tmp/NEW-RELEASE-*` at every phase boundary.

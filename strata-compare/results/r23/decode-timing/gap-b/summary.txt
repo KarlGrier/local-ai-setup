@@ -1,0 +1,388 @@
+=== 2026-11-05 03:04:50 DECODE ITEMS GAP B (work/r23/gap-decode-b.sh): the 9-workload screen + Basalt's bp90 fixtures (GATE-PLAN.md 3.4, 3.5) - measurements only, P028x stays served, nothing switches (Karl 11-04)
+=== 2026-11-05 03:04:50 part a: items L, O; engine-r23decode 48337a6023d8; arms screened: B LO L O Bs Os
+2026-11-05 03:04:50 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 1024059 (engine 1024074)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-05 05:54:44 port_gap4: gap open: test lock held (pid 1095269), 8080 stopped
+=== 2026-11-05 05:54:44 8080 down: engines left: none, MemAvailable 84 GB
+=== 2026-11-05 05:54:44 2 the 9-workload screen, 3 passes in turned order: B L O LO Bs Os | Os Bs LO O L B | O B Os LO Bs L
+=== 2026-11-05 05:54:44 screen B1 (r23-B.json, 2 GPU(s))
+server ready (guard pid 1095512, server pid 1095534) load_time_s 15.359383626 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-B1_20261105T055445.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1095552: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+B1n W1-think r0: prompt 110 ttft 0.311 s, 3072 tokens, 169.73 tok/s, length
+B1n W2-code r0: prompt 126 ttft 0.329 s, 3072 tokens, 154.54 tok/s, length
+B1n W3-research r0: prompt 26729 ttft 6.034 s, 2048 tokens, 169.77 tok/s, length
+B1a A-edit r0: prompt 2677 ttft 1.013 s, 170 tokens, 130.03 tok/s, tool_calls
+B1a B-write r0: prompt 1370 ttft 0.848 s, 3801 tokens, 155.89 tok/s, tool_calls
+B1r R1-verify20k r0: prompt 24240 ttft 5.525 s, 3680 tokens, 154.36 tok/s, stop
+B1r R2-report54k r0: prompt 54071 ttft 12.022 s, 4096 tokens, 155.63 tok/s, length
+B1r R3-extract5k r0: prompt 5011 ttft 1.444 s, 1115 tokens, 175.08 tok/s, stop
+B1r R4-agent33k r0: prompt 33417 ttft 7.838 s, 431 tokens, 133.4 tok/s, tool_calls
+vram at end: 0, 15490 MiB, 444 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-05 05:58:37   gate pcie_B1 INFO PCIe share: the CPU pool takes 48 us per missed expert (42.9 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 05:58:37 screen L1 (r23-L.json, 2 GPU(s))
+server ready (guard pid 1098346, server pid 1098361) load_time_s 15.360859304 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-L1_20261105T055839.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1098379: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+L1n W1-think r0: prompt 110 ttft 0.299 s, 3072 tokens, 169.3 tok/s, length
+L1n W2-code r0: prompt 124 ttft 0.322 s, 3072 tokens, 168.29 tok/s, length
+L1n W3-research r0: prompt 26726 ttft 6.033 s, 2048 tokens, 161.44 tok/s, length
+L1a A-edit r0: prompt 2679 ttft 1.012 s, 329 tokens, 120.78 tok/s, tool_calls
+L1a B-write r0: prompt 1371 ttft 0.848 s, 3015 tokens, 157.78 tok/s, tool_calls
+L1r R1-verify20k r0: prompt 24238 ttft 5.534 s, 3849 tokens, 158.5 tok/s, stop
+L1r R2-report54k r0: prompt 54067 ttft 12.015 s, 3504 tokens, 152.34 tok/s, stop
+L1r R3-extract5k r0: prompt 5011 ttft 1.445 s, 1571 tokens, 186.29 tok/s, stop
+L1r R4-agent33k r0: prompt 33414 ttft 7.829 s, 276 tokens, 129.4 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want late): late present, one absent -> PASS
+=== 2026-11-05 06:02:24   gate pcie_L1 INFO PCIe share: the CPU pool takes 38 us per missed expert (54.0 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:02:24 screen O1 (r23-O.json, 2 GPU(s))
+server ready (guard pid 1101077, server pid 1101099) load_time_s 14.346957578 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-O1_20261105T060225.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1101124: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+O1n W1-think r0: prompt 111 ttft 0.311 s, 3072 tokens, 172.79 tok/s, length
+O1n W2-code r0: prompt 125 ttft 0.319 s, 3072 tokens, 169.81 tok/s, length
+O1n W3-research r0: prompt 26729 ttft 6.042 s, 2048 tokens, 155.91 tok/s, length
+O1a A-edit r0: prompt 2676 ttft 1.013 s, 1717 tokens, 144.23 tok/s, tool_calls
+O1a B-write r0: prompt 1369 ttft 0.838 s, 1351 tokens, 168.42 tok/s, tool_calls
+O1r R1-verify20k r0: prompt 24240 ttft 5.524 s, 3806 tokens, 157.74 tok/s, stop
+O1r R2-report54k r0: prompt 54069 ttft 12.013 s, 3913 tokens, 153.4 tok/s, stop
+O1r R3-extract5k r0: prompt 5010 ttft 1.444 s, 1082 tokens, 174.48 tok/s, stop
+O1r R4-agent33k r0: prompt 33416 ttft 7.839 s, 354 tokens, 140.1 tok/s, tool_calls
+vram at end: 0, 15496 MiB, 438 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want one): late absent, one present -> PASS
+=== 2026-11-05 06:06:08   gate pcie_O1 INFO PCIe share: the CPU pool takes 45 us per missed expert (45.5 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:06:08 screen LO1 (r23-LO.json, 2 GPU(s))
+server ready (guard pid 1103697, server pid 1103712) load_time_s 14.339747391 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-LO1_20261105T060609.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1103730: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+LO1n W1-think r0: prompt 111 ttft 0.314 s, 3072 tokens, 168.11 tok/s, length
+LO1n W2-code r0: prompt 122 ttft 0.31 s, 3072 tokens, 158.39 tok/s, length
+LO1n W3-research r0: prompt 26729 ttft 6.041 s, 2048 tokens, 159.73 tok/s, length
+LO1a A-edit r0: prompt 2677 ttft 1.023 s, 331 tokens, 119.56 tok/s, tool_calls
+LO1a B-write r0: prompt 1368 ttft 0.847 s, 1134 tokens, 179.56 tok/s, tool_calls
+LO1r R1-verify20k r0: prompt 24240 ttft 5.531 s, 3580 tokens, 153.11 tok/s, stop
+LO1r R2-report54k r0: prompt 54070 ttft 12.011 s, 3016 tokens, 153.75 tok/s, stop
+LO1r R3-extract5k r0: prompt 5011 ttft 1.444 s, 1198 tokens, 175.48 tok/s, stop
+LO1r R4-agent33k r0: prompt 33417 ttft 7.844 s, 465 tokens, 136.04 tok/s, tool_calls
+vram at end: 0, 15498 MiB, 436 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want late,one): late present, one present -> PASS
+=== 2026-11-05 06:09:38   gate pcie_LO1 INFO PCIe share: the CPU pool takes 42 us per missed expert (48.9 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:09:38 screen Bs1 (r23-Bs.json, 1 GPU(s))
+server ready (guard pid 1106202, server pid 1106217) load_time_s 13.326752786 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-Bs1_20261105T060939.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 15 MiB, 7875 MiB 
+engine pid 1106235: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s), --kv-resident 32768
+ENV CHECK OK
+Bs1n W1-think r0: prompt 110 ttft 0.322 s, 3072 tokens, 167.26 tok/s, length
+Bs1n W2-code r0: prompt 124 ttft 0.317 s, 3072 tokens, 135.67 tok/s, length
+Bs1n W3-research r0: prompt 26728 ttft 6.052 s, 2048 tokens, 138.05 tok/s, length
+Bs1a A-edit r0: prompt 2678 ttft 1.022 s, 313 tokens, 108.4 tok/s, tool_calls
+Bs1a B-write r0: prompt 1369 ttft 0.842 s, 633 tokens, 122.81 tok/s, tool_calls
+Bs1r R1-verify20k r0: prompt 24241 ttft 5.529 s, 3677 tokens, 137.69 tok/s, stop
+Bs1r R2-report54k r0: prompt 54070 ttft 12.025 s, 2800 tokens, 123.16 tok/s, stop
+Bs1r R3-extract5k r0: prompt 5011 ttft 1.429 s, 1031 tokens, 146.98 tok/s, stop
+Bs1r R4-agent33k r0: prompt 33415 ttft 7.839 s, 359 tokens, 112.54 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 15 MiB, 7875 MiB 
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-05 06:13:18   gate pcie_Bs1 INFO PCIe share: the CPU pool takes 37 us per missed expert (55.0 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:13:18 screen Os1 (r23-Os.json, 1 GPU(s))
+server ready (guard pid 1108658, server pid 1108673) load_time_s 13.318213142 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-Os1_20261105T061320.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 15 MiB, 7875 MiB 
+engine pid 1108691: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s), --kv-resident 32768
+ENV CHECK OK
+Os1n W1-think r0: prompt 110 ttft 0.29 s, 3072 tokens, 154.03 tok/s, length
+Os1n W2-code r0: prompt 124 ttft 0.322 s, 3072 tokens, 137.45 tok/s, length
+Os1n W3-research r0: prompt 26728 ttft 6.05 s, 2048 tokens, 139.77 tok/s, length
+Os1a A-edit r0: prompt 2678 ttft 1.026 s, 174 tokens, 112.78 tok/s, tool_calls
+Os1a B-write r0: prompt 1371 ttft 0.854 s, 3304 tokens, 138.08 tok/s, tool_calls
+Os1r R1-verify20k r0: prompt 24240 ttft 5.533 s, 3676 tokens, 136.46 tok/s, stop
+Os1r R2-report54k r0: prompt 54070 ttft 12.019 s, 3708 tokens, 137.1 tok/s, stop
+Os1r R3-extract5k r0: prompt 5010 ttft 1.448 s, 1073 tokens, 154.68 tok/s, stop
+Os1r R4-agent33k r0: prompt 33414 ttft 7.847 s, 287 tokens, 113.42 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 15 MiB, 7875 MiB 
+start lines (want one): late absent, one present -> PASS
+=== 2026-11-05 06:17:20   gate pcie_Os1 INFO PCIe share: the CPU pool takes 37 us per missed expert (55.3 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:17:20 screen Os2 (r23-Os.json, 1 GPU(s))
+server ready (guard pid 1111396, server pid 1111411) load_time_s 13.320946066 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-Os2_20261105T061721.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 15 MiB, 7875 MiB 
+engine pid 1111429: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s), --kv-resident 32768
+ENV CHECK OK
+Os2n W1-think r0: prompt 110 ttft 0.3 s, 3072 tokens, 154.43 tok/s, length
+Os2n W2-code r0: prompt 125 ttft 0.327 s, 3072 tokens, 133.22 tok/s, length
+Os2n W3-research r0: prompt 26730 ttft 6.044 s, 2048 tokens, 138.06 tok/s, length
+Os2a A-edit r0: prompt 2676 ttft 1.021 s, 773 tokens, 123.19 tok/s, tool_calls
+Os2a B-write r0: prompt 1369 ttft 0.846 s, 320 tokens, 128.76 tok/s, tool_calls
+Os2r R1-verify20k r0: prompt 24240 ttft 5.515 s, 3676 tokens, 134.85 tok/s, stop
+Os2r R2-report54k r0: prompt 54071 ttft 12.02 s, 2344 tokens, 125.59 tok/s, stop
+Os2r R3-extract5k r0: prompt 5011 ttft 1.448 s, 892 tokens, 154.44 tok/s, stop
+Os2r R4-agent33k r0: prompt 33416 ttft 7.837 s, 345 tokens, 119.82 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 15 MiB, 7875 MiB 
+start lines (want one): late absent, one present -> PASS
+=== 2026-11-05 06:20:58   gate pcie_Os2 INFO PCIe share: the CPU pool takes 37 us per missed expert (55.7 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:20:58 screen Bs2 (r23-Bs.json, 1 GPU(s))
+server ready (guard pid 1113814, server pid 1113829) load_time_s 13.313424216 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-Bs2_20261105T062059.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 15 MiB, 7875 MiB 
+engine pid 1113847: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s), --kv-resident 32768
+ENV CHECK OK
+Bs2n W1-think r0: prompt 109 ttft 0.295 s, 3072 tokens, 176.4 tok/s, length
+Bs2n W2-code r0: prompt 123 ttft 0.322 s, 3072 tokens, 148.93 tok/s, length
+Bs2n W3-research r0: prompt 26729 ttft 6.044 s, 2048 tokens, 133.31 tok/s, length
+Bs2a A-edit r0: prompt 2678 ttft 1.025 s, 350 tokens, 103.96 tok/s, tool_calls
+Bs2a B-write r0: prompt 1370 ttft 0.853 s, 1560 tokens, 151.86 tok/s, tool_calls
+Bs2r R1-verify20k r0: prompt 24240 ttft 5.535 s, 3832 tokens, 134.86 tok/s, stop
+Bs2r R2-report54k r0: prompt 54070 ttft 12.023 s, 3112 tokens, 125.25 tok/s, stop
+Bs2r R3-extract5k r0: prompt 5012 ttft 1.463 s, 1429 tokens, 159.0 tok/s, stop
+Bs2r R4-agent33k r0: prompt 33416 ttft 7.847 s, 334 tokens, 113.84 tok/s, tool_calls
+vram at end: 0, 15486 MiB, 448 MiB 1, 15 MiB, 7875 MiB 
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-05 06:24:47   gate pcie_Bs2 INFO PCIe share: the CPU pool takes 37 us per missed expert (54.7 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:24:47 screen LO2 (r23-LO.json, 2 GPU(s))
+server ready (guard pid 1116251, server pid 1116266) load_time_s 14.349146041 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-LO2_20261105T062448.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1116284: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+LO2n W1-think r0: prompt 110 ttft 0.289 s, 3072 tokens, 192.56 tok/s, length
+LO2n W2-code r0: prompt 124 ttft 0.313 s, 3072 tokens, 165.05 tok/s, length
+LO2n W3-research r0: prompt 26728 ttft 6.036 s, 2048 tokens, 161.84 tok/s, length
+LO2a A-edit r0: prompt 2678 ttft 1.012 s, 195 tokens, 136.17 tok/s, tool_calls
+LO2a B-write r0: prompt 1371 ttft 0.849 s, 2589 tokens, 163.44 tok/s, tool_calls
+LO2r R1-verify20k r0: prompt 24239 ttft 5.53 s, 3578 tokens, 160.01 tok/s, stop
+LO2r R2-report54k r0: prompt 54071 ttft 12.011 s, 3035 tokens, 154.23 tok/s, stop
+LO2r R3-extract5k r0: prompt 5010 ttft 1.443 s, 1130 tokens, 184.33 tok/s, stop
+LO2r R4-agent33k r0: prompt 33416 ttft 7.837 s, 298 tokens, 138.66 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want late,one): late present, one present -> PASS
+=== 2026-11-05 06:28:19   gate pcie_LO2 INFO PCIe share: the CPU pool takes 37 us per missed expert (54.9 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:28:19 screen O2 (r23-O.json, 2 GPU(s))
+server ready (guard pid 1118774, server pid 1118789) load_time_s 15.354284145 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-O2_20261105T062820.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1118808: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+O2n W1-think r0: prompt 112 ttft 0.297 s, 2707 tokens, 171.39 tok/s, stop
+O2n W2-code r0: prompt 122 ttft 0.31 s, 3072 tokens, 152.3 tok/s, length
+O2n W3-research r0: prompt 26729 ttft 6.041 s, 2048 tokens, 163.26 tok/s, length
+O2a A-edit r0: prompt 2677 ttft 1.013 s, 312 tokens, 137.05 tok/s, tool_calls
+O2a B-write r0: prompt 1369 ttft 0.844 s, 1740 tokens, 166.31 tok/s, tool_calls
+O2r R1-verify20k r0: prompt 24237 ttft 5.528 s, 4003 tokens, 154.71 tok/s, stop
+O2r R2-report54k r0: prompt 54070 ttft 12.022 s, 3019 tokens, 147.53 tok/s, stop
+O2r R3-extract5k r0: prompt 5011 ttft 1.448 s, 1124 tokens, 177.3 tok/s, stop
+O2r R4-agent33k r0: prompt 33415 ttft 7.836 s, 264 tokens, 119.72 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want one): late absent, one present -> PASS
+=== 2026-11-05 06:31:53   gate pcie_O2 INFO PCIe share: the CPU pool takes 48 us per missed expert (43.0 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:31:53 screen L2 (r23-L.json, 2 GPU(s))
+server ready (guard pid 1121290, server pid 1121305) load_time_s 14.336213982 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-L2_20261105T063154.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1121323: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+L2n W1-think r0: prompt 111 ttft 0.304 s, 3072 tokens, 166.0 tok/s, length
+L2n W2-code r0: prompt 125 ttft 0.314 s, 3072 tokens, 157.2 tok/s, length
+L2n W3-research r0: prompt 26727 ttft 6.042 s, 2048 tokens, 168.5 tok/s, length
+L2a A-edit r0: prompt 2679 ttft 1.019 s, 916 tokens, 143.18 tok/s, tool_calls
+L2a B-write r0: prompt 1371 ttft 0.845 s, 2853 tokens, 156.35 tok/s, tool_calls
+L2r R1-verify20k r0: prompt 24239 ttft 5.522 s, 3587 tokens, 153.95 tok/s, stop
+L2r R2-report54k r0: prompt 54072 ttft 12.02 s, 2747 tokens, 152.95 tok/s, stop
+L2r R3-extract5k r0: prompt 5012 ttft 1.416 s, 994 tokens, 175.4 tok/s, stop
+L2r R4-agent33k r0: prompt 33417 ttft 7.843 s, 332 tokens, 142.25 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want late): late present, one absent -> PASS
+=== 2026-11-05 06:35:34   gate pcie_L2 INFO PCIe share: the CPU pool takes 39 us per missed expert (52.7 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:35:34 screen B2 (r23-B.json, 2 GPU(s))
+server ready (guard pid 1123979, server pid 1123994) load_time_s 14.351710700 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-B2_20261105T063535.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1124012: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+B2n W1-think r0: prompt 111 ttft 0.313 s, 3072 tokens, 166.18 tok/s, length
+B2n W2-code r0: prompt 125 ttft 0.318 s, 3072 tokens, 170.61 tok/s, length
+B2n W3-research r0: prompt 26729 ttft 6.082 s, 2048 tokens, 166.14 tok/s, length
+B2a A-edit r0: prompt 2677 ttft 1.016 s, 326 tokens, 121.37 tok/s, tool_calls
+B2a B-write r0: prompt 1372 ttft 0.849 s, 2085 tokens, 159.91 tok/s, tool_calls
+B2r R1-verify20k r0: prompt 24237 ttft 5.523 s, 3893 tokens, 159.81 tok/s, stop
+B2r R2-report54k r0: prompt 54072 ttft 12.02 s, 2892 tokens, 149.2 tok/s, stop
+B2r R3-extract5k r0: prompt 5010 ttft 1.444 s, 1244 tokens, 179.93 tok/s, stop
+B2r R4-agent33k r0: prompt 33417 ttft 7.847 s, 404 tokens, 133.9 tok/s, tool_calls
+vram at end: 0, 15490 MiB, 444 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-05 06:39:10   gate pcie_B2 INFO PCIe share: the CPU pool takes 46 us per missed expert (44.3 GB/s of expert bytes), the link 57.1 GB
+=== 2026-11-05 06:39:10 screen O3 (r23-O.json, 2 GPU(s))
+server ready (guard pid 1126539, server pid 1126554) load_time_s 14.337100449 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-O3_20261105T063911.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1126579: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+O3n W1-think r0: prompt 112 ttft 0.312 s, 3072 tokens, 167.64 tok/s, length
+O3n W2-code r0: prompt 124 ttft 0.319 s, 3072 tokens, 167.0 tok/s, length
+O3n W3-research r0: prompt 26730 ttft 6.084 s, 2048 tokens, 159.45 tok/s, length
+O3a A-edit r0: prompt 2677 ttft 1.023 s, 523 tokens, 131.76 tok/s, tool_calls
+O3a B-write r0: prompt 1369 ttft 0.833 s, 3162 tokens, 161.27 tok/s, tool_calls
+O3r R1-verify20k r0: prompt 24241 ttft 5.533 s, 3749 tokens, 154.65 tok/s, stop
+O3r R2-report54k r0: prompt 54072 ttft 12.023 s, 3387 tokens, 149.62 tok/s, stop
+O3r R3-extract5k r0: prompt 5012 ttft 1.445 s, 1492 tokens, 177.19 tok/s, stop
+O3r R4-agent33k r0: prompt 33417 ttft 7.841 s, 391 tokens, 127.42 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want one): late absent, one present -> PASS
+=== 2026-11-05 06:42:58   gate pcie_O3 INFO PCIe share: the CPU pool takes 46 us per missed expert (44.6 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:42:58 screen B3 (r23-B.json, 2 GPU(s))
+server ready (guard pid 1129400, server pid 1129415) load_time_s 15.347747069 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-B3_20261105T064259.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1129433: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+B3n W1-think r0: prompt 111 ttft 0.298 s, 3072 tokens, 164.83 tok/s, length
+B3n W2-code r0: prompt 123 ttft 0.312 s, 3072 tokens, 170.2 tok/s, length
+B3n W3-research r0: prompt 26729 ttft 6.04 s, 2048 tokens, 164.37 tok/s, length
+B3a A-edit r0: prompt 2679 ttft 1.016 s, 883 tokens, 146.87 tok/s, tool_calls
+B3a B-write r0: prompt 1371 ttft 0.842 s, 1553 tokens, 161.05 tok/s, tool_calls
+B3r R1-verify20k r0: prompt 24241 ttft 5.525 s, 3767 tokens, 154.97 tok/s, stop
+B3r R2-report54k r0: prompt 54071 ttft 12.021 s, 3945 tokens, 154.45 tok/s, stop
+B3r R3-extract5k r0: prompt 5012 ttft 1.447 s, 1196 tokens, 180.08 tok/s, stop
+B3r R4-agent33k r0: prompt 33416 ttft 7.838 s, 442 tokens, 134.15 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-05 06:46:40   gate pcie_B3 INFO PCIe share: the CPU pool takes 45 us per missed expert (45.9 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:46:40 screen Os3 (r23-Os.json, 1 GPU(s))
+server ready (guard pid 1131992, server pid 1132014) load_time_s 13.317753430 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-Os3_20261105T064642.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 15 MiB, 7875 MiB 
+engine pid 1132032: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s), --kv-resident 32768
+ENV CHECK OK
+Os3n W1-think r0: prompt 111 ttft 0.296 s, 3072 tokens, 156.13 tok/s, length
+Os3n W2-code r0: prompt 126 ttft 0.325 s, 3072 tokens, 138.81 tok/s, length
+Os3n W3-research r0: prompt 26729 ttft 6.041 s, 2048 tokens, 143.15 tok/s, length
+Os3a A-edit r0: prompt 2676 ttft 1.025 s, 461 tokens, 114.89 tok/s, tool_calls
+Os3a B-write r0: prompt 1371 ttft 0.854 s, 1770 tokens, 141.44 tok/s, tool_calls
+Os3r R1-verify20k r0: prompt 24238 ttft 5.537 s, 3731 tokens, 136.65 tok/s, stop
+Os3r R2-report54k r0: prompt 54070 ttft 12.025 s, 3446 tokens, 131.01 tok/s, stop
+Os3r R3-extract5k r0: prompt 5010 ttft 1.453 s, 1241 tokens, 149.72 tok/s, stop
+Os3r R4-agent33k r0: prompt 33416 ttft 7.853 s, 339 tokens, 104.02 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 15 MiB, 7875 MiB 
+start lines (want one): late absent, one present -> PASS
+=== 2026-11-05 06:50:34   gate pcie_Os3 INFO PCIe share: the CPU pool takes 38 us per missed expert (53.4 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 06:50:34 screen LO3 (r23-LO.json, 2 GPU(s))
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-LO.log)
+  [strata] 2026-11-05 06:50:37 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r23decode/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack --native /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf --ple-gguf /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf --expert-profile /home/USER/ai-speed-testing/strata-compare/strata-cstar18/data/expert-profile.bin --expert-cache auto --prefill auto:16384 --spec 7 --spec-min-p 0.5 --mtp /home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt --max-context 131072 --kv int8 --ple-inflight 128 --vram-reserve-mib 713 --chat-cache 16 --chat-cache-mib 12288 --expert-cache-device1 3300 --conversation-cache-mib 0 --kv-resident 32768
+  strata generate: CUDA1 context ready, 1.00 GiB free before expert arena registration
+server exited
+start lines (want late,one): late absent, one absent; MISSING late, one (the switch's path did not run: UNEXERCISED) -> FAIL
+=== 2026-11-05 06:50:39   gate pcie_LO3 INFO no PCIe share line
+=== 2026-11-05 06:50:39 screen Bs3 (r23-Bs.json, 1 GPU(s))
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-Bs.log)
+  [strata] 2026-11-05 06:50:41 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r23decode/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack --native /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf --ple-gguf /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf --expert-profile /home/USER/ai-speed-testing/strata-compare/strata-cstar18/data/expert-profile.bin --expert-cache auto --prefill auto:16384 --spec 7 --spec-min-p 0.5 --mtp /home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt --max-context 131072 --kv int8 --ple-inflight 128 --vram-reserve-mib 713 --chat-cache 16 --chat-cache-mib 12288 --conversation-cache-mib 0 --kv-resident 32768
+server exited
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-05 06:50:42   gate pcie_Bs3 INFO no PCIe share line
+=== 2026-11-05 06:50:42 screen L3 (r23-L.json, 2 GPU(s))
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-L.log)
+  [strata] 2026-11-05 06:50:43 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r23decode/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack --native /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf --ple-gguf /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf --expert-profile /home/USER/ai-speed-testing/strata-compare/strata-cstar18/data/expert-profile.bin --expert-cache auto --prefill auto:16384 --spec 7 --spec-min-p 0.5 --mtp /home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt --max-context 131072 --kv int8 --ple-inflight 128 --vram-reserve-mib 713 --chat-cache 16 --chat-cache-mib 12288 --expert-cache-device1 3300 --conversation-cache-mib 0 --kv-resident 32768
+  strata generate: CUDA1 context ready, 1.00 GiB free before expert arena registration
+server exited
+start lines (want late): late absent, one absent; MISSING late (the switch's path did not run: UNEXERCISED) -> FAIL
+=== 2026-11-05 06:50:44   gate pcie_L3 INFO no PCIe share line
+=== 2026-11-05 06:50:44 3 Basalt's fixtures, cold, 3 passes: B and LO (decode, pp16k, pp64k)
+Traceback (most recent call last):
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-B.log)
+  strata generate: CUDA1 context ready, 0.99 GiB free before expert arena registration
+server exited
+Traceback (most recent call last):
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-B.log)
+  strata generate: CUDA1 context ready, 0.99 GiB free before expert arena registration
+server exited
+Traceback (most recent call last):
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-B.log)
+  strata generate: CUDA1 context ready, 0.99 GiB free before expert arena registration
+server exited
+Traceback (most recent call last):
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-LO.log)
+  strata generate: CUDA1 context ready, 0.99 GiB free before expert arena registration
+server exited
+Traceback (most recent call last):
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-LO.log)
+  strata generate: CUDA1 context ready, 0.99 GiB free before expert arena registration
+server exited
+Traceback (most recent call last):
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-LO.log)
+  strata generate: CUDA1 context ready, 0.99 GiB free before expert arena registration
+server exited
+Traceback (most recent call last):
+EngineDied: the engine exited before it was ready (see /home/USER/ai-speed-testing/strata-compare/logs/engine-r23-LO.log)
+  strata generate: CUDA1 context ready, 0.99 GiB free before expert arena registration
+server exited
+server ready (guard pid 1136601, server pid 1136623) load_time_s 15.359249115 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpLO-pp16k-2_20261105T065112.log
+engine pid 1136641: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpLO-pp16k-2 pass 2 pp16k: 16676 tokens, 3830.7 tok/s engine
+server ready (guard pid 1137265, server pid 1137280) load_time_s 14.344264413 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpLO-pp64k-2_20261105T065207.log
+engine pid 1137298: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpLO-pp64k-2 pass 2 pp64k: 66617 tokens, 4362.1 tok/s engine
+server ready (guard pid 1137886, server pid 1137901) load_time_s 14.332900346 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpB-decode-2_20261105T065311.log
+engine pid 1137919: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpB-decode-2 pass 2 conv: 1070 tokens (stop), 143.7 tok/s decode
+bpB-decode-2 pass 2 struct: 7230 tokens (stop), 225.0 tok/s decode
+bpB-decode-2 pass 2 prose: 1200 tokens (length), 128.2 tok/s decode
+server ready (guard pid 1139075, server pid 1139090) load_time_s 15.357067622 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpB-pp16k-2_20261105T065450.log
+engine pid 1139108: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpB-pp16k-2 pass 2 pp16k: 16676 tokens, 3849.3 tok/s engine
+server ready (guard pid 1139674, server pid 1139689) load_time_s 15.356913370 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpB-pp64k-2_20261105T065545.log
+engine pid 1139714: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpB-pp64k-2 pass 2 pp64k: 66617 tokens, 4386.4 tok/s engine
+server ready (guard pid 1140304, server pid 1140319) load_time_s 14.337953657 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpB-decode-3_20261105T065650.log
+engine pid 1140338: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpB-decode-3 pass 3 conv: 1140 tokens (stop), 153.2 tok/s decode
+bpB-decode-3 pass 3 struct: 7230 tokens (stop), 231.3 tok/s decode
+bpB-decode-3 pass 3 prose: 1200 tokens (length), 134.0 tok/s decode
+server ready (guard pid 1141597, server pid 1141620) load_time_s 14.349625058 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpB-pp16k-3_20261105T065828.log
+engine pid 1141638: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpB-pp16k-3 pass 3 pp16k: 16676 tokens, 3843.5 tok/s engine
+server ready (guard pid 1142227, server pid 1142242) load_time_s 14.345856129 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpB-pp64k-3_20261105T065921.log
+engine pid 1142260: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpB-pp64k-3 pass 3 pp64k: 66617 tokens, 4383.0 tok/s engine
+server ready (guard pid 1142921, server pid 1142937) load_time_s 14.336756141 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpLO-decode-3_20261105T070025.log
+engine pid 1142962: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpLO-decode-3 pass 3 conv: 1058 tokens (stop), 151.5 tok/s decode
+bpLO-decode-3 pass 3 struct: 7230 tokens (stop), 234.8 tok/s decode
+bpLO-decode-3 pass 3 prose: 1200 tokens (length), 141.1 tok/s decode
+server ready (guard pid 1144368, server pid 1144383) load_time_s 15.363143060 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpLO-pp16k-3_20261105T070202.log
+engine pid 1144401: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpLO-pp16k-3 pass 3 pp16k: 16676 tokens, 3843.2 tok/s engine
+server ready (guard pid 1145113, server pid 1145138) load_time_s 14.341218356 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23b-bpLO-pp64k-3_20261105T070257.log
+engine pid 1145156: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpLO-pp64k-3 pass 3 pp64k: 66617 tokens, 4353.6 tok/s engine
+decode items, gap b - decision (2026-11-05 07:03:59; rules: work/r23/decode_rules.py, written before the gaps)
+  L vs B: 2 / 3 complete clean passes of 3
+  O vs B decode: -0.33 % (155.6 vs 156.1 tok/s; noise 3.8 %) -> no loss
+  O vs B prompt: +0.23 % (2,098.4 vs 2,093.7 tok/s; noise 0.9 %) -> no loss
+  O vs B per workload: none of the 9 slower beyond its noise
+  LO vs B: 2 / 3 complete clean passes of 3
+  Os vs Bs: 3 / 2 complete clean passes of 3
+  bp90 conv: B 2 / LO 1 passes of 3 - not decided
+  bp90 struct: B 2 / LO 1 passes of 3 - not decided
+  bp90 prose: B 2 / LO 1 passes of 3 - not decided
+  bp90 pp16k: B 2 / LO 2 passes of 3 - not decided
+  bp90 pp64k: B 2 / LO 2 passes of 3 - not decided
+  gate lines_LO3: FAIL start lines (want late,one): late absent, one absent; MISSING late, one (the switch's path did not run: UNEXERCISED)
+  gate lines_L3: FAIL start lines (want late): late absent, one absent; MISSING late (the switch's path did not run: UNEXERCISED)
+  settled PCIe share per arm pass (INFO): B1 PCIe share: the CPU pool takes 48 us per missed expert (42.9; B2 PCIe share: the CPU pool takes 46 us per missed expert (44.3; B3 PCIe share: the CPU pool takes 45 us per missed expert (45.9; Bs1 PCIe share: the CPU pool takes 37 us per missed expert (55.0; Bs2 PCIe share: the CPU pool takes 37 us per missed expert (54.7; Bs3 no PCIe share line [23b 11-05 06:50]; L1 PCIe share: the CPU pool takes 38 us per missed expert (54.0; L2 PCIe share: the CPU pool takes 39 us per missed expert (52.7; L3 no PCIe share line [23b 11-05 06:50]; LO1 PCIe share: the CPU pool takes 42 us per missed expert (48.9; LO2 PCIe share: the CPU pool takes 37 us per missed expert (54.9; LO3 no PCIe share line [23b 11-05 06:50]; O1 PCIe share: the CPU pool takes 45 us per missed expert (45.5; O2 PCIe share: the CPU pool takes 48 us per missed expert (43.0; O3 PCIe share: the CPU pool takes 46 us per missed expert (44.6; Os1 PCIe share: the CPU pool takes 37 us per missed expert (55.3; Os2 PCIe share: the CPU pool takes 37 us per missed expert (55.7; Os3 PCIe share: the CPU pool takes 38 us per missed expert (53.4
+=> item L (STRATA_REMOTE_LATE_LAUNCH=1): NOT DECIDED (L screen NOT DECIDED; LO screen NOT DECIDED; bp90 NOT DECIDED)
+=> item O (STRATA_POOL_ONE_BATCH=1): NOT DECIDED (Os screen NOT DECIDED; LO screen NOT DECIDED; bp90 NOT DECIDED); one card (Os vs Bs): no gain beyond max(noise, 1 %)
+=> item L+O (both): NOT DECIDED (LO screen NOT DECIDED; bp90 NOT DECIDED)
+Nothing is switched or served: a PASS / GAIN item is a candidate for after item 7 (Karl decides; GATE-PLAN section 5: mechanism + no loss may be enough for one item, Karl's call).
+=== 2026-11-05 07:03:59 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-05 07:04:05 port_gap4: memory back: MemAvailable 86 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-05 07:04:26 port_gap4: no swap-out while P028x started
+2026-11-05 07:04:26 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-05 07:04:26 decode gap b done (69 min with 8080 down)

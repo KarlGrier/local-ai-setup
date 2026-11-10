@@ -1,0 +1,88 @@
+--- a/local_deep_research/advanced_search_system/tools/fetch/__init__.py
++++ b/local_deep_research/advanced_search_system/tools/fetch/__init__.py
+@@ -54,6 +54,13 @@
+ CONTENT_FETCH_TIMEOUT = 30
+ CONTENT_MAX_LENGTH = 10_000
+ 
++# --- deep-research patch (workspace): larger pages and extractions, page cache, evidence recording (LDR_DEEP=1)
++from .... import deep as _deep  # noqa: E402
++
++_DEEP = _deep.config()
++if _DEEP.enabled:
++    CONTENT_MAX_LENGTH = _DEEP.fetch_max_chars
++
+ # Cap for credential-scrubbed fetch-tool error strings. Larger than the
+ # 200-char HTTP-client default because these errors feed the agent's
+ # reasoning; credential scrubbing still runs first on the full string (#4633).
+@@ -336,6 +343,11 @@
+         # INSIDE the try so the denial is returned as a recoverable
+         # tool message.
+         _enforce_url_policy(url, egress_context)
++        _store = getattr(collector, "deep_store", None)
++        cached = _store.cached_page(url) if _store is not None else None
++        if cached is not None:
++            logger.info(f"[FETCH] mode={mode_label} url={url} — page cache hit (deep)")
++            return dict(cached), url, None
+         enable_js = _read_js_rendering_setting(settings_snapshot)
+         with ContentFetcher(
+             timeout=CONTENT_FETCH_TIMEOUT,
+@@ -343,6 +355,8 @@
+             egress_context=egress_context,
+         ) as fetcher:
+             result = fetcher.fetch(url, max_length=CONTENT_MAX_LENGTH)
++        if _store is not None and isinstance(result, dict):
++            _store.cache_page(url, result)
+ 
+     return result, url, None
+ 
+@@ -495,12 +509,30 @@
+             if use_query:
+                 fmt_kwargs["overall_query"] = overall_query
+             prompt = template.format(**fmt_kwargs)
++            if _DEEP.enabled:
++                from ....deep.prompts import EXTRACT_LIMIT_NEW, EXTRACT_LIMIT_OLD
++
++                prompt = prompt.replace(
++                    EXTRACT_LIMIT_OLD,
++                    EXTRACT_LIMIT_NEW.format(max_chars=_DEEP.extract_max_chars),
++                )
+ 
+             try:
+-                summary_msg = model.invoke(prompt)
+-                summary = getattr(
+-                    summary_msg, "content", str(summary_msg)
+-                ).strip()
++                if _DEEP.enabled:
++                    # explicit effort (LDR_DEEP_EXTRACT_EFFORT); an answer-less call that thought until
++                    # max_tokens is retried one effort lower (medium, then low)
++                    from ....deep.llm import invoke as _deep_invoke
++
++                    summary, _info = _deep_invoke(model, prompt, _DEEP.extract_effort, what=f"extraction {url}")
++                    if len(_info["efforts"]) > 1:
++                        _st = getattr(collector, "deep_store", None)
++                        if _st is not None:
++                            _st.add_note("extract_retry", url=url, page_chars=len(content), efforts=_info["efforts"])
++                else:
++                    summary_msg = model.invoke(prompt)
++                    summary = getattr(
++                        summary_msg, "content", str(summary_msg)
++                    ).strip()
+             except Exception as exc:
+                 # Redacted scheme://host + mode only — no page content,
+                 # focus, or credentials in the message. Traceback follows
+@@ -539,10 +571,15 @@
+             # registration: the agent should be free to re-fetch the URL
+             # later with a different focus instead of seeing it as
+             # already-cached with an empty body.
++            _store = getattr(collector, "deep_store", None)
+             if not summary:
++                if _store is not None:
++                    _store.add_fetch(None, url, title, focus, content, "NOT RELEVANT")
+                 return f"NOT RELEVANT (no spans matched focus at {url})"
+ 
+             cite_idx = _register_in_collector(collector, url, title, summary)
++            if _store is not None:
++                _store.add_fetch(cite_idx, url, title, focus, content, summary)
+             return f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{summary}"
+         except PolicyDeniedError as exc:
+             # Recoverable per-URL denial — return a tool message so both the

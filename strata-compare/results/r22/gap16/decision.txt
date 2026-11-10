@@ -1,0 +1,11 @@
+tool-call step (gap16-toolcalls.sh) rc 0
+speed screen decode: X +1.03 % vs M (M 155.6, X 157.2 geometric means; pass spread M 2.8 %, X 1.9 %); Xc -0.2 % (conversation cache on, reported) -> PASS
+speed screen prompt: X -0.03 % vs M (M 2114.1, X 2113.5 geometric means; pass spread M 0.4 %, X 0.4 %); Xc -6.8 % (conversation cache on, reported) -> PASS
+Basalt conv decode: X 148.5 vs M 146.6 (+1.3 %; spread 3.5 %) -> PASS
+Basalt struct decode: X 228.4 vs M 228.6 (-0.1 %; spread 2.6 %) -> PASS
+Basalt prose decode: X 133.2 vs M 133.9 (-0.5 %; spread 8.7 %) -> PASS
+Basalt blend: X 198.4 vs M 199.7 (-0.6 %) -> PASS
+Basalt 16K prompt: X 3,826.7 vs M 3,901.2 (-1.9 %) -> FAIL
+Basalt 64K prompt: X 4,382.5 vs M 4,427.5 (-1.0 %) -> FAIL
+Basalt fixtures: only the long cold prompts miss (16K prompt -1.91 %, 64K prompt -1.02 %) - Karl's 10-30 exception, not counted against the switch
+DECISION: SWITCH (with Karl's long-prompt exception)

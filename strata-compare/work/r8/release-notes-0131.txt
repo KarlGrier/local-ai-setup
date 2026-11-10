@@ -1,0 +1,7 @@
+9259cad4cfa3543cd3b8decab5962672b968c649
+Thu Oct 1 06:27:52 2026 +0200
+Engine 0.1.31: Unsloth UD-Q4_K_XL runs on a 64 GB PC (experimental: split GGUF, Q4_K/Q5_K/Q5_1/Q8_0 experts, RAM budget + SSD tier with routing prefetch), the low-RAM mode reads GGUF experts in place, Windows GGUF load 2x (#230), server status race (#266) and tokenizer (#268) fixes, truncated tool calls (#211/#231), AMD intrinsics (#262); setup requires it
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0154bwiad8gY7wRehCXy27pN
+

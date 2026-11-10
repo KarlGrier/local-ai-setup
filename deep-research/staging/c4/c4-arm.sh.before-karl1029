@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# c4-arm.sh - one arm of the Sonnet 5.5 experiment (C4): its Anthropic budget guard + an LDR against it.
+# STAGED 2026-10-29, never run for real (staging/c4/README.md).
+#
+#   ./c4-arm.sh plan   <arm>   checks + what would be started; starts nothing
+#   ./c4-arm.sh guard  <arm>   the arm's guard only (a probe, or a pilot driven by hand)
+#   ./c4-arm.sh start  <arm>   the guard (unless running) + LDR (the staged run-ldr.sh with LDR_BACKEND=guard)
+#   ./c4-arm.sh stop   <arm>   LDR, then the guard
+#   ./c4-arm.sh status <arm>
+#
+# <arm> = arms/<arm>.env (ours | stock). A variable the caller sets wins over the arm file, e.g. the $3 pilot:
+#   C4_RUN_SUFFIX=pilot GUARD_RUN_CAP_USD=3 ./c4-arm.sh start ours        (run id o03-ours-pilot)
+# Folders: $C4_ROOT (default ~/ai/deep-research/results/bench2/sonnet55)/<arm>/{run,logs,data,deep-runs,guard}; the
+# ledger both arms share (the $60 total counts everything in it): $C4_ROOT/ledger.json.
+# Draft arm files (GUARD_STATUS=draft) need C4_ALLOW_DRAFT=1 (which also lets run-ldr.sh take the draft profile).
+# Nothing here touches the live LDR (run/, port 5000, strata-proxy, run/bench.lock) or starts/stops SearXNG.
+set -euo pipefail
+
+WS=/home/USER/ai/deep-research
+C4=$(dirname "$(realpath "$0")")
+VENV=$WS/.venv
+DEEP_PKG=${LDR_DEEP_PKG:-$VENV/lib/python3.12/site-packages/local_deep_research/deep}
+PROFILES_DIR=${LDR_PROFILES_DIR:-$WS/profiles}
+C4_ROOT=$(realpath -m "${C4_ROOT:-$WS/results/bench2/sonnet55}")
+
+die()  { echo "c4-arm: $*" >&2; exit 1; }
+info() { echo "c4-arm: $*"; }
+pid_alive() { [[ -f $1 ]] && kill -0 "$(cat "$1")" 2>/dev/null; }
+listener() { ss -H -ltnp "( sport = :$1 )" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2 || true; }
+port_used() { [[ -n $(ss -H -ltn "( sport = :$1 )" 2>/dev/null) ]]; }
+
+cmd=${1:-}; arm=${2:-}
+[[ -n $cmd && -n $arm ]] || { sed -n '2,19p' "$0"; exit 2; }
+[[ $arm =~ ^[a-z0-9-]+$ ]] || die "arm name: lower-case letters, digits, '-'"
+ARM_FILE=$C4/arms/$arm.env
+[[ -f $ARM_FILE ]] || die "no arm file $ARM_FILE"
+set -a
+# shellcheck disable=SC1090
+source "$ARM_FILE"
+set +a
+[[ ${GUARD_ARM:-} == "$arm" ]] || die "$ARM_FILE: GUARD_ARM=${GUARD_ARM:-?} is not $arm"
+RUN_ID=$GUARD_RUN_ID${C4_RUN_SUFFIX:+-$C4_RUN_SUFFIX}
+ARM_DIR=$C4_ROOT/$arm${C4_RUN_SUFFIX:+-$C4_RUN_SUFFIX}
+GDIR=$ARM_DIR/guard
+LEDGER=${GUARD_LEDGER:-$C4_ROOT/ledger.json}
+GUARD_URL=http://127.0.0.1:$GUARD_PORT
+LDR_VENV_USE=$VENV
+if [[ ${LDR_PROFILE:-deep} == baseline && ${C4_STOCK_MODE:-venv} == venv ]]; then LDR_VENV_USE=$STOCK_VENV; fi
+
+preflight() {   # $1 = what is about to start: plan | guard | ldr
+  [[ ${GUARD_STATUS:-draft} != draft || ${C4_ALLOW_DRAFT:-0} == 1 ]] \
+    || die "$ARM_FILE is a draft (GUARD_STATUS=draft) - set C4_ALLOW_DRAFT=1 to use it anyway"
+  case $C4_ROOT/ in
+    "$WS"/run/*|"$WS"/logs/*|"$WS"/data/*|"$WS"/results/deep-runs/*|"$WS"/results/quick-runs/*|"$WS"/jobs/*|"$WS"/reports/*)
+      die "C4_ROOT=$C4_ROOT is inside a live folder of the main LDR";;
+  esac
+  local p
+  for p in "$GUARD_PORT" "$C4_LDR_PORT"; do
+    [[ $p =~ ^[0-9]+$ ]] || die "port '$p' is not a number"
+    case $p in 3000|5000|8080|8090|8888|8889|8890) die "port $p belongs to a live service";; esac
+  done
+  [[ $GUARD_PORT != "$C4_LDR_PORT" ]] || die "the guard and LDR need different ports"
+  [[ -f $GUARD_KEY_FILE ]] || die "no key file $GUARD_KEY_FILE (it is checked, never read, here)"
+  awk -v a="${GUARD_RUN_CAP_USD:-0}" -v t="${GUARD_TOTAL_CAP_USD:-0}" 'BEGIN{exit !(a > 0 && t > 0 && a <= t)}' \
+    || die "caps: run \$${GUARD_RUN_CAP_USD:-?} must be > 0 and <= total \$${GUARD_TOTAL_CAP_USD:-?}"
+  if [[ $1 != guard ]]; then
+    [[ -f $DEEP_PKG/modelprofile.py ]] || die "the profile loader $DEEP_PKG/modelprofile.py is missing - install C3 first"
+    [[ -f $PROFILES_DIR/${LDR_MODEL_PROFILE}.env ]] || die "no profile $PROFILES_DIR/${LDR_MODEL_PROFILE}.env (C3 install)"
+    [[ -x $LDR_VENV_USE/bin/ldr-web ]] \
+      || die "no LDR install at $LDR_VENV_USE (the stock arm's own venv is not built yet - README, step 1)"
+  fi
+}
+
+start_guard() {
+  if pid_alive "$GDIR/guard.pid"; then info "guard already running (pid $(cat "$GDIR/guard.pid"))"; return; fi
+  ! port_used "$GUARD_PORT" || die "port $GUARD_PORT is taken (pid $(listener "$GUARD_PORT"))"
+  mkdir -p "$GDIR"
+  # lock descriptors are closed for the child (a script holding a lock on 8/9 must not pass it on)
+  GUARD_RUN_ID=$RUN_ID GUARD_LEDGER=$LEDGER GUARD_LOG_DIR=$GDIR \
+    setsid nohup "$VENV/bin/python" -I "$C4/tools/anthropic_guard.py" >> "$GDIR/guard.out" 2>&1 < /dev/null 8>&- 9>&- &
+  echo $! > "$GDIR/guard.pid"
+  local i; for i in $(seq 1 40); do
+    curl -s -m 1 -o /dev/null "$GUARD_URL/health" && break
+    pid_alive "$GDIR/guard.pid" || { tail -20 "$GDIR/guard.out"; die "the guard exited during start"; }
+    sleep 0.25
+  done
+  curl -s -m 2 -o /dev/null "$GUARD_URL/health" || die "the guard did not answer on $GUARD_URL (see $GDIR/guard.out)"
+  info "guard $arm (run $RUN_ID) on $GUARD_URL, log $GDIR/costs-$RUN_ID.jsonl"
+}
+
+stop_guard() {
+  local f=$GDIR/guard.pid pid i
+  pid_alive "$f" || { rm -f "$f"; info "guard is not running"; return; }
+  pid=$(cat "$f")
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  for i in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+  if kill -0 "$pid" 2>/dev/null; then kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; fi
+  rm -f "$f"; info "guard stopped (pid $pid)"
+}
+
+ldr() {   # the staged run-ldr.sh in guard mode for this arm
+  LDR_BACKEND=guard C4_ARM_DIR=$ARM_DIR GUARD_URL=$GUARD_URL C4_LDR_PORT=$C4_LDR_PORT \
+    LDR_ALLOW_DRAFT_PROFILE=${C4_ALLOW_DRAFT:-0} LDR_VENV=$LDR_VENV_USE LDR_DEEP_PKG=$DEEP_PKG \
+    LDR_PROFILES_DIR=$PROFILES_DIR "$C4/run-ldr.sh" "$@"
+}
+
+case $cmd in
+  plan)
+    preflight plan
+    echo "arm $arm (status ${GUARD_STATUS:-?}), run $RUN_ID, folder $ARM_DIR, ledger $LEDGER"
+    echo "guard: $GUARD_URL -> $GUARD_MODEL; caps run \$$GUARD_RUN_CAP_USD, total \$$GUARD_TOTAL_CAP_USD, agent \$${GUARD_AGENT_CAP_USD:-off}; efforts default ${GUARD_DEFAULT_EFFORT:-api}, class ${GUARD_CLASS_EFFORTS:--}; ttl $GUARD_CACHE_TTL; replay $GUARD_THINKING_REPLAY"
+    echo "LDR: 127.0.0.1:$C4_LDR_PORT, LDR_PROFILE=${LDR_PROFILE:-deep}, model profile $LDR_MODEL_PROFILE, ldr-web from $LDR_VENV_USE"
+    echo "LDR environment (run-ldr.sh env):"
+    ldr env | sed 's/^/  /';;
+  guard) preflight guard; start_guard;;
+  start) preflight ldr; start_guard; ldr start;;
+  stop)  ldr stop || true; stop_guard;;
+  status)
+    if pid_alive "$GDIR/guard.pid"; then curl -s -m 3 "$GUARD_URL/v1/guard/status" | "$VENV/bin/python" -m json.tool || true
+    else echo "guard $arm: not running"; fi
+    ldr status || true;;
+  *) die "unknown command $cmd (plan | guard | start | stop | status)";;
+esac

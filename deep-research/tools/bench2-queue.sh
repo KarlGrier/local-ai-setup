@@ -1,0 +1,279 @@
+#!/bin/bash
+# bench2-queue.sh - phase 3 runs, daytime only (2026-10-17; one question at a time since 10-18; medium pass 10-18).
+# Before each question, `bench2.py next` picks the first one in results/bench2/queue-plan.json that is not done and is
+# expected to end by 22:30, with its effort level and runs-folder label. LDR is restarted only when the profile or the
+# report/citation-check effort it was started with changes (run/ldr.profile, run/ldr.efforts; 10-29: or its model profile,
+# run/ldr.modelprofile, or an item 7 step needs the search hook - ldr_restart_why). Waits while another
+# bench2 run holds run/bench.lock. Pauses at a clean point when a Strata release
+# changes the engine or server (since 10-23 work/r22/tagcheck.sh decides by what changed and raises the release baseline
+# itself for the rest, with a NOTES.md line; a pause sends a desktop alert - the user, 10-23), or when tmp/bench2.stop
+# exists. 11-03 (Karl): a run the client's watchdog stopped (no model call for 30 min) is moved aside and requeued once;
+# the same run's second hang stops the queue with a NOTES.md line and an alert (the watchdog block). Log: logs/bench2-queue.log
+WS=/home/USER/ai/deep-research; cd $WS
+LOG=$WS/logs/bench2-queue.log
+say() { echo "$(date '+%F %T') $*" >> $LOG; }
+newtag() {   # 10-23 (the user): pause only for a release that changes the engine or server (10-24: our served Qwen build's path only, work/r22/qwenpath.py); prints "PAUSE <tag> <baseline> <n> <why>"
+  local r; r=$(/home/USER/ai-speed-testing/strata-compare/work/r22/tagcheck.sh --max-age 3600 --who queue 2>> $LOG)   # ls-remote at most hourly
+  case "$r" in
+    RAISED*) say "Strata ${r##* }: nothing on our Qwen build's path changed - release baseline raised, carrying on" ;;
+    UNKNOWN*) say "release check: ${r#UNKNOWN } - carrying on" ;;
+    PAUSE*) echo "$r" ;;
+  esac
+}
+day() { [ -e run/night-ok ] && return 0; local h=$(date +%-H); [ $h -ge 9 ] && [ $h -lt 22 ]; }   # new work starts 09:00-22:00 (and must end by 22:30); run/night-ok (the user away, 10-19) lifts it
+wait_day() { while ! day; do [ -e tmp/bench2.stop ] && exit 0; sleep 300; done; }
+SC=/home/USER/ai-speed-testing/strata-compare
+avail() { awk '/MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo; }
+ensure_strata() {   # Strata up (on demand), and its chat cache emptied if memory is short (same config, ~15 s)
+  env -u HTTP_PROXY -u HTTPS_PROXY $SC/configs/usability/bin/strata-ensure.sh "Deep research" >> $LOG 2>&1 || { say "Strata not ready"; return 1; }
+  if [ "$(avail)" -lt 20 ] && curl -s -m 5 http://127.0.0.1:8080/metrics | grep -q '"state": "idle"'; then
+    say "MemAvailable $(avail) GB: restarting Strata to empty its chat cache"
+    (cd $SC && STRATA_PORT=8080 ./run-strata.sh stop) >> $LOG 2>&1
+    for i in $(seq 60); do pgrep -f "(^|/)llama-server( |$)|strata --serve" > /dev/null || break; sleep 1; done
+    env -u HTTP_PROXY -u HTTPS_PROXY $SC/configs/usability/bin/strata-ensure.sh "Deep research" >> $LOG 2>&1 || { say "Strata did not come back"; return 1; }
+  fi
+  return 0
+}
+user_jobs() {   # a Jan job queued (not paused by you) or active
+  /usr/bin/python3 -I -c "
+import sys; sys.path.insert(0, '$WS/tools'); import research_common as rc
+sys.exit(0 if any(j.get('state') in rc.ACTIVE or (j.get('state') == 'queued' and not j.get('user_paused') and not j.get('cancel_requested')) for j in rc.all_jobs()) else 1)"
+}
+bench_busy() { ! flock -n $WS/run/bench.lock true; }   # a bench2 run (e.g. one started by the previous queue) is going
+# ---- 10-29: does the running LDR fit the next run? (staging/runner-bench/tests runs this block on fake run dirs) ----
+runfiles() { "$WS/.venv/bin/python" -I "$WS/tools/ldr_runfiles.py" "$@"; }
+ldr_restart_why() {   # $1 run dir, $2 LDR profile, $3 efforts (deep), $4 items (sorted; off = none), $5 search fallback on|off, $6 model profile
+  # prints why LDR must be restarted (the first stamp that does not fit), nothing when they all fit (LDR answering is
+  # checked apart). The checks before 10-29, in their order, then the model profile (run/ldr.modelprofile, C3b).
+  local d=$1 w
+  w=$(cat "$d/ldr.profile" 2>/dev/null); [ "$w" != "$2" ] && { echo "profile ${w:-?} -> $2"; return; }
+  if [ "$2" = deep ]; then
+    w=$(cat "$d/ldr.efforts" 2>/dev/null || echo 'report=default verify=default'); [ "$w" != "$3" ] && { echo "efforts $w -> $3"; return; }
+  fi
+  w=$(tr ' ' '\n' < "$d/ldr.items" 2>/dev/null | grep . | sort | tr '\n' ' ' | sed 's/ $//' || true); [ "$w" != "$4" ] && { echo "items ${w:-?} -> $4"; return; }
+  w=$(cat "$d/ldr.fallback" 2>/dev/null || echo off); [ "$w" != "$5" ] && { echo "search fallback $w -> $5"; return; }
+  w=$(cat "$d/ldr.s2" 2>/dev/null || echo off); [ "$w" != off ] && { echo "Semantic Scholar $w -> off"; return; }
+  w=$(cat "$d/ldr.quicklimits" 2>/dev/null || echo off); [ "$w" != off ] && { echo "quick limits $w -> off"; return; }
+  w=$(runfiles mp-check --run-dir "$d" --want "$6" 2>&1)
+  case $? in
+    0) ;;
+    1) echo "$w"; return ;;
+    *) echo "model profile check failed (${w:0:200}) - LDR left as it is" >&2 ;;
+  esac
+  return 0
+}
+# ---- end of the LDR fit block ----
+# ---- 11-03 (Karl): the stuck-run watchdog. tools/ldr-client.py stops a run with no model call for $WATCHDOG_MIN (30) min,
+# held time not counted, and writes RUNDIR/faulted.json; bench2.py exits with WD_RC. Here: LDR stopped (its research
+# thread may ignore LDR's terminate), the run folder moved aside (never deleted), one line per fault in WD_FAULTS, the
+# question requeued ONCE (`next` picks it again: no bench.json; a fresh LDR starts for it); the same run's second hang
+# stops the queue (exit 0: Restart=on-failure does not bring it back) with a NOTES.md line and a desktop alert.
+# (staging/watchdog/tests runs this script in a sandbox) ----
+WD_RC=86                                           # tools/ldr-client.py WATCHDOG_RC, passed on by tools/bench2.py
+WD_FAULTS=$WS/results/bench2/watchdog-faults.tsv   # key <TAB> time <TAB> where the run folder went
+wd_count() { awk -F'\t' -v k="$1" '$1 == k' "$WD_FAULTS" 2> /dev/null | wc -l; }
+wd_alert() {   # $1 run key, $2 what happened
+  notify-send -a "Deep research" -u critical "Measurement queue stopped (watchdog)" "$1 $2 (no model call for ${WATCHDOG_MIN:-30} min). Not requeued - see NOTES.md and logs/bench2-queue.log." 2> /dev/null || true
+}
+wd_after_run() {   # $1 bench2.py's rc, $2 run dir, $3 run key, $4 run text. 0 = a watchdog stop, requeued (the loop goes
+  # on); 1 = not a watchdog stop (the checks below as before); exits after the same run's second hang
+  local rc=$1 rd=$2 key=$3 txt=$4 dest why n where
+  { [ "$rc" -eq $WD_RC ] && [ -d "$rd" ] && [ ! -e "$rd/bench.json" ]; } || return 1
+  ./run-ldr.sh stop >> $LOG 2>&1
+  dest=$rd.faulted-$(date +%H%M%S); [ -e "$dest" ] && dest=$dest-$$
+  mv "$rd" "$dest"
+  printf '%s\t%s\t%s\n' "$key" "$(date '+%F %T')" "${dest#$WS/}" >> "$WD_FAULTS"
+  n=$(wd_count "$key")
+  why=$(/usr/bin/python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])).get("reason") or "?")' "$dest/faulted.json" 2> /dev/null || echo "no faulted.json")
+  say "$txt: FAULTED - $why; LDR stopped, run folder -> ${dest#$WS/} (hang $n of this run)"
+  if [ "$n" -ge 2 ]; then
+    where=$(awk -F'\t' -v k="$key" '$1 == k {printf "%s%s", s, $3; s = ", "}' "$WD_FAULTS")
+    say "$txt hung twice: not requeued - queue stopped"
+    echo "* $(date '+%F %H:%M') BENCH QUEUE STOPPED (watchdog, Karl 11-03): $key hung twice (the second: $why) - not requeued, LDR stopped. Folders: $where. To run it again: remove its lines from results/bench2/watchdog-faults.tsv and start deep-research-bench.service; to skip it: take it out of the plan (${BENCH2_PLAN:-queue-plan.json})." >> $WS/NOTES.md
+    wd_alert "$key" "hung twice"
+    exit 0
+  fi
+  say "$txt: requeued once (the plan picks it again; a fresh LDR starts for it)"
+  return 0
+}
+wd_refuse() {   # $1 run key, $2 run text: a run that hung twice already (the unit started again by hand) is not run again
+  [ "$(wd_count "$1")" -ge 2 ] || return 0
+  say "$2 hung twice before ($(wd_count "$1") faults in results/bench2/watchdog-faults.tsv): not run again - queue stopped"
+  wd_alert "$1" "hung twice before (the queue was started again)"
+  exit 0
+}
+# ---- end of the watchdog block ----
+# ---- 11-05 (Karl): "Queue failures: when one run fails 3 times, record it as failed and move on, the same way as D8, but
+# only where its frozen rules can still judge with that run missing. Otherwise, stop. If a second run reaches 3
+# failures, stop the queue and alert me." A failure = an attempt that ran and did not finish (bench2.py left
+# bench-fail.json; watchdog stops included), one "fail" line per attempt in QF_STATE (plan, run key), so a restart keeps
+# the count. At a run's 3rd: droppable for this plan (QF_DROP, from results/bench2/QUEUE-DROPPABLE-1105.md) and no other
+# run of the plan dropped / at 3 -> a "dropped" line (`bench2.py next` skips it), its folder to runs-failed/, NOTES.md
+# line, critical alert, next run; else NOTES.md line, critical alert, exit 0 (stays stopped).
+# 11-06 (Karl): "Stop-rule order: yes, the drop rule goes first for droppable runs. Make sure a manual restart can't get
+# stuck refusing a run that's already at 3." - the 3-in-a-row web-search stop (SFAIL) gives way to a drop; at the start
+# a run already at 3 is dropped now if it may be, else refused with ONE command to retry it (tools/bench2-retry-run.sh
+# KEY: a "reset" line = a fresh count of 3, and the unit started). Counts and drops start again after a "reset" line.
+# (staging/post7d/scratch/queuefail runs this script in a sandbox) ----
+QF_STATE=$WS/results/bench2/queue-failures.tsv     # time <TAB> plan <TAB> run key <TAB> fail|dropped|stopped|reset <TAB> detail
+QF_DROP=$WS/results/bench2/queue-droppable.json    # {"plans": {plan file: [run keys the frozen rules can judge missing]}}
+QF_PLAN=${BENCH2_PLAN:-queue-plan.json}
+QF_RETRY=tools/bench2-retry-run.sh
+qf_n() {   # $1 run key, $2 event: this plan's lines of that event for the run since its last "reset"
+  [ -e "$QF_STATE" ] || { echo 0; return; }
+  awk -F'\t' -v p="$QF_PLAN" -v k="$1" -v e="$2" '$2 == p && $3 == k { if ($4 == "reset") n = 0; else if ($4 == e) n++ } END { print n + 0 }' "$QF_STATE"
+}
+qf_add() { printf '%s\t%s\t%s\t%s\t%s\n' "$(date '+%F %T')" "$QF_PLAN" "$1" "$2" "$3" >> "$QF_STATE"; }
+qf_others() {   # $1 run key: the plan's OTHER runs already dropped or at 3 failures (since their last reset)
+  [ -e "$QF_STATE" ] || return 0
+  awk -F'\t' -v p="$QF_PLAN" -v k="$1" '$2 == p && $3 != k { if ($4 == "reset") { n[$3] = 0; d[$3] = 0 } else if ($4 == "dropped") d[$3] = 1; else if ($4 == "fail" && ++n[$3] >= 3) d[$3] = 1 }
+    END { for (x in d) if (d[x]) { printf "%s%s", s, x; s = " " } }' "$QF_STATE"
+}
+qf_droppable() { /usr/bin/python3 -I -c 'import json, sys; sys.exit(0 if sys.argv[3] in json.load(open(sys.argv[1]))["plans"][sys.argv[2]] else 1)' "$QF_DROP" "$QF_PLAN" "$1" 2> /dev/null; }
+qf_can_drop() { [ "$(qf_n "$1" fail)" -ge 3 ] && [ -z "$(qf_others "$1")" ] && qf_droppable "$1"; }   # $1 run key
+qf_drops_now() { [ -n "$QF_THIS" ] && qf_can_drop "$1"; }   # this attempt is a droppable run's counted 3rd failure
+qf_sfail_stops() {   # $1 run key: 11-06 - the 3-in-a-row web-search stop (SFAIL >= 3) applies to a run not droppable for this
+  # plan, or when the streak spans 3 different runs; a droppable run's streak is left to the drop rule
+  [ "$(tr ' ' '\n' <<< "${SFAIL_KEYS:-}" | grep . | sort -u | wc -l)" -ge 3 ] && return 0
+  ! qf_droppable "$1"
+}
+qf_alert() { notify-send -a "Deep research" -u critical "$1" "$2" 2> /dev/null || true; }
+qf_count() {   # $1 run dir (relative), $2 key, $3 rc: after bench2.py run - an attempt that ran and did not finish is a failure
+  # (bench2.py moves an earlier attempt's files to failed-attempt-*; one that exits before the question leaves them: the mtime)
+  QF_THIS=""; { [ -e "$1/bench-fail.json" ] && [ ! -e "$1/bench.json" ] && [ "$(stat -c %Y "$1/bench-fail.json")" -ge "${QF_T0:-0}" ]; } || return 0
+  qf_add "$2" fail "rc $3"; QF_THIS=1
+}
+qf_drop() {   # $1 key, $2 run text, $3 run dir, $4 what (e.g. "last rc 1"): record it as failed, set it aside, alert
+  local key=$1 txt=$2 rd=$3 dest=-
+  if [ -d "$rd" ]; then dest=$WS/results/bench2/runs-failed/${rd#$WS/results/bench2/runs/}; dest=${dest%/*}-${dest##*/}.dropped-$(date +%m%d-%H%M%S); mkdir -p "${dest%/*}"; mv "$rd" "$dest" || dest=-; fi
+  qf_add "$key" dropped "${dest#$WS/}"
+  say "$txt: FAILED 3 times ($4) - recorded as failed and dropped (its frozen rules judge it as not run; results/bench2/queue-droppable.json); run folder -> ${dest#$WS/}; going on"
+  echo "* $(date '+%F %H:%M') BENCH QUEUE: RUN DROPPED (Karl 11-05, the queue-failure rule): $key failed 3 times ($4) on $QF_PLAN - recorded in results/bench2/queue-failures.tsv, folder ${dest#$WS/}; its frozen rules judge it as not run (results/bench2/QUEUE-DROPPABLE-1105.md); the queue goes on. A second run reaching 3 failures stops the queue. To run it again later: bash ~/ai/deep-research/$QF_RETRY $key" >> $WS/NOTES.md
+  qf_alert "Measurement queue: a run dropped" "$key failed 3 times - recorded as failed and set aside (its rules judge it as not run); the queue goes on. See NOTES.md."
+}
+qf_why() {   # $1 key: why a run at 3 may not be dropped
+  local oth; oth=$(qf_others "$1")
+  if [ -n "$oth" ]; then echo "the second run of this plan to fail 3 times (dropped / at 3 already: $oth)"; else echo "its frozen rules cannot judge the plan with it missing (not in results/bench2/queue-droppable.json for $QF_PLAN)"; fi
+}
+qf_after() {   # $1 key, $2 run text, $3 run dir, $4 rc. 1 = this attempt is not a counted 3rd failure (the caller goes on as
+  # before); 0 = dropped (the loop goes on with the next run); exits (stop) otherwise
+  local key=$1 txt=$2 rd=$3 why
+  [ -n "$QF_THIS" ] || return 1; [ "$(qf_n "$key" fail)" -ge 3 ] || return 1
+  if qf_can_drop "$key"; then qf_drop "$key" "$txt" "$rd" "last rc $4"; return 0; fi
+  why=$(qf_why "$key")
+  qf_add "$key" stopped "$why"
+  say "$txt: FAILED 3 times (last rc $4) - $why: queue stopped"
+  echo "* $(date '+%F %H:%M') BENCH QUEUE STOPPED (Karl 11-05, the queue-failure rule): $key failed 3 times (last rc $4) on $QF_PLAN; $why. Recorded in results/bench2/queue-failures.tsv (its folder left in place). Karl decides; to run it again (a fresh count of 3, the unit started): bash ~/ai/deep-research/$QF_RETRY $key" >> $WS/NOTES.md
+  qf_alert "Measurement queue stopped (3 failures)" "$key failed 3 times; $why. To retry it: bash ~/ai/deep-research/$QF_RETRY $key"
+  exit 0
+}
+qf_refuse() {   # $1 run key, $2 run text, $3 run dir - before a run: one at 3 failures already (a restart, by hand or at
+  # boot): droppable -> dropped now, 1 (the loop picks the next run); else refused (NOTES line, alert with the retry
+  # command), exit 0 - every plain restart refuses only this run again, the command gives it a fresh count
+  [ "$(qf_n "$1" fail)" -ge 3 ] || return 0
+  if qf_can_drop "$1"; then qf_drop "$1" "$2" "$3" "before the queue was started again"; return 1; fi
+  local why; why=$(qf_why "$1")
+  qf_add "$1" stopped "refused at start: $why"
+  say "$2 failed $(qf_n "$1" fail) times before (results/bench2/queue-failures.tsv; $why): not run again - queue stopped; to retry it: bash ~/ai/deep-research/$QF_RETRY $1"
+  echo "* $(date '+%F %H:%M') BENCH QUEUE STOPPED at start (Karl 11-06): $1 failed 3 times before and is not run again ($why). To retry it (a fresh count of 3, the unit started): bash ~/ai/deep-research/$QF_RETRY $1" >> $WS/NOTES.md
+  qf_alert "Measurement queue stopped (3 failures)" "$1 failed 3 times before (the queue was started again); $why. To retry it: bash ~/ai/deep-research/$QF_RETRY $1"
+  exit 0
+}
+# ---- end of the queue-failure block ----
+say "queue started (pid $$)"
+while :; do
+  if bench_busy; then say "a bench2 run holds run/bench.lock: waiting for it"; while bench_busy; do sleep 60; done; fi
+  wait_day
+  T=$(newtag)
+  if [ -n "$T" ]; then
+    read -r _ PT PB PN PWHY <<< "$T"
+    say "Strata $PT changes our Qwen build's engine/server path ($PN files since $PB; ${PWHY#*: }): pausing the measurements until it is reviewed"
+    notify-send -a "Deep research" -u critical "Measurements paused: Strata $PT" "$PT changes our Qwen build's engine or server ($PN files since $PB). The research queue stopped at a clean point. After the review: work/r22/tagcheck.sh --accept $PT, then start deep-research-bench.service again." 2> /dev/null || true
+    exit 0
+  fi
+  [ -e tmp/bench2.stop ] && { say "stop file: stopping"; exit 0; }
+  # 2026-10-19: tmp/bench2.hold = a gap for the 0.2.0 port's builds and tests: no new run starts while it exists
+  if [ -e tmp/bench2.hold ]; then say "hold file: waiting ($(head -c 200 tmp/bench2.hold 2>/dev/null))"; while [ -e tmp/bench2.hold ]; do [ -e tmp/bench2.stop ] && exit 0; sleep 30; done; say "hold released"; continue; fi
+  # your own research from Jan goes first: wait while a job is queued or running
+  if user_jobs; then say "a research job from Jan is queued or running: waiting for it"; while user_jobs; do sleep 120; done; say "Jan job done: continuing"; continue; fi
+  # VEFF: phase 4 (10-20), the citation check apart; 10-29: ROUTE PCACHE (item 7's "paid_route", "paid_cache") and MPROF
+  # (a step's "model_profile")
+  read -r SET PROF ID EFF LABEL VEFF ITEMS ROUTE PCACHE MPROF <<< "$(.venv/bin/python tools/bench2.py next --wide 2>> $LOG)"
+  case "$SET" in
+    done) break ;;
+    wait|"") sleep 600; continue ;;      # nothing fits before 22:30 (or an error, logged): look again later
+  esac
+  [ "$EFF" = "-" ] && EFF=""; [ "$LABEL" = "-" ] && LABEL=""; [ "$VEFF" = "-" ] && VEFF=""
+  WDKEY="$SET/$PROF/${LABEL:--}/$ID"; WDTXT="$SET / $PROF${LABEL:+ / $LABEL} / $ID"   # 11-03: the watchdog's run key
+  wd_refuse "$WDKEY" "$WDTXT"
+  qf_refuse "$WDKEY" "$WDTXT" "$WS/results/bench2/runs/$SET-$PROF${LABEL:+-$LABEL}/$ID" || continue; QF_T0=$(date +%s)   # 11-05/06: at 3 already; this attempt's start
+  # 10-29: the model profile LDR must run (the step's, else LDR_MODEL_PROFILE, else flash-next); an item 7 step runs on an
+  # LDR with the search hook on (LDR_SEARCH_FALLBACK=1) and bench2.py writes run/paid-run.json for each question
+  [ "${ROUTE:--}" = "-" ] && ROUTE=""; [ "${PCACHE:--}" = "-" ] && PCACHE=""; [ "${MPROF:--}" = "-" ] && MPROF=${LDR_MODEL_PROFILE:-flash-next}
+  WANT_FB=off; FBENV=""; [ -n "$ROUTE" ] && { WANT_FB=on; FBENV=LDR_SEARCH_FALLBACK=1; }
+  # 10-21: phase 4 stage 2 - a plan step's "items" (setup, critic, verify2) run on an LDR started with exactly those
+  [ "${ITEMS:--}" = "-" ] && ITEMS=""
+  ITEMENV="LDR_DEEP_SETUP_PROFILE= LDR_DEEP_CRITIC= LDR_DEEP_VERIFY2= LDR_DEEP_TRIED= LDR_DEEP_NOTYET= LDR_DEEP_CODE= LDR_DEEP_FIX="
+  # 11-02: item 7e (set shop-7e) reads the 7e profile copy (+ board revision, US / USD); every other set the main one
+  SETUPF=user-setup.md; [ "$SET" = shop-7e ] && SETUPF=user-setup-7e.md
+  case ",$ITEMS," in *,setup,*) ITEMENV="$ITEMENV LDR_DEEP_SETUP_PROFILE=$PWD/$SETUPF";; esac
+  case ",$ITEMS," in *,critic,*) ITEMENV="$ITEMENV LDR_DEEP_CRITIC=1";; esac
+  case ",$ITEMS," in *,verify2,*) ITEMENV="$ITEMENV LDR_DEEP_VERIFY2=flag";; esac
+  case ",$ITEMS," in *,tried,*) ITEMENV="$ITEMENV LDR_DEEP_TRIED=1";; esac       # 10-23: item 4
+  case ",$ITEMS," in *,notyet,*) ITEMENV="$ITEMENV LDR_DEEP_NOTYET=1";; esac     # 10-23: item 2, in item 4's runs
+  case ",$ITEMS," in *,code,*) ITEMENV="$ITEMENV LDR_DEEP_CODE=1";; esac         # 10-27: the read-only code tool
+  FIX=""; case ",$ITEMS," in *,fixes,*) FIX=all;; esac                            # 10-27: phase 4's six fixes + consistency
+  case ",$ITEMS," in *,read,*) FIX="${FIX:+$FIX,}read";; esac                       # 10-28: bundle item 6 (every cited source read)
+  case ",$ITEMS," in *,claims,*) FIX="${FIX:+$FIX,}claims";; esac                   # 10-28: bundle item 5 (claims: quote, URL, date)
+  # 11-04 (Karl): the subagent step fix (LDR patch 0008, LDR_DEEP_FIX item "steps"; run-ldr.sh stamps it "fix:steps" in
+  # run/ldr.items, so a plan names it "fix:steps" - on for every plan after 7d)
+  case ",$ITEMS," in *,fix:steps,*) FIX="${FIX:+$FIX,}steps";; esac
+  [ -n "$FIX" ] && ITEMENV="$ITEMENV LDR_DEEP_FIX=$FIX"
+  WANT_ITEMS=$(echo "$ITEMS" | tr ',' '\n' | grep . | sort | tr '\n' ' ' | sed 's/ $//'); WANT_ITEMS=${WANT_ITEMS:-off}
+  WANT_EFF="report=${EFF:-default} verify=${VEFF:-${EFF:-default}}"
+  # restart LDR when a stamp does not fit (ldr_restart_why above; 10-29: + the model profile, + the fallback an item 7
+  # step needs) or LDR does not answer
+  WHY=$(ldr_restart_why run "$PROF" "$WANT_EFF" "$WANT_ITEMS" "$WANT_FB" "$MPROF")
+  # 11-01 (Karl, a test condition from p7c h02 on): a fresh LDR before every question, same settings - ldr-web grew
+  # 0.3 -> 4.7 GB in a day, so the 8080 relief restarts came 14 times by 10:10 and emptied its chat cache mid-question
+  [ -z "$WHY" ] && WHY="a fresh LDR for every question"
+  if [ -n "$WHY" ] || ! curl -s -m 5 -o /dev/null http://127.0.0.1:5000/auth/login; then
+    say "LDR -> $PROF profile${EFF:+, report at $EFF, citation check at ${VEFF:-$EFF}}${ROUTE:+, search fallback on (item 7 route $ROUTE)} (${WHY:-LDR does not answer})"
+    ./run-ldr.sh stop >> $LOG 2>&1
+    ensure_strata || { sleep 600; continue; }
+    if [ -n "$EFF" ]; then
+      env -u LDR_SEARCH_FALLBACK -u LDR_RESEARCH_S2 -u LDR_QUICK_LIMITS $ITEMENV $FBENV LDR_MODEL_PROFILE=$MPROF LDR_DEEP_REPORT_EFFORT=$EFF LDR_DEEP_VERIFY_EFFORT=${VEFF:-$EFF} LDR_PROFILE=$PROF ./run-ldr.sh start >> $LOG 2>&1
+    else
+      env -u LDR_DEEP_REPORT_EFFORT -u LDR_DEEP_VERIFY_EFFORT -u LDR_SEARCH_FALLBACK -u LDR_RESEARCH_S2 -u LDR_QUICK_LIMITS $ITEMENV $FBENV LDR_MODEL_PROFILE=$MPROF LDR_PROFILE=$PROF ./run-ldr.sh start >> $LOG 2>&1
+    fi || { say "LDR start failed; retry in 10 min"; sleep 600; continue; }
+  fi
+  ensure_strata || { sleep 600; continue; }
+  # 10-21 (the user): every service the run uses answers before it starts - SearXNG 8889 (LDR's), 8890, 8888, the proxy, LDR
+  /usr/bin/python3 -I tools/services_check.py --proxy --ldr >> $LOG 2>&1 || { say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: a service is down (above); retry in 10 min"; sleep 600; continue; }
+  say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: running${ROUTE:+ (item 7 route $ROUTE${PCACHE:+, cache $PCACHE})}"
+  .venv/bin/python tools/bench2.py run $SET $PROF --ids $ID ${EFF:+--effort-all $EFF} ${VEFF:+--effort-verify $VEFF} ${LABEL:+--label $LABEL} ${ITEMS:+--items $ITEMS} --model-profile $MPROF ${ROUTE:+--paid-route $ROUTE} ${PCACHE:+--paid-cache $PCACHE} >> $LOG 2>&1
+  rc=$?
+  RD=results/bench2/runs/$SET-$PROF${LABEL:+-$LABEL}/$ID
+  qf_count "$RD" "$WDKEY" $rc                                  # 11-05 (Karl): one failure of this run, if it did not finish
+  wd_after_run $rc "$WS/$RD" "$WDKEY" "$WDTXT" && { qf_after "$WDKEY" "$WDTXT" "$WS/$RD" $rc; continue; }     # 11-03: a watchdog stop - moved aside, requeued once
+  # 10-21 (the user): a run whose searches mostly failed is FAILED (tools/ldr-client.py: search-failed.json, no
+  # summary); three such runs in a row stop the queue with an alert instead of retrying all day
+  if [ -e $RD/search-failed.json ] && [ ! -e $RD/bench.json ]; then
+    SFAIL=$(( ${SFAIL:-0} + 1 )); SFAIL_KEYS="${SFAIL_KEYS:-} $WDKEY"; mv $RD/search-failed.json $RD/search-failed-$(date +%H%M%S).json
+    say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: FAILED - web searches failing ($SFAIL in a row)"
+    if [ $SFAIL -ge 3 ] && ! qf_drops_now "$WDKEY" && qf_sfail_stops "$WDKEY"; then    # 11-06 (Karl): the drop rule first
+      say "three runs in a row FAILED on web searches - queue stopped"
+      notify-send -a "Deep research" -u critical "Measurement queue stopped" "Three runs in a row failed because web searches failed (see logs/bench2-queue.log)." 2> /dev/null || true
+      # 11-04 (Karl): exit 0, not 1 - with Restart=on-failure an exit 1 brought the queue back after 60 s and the count
+      # started over, so it never really stopped (as the watchdog's stop: exit 0 stays stopped until started by hand)
+      exit 0
+    fi
+  elif [ -e $RD/bench.json ]; then SFAIL=0; SFAIL_KEYS=""; fi
+  [ -e $RD/bench.json ] || qf_after "$WDKEY" "$WDTXT" "$WS/$RD" $rc || { say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: not completed (rc $rc); retry in 10 min"; sleep 600; }
+done
+say "all planned questions done"
+[ -n "${BENCH2_PLAN:-}" ] && { say "queue finished ($BENCH2_PLAN)"; exit 0; }   # phase 4: graded by hand
+for s in "screen deep" "screen deep --label medium" "hard-screen baseline" "hard-screen deep" "hard-screen deep --label medium"; do
+  .venv/bin/python tools/bench2.py grade $s >> $LOG 2>&1
+done
+say "queue finished"

@@ -1,0 +1,74 @@
+--- a/local_deep_research/deep/report.py
++++ b/local_deep_research/deep/report.py
+@@ -177,6 +177,12 @@
+         for fix, rule in FIX_OPENING_RULES:
+             if checks.fix_on(fix):
+                 self.p_opening += "\n" + rule
++        # 10-29 engine scope (with the version labels): the task is about one engine of a multi-engine project - its
++        # sources about another engine are marked [OTHER ENGINE ...] and the sections get one rule line
++        if checks.fix_on("version"):
++            from . import enginescope
++            if enginescope.scopes_of(store, query):
++                self.p_section += "\n" + enginescope.SECTION_RULE
+         # Fix 6: the report stage plans its steps to end by the run's deadline (set by the strategy on the store)
+         from .control import clock
+         self.plan = checks.TimePlan(getattr(store, "run_deadline", None) if checks.fix_on("budget") else None, clock)
+@@ -242,6 +248,9 @@
+         return out
+ 
+     def _extractions(self, s: Source) -> str:
++        return self._engine_quotes(s, self._extractions_plain(s))
++
++    def _extractions_plain(self, s: Source) -> str:
+         if checks.fix_on("claims") and getattr(s, "claims", None):
+             block = claim_store.evidence_block(s.claims, self.cfg.claims_per_source)    # item 5: the checked, dated
+                                                                                          # quotes, not the raw lines
+@@ -272,12 +281,29 @@
+         from .codetool import version_note
+         return version_note(s.url, getattr(self.store, "pins", None))
+ 
++    def _engine_note(self, s: Source) -> str:
++        """10-29 (engine scope, with the version labels): a source about another engine of the task's project - by its
++        path, or by its words (a mixed page: the parts that are) - says so, next to the version note."""
++        if not checks.fix_on("version"):
++            return ""
++        from .enginescope import writer_note
++        return writer_note(self.store, s)
++
++    def _engine_quotes(self, s: Source, text: str, paragraphs: bool = False) -> str:
++        """Quotes (or, with paragraphs, passages) from another engine's part of a mixed page, marked."""
++        if not text or not checks.fix_on("version"):
++            return text
++        from .enginescope import writer_quotes
++        return writer_quotes(self.store, s, text, paragraphs=paragraphs)
++
+     def _label(self, s: Source) -> str:
+         """'[N] title (url)', with the page's date and, for a primary source, the page it was found from (item 6)."""
+         extra = (f", dated {s.date}" if getattr(s, "date", "") else "") + (
+             f"; primary source behind [{s.via}]" if getattr(s, "via", None) is not None else "")
+         note = self._version_note(s)
+-        return f"[{s.idx}] {'[' + note + '] ' if note else ''}{s.title[:100]} ({s.url}{extra})"
++        eng = self._engine_note(s)
++        return (f"[{s.idx}] {'[' + note + '] ' if note else ''}{'[' + eng + '] ' if eng else ''}{s.title[:100]} "
++                f"({s.url}{extra})")
+ 
+     def _digest(self, sources: list[Source], max_tokens: int) -> str:
+         if not sources:
+@@ -334,7 +360,7 @@
+         if read and used < budget:
+             per = (budget - used) // len(read)
+             for s in read:
+-                extra = relevant_passages(s.page_text, qw, per)
++                extra = self._engine_quotes(s, relevant_passages(s.page_text, qw, per), paragraphs=True)
+                 if extra:
+                     blocks[s.idx] += f"\n--- more of the page [{s.idx}] ---\n{extra}"
+         evidence = "\n\n".join(blocks[s.idx] for s in srcs) or "(no page evidence assigned; use the findings)"
+@@ -434,6 +460,8 @@
+                 label = "page text" if kind == "page" else "search snippet only (page never read)"
+                 note = self._version_note(s)
+                 label += f"; {note}" if note else ""
++                eng = self._engine_note(s)
++                label += f"; {eng}" if eng else ""
+                 blocks.append(f"Source [{i}] {s.title[:100]} — {label}:\n{txt}")
+             c["checked_against"] = sorted(kinds)
+             items.append((ci, blocks))

@@ -1,0 +1,15 @@
+#!/bin/bash
+# memguard.sh PID [MIN_AVAIL_MIB] [MAX_SWAP_GROWTH_MIB] — stop PID (SIGTERM, then SIGKILL) if MemAvailable drops below
+# MIN_AVAIL_MIB (default 20480) or swap use grows by more than MAX_SWAP_GROWTH_MIB (default 1024) since the start,
+# so a test process can never push the desktop into swap or the OOM killer again. Logs to stderr.
+P=$1 MIN=${2:-20480} MAXSW=${3:-1024}
+sw0=$(( $(awk '/SwapFree/{print $2}' /proc/meminfo) / 1024 ))
+while kill -0 "$P" 2>/dev/null; do
+  a=$(( $(awk '/MemAvailable/{print $2}' /proc/meminfo) / 1024 )); sw=$(( $(awk '/SwapFree/{print $2}' /proc/meminfo) / 1024 ))
+  if (( a < MIN || sw0 - sw > MAXSW )); then
+    echo "memguard $(date +%T): MemAvailable $a MiB, swap grew $(( sw0 - sw )) MiB: stopping pid $P" >&2
+    kill -TERM "$P"; sleep 2; kill -0 "$P" 2>/dev/null && kill -KILL "$P"
+    exit 1
+  fi
+  sleep 0.25
+done

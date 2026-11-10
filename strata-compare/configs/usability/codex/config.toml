@@ -1,0 +1,43 @@
+# Codex CLI 0.162.1 for Strata C*18 on 127.0.0.1:8080 - usability round, 2026-10-15.
+# Used through configs/usability/bin/codex-strata with CODEX_HOME=~/.codex-strata (copied there on first start);
+# your own ~/.codex (ChatGPT login, gpt-6-astra) is not read or changed.
+model = "strata-qwen3.8-flash-next-iq3s"
+model_provider = "strata"
+model_reasoning_effort = "medium"    # 2026-10-17; xhigh on demand: -c model_reasoning_effort="xhigh" or /model
+model_context_window = 131072          # Strata's max_context (/v1/models)
+show_raw_agent_reasoning = true        # Strata returns the thinking itself (no summaries): show it
+hide_agent_reasoning = false
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "disabled"                # a cloud search; 127.0.0.1 only
+check_for_update_on_startup = false
+
+[model_providers.strata]
+name = "Strata (local)"
+base_url = "http://127.0.0.1:8080/v1"
+wire_api = "responses"                 # the only wire API in 0.162 (Strata serves /v1/responses)
+requires_openai_auth = false           # no login, no key
+supports_websockets = false
+request_max_retries = 1
+stream_max_retries = 1
+stream_idle_timeout_ms = 900000        # a 120K-token prompt reads in ~30 s; leave room
+
+[analytics]
+enabled = false
+[feedback]
+enabled = false
+[otel]
+exporter = "none"
+[history]
+persistence = "save-all"               # local file only ($CODEX_HOME/history.jsonl)
+
+[features]
+apps = false
+plugins = false
+remote_plugin = false
+recommended_plugins = false
+remote_models = false
+standalone_web_search = false
+image_generation = false
+realtime_conversation = false
+in_app_updates = false

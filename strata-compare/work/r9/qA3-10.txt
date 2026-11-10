@@ -1,0 +1,6 @@
+work/r9/tagcheck.sh "phase A track 3: PDL step 1"
+work/r9/exact7.sh a3off configs/A3-off.json
+work/r9/exact7.sh a3on configs/A3-on.json
+work/r9/exact7.sh a3on2 configs/A3-on.json
+work/r9/exact7.sh a3off2 configs/A3-off.json
+work/r9/tagcheck.sh "track 3 step 1 done"

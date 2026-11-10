@@ -1,0 +1,22 @@
+=== 2026-10-26 07:49:36 h2h M1: Maya v1.1.28 with Strata's arithmetic - DS4.1 arm M1 (/home/USER/ai-speed-testing/strata-compare/results/ds41/h2h/cfg-M1/maya-M1.json, server /home/USER/ai-speed-testing/strata-compare/ext/maya-v1.1.28-src/serve/server.py, 3 passes): --max-context 32768 --eos 1 --dspark none --vision off --tp 2 --prefill-chunk 8192 --mmap-experts on --expert-profile /home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-maya.bin {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX4060TI,GPU-UUID-RTX5080', 'DS4_WARM_CAP_GB': '70', 'DS4_SPLIT': '10,30', 'DS4_CACHE_DECAY': '0.8', 'DS4_ENGRAM_CACHE_MB': '16', 'MAYA_DS4_SLOT_KEEP': '0', 'MAYA_DS4_STREAM': '0', 'STRATA_SERVER_LOG': '0', 'DS4_LANE_CAL': 'none', 'DS4_FLOW_STATS': '1', 'MAYA_DS4_PROMPT_SKIP': '0', 'DS4_FAT_ROWS': '0', 'DS4_ATTN_MMA': '0', 'DS4_ATTN_SLAB_MB': '8', 'DS4_W16_MB': '16', 'DS4_IQ_Q8K': '0'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/M1-1026-0749
+=== 2026-10-26 07:50:36 cool-down before the arm: 60 s, drive 39 -> 38 C
+dropcache: 7 model files dropped from the page cache in 0.6 s
+=== 2026-10-26 07:50:36 before: MemAvailable 87.6 GB; swap in use 1799 MB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-26 07:50:50 ready after 14 s: MemAvailable 80.7 GB, engine RSS 6864 MB; vram 0, 15371 MiB, 563 MiB;1, 7303 MiB, 587 MiB;
+=== 2026-10-26 07:53:22 requests done (rc 1): 8 responses
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: the experts VRAM leaves over (~120.4 GB) are read in place from the model's files (--mmap-experts on) (87.9 GB of RAM free to keep them: the most-routed 70.0 GB read ahead; prompts in chunks of 8192)
+ds4: CUDA0 layers [0, 9]: weights 1.42 GB, experts 3.33 GB (416 of 3840 in VRAM), caches 0.01 GB, 586 MiB free
+ds4: CUDA1 layers [10, 39] + head: weights 4.44 GB, experts 8.31 GB (919 of 11520 in VRAM), caches 0.02 GB, 562 MiB free
+ds4: 14025 routed experts on the CPU lane (120.8 GB, in place in the model's files), 16 threads
+=== 2026-10-26 07:53:25 GUARD: failed: memory - the engine's swapped memory reached 1089 MB (limit 256)
+monitor: lowest MemAvailable 79.9 GB, peak engine RSS 82937 MB, peak VRAM used 5080 15445 MiB / 4060 Ti 7379 MiB
+=== 2026-10-26 07:53:25 kcheck clean
+P4K: [382.8, 409.9, 404.8] tok/s (mean 399.2, spread 3.39 %), tokens [4125, 4396, 4239], SSD [45.778, 42.778, 41.986] GB per prompt
+P20K: [701.2, 684.0, 694.4] tok/s (mean 693.2, spread 1.24 %), tokens [19753, 18889, 19525], SSD [140.738, 134.228, 133.417] GB per prompt
+CUDA0 layers [0,9]: 416 experts in VRAM (3.33 GB), weights 1.42 GB, 586 MiB free
+CUDA1 layers [10,39]: 919 experts in VRAM (8.31 GB), weights 4.44 GB, 562 MiB free
+GPU clocks while prompt: GPU0 SM 2790 MHz (p10 2767), util 94 %, 226.1 W; GPU1 SM 2670 MHz (p10 2550), util 100 %, 105.2 W
+lowest MemAvailable 79.9 GB, peak engine RSS 82937 MB, peak VRAM [15445, 7379] MiB
+nvme0 (Samsung 9100 PRO): 7 samples 07:50-07:53, composite 38-44 C (sensor 1 max 49 C), alarm bit never set; no request above 70 C
+=== 2026-10-26 07:53:25 done

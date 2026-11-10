@@ -1,0 +1,33 @@
+work/r7/tagcheck.sh "item4 start"
+NSYS=node EXE=/home/USER/ai-speed-testing/strata-compare/engine-r7o-trace/strata ENVX="STRATA_PROFILE_FROM=60 STRATA_PROFILE_ROUNDS=120" work/r7/run.sh nsys7-dec-math configs/Cstar7.json math 600
+NSYS=node EXE=/home/USER/ai-speed-testing/strata-compare/engine-r7o-trace/strata ENVX="STRATA_PROFILE_FROM=60 STRATA_PROFILE_ROUNDS=120" work/r7/run.sh nsys7-dec-math-x configs/Cstar7.json math 600 --adapt-swaps 0 --suffix-draft 0
+work/r7/run.sh s8-math-a configs/Cstar7.json math 512 --spec 8 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s8split-math-a configs/Cstar7.json math 512 --spec 8 --spec-split --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s4-math-a configs/Cstar7.json math 512 --spec 4 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s6-math-a configs/Cstar7.json math 512 --spec 6 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s6split-math-a configs/Cstar7.json math 512 --spec 6 --spec-split --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s3-math-a configs/Cstar7.json math 512 --spec 3 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s8-code-a configs/Cstar7.json code 512 --spec 8 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s8split-code-a configs/Cstar7.json code 512 --spec 8 --spec-split --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s4-code-a configs/Cstar7.json code 512 --spec 4 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s6-code-a configs/Cstar7.json code 512 --spec 6 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s6split-code-a configs/Cstar7.json code 512 --spec 6 --spec-split --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s3-code-a configs/Cstar7.json code 512 --spec 3 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s8-math-b configs/Cstar7.json math 512 --spec 8 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s8split-math-b configs/Cstar7.json math 512 --spec 8 --spec-split --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s4-math-b configs/Cstar7.json math 512 --spec 4 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s6-math-b configs/Cstar7.json math 512 --spec 6 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s6split-math-b configs/Cstar7.json math 512 --spec 6 --spec-split --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s3-math-b configs/Cstar7.json math 512 --spec 3 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s8-code-b configs/Cstar7.json code 512 --spec 8 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s8split-code-b configs/Cstar7.json code 512 --spec 8 --spec-split --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s4-code-b configs/Cstar7.json code 512 --spec 4 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s6-code-b configs/Cstar7.json code 512 --spec 6 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s6split-code-b configs/Cstar7.json code 512 --spec 6 --spec-split --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/run.sh s3-code-b configs/Cstar7.json code 512 --spec 3 --adapt-swaps 0 --suffix-draft 0 --spec-min-p 0
+work/r7/tagcheck.sh "item4 4a/4b done"
+WEB=1 work/r7/with_server.sh AG-seq1 configs/Cstar7.json -- ".venv/bin/python work/r7/agents2.py seq seq1"
+WEB=1 work/r7/with_server.sh AG-ovl1 configs/Cstar7.json -- ".venv/bin/python work/r7/agents2.py ovl ovl1"
+WEB=1 work/r7/with_server.sh AG-seq2 configs/Cstar7.json -- ".venv/bin/python work/r7/agents2.py seq seq2"
+WEB=1 work/r7/with_server.sh AG-ovl2 configs/Cstar7.json -- ".venv/bin/python work/r7/agents2.py ovl ovl2"
+work/r7/tagcheck.sh "item4 done"

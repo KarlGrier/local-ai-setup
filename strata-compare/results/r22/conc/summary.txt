@@ -1,0 +1,167 @@
+=== 2026-10-20 14:24:23 === conc21: concurrency test on 0.2.1 (P021, engine c9fe314316c4)
+=== 2026-10-20 14:24:23 queue hold set; waiting for the running research run to finish
+=== 2026-10-20 16:08:23 research run done; waiting for any active Jan job
+=== 2026-10-20 16:08:57 gap open: lock held (pid 1400729), 8080 stopped; MemAvailable 84.0 GiB
+=== 2026-10-20 16:08:57 arm base: levels 1,2,4, 2 reps, output check 0 (2666 s left)
+vram after load: 0, 15395 MiB, 539 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1400970 pinned/locked: VmLck: 0 kB VmPin: 0 kB VmRSS: 52383980 kB 
+{"arm": "base", "kind": "chat", "level": 1, "rep": 1, "wall_s": 3.96, "total_tps": 129.23, "per_request_tps_median": 143.91, "ttft_median_s": 0.4, "ttft_worst_s": 0.4, "prompt_tps": [141.1], "mem_available_min_gib": 31.99, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "chat", "level": 2, "rep": 1, "wall_s": 8.57, "total_tps": 119.49, "per_request_tps_median": 132.64, "ttft_median_s": 2.55, "ttft_worst_s": 4.69, "prompt_tps": [12.1, 131.3], "mem_available_min_gib": 31.96, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "chat", "level": 4, "rep": 1, "wall_s": 16.08, "total_tps": 127.37, "per_request_tps_median": 139.7, "ttft_median_s": 6.29, "ttft_worst_s": 12.21, "prompt_tps": [7.0, 4.4, 153.3, 14.4], "mem_available_min_gib": 31.97, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "chat", "level": 4, "rep": 2, "wall_s": 16.53, "total_tps": 123.89, "per_request_tps_median": 139.81, "ttft_median_s": 6.46, "ttft_worst_s": 12.41, "prompt_tps": [6.8, 4.4, 131.2, 14.1], "mem_available_min_gib": 31.97, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "chat", "level": 2, "rep": 2, "wall_s": 8.66, "total_tps": 118.24, "per_request_tps_median": 130.95, "ttft_median_s": 2.55, "ttft_worst_s": 4.67, "prompt_tps": [129.4, 11.6], "mem_available_min_gib": 31.98, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "chat", "level": 1, "rep": 2, "wall_s": 4.31, "total_tps": 118.72, "per_request_tps_median": 131.87, "ttft_median_s": 0.43, "ttft_worst_s": 0.43, "prompt_tps": [132.6], "mem_available_min_gib": 31.98, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "agent", "level": 1, "rep": 1, "wall_s": 8.89, "total_tps": 57.57, "per_request_tps_median": 131.62, "ttft_median_s": 5.0, "ttft_worst_s": 5.0, "prompt_tps": [3674.3], "mem_available_min_gib": 31.56, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "agent", "level": 2, "rep": 1, "wall_s": 17.36, "total_tps": 58.97, "per_request_tps_median": 134.28, "ttft_median_s": 9.23, "ttft_worst_s": 13.51, "prompt_tps": [1360.6, 3671.7], "mem_available_min_gib": 30.44, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "agent", "level": 4, "rep": 1, "wall_s": 34.4, "total_tps": 59.53, "per_request_tps_median": 137.66, "ttft_median_s": 17.91, "ttft_worst_s": 30.63, "prompt_tps": [832.0, 1322.1, 3700.2, 600.5], "mem_available_min_gib": 28.5, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "agent", "level": 4, "rep": 2, "wall_s": 34.06, "total_tps": 60.12, "per_request_tps_median": 137.84, "ttft_median_s": 17.63, "ttft_worst_s": 30.14, "prompt_tps": [847.1, 1338.6, 3725.3, 610.2], "mem_available_min_gib": 26.58, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "agent", "level": 2, "rep": 2, "wall_s": 16.84, "total_tps": 60.79, "per_request_tps_median": 142.35, "ttft_median_s": 9.1, "ttft_worst_s": 13.34, "prompt_tps": [1377.6, 3744.5], "mem_available_min_gib": 25.62, "fixed_length_ok": true, "errors": []}
+{"arm": "base", "kind": "agent", "level": 1, "rep": 2, "wall_s": 8.6, "total_tps": 59.55, "per_request_tps_median": 134.85, "ttft_median_s": 4.8, "ttft_worst_s": 4.8, "prompt_tps": [3829.0], "mem_available_min_gib": 25.15, "fixed_length_ok": true, "errors": []}
+vram at end: 0, 15447 MiB, 487 MiB 1, 6603 MiB, 1287 MiB 
+guard: 2026-10-20T16:12:45 srv-conc-base exit=0 227s min_MemAvailable=25.1GiB@192s min_5080_free=487MiB@87s max_tree_RSS=58.4GiB max_swap_used=0.21GiB min_4060Ti_free=1287MiB ok
+--- engine start lines (base):
+[strata] 2026-10-20 16:08:59 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p021/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack --native /home/USER/ai-speed-testing/str
+strata generate: KV streaming: 32768 of 131072 cells per QSA layer in VRAM, the K/V in 1.55 GiB of pinned RAM
+strata generate: expert cache auto: 9.53 GiB free, 713 MiB reserved (+87 MiB for the draft head) -> 3527 slots
+strata generate: expert cache 4585 slots, 8.75 GiB of VRAM; policy is
+strata generate: CUDA1: 3300 additional experts, 6.21 GiB; results return through pinned host rows
+=== 2026-10-20 16:12:47 arm b4: levels 1,2,4, 2 reps, output check 1 (2436 s left)
+vram after load: 0, 14895 MiB, 1039 MiB 1, 6621 MiB, 1269 MiB 
+engine pid 1403609 pinned/locked: VmLck: 0 kB VmPin: 0 kB VmRSS: 58774140 kB 
+{"arm": "b4", "kind": "chat", "level": 1, "rep": 1, "wall_s": 4.67, "total_tps": 109.7, "per_request_tps_median": 121.65, "ttft_median_s": 0.46, "ttft_worst_s": 0.46, "prompt_tps": [126.5], "mem_available_min_gib": 25.8, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "chat", "level": 2, "rep": 1, "wall_s": 10.68, "total_tps": 95.89, "per_request_tps_median": 51.28, "ttft_median_s": 0.67, "ttft_worst_s": 0.92, "prompt_tps": [63.2, 128.0], "mem_available_min_gib": 25.53, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "chat", "level": 4, "rep": 1, "wall_s": 17.51, "total_tps": 116.96, "per_request_tps_median": 31.6, "ttft_median_s": 1.28, "ttft_worst_s": 2.0, "prompt_tps": [38.0, 27.5, 53.4, 128.6], "mem_available_min_gib": 25.13, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "chat", "level": 4, "rep": 2, "wall_s": 17.91, "total_tps": 114.34, "per_request_tps_median": 30.56, "ttft_median_s": 1.13, "ttft_worst_s": 1.85, "prompt_tps": [63.1, 132.6, 40.7, 35.2], "mem_available_min_gib": 25.09, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "chat", "level": 2, "rep": 2, "wall_s": 10.48, "total_tps": 97.74, "per_request_tps_median": 52.31, "ttft_median_s": 0.67, "ttft_worst_s": 0.91, "prompt_tps": [63.6, 130.3], "mem_available_min_gib": 25.09, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "chat", "level": 1, "rep": 2, "wall_s": 4.66, "total_tps": 109.94, "per_request_tps_median": 121.53, "ttft_median_s": 0.44, "ttft_worst_s": 0.44, "prompt_tps": [130.6], "mem_available_min_gib": 25.15, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "agent", "level": 1, "rep": 1, "wall_s": 8.96, "total_tps": 57.14, "per_request_tps_median": 119.37, "ttft_median_s": 4.67, "ttft_worst_s": 4.67, "prompt_tps": [3935.4], "mem_available_min_gib": 24.86, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "agent", "level": 2, "rep": 1, "wall_s": 19.41, "total_tps": 52.76, "per_request_tps_median": 46.2, "ttft_median_s": 7.37, "ttft_worst_s": 10.28, "prompt_tps": [1789.2, 4069.6], "mem_available_min_gib": 23.96, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "agent", "level": 4, "rep": 1, "wall_s": 35.2, "total_tps": 58.18, "per_request_tps_median": 24.52, "ttft_median_s": 13.17, "ttft_worst_s": 21.98, "prompt_tps": [1797.1, 4100.7, 836.1, 1141.0], "mem_available_min_gib": 22.85, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "agent", "level": 4, "rep": 2, "wall_s": 34.96, "total_tps": 58.59, "per_request_tps_median": 24.68, "ttft_median_s": 13.19, "ttft_worst_s": 21.91, "prompt_tps": [839.0, 1763.3, 4057.8, 1143.5], "mem_available_min_gib": 21.84, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "agent", "level": 2, "rep": 2, "wall_s": 19.23, "total_tps": 53.26, "per_request_tps_median": 46.57, "ttft_median_s": 7.28, "ttft_worst_s": 10.18, "prompt_tps": [1805.6, 4151.2], "mem_available_min_gib": 21.47, "fixed_length_ok": true, "errors": []}
+{"arm": "b4", "kind": "agent", "level": 1, "rep": 2, "wall_s": 8.77, "total_tps": 58.35, "per_request_tps_median": 116.86, "ttft_median_s": 4.39, "ttft_worst_s": 4.39, "prompt_tps": [4184.9], "mem_available_min_gib": 21.47, "fixed_length_ok": true, "errors": []}
+{"level": 1, "idx": 0, "id": "hash", "ttft_s": 0.44688940048217773, "decode_tps": 130.23964750666653, "finish": "length"}
+{"level": 1, "idx": 1, "id": "story", "ttft_s": 0.4202558994293213, "decode_tps": 111.67645646319347, "finish": "length"}
+{"level": 1, "idx": 2, "id": "tcp", "ttft_s": 0.40813422203063965, "decode_tps": 125.50816718107387, "finish": "length"}
+{"level": 1, "idx": 3, "id": "todo", "ttft_s": 0.44262266159057617, "decode_tps": 121.1349422507681, "finish": "length"}
+{"arm": "b4-greedy", "kind": "chat", "level": 4, "rep": 1, "wall_s": 17.06, "total_tps": 120.07, "per_request_tps_median": 31.39, "ttft_median_s": 0.72, "ttft_worst_s": 1.4, "prompt_tps": [56.8, 35.6, 99.8, 1039.2], "mem_available_min_gib": 20.98, "fixed_length_ok": true, "errors": []}
+{"level": 1, "idx": 0, "id": "argparse", "ttft_s": 4.400153160095215, "decode_tps": 115.03600603516428, "finish": "length"}
+{"level": 1, "idx": 1, "id": "json", "ttft_s": 4.381519079208374, "decode_tps": 120.1599724975649, "finish": "length"}
+{"level": 1, "idx": 2, "id": "configparser", "ttft_s": 4.433181047439575, "decode_tps": 117.26417233634383, "finish": "length"}
+{"level": 1, "idx": 3, "id": "logging", "ttft_s": 4.432705640792847, "decode_tps": 116.72272106731525, "finish": "length"}
+{"arm": "b4-greedy", "kind": "agent", "level": 4, "rep": 1, "wall_s": 14.71, "total_tps": 139.2, "per_request_tps_median": 35.76, "ttft_median_s": 0.38, "ttft_worst_s": 0.67, "prompt_tps": [61829.4, 40021.3, 154518.6, 27354.8], "mem_available_min_gib": 19.69, "fixed_length_ok": true, "errors": []}
+vram at end: 0, 15027 MiB, 907 MiB 1, 6623 MiB, 1267 MiB 
+guard: 2026-10-20T16:18:16 srv-conc-b4 exit=0 327s min_MemAvailable=19.7GiB@281s min_5080_free=907MiB@245s max_tree_RSS=63.7GiB max_swap_used=0.22GiB min_4060Ti_free=1267MiB ok
+--- engine start lines (b4):
+[strata] 2026-10-20 16:12:49 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p021/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack --native /home/USER/ai-speed-testing/str
+strata generate: KV streaming: 32768 of 131072 cells per QSA layer in VRAM, the K/V in 1.55 GiB of pinned RAM
+strata generate: --batch: 4 slot sessions on CUDA0 (0.73 GiB each); 8.00 GiB free
+strata generate: --batch 4: the slot sessions take 2.91 GiB of VRAM on CUDA0 that the expert cache would otherwise hold
+strata generate: expert cache auto: 6.60 GiB free, 1213 MiB reserved (+87 MiB for the draft head) -> 2150 slots
+strata generate: expert cache 2781 slots, 5.33 GiB of VRAM; policy is
+strata generate: CUDA1: 3300 additional experts, 6.21 GiB; results return through pinned host rows
+strata batch: slot 1 takes 18380 tokens (copied in 40.6 ms)
+strata batch: slot 2 takes 18143 tokens (copied in 40.9 ms)
+strata batch: slot 3 takes 18387 tokens (copied in 40.5 ms)
+strata batch: 514 windows, avg 3.97 rows, 27.38 ms/window = run 25.25 (CUDA0 GPU-reach wait 10.62 + CPU experts 13.70) + commit 1.42 + emit 0.00 + adapt wait 0.70; per stage (ms/window): CUDA0 wait 10.62 + pool 13.70; per layer-window: CPU experts 8.81, VRAM hits 20.45, PCIe 0.00; routed entries per window: VRAM 981.5 (50.9%), P
+{"level": 4, "id": "hash", "equal": false, "first_diff_token": 29, "tokens": [512, 512], "solo_next": "average-case $O(1)$ time complexity for ", "together_next": "the foundation for dictionaries, sets, a"}
+{"level": 4, "id": "story", "equal": false, "first_diff_token": 4, "tokens": [512, 512], "solo_next": "eaten into the iron of the gallery raili", "together_next": "a way of getting into everything. It set"}
+{"level": 4, "id": "tcp", "equal": false, "first_diff_token": 46, "tokens": [512, 512], "solo_next": "ir design philosophies, mechanisms, and ", "together_next": "y represent fundamentally different phil"}
+{"level": 4, "id": "todo", "equal": false, "first_diff_token": 30, "tokens": [512, 512], "solo_next": "interface (CLI) to-do application using ", "together_next": "to-do application using Python. This pro"}
+b4-greedy chat: equal 0 of 4
+{"level": 4, "id": "argparse", "equal": false, "first_diff_token": 5, "tokens": [512, 512], "solo_next": "argparse code relevant to a `deprecated=", "together_next": "code read so far, and plan\n\n## 1. What I"}
+{"level": 4, "id": "json", "equal": false, "first_diff_token": 11, "tokens": [512, 512], "solo_next": "plan\n\n## 1. Scope of the repository as g", "together_next": "the plan\n\n## 1. What the task asks\n\nMake"}
+{"level": 4, "id": "configparser", "equal": false, "first_diff_token": 1, "tokens": [512, 512], "solo_next": " Code Review and Plan: Adding `Environme", "together_next": "# Code Review and Plan: Adding `Environm"}
+{"level": 4, "id": "logging", "equal": false, "first_diff_token": 17, "tokens": [512, 512], "solo_next": "What I have read\n\nI read lines 1\u20131222 of", "together_next": "Repository scope and what I know\n\nThe ch"}
+b4-greedy agent: equal 0 of 4
+=== 2026-10-20 16:18:18 arm b4mtp: levels 2,4, 2 reps, output check 1 (2105 s left)
+vram after load: 0, 14911 MiB, 1023 MiB 1, 6625 MiB, 1265 MiB 
+engine pid 1406662 pinned/locked: VmLck: 0 kB VmPin: 0 kB VmRSS: 59299340 kB 
+{"arm": "b4mtp", "kind": "chat", "level": 2, "rep": 1, "wall_s": 10.53, "total_tps": 97.22, "per_request_tps_median": 54.2, "ttft_median_s": 0.82, "ttft_worst_s": 1.1, "prompt_tps": [54.3, 107.6], "mem_available_min_gib": 24.98, "fixed_length_ok": true, "errors": []}
+{"arm": "b4mtp", "kind": "chat", "level": 4, "rep": 1, "wall_s": 18.15, "total_tps": 112.83, "per_request_tps_median": 31.45, "ttft_median_s": 1.22, "ttft_worst_s": 2.05, "prompt_tps": [62.5, 130.0, 38.7, 32.7], "mem_available_min_gib": 24.6, "fixed_length_ok": true, "errors": []}
+{"arm": "b4mtp", "kind": "chat", "level": 4, "rep": 2, "wall_s": 17.2, "total_tps": 119.1, "per_request_tps_median": 32.86, "ttft_median_s": 1.24, "ttft_worst_s": 2.01, "prompt_tps": [29.9, 38.1, 131.9, 67.6], "mem_available_min_gib": 24.46, "fixed_length_ok": true, "errors": []}
+{"arm": "b4mtp", "kind": "chat", "level": 2, "rep": 2, "wall_s": 9.66, "total_tps": 105.96, "per_request_tps_median": 59.44, "ttft_median_s": 0.7, "ttft_worst_s": 0.96, "prompt_tps": [62.4, 128.9], "mem_available_min_gib": 24.45, "fixed_length_ok": true, "errors": []}
+{"arm": "b4mtp", "kind": "agent", "level": 2, "rep": 1, "wall_s": 17.98, "total_tps": 56.95, "per_request_tps_median": 53.87, "ttft_median_s": 7.54, "ttft_worst_s": 10.41, "prompt_tps": [3930.7, 1744.3], "mem_available_min_gib": 23.72, "fixed_length_ok": true, "errors": []}
+{"arm": "b4mtp", "kind": "agent", "level": 4, "rep": 1, "wall_s": 33.44, "total_tps": 61.25, "per_request_tps_median": 26.37, "ttft_median_s": 13.1, "ttft_worst_s": 21.71, "prompt_tps": [847.0, 1776.9, 1149.7, 4046.5], "mem_available_min_gib": 22.64, "fixed_length_ok": true, "errors": []}
+{"arm": "b4mtp", "kind": "agent", "level": 4, "rep": 2, "wall_s": 33.56, "total_tps": 61.02, "per_request_tps_median": 26.38, "ttft_median_s": 13.05, "ttft_worst_s": 21.61, "prompt_tps": [1805.2, 840.0, 1154.8, 4134.2], "mem_available_min_gib": 21.57, "fixed_length_ok": true, "errors": []}
+{"arm": "b4mtp", "kind": "agent", "level": 2, "rep": 2, "wall_s": 17.29, "total_tps": 59.22, "per_request_tps_median": 56.36, "ttft_median_s": 7.19, "ttft_worst_s": 10.04, "prompt_tps": [1831.4, 4174.9], "mem_available_min_gib": 21.09, "fixed_length_ok": true, "errors": []}
+{"level": 1, "idx": 0, "id": "hash", "ttft_s": 0.4159986972808838, "decode_tps": 127.59209385240867, "finish": "length"}
+{"level": 1, "idx": 1, "id": "story", "ttft_s": 0.42072153091430664, "decode_tps": 109.75731555327947, "finish": "length"}
+{"level": 1, "idx": 2, "id": "tcp", "ttft_s": 0.41193652153015137, "decode_tps": 115.81211405555055, "finish": "length"}
+{"level": 1, "idx": 3, "id": "todo", "ttft_s": 0.43697214126586914, "decode_tps": 123.96451453394702, "finish": "length"}
+{"arm": "b4mtp-greedy", "kind": "chat", "level": 4, "rep": 1, "wall_s": 16.38, "total_tps": 125.01, "per_request_tps_median": 34.48, "ttft_median_s": 1.13, "ttft_worst_s": 1.8, "prompt_tps": [59.5, 119.7, 27.8, 43.9], "mem_available_min_gib": 21.09, "fixed_length_ok": true, "errors": []}
+{"level": 1, "idx": 0, "id": "argparse", "ttft_s": 4.3757500648498535, "decode_tps": 113.84135012257322, "finish": "length"}
+{"level": 1, "idx": 1, "id": "json", "ttft_s": 4.347397089004517, "decode_tps": 118.81074424668076, "finish": "length"}
+{"level": 1, "idx": 2, "id": "configparser", "ttft_s": 4.400590896606445, "decode_tps": 119.32816801889616, "finish": "length"}
+{"level": 1, "idx": 3, "id": "logging", "ttft_s": 4.404150009155273, "decode_tps": 111.05685549233986, "finish": "length"}
+{"arm": "b4mtp-greedy", "kind": "agent", "level": 4, "rep": 1, "wall_s": 13.92, "total_tps": 147.15, "per_request_tps_median": 38.01, "ttft_median_s": 0.38, "ttft_worst_s": 0.64, "prompt_tps": [157818.4, 28327.0, 39761.5, 61738.2], "mem_available_min_gib": 19.74, "fixed_length_ok": true, "errors": []}
+vram at end: 0, 15165 MiB, 769 MiB 1, 6627 MiB, 1263 MiB 
+guard: 2026-10-20T16:23:11 srv-conc-b4mtp exit=0 292s min_MemAvailable=19.7GiB@253s min_5080_free=769MiB@260s max_tree_RSS=63.6GiB max_swap_used=0.22GiB min_4060Ti_free=1263MiB ok
+--- engine start lines (b4mtp):
+[strata] 2026-10-20 16:18:20 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p021/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack --native /home/USER/ai-speed-testing/str
+strata generate: KV streaming: 32768 of 131072 cells per QSA layer in VRAM, the K/V in 1.55 GiB of pinned RAM
+strata generate: --batch: 4 slot sessions on CUDA0 (0.73 GiB each); 8.00 GiB free
+strata generate: --batch 4: the slot sessions take 2.91 GiB of VRAM on CUDA0 that the expert cache would otherwise hold
+strata generate: --batch-mtp: 4 slot drafters on CUDA0 (50 MiB of private K/V state and buffers each, sharing the solo drafter's weights); 6.97 GiB free there
+strata generate: expert cache auto: 6.39 GiB free, 1213 MiB reserved (+114 MiB for the draft head) -> 2056 slots
+strata generate: expert cache 2658 slots, 5.10 GiB of VRAM; policy is
+strata generate: CUDA1: 3300 additional experts, 6.22 GiB; results return through pinned host rows
+strata batch: slot 2 takes 18375 tokens (copied in 43.2 ms)
+strata batch: slot 0 takes 18143 tokens (copied in 68.1 ms)
+strata batch: 297 windows, avg 6.88 rows, 44.82 ms/window = run 41.41 (CUDA0 GPU-reach wait 15.82 + CPU experts 24.47) + commit 1.44 + emit 1.68 + adapt wait 0.29; per stage (ms/window): CUDA0 wait 15.82 + pool 24.47; per layer-window: CPU experts 16.06, VRAM hits 39.24, PCIe 0.00; routed entries per window: VRAM 1883.3 (49.4%),
+strata batch: MTP proposals accepted 873 of 1170 (74.6%)
+{"level": 4, "id": "hash", "equal": false, "first_diff_token": 14, "tokens": [512, 512], "solo_next": " are arguably the most important data st", "together_next": ", also known as hash maps or dictionarie"}
+{"level": 4, "id": "story", "equal": false, "first_diff_token": 4, "tokens": [512, 512], "solo_next": "eaten into the iron of the gallery raili", "together_next": "a way of getting into everything. It set"}
+{"level": 4, "id": "tcp", "equal": false, "first_diff_token": 0, "tokens": [512, 512], "solo_next": "# The Great Divide: A Deep Dive into TCP", "together_next": "Transmission Control Protocol (TCP) and "}
+{"level": 4, "id": "todo", "equal": false, "first_diff_token": 30, "tokens": [512, 512], "solo_next": "interface (CLI) to-do application using ", "together_next": "to-do application using Python. This pro"}
+b4mtp-greedy chat: equal 0 of 4
+{"level": 4, "id": "argparse", "equal": false, "first_diff_token": 5, "tokens": [512, 512], "solo_next": "argparse code relevant to this task (no ", "together_next": "code read so far, and plan\n\n## 1. What I"}
+{"level": 4, "id": "json", "equal": false, "first_diff_token": 17, "tokens": [512, 512], "solo_next": "Scope of the repository as given\n\nThe ch", "together_next": "What the task asks\n\nMake the pure-Python"}
+{"level": 4, "id": "configparser", "equal": false, "first_diff_token": 14, "tokens": [512, 512], "solo_next": "configparser\n\n## 1. Repository layout an", "together_next": "`configparser`\n\n## 1. Repository layout "}
+{"level": 4, "id": "logging", "equal": false, "first_diff_token": 17, "tokens": [512, 512], "solo_next": "Repository scope\n\nThe checkout is a sing", "together_next": "What I have read\n\nI read the first ~1,22"}
+b4mtp-greedy agent: equal 0 of 4
+
+base (chat, the user's sampling; median of 2 reps):
+| N | total tok/s | per request tok/s (median / slowest) | first token median / worst s | prompt tok/s (median) | wall s | min MemAvailable GiB | all at max_tokens |
+|---|---|---|---|---|---|---|---|
+| 1 | 124.0 | 137.9 / 137.9 | 0.42 / 0.42 | 137 | 4.1 | 32.0 | yes |
+| 2 | 118.9 | 131.8 / 130.1 | 2.55 / 4.68 | 71 | 8.6 | 32.0 | yes |
+| 4 | 125.6 | 139.8 / 128.3 | 6.38 / 12.31 | 11 | 16.3 | 32.0 | yes |
+
+b4 (chat, the user's sampling; median of 2 reps):
+| N | total tok/s | per request tok/s (median / slowest) | first token median / worst s | prompt tok/s (median) | wall s | min MemAvailable GiB | all at max_tokens |
+|---|---|---|---|---|---|---|---|
+| 1 | 109.8 | 121.6 / 121.6 | 0.45 / 0.45 | 129 | 4.7 | 25.1 | yes |
+| 2 | 96.8 | 51.8 / 50.6 | 0.67 / 0.92 | 96 | 10.6 | 25.1 | yes |
+| 4 | 115.7 | 31.1 / 29.9 | 1.21 / 1.93 | 47 | 17.7 | 25.1 | yes |
+
+b4mtp (chat, the user's sampling; median of 2 reps):
+| N | total tok/s | per request tok/s (median / slowest) | first token median / worst s | prompt tok/s (median) | wall s | min MemAvailable GiB | all at max_tokens |
+|---|---|---|---|---|---|---|---|
+| 2 | 101.6 | 56.8 / 53.4 | 0.76 / 1.03 | 85 | 10.1 | 24.4 | yes |
+| 4 | 116.0 | 32.2 / 30.2 | 1.23 / 2.03 | 51 | 17.7 | 24.5 | yes |
+
+base (agent, the user's sampling; median of 2 reps):
+| N | total tok/s | per request tok/s (median / slowest) | first token median / worst s | prompt tok/s (median) | wall s | min MemAvailable GiB | all at max_tokens |
+|---|---|---|---|---|---|---|---|
+| 1 | 58.6 | 133.2 / 133.2 | 4.90 / 4.90 | 3752 | 8.7 | 25.1 | yes |
+| 2 | 59.9 | 138.3 / 135.6 | 9.16 / 13.43 | 2525 | 17.1 | 25.6 | yes |
+| 4 | 59.8 | 137.8 / 130.2 | 17.77 / 30.38 | 1085 | 34.2 | 26.6 | yes |
+
+b4 (agent, the user's sampling; median of 2 reps):
+| N | total tok/s | per request tok/s (median / slowest) | first token median / worst s | prompt tok/s (median) | wall s | min MemAvailable GiB | all at max_tokens |
+|---|---|---|---|---|---|---|---|
+| 1 | 57.7 | 118.1 / 118.1 | 4.53 / 4.53 | 4060 | 8.9 | 21.5 | yes |
+| 2 | 53.0 | 46.4 / 36.4 | 7.33 / 10.23 | 2938 | 19.3 | 21.5 | yes |
+| 4 | 58.4 | 24.6 / 18.5 | 13.18 / 21.95 | 1453 | 35.1 | 21.8 | yes |
+
+b4mtp (agent, the user's sampling; median of 2 reps):
+| N | total tok/s | per request tok/s (median / slowest) | first token median / worst s | prompt tok/s (median) | wall s | min MemAvailable GiB | all at max_tokens |
+|---|---|---|---|---|---|---|---|
+| 2 | 58.1 | 55.1 / 41.1 | 7.37 / 10.22 | 2881 | 17.6 | 21.1 | yes |
+| 4 | 61.1 | 26.4 / 19.8 | 13.07 / 21.66 | 1466 | 33.5 | 21.6 | yes |
+=== 2026-10-20 16:23:13 arms done after 14 min - 8080 back on P021
+answered: stop 33 tokens
+8080: server 1408884 engine 1408899 exe /home/USER/ai-speed-testing/strata-compare/engine-r22p021/strata sha c9fe314316c4
+=== 2026-10-20 16:23:33 8080 on P021 (c9fe314316c4), policy on, queue hold removed
+=== 2026-10-20 16:23:33 conc21 done after 15 min

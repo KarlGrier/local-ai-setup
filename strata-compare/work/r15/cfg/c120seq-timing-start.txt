@@ -1,0 +1,1 @@
+server ready (guard pid 1400369, server pid 1400384) load_time_s 25.649957011 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r15-c120seq-timing_20261008T040517.log

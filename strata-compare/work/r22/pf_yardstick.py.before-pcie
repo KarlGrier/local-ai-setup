@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""pf_yardstick.py - round 22 gap 7 (10-21): the quality yardstick on the PROMPT path, for Basalt's v2 prompt expert
+kernels (STRATA_PREFILL_V2) and the one-flag tests that change prompt arithmetic (STRATA_PROMPT_ATTN_IMMA). The user,
+10-21: the kernels go in only if "close to exact" shows up as rounding-level on the quality yardstick (same top token
+and KLD vs the current build) and on the needle / 120K / probe checks.
+
+Why not tools/quant_quality.py `run`: it reads every token through the decode windows (--short-read), so the prompt
+kernels never run; and the CLI's --dump-logits never fires on a native pack. Its `prompt` mode is the method used here,
+with more and longer prompts: one `strata --serve` engine with the yardstick's fixed settings (quant_quality.engine_args:
+experts on the CPU, no adaptation, no PCIe share, FP16 K/V, STRATA_PREFILL_CPU_SHARE=0, so every prompt expert runs on
+the GPU's prompt kernels), the batched prompt path (--prefill auto, short reads only up to 64 tokens), and per prompt
+the full-vocabulary logits after it (STRATA_DUMP_FIRST_LOGITS). Prompts (47, nothing cached between them):
+  the yardstick set's 5 segments (code, docs, English, other languages, an agent transcript) cut at 128, 256, 384, 512,
+  640, 768, 896 and 1000 tokens (40); tf-long16k cut at 2K, 4K, 8K and 16K (4); the 32K speed prompt cut at 24K and 32K
+  and whole (3: the long chunks with hundreds of rows per expert).
+
+  pf_yardstick.py run CONFIG OUTDIR [--env K=V ...]   OUTDIR/first.<i> + index.json (quant_quality.py pcompare's layout)
+  pf_yardstick.py compare REFDIR RUNDIR...            quant_quality.py pcompare (top-1 agreement, full-vocabulary KL
+                                                      mean / median / max), per prompt group too
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+SC = pathlib.Path("/home/USER/ai-speed-testing/strata-compare")
+TOOL = SC / "strata-r22p022n/tools/quant_quality.py"
+PR = SC / "bringup/out/r20a/prompts"
+SEG_LENS = (128, 256, 384, 512, 640, 768, 896, 1000)
+LONG = [("tf-long16k.prompt", (2048, 4096, 8192, 16384)), ("32k.tokens", (24576, 32768, 0))]   # 0 = whole
+# 10-21 night (the user: the v2 decision needs ~40 long prompts, 2K-32K): 40 cuts of 8 different texts (32k.tokens holds
+# the tf-long16k / 24k text; tf-long28k / 40k / 64k / 112k, pp4k, ldrsyn20k (research-like) and rep9k (repetitive) are
+# each their own), ending at different positions
+LONG40 = [("32k.tokens", (2048, 4096, 6144, 8192, 12288, 20480, 28672, 32768)),
+          ("tf-long28k.prompt", (2560, 7168, 11008, 14336, 21504, 28672)),
+          ("tf-long40k.prompt", (3072, 9216, 14080, 18432, 27648, 32768)),
+          ("tf-long64k.prompt", (3584, 10240, 17408, 25600, 32768)),
+          ("tf-long112k.prompt", (4608, 11264, 19456, 26624, 32768)),
+          ("pp4k.tokens", (2304, 0)),
+          ("ldrsyn20k.tokens", (2816, 5632, 7680, 9728, 13824, 0)),
+          ("rep9k.tokens", (4505, 0))]
+
+
+def tool():
+    spec = importlib.util.spec_from_file_location("quant_quality", TOOL)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def prompts(qq, which="g7"):
+    out = []
+    if which == "long40":
+        for f, cuts in LONG40:
+            ids = [int(x) for x in (PR / f).read_text().replace("\n", ",").split(",") if x.strip()]
+            for n in cuts:
+                out.append((f"{f.split('.')[0]}-{n or len(ids)}", ids[:n] if n else ids))
+        assert len(out) == 40, len(out)
+        return out
+    st = json.load(open(qq.SET_DIR / "set.ids.json"))
+    for s in st["segments"]:
+        for n in SEG_LENS:
+            out.append((f"{s['name']}-{n}", s["ids"][:n]))
+    for f, cuts in LONG:
+        ids = [int(x) for x in (PR / f).read_text().replace("\n", ",").split(",") if x.strip()]
+        for n in cuts:
+            out.append((f"{f.split('.')[0]}-{n or len(ids)}", ids[:n] if n else ids))
+    return out
+
+
+def run(a):
+    qq = tool()
+    cfg = json.load(open(a.config, encoding="utf-8-sig"))
+    out = pathlib.Path(a.outdir).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    for f in out.glob("first.*"):
+        f.unlink()
+    ps = prompts(qq, a.set)
+    env = dict(os.environ)
+    env.update(cfg.get("env", {}))
+    if cfg.get("lib_dirs"):
+        env["LD_LIBRARY_PATH"] = ":".join(cfg["lib_dirs"] + [env.get("LD_LIBRARY_PATH", "")])
+    env.update(qq.FIXED_ENV)
+    for kv in a.env or []:
+        k, _, v = kv.partition("=")
+        env[k] = v
+    env["STRATA_DUMP_FIRST_LOGITS"] = str(out / "first")
+    if qq.mem_available_gb() < a.min_free_gb:
+        raise SystemExit(f"only {qq.mem_available_gb():.0f} GB available (< {a.min_free_gb}): not starting an engine")
+    args = qq.engine_args(cfg, False, max(len(p) for _, p in ps))
+    k = args.index("--short-read")
+    del args[k:k + 2]                      # the default (64): every prompt here takes the batched prompt path
+    k = args.index("--prefill")
+    args[k + 1] = "auto"
+    k = args.index("--kv")                 # quant_quality's FP16 K/V unless --kv int8 (the served cache; int8 attention
+    args[k + 1] = a.kv                     # STRATA_PROMPT_ATTN_IMMA runs only on int8 K/V)
+    errf = open(out / "stderr.txt", "w")
+    print("engine:", " ".join(args), flush=True)
+    p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errf, text=True,
+                         cwd=cfg.get("cwd"), env=env, bufsize=1)
+    for line in p.stdout:
+        if line.startswith("READY"):
+            break
+    else:
+        raise SystemExit(f"the engine ended before READY (exit {p.wait()}); see {out}/stderr.txt")
+    index = []
+    for name, ids in ps:
+        p.stdin.write("GEN 1 " + ",".join(map(str, ids)) + "\n")
+        p.stdin.flush()
+        done = None
+        for line in p.stdout:
+            if line.startswith(("DONE", "ERR")):
+                done = line.strip()
+                break
+        if done is None or not done.startswith("DONE") or "nonfinite" in done:
+            p.kill()
+            raise SystemExit(f"{name}: the engine answered {done!r}; see {out}/stderr.txt")
+        index.append({"segment": name.rsplit("-", 1)[0], "tokens": len(ids), "name": name})
+    p.stdin.write("QUIT\n")
+    p.stdin.flush()
+    try:
+        p.wait(timeout=600)
+    except subprocess.TimeoutExpired:
+        p.kill()
+    errf.close()
+    n = len(list(out.glob("first.*")))
+    (out / "index.json").write_text(json.dumps({"requests": index, "args": args, "env": a.env or [],
+                                                "config": a.config}, indent=1))
+    err = (out / "stderr.txt").read_text(errors="replace")
+    v2 = [l for l in err.splitlines() if "v2 kernels" in l or "STRATA_PREFILL_V2" in l or "prefill_v2" in l][:4]
+    print(f"{len(index)} prompts, {n} logit rows" + ("".join(f"\n  {l}" for l in v2) if v2 else ""))
+    return 0 if n == len(index) else 1
+
+
+def compare(a):
+    import numpy as np
+    ref = pathlib.Path(a.ref)
+    idx = json.loads((ref / "index.json").read_text())["requests"]
+
+    def logp(d, i):
+        x = np.fromfile(d / f"first.{i}", dtype=np.float32).astype(np.float64)
+        x -= x.max()
+        return x - np.log(np.exp(x).sum())
+
+    groups = {"short (128-1000)": lambda r: r["tokens"] <= 1000, "long (2K-32K)": lambda r: r["tokens"] > 1000,
+              "2K-8K": lambda r: 1000 < r["tokens"] <= 8192, "8K-16K": lambda r: 8192 < r["tokens"] <= 16384,
+              "16K-32K": lambda r: 16384 < r["tokens"]}
+    print(f"reference: {ref}")
+    print(f"{'run':28s} {'prompts':>16s} {'n':>3s} {'top-1':>7s} {'KL mean':>9s} {'KL median':>9s} {'KL max':>9s}")
+    for run in a.runs:
+        r = pathlib.Path(run)
+        rows = []
+        for i, rq in enumerate(idx):
+            if not (r / f"first.{i}").exists() or not (ref / f"first.{i}").exists():
+                continue
+            lr, la = logp(ref, i), logp(r, i)
+            rows.append((rq, float((np.exp(lr) * (lr - la)).sum()), int(lr.argmax() == la.argmax())))
+        for g, f in [("all", lambda r: True), *groups.items()]:
+            sel = [(k, t) for rq, k, t in rows if f(rq)]
+            if not sel:
+                continue
+            kl = sorted(k for k, _ in sel)
+            print(f"{r.name:28s} {g:>16s} {len(sel):3d} {100 * sum(t for _, t in sel) / len(sel):6.1f}% "
+                  f"{sum(kl) / len(kl):9.6f} {kl[len(kl) // 2]:9.6f} {kl[-1]:9.6f}")
+        worst = sorted(rows, key=lambda x: -x[1])[:3]
+        print(f"{'':28s} worst: " + ", ".join(f"{rq['name']} {k:.5f}{'' if t else ' (top-1 differs)'}" for rq, k, t in worst))
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("run")
+    r.add_argument("config"); r.add_argument("outdir")
+    r.add_argument("--env", action="append")
+    r.add_argument("--min-free-gb", type=float, default=16)
+    r.add_argument("--set", default="g7", choices=["g7", "long40"], help="g7: gap 7's 47 prompts; long40: 40 long ones")
+    r.add_argument("--kv", default="fp16", choices=["fp16", "int8"])
+    c = sub.add_parser("compare")
+    c.add_argument("ref"); c.add_argument("runs", nargs="+")
+    a = ap.parse_args()
+    sys.exit(run(a) if a.cmd == "run" else compare(a))
+
+
+if __name__ == "__main__":
+    main()

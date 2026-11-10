@@ -1,0 +1,21 @@
+=== 2026-10-24 00:01:14 DS4.1 arm dsp70 (/home/USER/ai-speed-testing/strata-compare/configs/DS41-v024-dsp70.json): --max-context 32768 --eos 1 --dspark on --dspark-conf 0.65 --tp 2 --ssd-cache 70 {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX5080,GPU-UUID-RTX4060TI', 'STRATA_DS4_PROMPT_SKIP': '0', 'DS4_STORE_FLOOR_GB': '16'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/arm-dsp70-1024-0001
+=== 2026-10-24 00:04:14 cool-down before the arm: 180 s, drive 39 -> 37 C
+=== 2026-10-24 00:04:14 before: MemAvailable 86.0 GB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-24 00:04:26 ready after 12 s: MemAvailable 27.1 GB, engine RSS 59816 MB; vram 0, 15365 MiB, 569 MiB;1, 7307 MiB, 583 MiB;
+=== 2026-10-24 00:23:03 requests done (rc 0): 11 responses
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: RAM store: up to 6814 slots of 10.3 MB (70.0 GB), policy 0, 8 reader threads, unbuffered reads
+ds4: RAM store: 6558 of the profile's hottest experts read in (50.9 GB) in 5.5 s
+ds4: CUDA0 layers [0, 42]: weights 3.58 GB, experts 9.12 GB (594 of 8448 in VRAM), caches 0.03 GB, 568 MiB free
+ds4: CUDA1 layers [21, 39] + head: weights 3.04 GB, experts 1.72 GB (171 of 7296 in VRAM), caches 0.01 GB, 582 MiB free
+ds4: 14979 routed experts on the CPU lane (129.2 GB, in place in the model's files), 16 threads
+monitor: lowest MemAvailable 15.5 GB, peak engine RSS 72027 MB, peak VRAM used 5080 15441 MiB / 4060 Ti 7383 MiB
+=== 2026-10-24 00:23:10 kcheck clean
+P4K: prompt [4125, 4395] tokens, [186.8, 206.9] tok/s (TTFT [22.086, 21.241] s), disk [86.476, 77.099] GB
+P20K: prompt [19753, 18888] tokens, [317.9, 315.9] tok/s (TTFT [62.137, 59.786] s), disk [200.535, 192.573] GB
+W1-think: decode [20.02, 24.81] tok/s (mean 22.41), [2333, 3072] tokens, prompt [124, 125] at [17.6, 23.4] tok/s, finish ['stop', 'length'], disk [0.0706, 0.0618] GB/token
+W2-code: decode [20.15, 23.8] tok/s (mean 21.98), [3072, 3072] tokens, prompt [139, 141] at [16.2, 17.1] tok/s, finish ['length', 'length'], disk [0.0891, 0.0757] GB/token
+W3-research: decode [18.24, 18.08] tok/s (mean 18.16), [2048, 2048] tokens, prompt [23552, 23552] at [333.2, 342.6] tok/s, finish ['length', 'length'], disk [0.2172, 0.2101] GB/token
+W1-W3 decode mean 20.85 tok/s over 6 responses
+nvme0 (Samsung 9100 PRO): 44 samples 00:01-00:23, composite 37-43 C (sensor 1 max 51 C), alarm bit never set; no request above 70 C
+=== 2026-10-24 00:23:10 done

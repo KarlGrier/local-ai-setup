@@ -1,0 +1,44 @@
+{
+ "decided": "2026-10-20T03:09:24",
+ "graded": "blind, against the frozen answers (answers/answers-hard.jsonl, FROZEN-hard.txt): tools/blind-open.py relabelled each question's two answers A/B in a random order with the setup cues taken out, and the grades (blind/grades.jsonl) were written before the key was opened - the same way as the rest of phase 3; the grader did not know which arm was which",
+ "medium_correct": 5,
+ "xhigh_correct": 5,
+ "per_question": {
+  "medium": {
+   "h02": true,
+   "h04": true,
+   "h05": true,
+   "h06": true,
+   "h08": true
+  },
+  "xhigh": {
+   "h02": true,
+   "h04": true,
+   "h05": true,
+   "h06": true,
+   "h08": true
+  }
+ },
+ "matcher_sanity": {
+  "medium": 5,
+  "xhigh": 5,
+  "per_question": {
+   "medium": {
+    "h02": true,
+    "h04": true,
+    "h05": true,
+    "h06": true,
+    "h08": true
+   },
+   "xhigh": {
+    "h02": true,
+    "h04": true,
+    "h05": true,
+    "h06": true,
+    "h08": true
+   }
+  }
+ },
+ "rule": "run the xhigh open-ended runs (o02/o03/o07/o08) only if xhigh_correct > medium_correct (a tie is not a win)",
+ "run_xhigh_open": false
+}

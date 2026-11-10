@@ -1,0 +1,14 @@
+# Stops Strata on 127.0.0.1:8080 after a while without requests (2026-10-17). The minutes: 
+# configs/usability/strata-idle-stop.conf. Installed as ~/.config/systemd/user/strata-idle-stop.service.
+# Off for good: systemctl --user disable --now strata-idle-stop.service
+[Unit]
+Description=Stop Strata (127.0.0.1:8080) after a while without requests
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I /home/USER/ai-speed-testing/strata-compare/configs/usability/bin/strata-idle-stop.py
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

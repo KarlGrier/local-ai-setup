@@ -1,0 +1,119 @@
+#!/bin/bash
+# retry-failed-replay.sh - Karl 11-05 (D8): "Give the failed replay one retry at the end of the chain, if it needs no
+# decision from me." A one-shot (staged 11-05, staging/post7d; NOT started). Start it as a user unit (Karl):
+#   systemd-run --user --unit=post7d-retry --description="post-7d: one retry of each failed replay after the chain (Karl 11-05 D8)" /bin/bash /home/USER/ai/deep-research/staging/post7d/retry-failed-replay.sh
+# 1 Waits (polls every 5 min; staging/post7d/STOP-retry ends the wait, exit 3) until the chain has ended:
+#   post7d-chain.service inactive AND deep-research-bench.service inactive - i.e. after Phase 5's queue has finished
+#   (chain.sh itself ends right after the Phase 5 switch), or after the chain stopped with the queue idle.
+# 2 The failed replays = the labels in staging/post7d/item8/failed-replays.tsv (written by replays.sh) whose last
+#   event is "failed" or "void-twice". None -> a log line, exit 0.
+# 3 Each one ONCE, in the order they failed. It needs Karl's decision (not retried; written to
+#   staging/post7d/item8/RETRY-NEEDS-DECISION.txt) when: its evidence file is gone or changed (sha256), tools/fix-replay.py
+#   or the LDR deep package changed since the failure (its pair's other side was written by the old code), its label
+#   folder is in use again, or an earlier retry of it was interrupted. Otherwise, with replays.sh's own functions:
+#   waits until run/bench.lock is free (no bench run live) and the chain is still over, then replay(): no Jan job, no
+#   hold / open gap, Strata up, the engine = P028x (else a decision), the same fix-replay command and time limit, VOID
+#   if a gap opens (one rerun), a kernel check after it. A retry that fails again: folder to item8/failed/, "Karl decides".
+#   A stop (kernel check, engine, Strata) marks the rest as needing a decision.
+# 4 Events retry-start / retry-ok / retry-failed / needs-decision appended to the state file; one NOTES.md line and a
+#   desktop alert with the outcome (critical when anything failed or needs a decision). Log: logs/post7d-retry.log.
+# Nothing else runs: no queue, no switch, no install. Lock fds are closed for children (replays.sh does it per call).
+set -u
+REPLAYS=${RETRY_REPLAYS_SH:-/home/USER/ai/deep-research/staging/post7d/replays.sh}
+REPLAYS_SOURCE_ONLY=1 source "$REPLAYS" || { echo "cannot source $REPLAYS"; exit 2; }
+LOG=$WS/logs/post7d-retry.log
+STOPR=$S/STOP-retry
+NEEDF=$S/item8/RETRY-NEEDS-DECISION.txt
+RETRY_POLL_S=${RETRY_POLL_S:-300}
+LOCK_POLL_S=${RETRY_LOCK_POLL_S:-60}
+CUR=""; CUR_SIZES=""; CUR_RUN=""; TODO=(); OK=""; BAD=""; NEED=""
+say() { echo "$(date '+%F %T') retry: $*" >> "$LOG"; }
+# 11-05 18:5x (audit AUDIT-1105.md #5): "ended" = both units inactive or failed, and still so 2 min later - the queue's
+# Restart=on-failure shows "activating" for 60 s after a crash, which is-active also reports as not active
+unit_down() { case "$(systemctl --user show -p ActiveState --value "$1" 2> /dev/null)" in inactive|failed) return 0 ;; *) return 1 ;; esac; }
+both_down() { unit_down post7d-chain.service && unit_down deep-research-bench.service; }
+chain_ended() { both_down && sleep "${ENDED_CONFIRM_S:-120}" && both_down; }
+bench_free() { flock -n "$WS/run/bench.lock" true; }
+need() {   # need LABEL SIZES RUN WHAT - a retry that needs Karl's decision
+  state_add needs-decision "$1" "$2" "$WS/$3" "$4" "-" "yes: $4"
+  echo "$(date '+%F %T')  $1  ($2, $3): $4" >> "$NEEDF"
+  NEED="$NEED $1"; say "$1: needs Karl's decision - $4"
+}
+finish() {   # one NOTES line + an alert; $1 = exit code
+  local u=normal txt
+  txt="retried ok:${OK:- none}; failed again:${BAD:- none}; needs a decision:${NEED:- none}"
+  [ -n "$BAD$NEED" ] && u=critical
+  say "done - $txt"
+  echo "* $(date '+%F %H:%M') POST-7d REPLAY RETRY (Karl 11-05 D8, staging/post7d/retry-failed-replay.sh): $txt. State: staging/post7d/item8/failed-replays.tsv$([ -n "$NEED" ] && echo "; what is needed: staging/post7d/item8/RETRY-NEEDS-DECISION.txt")." >> "$NOTES"
+  alert $u "post-7d replay retry done" "$txt"
+  exit "$1"
+}
+# replays.sh's stops, here: the current label and every one not yet retried need a decision
+die() {
+  say "STOPPED: $*"
+  local i
+  if [ -n "$CUR" ]; then need "$CUR" "$CUR_SIZES" "${CUR_RUN#$WS/}" "the retry stopped: $*"; fi
+  for i in "${TODO[@]}"; do IFS=$'\t' read -r l s r _ <<< "$i"; need "$l" "$s" "$r" "not retried: the retry stopped ($*)"; done
+  TODO=(); CUR=""
+  finish 1
+}
+# a retry that fails again: set aside, no further attempt
+replay_failed() {
+  aside "$1" failed
+  state_add retry-failed "$1" "$2" "$3" "$4" "$ASIDE_TO" "yes: the retry failed too ($4) - Karl decides"
+  BAD="$BAD $1"; say "$1: the retry FAILED ($4) - set aside; Karl decides"
+  return 0
+}
+
+[ -n "${RETRY_TEST_HOOK:-}" ] && source "$RETRY_TEST_HOOK"   # tests only (scratch/weekend/test_retry.sh): sandbox paths + stubs
+[ "${RETRY_SOURCE_ONLY:-0}" = 1 ] && { return 0 2> /dev/null || exit 0; }   # tests
+say "start (pid $$): waiting for the chain to end (post7d-chain and deep-research-bench inactive)"
+told=0
+until chain_ended; do
+  [ -e "$STOPR" ] && { say "STOP-retry present - stopped waiting (nothing retried)"; exit 3; }
+  [ $told = 0 ] && { say "the chain or the bench queue is active - waiting (poll ${RETRY_POLL_S} s)"; told=1; }
+  sleep "$RETRY_POLL_S"
+done
+say "the chain has ended (post7d-chain: $(systemctl --user is-active post7d-chain.service 2> /dev/null); bench: $(systemctl --user is-active deep-research-bench.service 2> /dev/null))"
+# the failed labels, in the order they first failed: last event failed / void-twice / retry-start (interrupted)
+mapfile -t ROWS < <(awk -F'\t' 'NR > 1 { if (!($2 in last)) order[++n] = $2; last[$2] = $3; row[$2] = $0 }
+  END { for (i = 1; i <= n; i++) { l = order[i]; if (last[l] == "failed" || last[l] == "void-twice" || last[l] == "retry-start") print row[l] } }' "$STATE" 2> /dev/null)
+if [ ${#ROWS[@]} = 0 ]; then say "no failed replay recorded ($( [ -s "$STATE" ] && echo "state file: all settled" || echo "no state file")) - nothing to retry"; exit 0; fi
+say "to retry once each: $(for r in "${ROWS[@]}"; do printf '%s ' "$(cut -f2 <<< "$r")"; done)"
+# 11-05 (Claude, on Karl's D8: "If a second replay fails, stop the chain and alert me"): retry only at the chain's NORMAL
+# end (Phase 5's queue finished); a chain that stopped early (e.g. a second replay failure) waits for Karl instead
+if ! grep -qF 'queue finished (queue-plan-p5-holdout.json)' "$WS/logs/bench2-queue.log" 2> /dev/null; then
+  for r in "${ROWS[@]}"; do IFS=$'\t' read -r _ l _ s rr _ <<< "$r"; need "$l" "$s" "$rr" "the chain stopped before its end (Phase 5 did not finish) - not retried; Karl decides"; done
+  finish 1
+fi
+bash "$KC" post7d-retry-start >> "$LOG" 2>&1 || { TODO=(); for r in "${ROWS[@]}"; do IFS=$'\t' read -r _ l _ s rr _ <<< "$r"; TODO+=("$l"$'\t'"$s"$'\t'"$rr"); done; die "kernel check failed before the retries"; }
+TODO=(); for r in "${ROWS[@]}"; do IFS=$'\t' read -r _ l _ s rr _ <<< "$r"; TODO+=("$l"$'\t'"$s"$'\t'"$rr"); done
+for r in "${ROWS[@]}"; do
+  IFS=$'\t' read -r _t label event sizes run why folder _dec fr0 deep0 ev0 <<< "$r"
+  TODO=("${TODO[@]:1}")
+  if [ "$event" = retry-start ]; then need "$label" "$sizes" "$run" "an earlier retry of it was interrupted"; continue; fi
+  RUN=$WS/$run
+  if [ ! -s "$RUN/deep/evidence.jsonl" ]; then need "$label" "$sizes" "$run" "its evidence ($run/deep/evidence.jsonl) is gone"; continue; fi
+  [ "$(ev_sha "$RUN")" = "$ev0" ] || { need "$label" "$sizes" "$run" "its evidence changed since the failure (sha256 $ev0 -> $(ev_sha "$RUN"))"; continue; }
+  [ "$(code_sha fr)" = "$fr0" ] || { need "$label" "$sizes" "$run" "tools/fix-replay.py changed since the failure ($fr0 -> $(code_sha fr)): its pair was written by the old code"; continue; }
+  [ "$(code_sha deep)" = "$deep0" ] || { need "$label" "$sizes" "$run" "the LDR deep package changed since the failure ($deep0 -> $(code_sha deep)): its pair was written by the old code"; continue; }
+  if [ -e "$R/fixes/replays/$label" ] && [ -n "$(ls -A "$R/fixes/replays/$label" 2> /dev/null)" ]; then
+    need "$label" "$sizes" "$run" "results/bench2/fixes/replays/$label is in use again"; continue; fi
+  told=0
+  until chain_ended && bench_free; do
+    [ -e "$STOPR" ] && die "STOP-retry present"
+    [ $told = 0 ] && { say "$label: a bench run or the chain is live again - waiting"; told=1; }
+    sleep "$LOCK_POLL_S"
+  done
+  CUR=$label; CUR_SIZES=$sizes; CUR_RUN=$RUN
+  state_add retry-start "$label" "$sizes" "$RUN" "the one retry (first failure: $why)" "-" "no"
+  say "$label: the one retry ($sizes sizes, $run; first failure: $why, folder ${folder})"
+  n_bad=$(wc -w <<< "$BAD")
+  replay "$label" "$sizes" "$RUN"
+  if [ "$(wc -w <<< "$BAD")" = "$n_bad" ] && done_label "$label"; then
+    state_add retry-ok "$label" "$sizes" "$RUN" "retried once: report written" "$R/fixes/replays/$label" "no"
+    OK="$OK $label"; say "$label: retry ok"
+  fi
+  CUR=""
+done
+finish $([ -n "$BAD$NEED" ] && echo 1 || echo 0)

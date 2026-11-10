@@ -1,0 +1,127 @@
+=== 2026-11-09 16:28:04 an earlier attempt's outputs moved to /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap-prev-1109-162804
+=== 2026-11-09 16:28:04 SHAPE GAP 0213 (work/r23/shape-gap/gap-shape0213.sh, Karl 11-09): parity programs at flash_next / q4_mid / q4_big / q4_deep, one smoke per q4 shape - information only
+=== 2026-11-09 16:28:04   shape_rules.py selftest: shape_rules selftest: OK (0 failure(s))
+  VERIFY OK: prep record /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap-prep/READY.json (sha256)
+=== 2026-11-09 16:28:17   VERIFY OK: prep record /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap-prep/READY.json (sha256)
+=== 2026-11-09 16:28:17   build records, ninja and engine copies checked (HEAD 66d4f9b65c90)
+2026-11-09 16:28:18 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 415874 (engine 415888)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-09 16:29:38 port_gap4: gap open: test lock held (pid 451715), 8080 stopped
+=== 2026-11-09 16:29:38 8080 down: engines left: none MemAvailable 88 GB; deadline 17:24 (55 min)
+=== 2026-11-09 16:29:38 steps: parity:q4_mid parity:q4_big smoke:q4_mid smoke:q4_big smoke:q4_deep parity:q4_deep
+=== 2026-11-09 16:29:38 2a q4_mid: 82 ctest entries (build build-q4_mid, timeout 1500 s for all) + 3 direct programs
+=== 2026-11-09 16:37:01   ctest rc 8: 99% tests passed, 1 tests failed out of 82
+parity q4_mid: 83 pass / 1 skip / 1 fail of 85
+  FAIL gguf_geometry_test: Failed 0.009376 s
+=== 2026-11-09 16:39:51   gate parity_q4_mid INFO q4_mid: 83 pass / 1 skip / 1 fail of 85
+=== 2026-11-09 16:39:51 2a q4_big: 82 ctest entries (build build-q4_big, timeout 1500 s for all) + 3 direct programs
+=== 2026-11-09 16:49:10   ctest rc 8: 99% tests passed, 1 tests failed out of 82
+parity q4_big: 83 pass / 1 skip / 1 fail of 85
+  FAIL gguf_geometry_test: Failed 0.0095704 s
+=== 2026-11-09 16:53:35   gate parity_q4_big INFO q4_big: 83 pass / 1 skip / 1 fail of 85
+cfg q4_mid -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_mid/cfg.json: changed _comment, args, cwd, drafting, env, exe, fallback, log, model_name, model_not_running, mtp, tokenizer, vision; args 37 -> 32
+CFG OK
+=== 2026-11-09 16:53:35 2b q4_mid: CLI probe sg11091628-q4_mid-probe (p2000, 16 new tokens; cut at 300 s)
+=== 2026-11-09 16:53:40   probe: rc 0, exit 1
+guards q4_mid: expected gr_fork OFF (not built for this shape), prefill_v2 on (kV2Shape True)
+  strata patch guard: spec_exact on - exact speculative sampling (the drafter's q lists over its draft vocabulary)
+  strata patch guard: side_mixer on - GDN gates / QSA indexer chain (and with 2 the gate projection / query chain) on side branches
+  strata patch guard: router_q8k on - A.2: the doorbell writes the pool's Q8_K rows
+  strata patch guard: qsa_split_attn on - B.2: the decode attention through the int8 tensor-core kernel, split
+  strata patch guard: gr_fork OFF (STRATA_GR_FORK=0; upstream's path): this build is compiled for n_embd 3072, 4 streams, low rank 384; the fork read is built for Flash-Next's 2560 / 4 / 320 only
+  strata patch guard: draft_cum on - the cumulative, per-request adaptive draft length (Basalt's table)
+  strata patch guard: prefill_v2 on - v2 fused prompt expert kernels for IQ3_XXS gate/up and IQ4_NL down
+  strata patch guards: 7 checked, 1 off [spec_exact side_mixer router_q8k qsa_split_attn gr_fork(off) draft_cum prefill_v2]; model qwen4exp 3072 x 4 layers (+0 nextn), 256 experts of 1024, vocab 248320, draft vocab -1; experts IQ3_S/IQ4_NL IQ4_XS/IQ4_NL
+GUARDS AS EXPECTED
+=== 2026-11-09 16:53:40   gate fatal_probe_q4_mid PASS no fatal / stall / restart / non-finite line (sg11091628-q4_mid-probe)
+=== 2026-11-09 16:53:40   served start sg11091628-q4_mid (cfg.json; cut at 900 s)
+    === 2026-11-09T16:53:40-06:00 sg11091628-q4_mid start (/home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_mid/cfg.json)
+    server exited
+=== 2026-11-09 16:53:46   gate fatal_serve_q4_mid PASS no fatal / stall / restart / non-finite line (sg11091628-q4_mid)
+MANIFEST MISSING: /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_mid/manifest.json
+=== 2026-11-09 16:53:46   gate smoke_q4_mid FAIL the server did not start (server exited)
+cfg q4_mid --no-ple -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_mid/cfg-nople.json: changed _comment, args, cwd, drafting, env, exe, fallback, log, model_name, model_not_running, mtp, tokenizer, vision; args 37 -> 29
+CFG OK
+=== 2026-11-09 16:53:46   served start sg11091628-q4_mid-nople (cfg-nople.json; cut at 900 s)
+    === 2026-11-09T16:53:47-06:00 sg11091628-q4_mid-nople start (/home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_mid/cfg-nople.json)
+    Traceback (most recent call last):
+    server exited
+=== 2026-11-09 16:53:52   gate fatal_serve_q4_mid-nople PASS no fatal / stall / restart / non-finite line (sg11091628-q4_mid-nople)
+=== 2026-11-09 16:53:52   gate smoke_q4_mid_nople INFO with --no-ple: started no, env not OK, chat FAIL, fatal lines none
+cfg q4_big -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_big/cfg.json: changed _comment, args, cwd, drafting, env, exe, fallback, log, model_name, model_not_running, mtp, tokenizer, vision; args 37 -> 32
+CFG OK
+=== 2026-11-09 16:53:53 2b q4_big: CLI probe sg11091628-q4_big-probe (p2000, 16 new tokens; cut at 300 s)
+=== 2026-11-09 16:54:03   probe: rc 0, exit 1
+guards q4_big: expected gr_fork OFF (not built for this shape), prefill_v2 on (kV2Shape True)
+  strata patch guard: spec_exact on - exact speculative sampling (the drafter's q lists over its draft vocabulary)
+  strata patch guard: side_mixer on - GDN gates / QSA indexer chain (and with 2 the gate projection / query chain) on side branches
+  strata patch guard: router_q8k on - A.2: the doorbell writes the pool's Q8_K rows
+  strata patch guard: qsa_split_attn on - B.2: the decode attention through the int8 tensor-core kernel, split
+  strata patch guard: gr_fork OFF (STRATA_GR_FORK=0; upstream's path): this build is compiled for n_embd 4096, 4 streams, low rank 512; the fork read is built for Flash-Next's 2560 / 4 / 320 only
+  strata patch guard: draft_cum on - the cumulative, per-request adaptive draft length (Basalt's table)
+  strata patch guard: prefill_v2 on - v2 fused prompt expert kernels for IQ3_XXS gate/up and IQ4_NL down
+  strata patch guards: 7 checked, 1 off [spec_exact side_mixer router_q8k qsa_split_attn gr_fork(off) draft_cum prefill_v2]; model qwen4exp 4096 x 4 layers (+0 nextn), 512 experts of 1024, vocab 248320, draft vocab -1; experts IQ3_S/IQ4_NL IQ4_XS/IQ4_NL
+GUARDS AS EXPECTED
+=== 2026-11-09 16:54:03   gate fatal_probe_q4_big PASS no fatal / stall / restart / non-finite line (sg11091628-q4_big-probe)
+=== 2026-11-09 16:54:03   served start sg11091628-q4_big (cfg.json; cut at 900 s)
+    === 2026-11-09T16:54:03-06:00 sg11091628-q4_big start (/home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_big/cfg.json)
+    server exited
+=== 2026-11-09 16:54:14   gate fatal_serve_q4_big PASS no fatal / stall / restart / non-finite line (sg11091628-q4_big)
+MANIFEST MISSING: /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_big/manifest.json
+=== 2026-11-09 16:54:14   gate smoke_q4_big FAIL the server did not start (server exited)
+cfg q4_big --no-ple -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_big/cfg-nople.json: changed _comment, args, cwd, drafting, env, exe, fallback, log, model_name, model_not_running, mtp, tokenizer, vision; args 37 -> 29
+CFG OK
+=== 2026-11-09 16:54:14   served start sg11091628-q4_big-nople (cfg-nople.json; cut at 900 s)
+    === 2026-11-09T16:54:15-06:00 sg11091628-q4_big-nople start (/home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_big/cfg-nople.json)
+    Traceback (most recent call last):
+    server exited
+=== 2026-11-09 16:54:21   gate fatal_serve_q4_big-nople PASS no fatal / stall / restart / non-finite line (sg11091628-q4_big-nople)
+=== 2026-11-09 16:54:21   gate smoke_q4_big_nople INFO with --no-ple: started no, env not OK, chat FAIL, fatal lines none
+cfg q4_deep -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_deep/cfg.json: changed _comment, args, cwd, drafting, env, exe, fallback, log, model_name, model_not_running, mtp, tokenizer, vision; args 37 -> 32
+CFG OK
+=== 2026-11-09 16:54:21 2b q4_deep: CLI probe sg11091628-q4_deep-probe (p2000, 16 new tokens; cut at 300 s)
+=== 2026-11-09 16:54:26   probe: rc 0, exit 1
+guards q4_deep: expected gr_fork on, prefill_v2 on (kV2Shape True)
+  strata patch guard: spec_exact on - exact speculative sampling (the drafter's q lists over its draft vocabulary)
+  strata patch guard: side_mixer on - GDN gates / QSA indexer chain (and with 2 the gate projection / query chain) on side branches
+  strata patch guard: router_q8k on - A.2: the doorbell writes the pool's Q8_K rows
+  strata patch guard: qsa_split_attn on - B.2: the decode attention through the int8 tensor-core kernel, split
+  strata patch guard: gr_fork on - B.1: fork Eddoursul's hyper-connection read
+  strata patch guard: draft_cum on - the cumulative, per-request adaptive draft length (Basalt's table)
+  strata patch guard: prefill_v2 on - v2 fused prompt expert kernels for IQ3_XXS gate/up and IQ4_NL down
+  strata patch guards: 7 checked, 0 off [spec_exact side_mixer router_q8k qsa_split_attn gr_fork draft_cum prefill_v2]; model qwen4exp 2560 x 4 layers (+0 nextn), 512 experts of 640, vocab 248320, draft vocab -1; experts IQ3_S/IQ4_NL IQ4_XS/IQ4_NL
+GUARDS AS EXPECTED
+=== 2026-11-09 16:54:26   gate fatal_probe_q4_deep PASS no fatal / stall / restart / non-finite line (sg11091628-q4_deep-probe)
+=== 2026-11-09 16:54:26   served start sg11091628-q4_deep (cfg.json; cut at 900 s)
+    === 2026-11-09T16:54:26-06:00 sg11091628-q4_deep start (/home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_deep/cfg.json)
+    server exited
+=== 2026-11-09 16:54:32   gate fatal_serve_q4_deep PASS no fatal / stall / restart / non-finite line (sg11091628-q4_deep)
+MANIFEST MISSING: /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_deep/manifest.json
+=== 2026-11-09 16:54:32   gate smoke_q4_deep FAIL the server did not start (server exited)
+cfg q4_deep --no-ple -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_deep/cfg-nople.json: changed _comment, args, cwd, drafting, env, exe, fallback, log, model_name, model_not_running, mtp, tokenizer, vision; args 37 -> 29
+CFG OK
+=== 2026-11-09 16:54:32   served start sg11091628-q4_deep-nople (cfg-nople.json; cut at 900 s)
+    === 2026-11-09T16:54:32-06:00 sg11091628-q4_deep-nople start (/home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap/smoke/q4_deep/cfg-nople.json)
+    Traceback (most recent call last):
+    server exited
+=== 2026-11-09 16:54:38   gate fatal_serve_q4_deep-nople PASS no fatal / stall / restart / non-finite line (sg11091628-q4_deep-nople)
+=== 2026-11-09 16:54:38   gate smoke_q4_deep_nople INFO with --no-ple: started no, env not OK, chat FAIL, fatal lines none
+=== 2026-11-09 16:54:39 2a q4_deep: 82 ctest entries (build build-q4_deep, timeout 1500 s for all) + 3 direct programs
+=== 2026-11-09 17:00:27   ctest rc 8: 99% tests passed, 1 tests failed out of 82
+parity q4_deep: 83 pass / 1 skip / 1 fail of 85
+  FAIL gguf_geometry_test: Failed 0.00989854 s
+=== 2026-11-09 17:01:57   gate parity_q4_deep INFO q4_deep: 83 pass / 1 skip / 1 fail of 85
+=== 2026-11-09 17:01:57 the gap's work took 32 min (deadline 55)
+=== 2026-11-09 17:01:58 3 port_gap4.sh end: P028x back on 8080
+2026-11-09 17:02:03 port_gap4: memory back: MemAvailable 87 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-09 17:02:18 port_gap4: WARNING: 71 MB swapped out while P028x started
+2026-11-09 17:02:18 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+flash_next (reference): builds build rc 0, parity programs NOT RUN
+q4_mid: builds full shape build rc 0, 4-layer build rc 0, parity programs 83 pass / 1 skip / 1 fail, loads and answers no (the server did not start (server exited))
+q4_big: builds full shape build rc 0, 4-layer build rc 0, parity programs 83 pass / 1 skip / 1 fail, loads and answers no (the server did not start (server exited))
+q4_deep: builds full shape build rc 0, 4-layer build rc 0, parity programs 83 pass / 1 skip / 1 fail, loads and answers no (the server did not start (server exited))
+=== 2026-11-09 17:02:18 8080 was down for about 32 min; kernel check after the gap: ok
+=== 2026-11-09 17:02:19 RESULT: DONE (information only, nothing switched; 8080 down 32 min; kernel check after: ok): flash_next (ref): builds build rc 0, parity programs NOT RUN; q4_mid: builds full shape build rc 0, 4-layer build rc 0, parity programs 83 pass / 1 skip / 1 fail, loads and answers no (the server did not start (server exited)); q4_big: builds full shape build rc 0, 4-layer build rc 0, parity programs 83 pass / 1 skip / 1 fail, loads and answers no (the server did not start (server exited)); q4_deep: builds full shape build rc 0, 4-layer build rc 0, parity programs 83 pass / 1 skip / 1 fail, loads and answers no (the server did not start (server exited)); 6 failure line(s) in decision.txt

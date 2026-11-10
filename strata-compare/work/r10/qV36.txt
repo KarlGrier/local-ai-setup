@@ -1,0 +1,54 @@
+work/r10/tagcheck.sh "v0.1.36 port: build"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v36 engine-v36c
+BDIR=build work/r10/build.sh strata-v36m engine-v36m
+.venv/bin/python work/r10/buildrec.py V36 configs/V36.json "v0.1.36 port (worktree build, v36-c11 = v0.1.36 + C*11's 16 patches) - measured on its own"
+.venv/bin/python work/r10/buildrec.py V36m configs/V36m-tf-helper.json "v0.1.36 port's measurement twin (v36-c11-meas)"
+work/r10/exact7.sh v36 configs/V36.json
+work/r10/exact7.sh v36nocl2 configs/V36-nocl2.json
+work/r10/tf.sh V36mtf-helper configs/V36m-tf-helper.json engine-v36m/strata math corpus long16k long24k long28k long40k long64k
+work/r10/tf.sh V36mtf-single configs/V36m-tf-single.json engine-v36m/strata math corpus long16k long24k long28k long40k long64k
+.venv/bin/python work/r10/tf_compare9.py V36mtf-helper=R11mtf3500-helper V36mtf-single=R11mtf3500-single | tee results/r10/tf-v36-vs-c11.txt
+work/r10/with_server.sh RT36-direct configs/V36m-rt.json -- ".venv/bin/python work/r10/roundtrip.py direct small r36-direct1"
+work/r10/with_server.sh RT36-direct configs/V36m-rt.json -- ".venv/bin/python work/r10/roundtrip.py direct small r36-direct2"
+work/r10/with_server.sh RT36-park configs/V36m-rt.json -- ".venv/bin/python work/r10/roundtrip.py park small r36-park"
+work/r10/with_server.sh RT36-editref configs/V36m-rt.json -- ".venv/bin/python work/r10/roundtrip.py editref small r36-editref"
+.venv/bin/python work/r10/rt_compare.py r36 > results/r10/roundtrip-v36.md; cat results/r10/roundtrip-v36.md
+work/r10/with_server.sh RT36o-direct configs/V36m-rt-essoff.json -- ".venv/bin/python work/r10/roundtrip.py direct small r36o-direct1"
+work/r10/with_server.sh RT36o-park configs/V36m-rt-essoff.json -- ".venv/bin/python work/r10/roundtrip.py park small r36o-park"
+.venv/bin/python work/r10/rt_compare.py r36o > results/r10/roundtrip-v36-essoff.md; cat results/r10/roundtrip-v36-essoff.md
+work/r10/with_server.sh FAIL36 configs/V36.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r10/tagcheck.sh "v0.1.36 port: gates done"
+work/r10/basecheck.sh
+work/r10/screen.sh V36-a configs/V36.json
+work/r10/screen.sh C11-c configs/R10-C11.json
+work/r10/screen.sh C11-d configs/R10-C11.json
+work/r10/screen.sh V36-b configs/V36.json
+.venv/bin/python work/r10/ab_table.py C11=C11-c,C11-d V36=V36-a,V36-b | tee results/r10/ab-v36-vs-c11.md
+work/r10/ldrscreen.sh L36-a configs/V36.json
+work/r10/ldrscreen.sh LC11-a configs/R10-C11.json
+work/r10/ldrscreen.sh LC11-b configs/R10-C11.json
+work/r10/ldrscreen.sh L36-b configs/V36.json
+.venv/bin/python work/r10/ldr_table.py C11=LC11-a,LC11-b V36=L36-a,L36-b | tee results/r10/ldr-v36-vs-c11.md
+work/r10/tagcheck.sh "v0.1.36 port: ABBA done"
+work/r10/basecheck.sh
+work/r10/ttftscreen.sh T36cl-a configs/V36.json
+work/r10/ttftscreen.sh T36nocl-a configs/V36-nocl.json
+work/r10/ttftscreen.sh T36nocl-b configs/V36-nocl.json
+work/r10/ttftscreen.sh T36cl-b configs/V36.json
+.venv/bin/python work/r10/ttft_table.py cluster_off=T36nocl-a,T36nocl-b cluster_on=T36cl-a,T36cl-b | tee results/r10/ab-v36-cluster.md
+work/r10/startcheck.sh V36p16 configs/V36-p16.json
+work/r10/startcheck.sh V36pf16 configs/V36-pf16.json
+work/r10/exact7.sh v36pf configs/V36-pf.json
+work/r10/ttftscreen.sh T36pf-a configs/V36-pf.json
+work/r10/ttftscreen.sh T36mmq-a configs/V36.json
+work/r10/ttftscreen.sh T36mmq-b configs/V36.json
+work/r10/ttftscreen.sh T36pf-b configs/V36-pf.json
+.venv/bin/python work/r10/ttft_table.py mmq=T36mmq-a,T36mmq-b fused=T36pf-a,T36pf-b | tee results/r10/ab-v36-pffused.md
+work/r10/tf.sh V36mpftf-helper configs/V36m-pf-tf-helper.json engine-v36m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r10/tf_compare9.py V36mpftf-helper=R11mtf3500-helper | tee results/r10/tf-v36-pffused.txt
+work/r10/tagcheck.sh "v0.1.36 measured"
+work/r10/basecheck.sh
+work/r10/phase_end.sh p036 keep
+work/r10/hold.sh v036b

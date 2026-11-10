@@ -1,0 +1,10 @@
+work/r9/tagcheck.sh "phase A track 2 (no commit wait) start"
+work/r9/exact7.sh eA-r9s configs/R9s.json
+work/r9/exact7.sh eA-r9ssync configs/R9s-sync.json
+work/r9/exact7.sh eA-r9s2 configs/R9s.json
+work/r9/exact7.sh eA-r9ssync2 configs/R9s-sync.json
+work/r9/decscreen.sh NOS-a configs/R9s.json
+work/r9/decscreen.sh SYN-a configs/R9s-sync.json
+work/r9/decscreen.sh SYN-b configs/R9s-sync.json
+work/r9/decscreen.sh NOS-b configs/R9s.json
+work/r9/tagcheck.sh "track 2 done"

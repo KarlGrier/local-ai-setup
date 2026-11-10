@@ -1,0 +1,16 @@
+[Unit]
+Description=Deep research measurements (phase 4 item 7e since 11-02: queue-plan-7e.json - s1-s4 without (SearXNG only), then s1-s4 with route 7c (Exa, <= 30); ~/ai/deep-research/tools/bench2-queue.sh)
+After=default.target deep-research-runner.service
+
+[Service]
+Type=simple
+# waits for 09:00; new work only 09:00-22:00; stops between questions for a new Strata release or tmp/bench2.stop
+ExecStart=/bin/bash /home/USER/ai/deep-research/tools/bench2-queue.sh
+WorkingDirectory=/home/USER/ai/deep-research
+Environment=BENCH2_PLAN=queue-plan-7e.json
+Restart=on-failure
+RestartSec=60
+KillMode=process
+
+[Install]
+WantedBy=default.target

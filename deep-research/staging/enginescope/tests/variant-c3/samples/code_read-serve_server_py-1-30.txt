@@ -1,0 +1,34 @@
+[90010] Title: Niko1221/Strata@v0.2.4: serve/server.py lines 1-30 (source code)
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/serve/server.py#L1-L30
+
+1: """serve/server.py - plan v0.3 P8: OpenAI and Anthropic endpoints over any engine that maps token ids to tokens.
+2: 
+3:     python -m serve.server --engine mock --port 8095            (a scripted engine, for clients and tests)
+4:     python -m serve.server --engine strata --config strata.json --port 8080   (the real engine, resident)
+5: 
+6: Endpoints: POST /v1/chat/completions (OpenAI, stream and non-stream), POST /v1/messages (Anthropic, stream and
+7: non-stream), GET /v1/models, GET /models, GET /props, GET /slots, GET /health, GET /mcp. One sequence at a time behind a FIFO (plan: one resident sequence).
+8: Image generation (optional, when the config has an "images" section): POST /v1/images/generations (OpenAI's shape,
+9: plus seed and steps) runs stable-diffusion.cpp's sd-cli for Qwen-Image-2.1-Turbo, one job at a time on the GPU the
+10: text engine uses (serve/images.py).
+11: Tools from MCP servers (serve/mcp.py, `"mcp_servers"` in the config or --mcp-config) are offered only to requests that
+12: ask for them with `"strata_mcp": true` - the web app does; other clients see exactly the API they always saw.
+13: Images (optional, when the config has a "vision" entry): OpenAI image_url parts and Anthropic image blocks (base64
+14: data, http(s) URLs or local file paths) go through `strata-vision` (the model's mmproj file) and reach the engine as
+15: embeddings (`GENI`).  JPEG/PNG/BMP/GIF go straight in; WebP, TIFF, AVIF, ... (agents like omp send WebP) are
+16: converted to PNG first with Pillow.
+17: A request whose prompt alone does not fit the engine's context is REJECTED with 400, never truncated.  When the prompt
+18: fits but prompt plus max tokens does not (Claude Code asks for 32000, the Harness for 16384), max tokens is shortened to
+19: the room left (less CTX_SLACK) and the thinking budget follows it; `--no-fit-max-tokens` / `"fit_max_tokens": false`
+20: brings back the strict 400 of llama.cpp.
+21: An unset (or 0, or -1) max tokens means "unlimited": whatever the prompt leaves of the context.
+22: 
+23: The engine boundary is `Engine.generate(prompt_ids, max_new, sampling, cancel) -> iterator of token ids`.
+24: `StrataEngine` keeps one `strata --serve` process resident (weights, expert arena and VRAM tier load once) and
+25: talks to it over stdin/stdout; `MockEngine` is a scripted stand-in that makes every API path testable without a GPU.
+26: """
+27: from __future__ import annotations
+28: 
+29: import argparse
+30: import contextlib
+(serve/server.py has 8717 lines.)

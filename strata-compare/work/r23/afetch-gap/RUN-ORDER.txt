@@ -1,0 +1,66 @@
+ADAPT_FETCH GAP - run order (written 11-09 by a helper, review fixes and Karl's rule answers the same evening; Claude
+runs these; nothing here has run yet except afetch_rules.py's selftest, the driver's --dry-run and the --mock test)
+
+Files (work/r23/afetch-gap/):
+  gap-afetch.sh          the driver (exit 0 done, 1 busy, 2 a bad argument, 3 a kernel error: stopped at once, P028x back
+                         unless the result says "8080 NOT back", 4 port_gap4 end failed,
+                         5 not run: engines left after 8080 stopped, 6 hard refusal, 7 signal, 8 the priority rule,
+                         9 another instance runs)
+  afetch_rules.py        the rules (frozen into results/r23/adaptfetch/gap/rules.txt with their switches, Karl 11-09:
+                         B3_PROMPT_FORM tol1, GAIN_FORM screen, ORDER_FORM vf-first) and the tools the driver calls
+  afetch-after-shape.sh  the starter (a user unit): waits for the shape gap, then runs a snapshot of the driver
+  gap-mock-test.sh       the driver and the starter against stubs (scratch/mock only)
+
+0. Before: the v0.2.13 shape gap has RUN - its result.txt starts "DONE". Every other line keeps the starter waiting (up
+   to 24 h, then an alert), Karl looks at those first: "kernel check FAILED ...", "KERNEL ERROR ...", "port_gap4.sh end
+   FAILED ...", "INTERRUPTED ...", "not started ...", "not run: ...". So do an active unit shape-gap0213 and a research-
+   queue hold that is not this gap's own (the driver refuses busy; the starter retries it every 15 min for up to 6 h).
+   engine-r23afetch is 153ce47d3ef0 (built 11-09).
+
+1. Optional desk checks (CPU only, no lock, no GPU):
+     bash /home/USER/ai-speed-testing/strata-compare/work/r23/afetch-gap/gap-mock-test.sh
+        -> "gap-mock-test: ALL CHECKS PASSED" (writes only work/r23/afetch-gap/scratch/mock; its fake engines are copies
+           of sleep named afmock-eng, never strata*, and are stopped by the test)
+     bash /home/USER/ai-speed-testing/strata-compare/work/r23/afetch-gap/gap-afetch.sh --dry-run
+        -> "DRY RUN done: N refusal(s)" (writes only scratch/). N = 2 while the shape gap's unit is active (its result
+           not DONE yet + the active unit), 3 while the research queue is held for it too (bench2.hold), 1 after it ended
+           without DONE, 0 once its result says DONE and nothing else is held
+   RECOMMENDED (not run by the helper: the sampled harness is an existing component, CPU only, it writes only its own
+   scratch/): sq.py selftest-real has never run; the driver's preflight requires "SELFTEST-REAL OK" and refuses HARD (an
+   alert, no gap) otherwise:
+     nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/work/r23/sampled-qwen/sq.py selftest-real
+        -> last line SELFTEST-REAL OK
+
+2. Review, then write the .ready the starter requires: the sha256 (first 12 hex) of the driver, afetch_rules.py (the whole
+   file), sq_client.py and spec-adaptfetch.json. The starter refuses (exit 6, an alert) when any of them changed, and when
+   the snapshot it copied is not the reviewed driver:
+     D=/home/USER/ai-speed-testing/strata-compare/work/r23/afetch-gap; Q=/home/USER/ai-speed-testing/strata-compare/work/r23/sampled-qwen
+     echo "reviewed by Claude $(date '+%m-%d %H:%M'): <notes>; sha256 $(sha256sum $D/gap-afetch.sh | cut -c1-12), rules $(sha256sum $D/afetch_rules.py | cut -c1-12), client $(sha256sum $Q/sq_client.py | cut -c1-12), spec $(sha256sum $Q/spec-adaptfetch.json | cut -c1-12)" > $D/gap-afetch.sh.ready
+
+3. Start the starter as a user unit (no argument):
+     systemd-run --user --unit=afetch-after-shape --description="ADAPT_FETCH gap after the v0.2.13 shape gap" /bin/bash /home/USER/ai-speed-testing/strata-compare/work/r23/afetch-gap/afetch-after-shape.sh
+   Then confirm it runs: systemctl --user status afetch-after-shape (active, its pid) and the first line of
+   results/r23/adaptfetch/starter.log ("start (pid N): ... waiting for the v0.2.13 shape gap's result").
+   A busy refusal is retried every 15 min for up to 6 h; exits 5, 8 and 9 are final (5 and 9: the starter alerts; 8: the
+   driver alerts). To stop it before the gap opens: systemctl --user stop afetch-after-shape (nothing changed). After the
+   gap opened, a stop leaves "INTERRUPTED" in result.txt with what to check (the gap possibly open; whether 8080 listens;
+   if it came during port_gap4.sh end: check 8080 first, do not run end a second time blindly).
+
+4. The gap, in Karl's order (ORDER_FORM vf-first): build vs switch (exact7 + long40), the VF read-back start (=2; a
+   mismatch: no speed and no sampled part for either candidate), speed (B2 + B3), the sampled arms R1 X1 X2 R2 + the
+   scorer. ~100 min with 8080 down; new steps stop at AF_MAX_MIN = 150 min after the gap opens; 8080 down ~2.9 h at most
+   (175 min = the GAP_MAX_MIN port_gap4.sh gets); a critical alert if the gap is still open 20 min past the deadline.
+   A KERNEL ERROR (any new Xid / kwatch's tmp/r19/KERNEL_ERROR, or a kernel check failing) stops it at once: P028x back,
+   a critical alert, result "KERNEL ERROR during the gap - stopped at once, ...", exit 3; kwatch is NOT cleared (Karl
+   looks first). An engine process still running from before the gap (8080's) is named, never stopped by this gap.
+   Results: results/r23/adaptfetch/gap/ decision.txt / decision.json (per candidate: build vs switch, speed verdict +
+   numbers, sampled verdict, read-back, QUALITY, admissions per window, placement), result.txt, summary.txt, gates.txt,
+   rules.txt, configs/, bp90/, speed/, pfy40/, englog/, fetchstats.txt, sampled/ (the harness's own decision.txt /
+   rule.txt / verify-VF.json / arm folders). The starter's log: results/r23/adaptfetch/starter.log.
+
+5. The priority-rule override (only when Karl says the Qwen4 day-one work is done): write a dated reason line, e.g.
+     echo "2026-11-1X: Karl: the Qwen4 day-one work is done (<what>)" > /home/USER/ai-speed-testing/strata-compare/tmp/afetch-priority-done
+   With it, open Flash weights no longer hold this gap; the summary, the decision and the result line name it. A marker
+   without a dated first line is ignored (the hold applies).
+
+6. After: tell Karl the decision. NOTHING SWITCHES - a PROPOSAL (exact unset + quality PASS + a decode gain) is his call.

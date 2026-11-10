@@ -1,0 +1,502 @@
+#!/bin/bash
+# gap-afetch-adopt.sh - Karl 11-09 (after the ADAPT_FETCH gap): "ADAPT_FETCH: make =2 the daily, as a recorded owner
+# exception to the prompt no-loss rule. [...] Outside a gap, one restart: 1. Back up the config with a date. 2. Point P028x
+# at the fetch build's engine and add STRATA_ADAPT_FETCH=2. 3. Run exact7 and the short speed check, and tell me the
+# result. Keep a ready =1 config as the fallback. Give me the one-command rollback."
+# The change = the gap's F2 arm exactly: exe engine-r22p028x -> engine-r23afetch (153ce47d3ef0, r23-adaptfetch f381bfdf5),
+# env STRATA_ADAPT_FETCH=2. Gap 11-09 (results/r23/adaptfetch/gap/decision.txt): build vs switch PASS, F2 sampled PASS,
+# read-back PASS, screen decode +12.7 %; its prompt no-loss FAIL (R4-agent33k -0.1 % vs noise 0.1 %) is Karl's recorded
+# owner exception for this decision only (results/r23/adaptfetch/OWNER-EXCEPTION-1109.md; the rule is unchanged).
+# The form of work/r23/gap-u-adopt.sh (reviewed 11-09), with the 11-09 kernel-error policy and the Qwen4 priority rule.
+#   0 BEFORE THE GAP (no GPU, 8080 untouched) - REFUSES (nothing changed; exit 1 busy, exit 6 hard + an alert) unless:
+#     the owner-exception record exists; the gap's decision.txt is the one adopted from (DONE, build vs switch PASS, F2's
+#     quality PASS); af_adopt.py plan passes (P028x.json = the file the gap measured from, by sha; + the change = the gap's
+#     F2.json key by key); the fetch build is 153ce47d3ef0; the stored exact7 x28h-e7a, this morning's P / PU bp90 files,
+#     the gap's P / F2 decode files and the U adoption's S files exist; the Qwen4 priority rule is CLEAR; no other gap, no
+#     held test lock, no model server but 8080's P028x, nothing on 8081; kwatch runs, no kernel-error marker, a clean
+#     kernel check. The ready =1 fallback configs/P028x.json.afetch1-1109 and a copy of the =2 daily
+#     configs/P028x.json.afetch2-1109 are written here (never served by this script; served-afetch.sh switches to them).
+#   1 port_gap4.sh begin (the research queue held, the test lock, 8080 down; it waits for a running question, an active
+#     Jan job and a chat being answered on 8080)
+#   2 configs/P028x.json -> P028x.json.before-afetch2-1109 (kept for rollback), then exe engine-r23afetch/strata + env
+#     STRATA_ADAPT_FETCH=2, nothing else (checked); the test configs S2 = the new file without the picture reader /
+#     fallback / guard key (= the gap's F2.json, checked) and S0 = S2 without the switch (= F0.json)
+#   3 exact7 S0 at pin 2500 against P028x's stored x28h-e7a: 7/7 slots MATCHED wanted (the new engine + config are P028x
+#     bitwise with the switch unset); the CLI engines' env checked. Then exact7 S2 (the switch on) - INFORMATION ONLY: the
+#     fetch admissions move experts between the CPU and the GPUs, so bit-identity is not expected; its env check must pass
+#     and no fatal line may appear (the switch's quality is the gap's sampled test + read-back)
+#   4 the short speed check on S2, a fresh engine each, its env checked: pp16k, pp64k, decode (conv / struct / prose), 1
+#     pass; pp16k / pp64k against this morning's PU (P028x + U) and P and the U adoption's check, decode against the gap's
+#     P and F2; reported, a FLAG when a prompt set is more than 3 % below PU (Karl decides; no rollback for a FLAG)
+#   5 a FAIL in 2-4 (the edit, the env checks, exact7 S0, a fatal line, no speed server up) -> the backup goes back
+#     (P028x as before) and a critical alert; the restart below then brings P028x back as it was
+#   6 port_gap4.sh end = THE ONE RESTART: configs/P028x.json on 8080
+#   7 after it: the 8080 engine is 153ce47d3ef0 with STRATA_ADAPT_FETCH=2 and STRATA_HC_UPMIX=1 in its environment; its
+#     log shows the switch's start line (on, not an off-condition); the guard answers DeepSeek's model with its 400; one
+#     short chat answers and its request prints a fetch line; a kernel check
+# KERNEL ERRORS (Karl 11-09: any new Xid or kernel error: stop at once, bring P028x back, alert; kwatch not cleared):
+# kwatch's tmp/r19/KERNEL_ERROR is polled every 5 s while a test engine runs (this gap's engines, started after the gap
+# opened and not under 8080's listener, are killed at once) and checked before every step and by every kernel check; then
+# the backup goes back (P028x as before), the lock sweep, port_gap4.sh end, a critical alert, exit 3.
+# -> results/r23/afetch-adopt/ (summary.txt, gates.txt, result.txt), a NOTES.md line, a non-urgent ntfy note (an alert on a
+# FAIL). Exit 0 adopted, 1 busy (refused), 2 rolled back (P028x as before), 3 kernel error (stopped, P028x back) or a failed
+# restore (gap left OPEN), 4 port_gap4.sh end failed, 5 served checks failed after the restart, 6 hard refusal, 7 signal.
+set -u -o pipefail
+exec 8>&- 9>&-     # no inherited lock descriptor reaches a child (this script holds none itself)
+WS=/home/USER/ai-speed-testing/strata-compare
+source $WS/bringup/lib/env.sh
+unset GUARD_MEM_GIB GUARD_VRAM_MIB GUARD_SWAP_GROW_GIB GUARD_VRAM_MODE GUARD_FOLLOW_PORT LR_MAX SPEED_FILE
+for v in $(compgen -e | grep '^STRATA_'); do [ "$v" = STRATA_MON_GPU ] || unset "$v"; done   # no stray switch reaches an engine
+export PROMPT_DIR=$WS/bringup/out/r20a/prompts RB_CACHE=$WS/tmp/r23 EVICT_GLOB="$WS/models/ISTA-GSQ-RCO/IQ3_S/*.gguf"
+P=$WS/.venv/bin/python; AA=$WS/work/r23/afetch-adopt/af_adopt.py; FR=$WS/work/r23/basalt_fix_rules.py; KR=$WS/work/r22
+AFR=$WS/work/r23/afetch-gap/afetch_rules.py; LIB=$WS/bringup/lib; B90=$KR/basalt-pr90
+O=$WS/results/r23/afetch-adopt; S=$O/summary.txt; G=$O/gates.txt; BO=$O/bp90; EL=$O/englog; FG=$O/foreign
+CFG=$WS/configs/P028x.json; BAK=$WS/configs/P028x.json.before-afetch2-1109; FB1=$WS/configs/P028x.json.afetch1-1109
+FB2=$WS/configs/P028x.json.afetch2-1109   # a copy of the adopted daily (served-afetch.sh afetch2 switches back to it)
+GAPD=$WS/results/r23/adaptfetch/gap; GC=$GAPD/configs; GAPBP=$GAPD/bp90; DEC=$GAPD/decision.txt
+EXC=$WS/results/r23/adaptfetch/OWNER-EXCEPTION-1109.md
+UBP=$WS/results/r23/u-adopt/bp90; MORNING=$WS/results/r23/basalt-prompt/gap-speed/bp90
+S2C=$O/S2.json; S0C=$O/S0.json
+W28=$WS/strata-r22p028x; E28=$WS/engine-r22p028x; EAF=$WS/engine-r23afetch; E7REF=x28h-e7a; PROF=$WS/bringup/out/logs/prof
+LOCKPID=$WS/tmp/port-gap.lockpid; LOCKF=$WS/tmp/gpu-test.lock; HOLD=/home/USER/ai/deep-research/tmp/bench2.hold
+KERR=$WS/tmp/r19/KERNEL_ERROR   # kwatch's marker (never taken from the environment, never cleared here)
+STATE=$WS/work/qwen4-kit/hfwatch/state.json; PRIO_DONE=$WS/tmp/afetch-priority-done
+NOTE=$WS/configs/usability/bin/ntfy-note.py
+P028X_SHA=f4c4f654fb24; EAF_SHA=153ce47d3ef0
+MAXM=${AA_MAX_MIN:-55}
+CLK=$(getconf CLK_TCK)
+LP=r23aa$(date +%m%d%H%M)
+PREV=""; if [ -n "$(find $O/bp90 $O/englog -mindepth 1 2> /dev/null | head -1)" ]; then PREV=$O-prev-$(date +%m%d-%H%M%S); mv $O $PREV; fi   # judge only this attempt
+mkdir -p $O $BO $EL $FG $WS/logs $WS/tmp/r23
+say() { echo "=== $(date '+%F %T') $*" | tee -a $S; }
+gate() { echo "$1 $2 ${*:3} [23aa $(date '+%m-%d %H:%M')]" >> $G; say "  gate $*"; }
+gst() { grep "^$1 " $G 2> /dev/null | tail -1 | cut -d' ' -f2; }
+br() { $P -I -B $FR br "$@" 8>&- 9>&- < /dev/null; }
+aa() { nice -n 19 $P -I -B $AA "$@" 8>&- 9>&- < /dev/null; }
+afr() { nice -n 19 $P -I -B $AFR "$@" 8>&- 9>&- < /dev/null; }
+alert() { notify-send -a Strata -u critical "$1" "$2" 2> /dev/null || true; }
+note() { $NOTE "$1" "$2" >> $S 2>&1 8>&- 9>&- < /dev/null || say "(the ntfy note did not go out)"; }
+KFAIL=0; GAPOPEN=0; ENDING=0; T0=$(date +%s); T0T=0; PRE=""; DEADLINE=$(( T0 + MAXM * 60 ))
+kc() {   # a kernel check, and kwatch's marker: either fails -> KFAIL (Karl 11-09: stop at once)
+  [ -e $KERR ] && { [ $KFAIL = 1 ] || say "KERNEL ERROR recorded by kwatch ($(head -c 160 $KERR 2> /dev/null | tr '\n' ' ')) at $1"; KFAIL=1; return 1; }
+  $LIB/kcheck.sh "r23aa-$1" > /dev/null 8>&- 9>&- < /dev/null || { say "KERNEL CHECK FAILED after $1"; KFAIL=1; return 1; }
+}
+left() { echo $(( DEADLINE - $(date +%s) )); }
+ok_to_go() {   # (review 11-09 #7) kwatch's marker sets KFAIL here too, so every later step takes the kernel-error path
+  if [ -e $KERR ] && [ $KFAIL = 0 ]; then say "KERNEL ERROR recorded by kwatch ($(head -c 160 $KERR 2> /dev/null | tr '\n' ' '))"; KFAIL=1; fi
+  [ $KFAIL = 0 ] && [ $(left) -gt 0 ]
+}
+fits() { ok_to_go && [ $(left) -ge $(( $1 * 60 )) ]; }
+sha12() { sha256sum "$1" | cut -c1-12; }
+elog() { $P -I -c "import json, sys; print(json.load(open(sys.argv[1]))['log'])" "$1"; }
+exe_of() { $P -I -c "import json, sys; print(json.load(open(sys.argv[1]))['exe'])" "$1"; }
+slog() { ls -t $WS/bringup/out/logs/server_$1_*.log 2> /dev/null | head -1; }
+ppid_of() { local s; s=$(cat /proc/$1/stat 2> /dev/null) || return 0; s=${s##*) }; set -- $s; echo "${2:-}"; }
+memav() { awk '/^MemAvailable/ {printf "%d", $2 / 1048576}' /proc/meminfo; }
+engines_left() { local x out=""; for x in strata strata-host strata-vision strata-dsv41 llama-server ollama; do pgrep -x $x > /dev/null && out="$out $x"; done; echo $out; }
+listener8080() { ss -H -ltnp "( sport = :8080 )" 2> /dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2; }
+srv8080_engine() {   # the engine process under the server listening on 8080 ("" if none)
+  local l p q
+  l=$(listener8080)
+  [ -n "$l" ] || return 0
+  for p in $( { pgrep -x strata-host; pgrep -x strata; } | sort -un); do
+    q=$p; while [ -n "$q" ] && [ "$q" -gt 1 ] && [ "$q" != "$l" ]; do q=$(ppid_of $q); done
+    [ "$q" = "$l" ] && { echo $p; return 0; }
+  done
+}
+uptk() { awk -v c=$CLK '{printf "%d", $1 * c}' /proc/uptime; }
+ptick() { local s; s=$(cat /proc/$1/stat 2> /dev/null) || { echo 0; return 0; }; s=${s##*) }; set -- $s; echo ${20}; }
+under8080() { local l q; l=$(listener8080); [ -n "$l" ] || return 1; q=$1; while [ -n "$q" ] && [ "$q" -gt 1 ] && [ "$q" != "$l" ]; do q=$(ppid_of $q); done; [ "$q" = "$l" ]; }
+our_exe_pids() { find /proc/[0-9]*/exe -maxdepth 0 \( -lname "$EAF/*" -o -lname "$E28/*" \) 2> /dev/null | cut -d/ -f3 | sort -un; }
+ours_new() {   # ours_new PID EXE: an engine binary of this gap AND started after the gap opened AND not one of PRE (running when
+  # it opened) AND not under the 8080 listener - never the served engine, never one from before the gap
+  case "$2" in $EAF/*|$E28/*) ;; *) return 1;; esac
+  [ $GAPOPEN = 1 ] && [ $T0T -gt 0 ] || return 1
+  case " $PRE " in *" $1 "*) return 1;; esac
+  [ "$(ptick $1)" -ge $T0T ] || return 1
+  under8080 $1 && return 1
+  return 0
+}
+desc() { local c; for c in $(pgrep -P $1 2> /dev/null); do echo $c; desc $c; done; }
+kill_tree() { local p; [ -n "${1:-}" ] && kill -0 $1 2> /dev/null || return 0; for p in $(desc $1) $1; do kill -KILL $p 2> /dev/null; done; }
+JP=""   # the running exact7 job (its subshell); set before its GPU watch starts, so the watch can stop it
+kerr_poll() {   # Karl 11-09: a kernel error -> this gap's programs are killed at once, and again at EVERY poll while the marker
+  # exists (review 11-09 #2: exact7 starts a fresh engine per item), the exact7 job too; $O/kerr.seen marks it
+  local p ex
+  [ -e $KERR ] || return 0
+  [ -e $O/kerr.seen ] || touch $O/kerr.seen
+  [ $ENDING = 0 ] || return 0   # (never during port_gap4.sh end: the served engine starting there has the fetch build's binary)
+  for p in $(our_exe_pids); do ex=$(readlink /proc/$p/exe 2> /dev/null) || continue; ours_new $p "$ex" && kill -KILL $p 2> /dev/null; done
+  kill_tree "$JP"
+  return 0
+}
+lock_sweep() {   # before port_gap4.sh end: nothing of this gap may still run or hold the test lock (strata-ensure refuses then)
+  local p ex cmd lp pp bad=""
+  [ $GAPOPEN = 1 ] && [ $ENDING = 0 ] || return 0
+  lp=$(cat $LOCKPID 2> /dev/null); pp=$(ppid_of ${lp:-0})
+  for p in $(our_exe_pids); do
+    ex=$(readlink /proc/$p/exe 2> /dev/null) || continue
+    if ours_new $p "$ex"; then kill -KILL $p 2> /dev/null; bad="$bad $p(${ex##*/}: this gap's, killed)"
+    else case " $PRE " in *" $p "*) bad="$bad $p(${ex##*/}: running since before the gap - left alone)";; esac; fi
+  done
+  for p in $(find /proc/[0-9]*/fd -maxdepth 1 -lname "$LOCKF" 2> /dev/null | cut -d/ -f3 | sort -un); do
+    { [ "$p" = $$ ] || [ "$p" = "$lp" ] || [ "$p" = "$pp" ]; } && continue
+    cmd=$(tr '\0' ' ' < /proc/$p/cmdline 2> /dev/null | cut -c1-400)
+    case $cmd in *monitor-$LP-*|*srv-$LP-*|*$O/*) kill -TERM $p 2> /dev/null; bad="$bad $p(this gap's leftover, stopped)";;
+      *) bad="$bad $p($(cat /proc/$p/comm 2> /dev/null) holds the test lock)";; esac
+  done
+  [ -n "$bad" ] && { say "  lock sweep before the end:$bad"; gate lock_sweep INFO "$bad"; sleep 3; }
+  return 0
+}
+
+hold_foreign() { [ -e $HOLD ] && ! grep -qF 'ADAPT_FETCH=2 adoption' $HOLD 2> /dev/null; }   # the research queue held by someone else
+preflight() {   # gap-u-adopt.sh's rule: no measurement on the GPU lock, no other gap, no model server but 8080's P028x
+  local l p q apps bad="" sh
+  hold_foreign && refuse busy "the research queue is held by someone else (bench2.hold: $(head -c 120 $HOLD 2> /dev/null | tr '\n' ' ')) - another gap opener or a pause"
+  if [ -s $LOCKPID ] && kill -0 "$(cat $LOCKPID)" 2> /dev/null; then
+    refuse busy "another gap holds the test lock (tmp/port-gap.lockpid $(cat $LOCKPID))"
+  fi
+  if ! flock -n -x $LOCKF true 2> /dev/null; then
+    refuse busy "tmp/gpu-test.lock is held (a measurement or a test server)"
+  fi
+  l=$(listener8080)
+  apps=$(timeout 30 nvidia-smi --query-compute-apps=pid --format=csv,noheader 2> /dev/null) || refuse busy "nvidia-smi did not answer"
+  for p in $( { for x in strata strata-host strata-vision strata-dsv41 llama-server ollama; do pgrep -x "$x"; done; echo "$apps"; } \
+              | tr -d ' ' | grep -E '^[0-9]+$' | sort -un); do
+    q=$p; while [ -n "$q" ] && [ "$q" -gt 1 ] && [ "$q" != "${l:-none}" ]; do q=$(ppid_of $q); done
+    if [ -n "$l" ] && [ "$q" = "$l" ]; then
+      case $(cat /proc/$p/comm 2> /dev/null) in
+        strata|strata-host) sh=$(sha12 /proc/$p/exe 2> /dev/null)   # (a rerun after a restart with the change: the fetch build)
+          [ "$sh" = $P028X_SHA ] || [ "$sh" = $EAF_SHA ] || bad="$bad 8080-engine:$p($(readlink /proc/$p/exe))";;
+        strata-vision) ;;
+        *) bad="$bad 8080:$p($(cat /proc/$p/comm 2> /dev/null))";;
+      esac
+    else bad="$bad $p($(cat /proc/$p/comm 2> /dev/null))"; fi
+  done
+  ss -H -ltn "( sport = :8081 )" 2> /dev/null | grep -q . && bad="$bad listener-on-8081(a-test-server)"
+  [ -z "$bad" ] || refuse busy "a model server other than the 8080 queue's P028x is running:$bad"
+}
+fatalchk() {   # fatalchk GATE ENGINE_LOG OFFSET LABEL
+  local L=$2 off=$3 sl hits
+  sl=$(slog $4)
+  hits=$( { tail -c +$((off + 1)) $L 2> /dev/null; [ -n "$sl" ] && cat $sl; } | grep -c -E "fatal GPU error|no progress for [0-9]+ s during a request|the engine had stopped \(exit code|became non-finite")
+  [ "$hits" = 0 ] || gate $1 FAIL "$hits line(s): fatal GPU error / stall / engine restart / non-finite ($L from byte $off; $sl)"
+}
+foreign() {   # GPU users that are not this gap's engine: an engine process (exact names) or an NVIDIA compute process
+  # holding >= 512 MiB (or an unknown amount) whose binary is not in engine-r23afetch/
+  local p m x ex c
+  { for x in strata strata-host strata-vision strata-dsv41 llama-server ollama; do pgrep -x $x | sed 's/$/,engine/'; done
+    timeout 30 nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2> /dev/null; } | tr -d ' ' \
+  | while IFS=, read -r p m; do
+      [[ $p =~ ^[0-9]+$ ]] && [ -e /proc/$p ] || continue
+      [[ $m =~ ^[0-9]+$ ]] && [ $m -lt 512 ] && continue
+      ex=$(readlink /proc/$p/exe 2> /dev/null) || ex=""; c=$(cat /proc/$p/comm 2> /dev/null)
+      case $c in strata-dsv41|llama-server|ollama) ;; *) [ -n "$ex" ] || continue
+        case $ex in $EAF/*) continue;; esac;; esac
+      echo "pid $p ($c, ${ex:-?}, $m$([[ $m =~ ^[0-9]+$ ]] && echo ' MiB'))"
+    done | sort -u
+}
+gwatch() { while [ -e $1 ] && kill -0 $$ 2> /dev/null; do foreign | sed "s/^/$(date +%T) /" >> $2; kerr_poll; sleep 5; done; }
+gpu_clear() {
+  local i f
+  for i in $(seq 12); do f=$(foreign); [ -z "$f" ] && return 0; sleep 5; done
+  gate foreign_$1 FAIL "not started: $(echo "$f" | head -1) still on the GPU after 60 s"
+  return 1
+}
+WGP=""
+wstart() { rm -f $FG/$1.foreign; touch $FG/$1.watching; gwatch $FG/$1.watching $FG/$1.foreign 8>&- 9>&- < /dev/null & WGP=$!; }
+wstop() {
+  rm -f $FG/$1.watching; [ -n "$WGP" ] && wait $WGP 2> /dev/null; WGP=""
+  [ -s $FG/$1.foreign ] && gate foreign_$1 FAIL "seen during $1 ($(wc -l < $FG/$1.foreign) sample(s)): $(head -1 $FG/$1.foreign | cut -c1-160)"
+  return 0
+}
+bprun() {   # bprun SET: one fresh test server from S2, its env checked, Basalt's fixture SET, 1 pass -> bp90/S2-SET-1.jsonl
+  local set=$1 lab=$LP-S2-$1 out=$BO/S2-$1-1.jsonl L off exe
+  fits 4 || { say "skipped $set (under 4 min to the deadline, or a kernel error)"; return 0; }
+  gpu_clear S2_$set || { say "$lab NOT started (a foreign GPU user)"; return 0; }
+  exe=$(exe_of $S2C); L=$(elog $S2C); touch $L; off=$(stat -c %s $L)
+  say "server $lab (S2.json)"
+  wstart S2_$set
+  $LIB/with_server.sh $lab $S2C -- "$P -I -B $FR br envcheck $exe $S2C --gate env_S2_$set --gates $G && $P -I -B $B90/bp90_client.py http://127.0.0.1:8081 --label $lab --sets $set --passes 1 --first-pass 1 --tree $W28 --out $out" 8>&- 9>&- < /dev/null 2>&1 \
+    | grep -E "engine pid [0-9]+:|ENV CHECK| pass |tok/s|ready|exited|refus|Error|GUARD|Traceback" | tee -a $S
+  wstop S2_$set
+  tail -c +$((off + 1)) $L > $EL/$lab.englog
+  fatalchk fatal_S2_$set $L $off $lab
+  if [ "$(gst foreign_S2_$set)" = FAIL ]; then mkdir -p $BO/void; [ -e $out ] && mv $out $BO/void/; fi
+  kc $lab
+  return 0
+}
+e7() {   # e7 TAG CFG: exact7 at pin 2500 against the stored x28h-e7a, every item's engine env checked -> gates e7_TAG, env_TAG_e7
+  local tag=$1 cfg=$2 jp
+  fits 6 || { say "skipped exact7 $tag (under 6 min to the deadline, or a kernel error)"; return 1; }
+  say "exact7 $LP-$tag ($(basename $cfg) against $E7REF, pin 2500)"
+  ( PIN_CACHE=2500 REF=$E7REF $LIB/exact7.sh $LP-$tag $cfg 2>&1 | tail -9 | tee -a $S ) 8>&- 9>&- < /dev/null &
+  jp=$!; JP=$jp
+  wstart e7_$tag
+  br envcli $(exe_of $cfg) $cfg --job $jp --mode e7 --kill --gate env_${tag}_e7 --gates $G 2>&1 | tee -a $S
+  wait $jp
+  JP=""
+  wstop e7_$tag
+  br e7gate $S $LP-$tag --gate e7_$tag --gates $G | tee -a $S
+  local hits; hits=$(cat $PROF/$LP-$tag-*.out $PROF/$LP-$tag-*.err 2> /dev/null | grep -c -E "fatal GPU error|became non-finite|no progress for [0-9]+ s")
+  [ "${hits:-0}" = 0 ] || gate fatal_e7_$tag FAIL "$hits fatal / non-finite / stall line(s) in $PROF/$LP-$tag-*.out / .err"
+  kc e7-$LP-$tag
+}
+EDITED=0; ROLLED=0; RESTARTING=0
+cfgstate() {   # what configs/P028x.json is now, for the result lines
+  if [ -e $BAK ] && cmp -s $CFG $BAK; then echo "configs/P028x.json = its backup (P028x as before: engine-r22p028x, U, the guard)"
+  elif [ $EDITED = 1 ]; then echo "configs/P028x.json STILL HAS the fetch build + STRATA_ADAPT_FETCH=2 (not restored)"
+  else echo "configs/P028x.json not changed"; fi
+}
+served_sw() {   # yes / no / none: STRATA_ADAPT_FETCH=2 in the 8080 engine's environment
+  local ep; ep=$(srv8080_engine); [ -n "$ep" ] || { echo none; return 0; }
+  tr '\0' '\n' < /proc/$ep/environ 2> /dev/null | grep -qx 'STRATA_ADAPT_FETCH=2' && echo yes || echo no
+}
+refuse() {   # refuse busy|hard WHY - before the gap, nothing changed. busy: exit 1; hard: an alert, exit 6
+  echo "not started ($1): $2 - nothing changed" > $O/result.txt
+  say "NOT STARTED ($1): $2 - nothing changed"
+  if [ "$1" = hard ]; then
+    printf -- '- %s ADAPT_FETCH=2 ADOPTION not started: %s - nothing changed (work/r23/afetch-adopt/gap-afetch-adopt.sh)\n' "$(date '+%m-%d %H:%M')" "$2" >> $WS/NOTES.md
+    alert "ADAPT_FETCH adoption not started" "$(echo "$2" | cut -c1-120); nothing changed"; exit 6
+  fi
+  exit 1
+}
+on_signal() {   # stopped from outside (review 11-09 #3 / #6): the exact7 job stopped; inside the gap and before the restart the
+  # backup goes back and this gap's engines are swept; port_gap4.sh end is NOT run here (a systemd stop would cut it off) -
+  # the result says what to do; stopped inside begin: this driver's research-queue hold is lifted (or "maybe open")
+  trap - TERM INT HUP
+  say "SIGNAL: the driver was stopped"
+  local st
+  kill_tree "$JP"
+  if [ $RESTARTING = 1 ]; then
+    st="stopped during or after the restart (port_gap4.sh end): do NOT run end a second time blindly - check 8080's engine, tmp/port-gap.lockpid and the research-queue hold first; $(cfgstate)"
+  elif [ $GAPOPEN = 1 ]; then
+    [ $ROLLED = 0 ] && rollback "the driver was stopped"
+    lock_sweep
+    if [ $ROLLED = 9 ]; then st="the restore FAILED: the gap is OPEN (8080 down) - fix configs/P028x.json (backup configs/P028x.json.before-afetch2-1109) before work/r22/port_gap4.sh end"
+    else st="the gap is OPEN (8080 down); $(cfgstate): close it with work/r22/port_gap4.sh end (8080 then starts P028x as before)"; fi
+  else
+    st="the gap was not open; $(cfgstate)"
+    if grep -qF 'ADAPT_FETCH=2 adoption' $HOLD 2> /dev/null; then
+      if [ -s $LOCKPID ] && kill -0 "$(cat $LOCKPID)" 2> /dev/null; then st="the gap may have opened as it was stopped (lock held; the config not changed): close it with work/r22/port_gap4.sh end"
+      else rm -f $HOLD; st="the gap was not open (this driver's research-queue hold lifted); $(cfgstate)"; fi
+    fi
+  fi
+  ss -H -ltn "( sport = :8080 )" 2> /dev/null | grep -q . && st="$st; 8080 is listening" || st="$st; 8080 is NOT listening"
+  echo "INTERRUPTED: $st" > $O/result.txt
+  say "INTERRUPTED: $st"
+  printf -- '- %s ADAPT_FETCH=2 ADOPTION INTERRUPTED: %s\n' "$(date '+%m-%d %H:%M')" "$st" >> $WS/NOTES.md
+  alert "ADAPT_FETCH adoption interrupted" "$(echo "$st" | cut -c1-160)"
+  exit 7
+}
+rollback() {   # $1 = why: the backup back, before the restart (once the edit has run, or the config differs from its backup in the gap)
+  [ $EDITED = 0 ] && [ $GAPOPEN = 1 ] && [ -e $BAK ] && ! cmp -s $CFG $BAK && EDITED=1
+  [ $EDITED = 1 ] || { say "no rollback needed ($1): configs/P028x.json was not changed"; ROLLED=1; return 0; }
+  say "ROLLBACK ($1): configs/P028x.json back to its backup"
+  if aa restore $CFG $BAK | tee -a $S | grep -q '^restored'; then ROLLED=1
+  else say "THE RESTORE FAILED - configs/P028x.json needs a look before 8080 starts"; ROLLED=9; fi
+}
+finish() {   # $1 = the result line, $2 = exit code
+  echo "$1" > $O/result.txt
+  say "RESULT: $1"
+  printf -- '- %s ADAPT_FETCH=2 ADOPTION (Karl 11-09; work/r23/afetch-adopt/, results/r23/afetch-adopt/): %s\n' "$(date '+%m-%d %H:%M')" "$1" >> $WS/NOTES.md
+  exit $2
+}
+ROLLBACK_CMD="$WS/work/r23/afetch-adopt/served-afetch.sh p028x"
+
+# ================================================================ 0 before the gap (no GPU; 8080 untouched)
+: > $G
+[ -n "$PREV" ] && say "an earlier attempt's outputs moved to $PREV"
+say "ADAPT_FETCH=2 ADOPTION (work/r23/afetch-adopt/gap-afetch-adopt.sh, Karl 11-09): configs/P028x.json -> the fetch build + STRATA_ADAPT_FETCH=2, one restart; exact7 + the short speed check"
+[ -e $KERR ] && refuse hard "a kernel-error marker is present (tmp/r19/KERNEL_ERROR): Karl clears kwatch"
+[ -s $EXC ] && grep -q 'owner exception' $EXC || refuse hard "the owner-exception record $EXC is missing"
+head -1 $GAPD/result.txt 2> /dev/null | grep -q '^DONE' || refuse hard "the ADAPT_FETCH gap's result.txt does not start DONE"
+grep -q '^BUILD VS SWITCH .*: PASS' $DEC && grep -q '^F2 (STRATA_ADAPT_FETCH=2): FAIL (speed FAIL (screen))' $DEC \
+  && [ "$(grep -c '^  QUALITY (sampled AND read-back): PASS' $DEC)" = 2 ] \
+  || refuse hard "the gap's decision.txt is not the one adopted from (build vs switch PASS, F2 speed FAIL (screen) only, both qualities PASS)"
+PR=$(afr priority --state $STATE --override $PRIO_DONE); PRC=$?; say "  $PR"
+case $PRC in 0) ;; 10) refuse hard "the Qwen4 priority rule: $PR - day-one work first (Karl 11-09)";; *) refuse busy "the priority rule cannot be checked: $PR";; esac
+PL=$(aa plan $CFG $GC $BAK); say "  $PL"
+case $PL in "PLAN OK:"*) ;; *) refuse hard "the config check: $PL";; esac
+SRVPY=$($P -I -c "import json, sys; print(json.load(open(sys.argv[1]))['server'])" $CFG)
+grep -q 'model_not_running' "$SRVPY" 2> /dev/null || refuse hard "the served server ($SRVPY) has no model_not_running code"
+for f in $AA $FR $AFR $LIB/with_server.sh $LIB/exact7.sh $LIB/kcheck.sh $B90/bp90_client.py $KR/port_gap4.sh $NOTE \
+         $W28/serve/server.py $WS/work/r23/afetch-adopt/served-afetch.sh; do
+  [ -e $f ] || refuse hard "missing: $f"
+done
+[ "$(ls $PROF/$E7REF-*.out 2> /dev/null | wc -l)" = 7 ] || refuse hard "P028x's stored exact7 $E7REF is incomplete"
+for a in P PU; do for st in pp16k-1 pp16k-2 pp16k-3 pp64k-1 pp64k-2 pp64k-3; do
+  [ -s $MORNING/$a-$st.jsonl ] || refuse hard "this morning's $a-$st.jsonl is missing"
+done; done
+for a in P F2; do for k in 1 2 3; do [ -s $GAPBP/$a-decode-$k.jsonl ] || refuse hard "the gap's $a-decode-$k.jsonl is missing"; done; done
+for st in pp16k pp64k; do [ -s $UBP/S-$st-1.jsonl ] || refuse hard "the U adoption's S-$st-1.jsonl is missing"; done
+[ -x $EAF/strata ] && [ "$(sha12 $EAF/strata)" = $EAF_SHA ] || refuse hard "engine-r23afetch is not the measured fetch build ($EAF_SHA)"
+$P -I -c "import sys; b = open(sys.argv[1], 'rb').read(); sys.exit(0 if b'STRATA_ADAPT_FETCH\0' in b and b'strata serve: fetch: %lld admissions' in b else 1)" $EAF/strata \
+  || refuse hard "engine-r23afetch has no STRATA_ADAPT_FETCH / no serve fetch line"
+free=$(df --output=avail -B1G $WS/results | tail -1 | tr -d ' ')
+[ "${free:-0}" -ge 5 ] || refuse hard "only ${free} GB free on results/"
+ST=$O/selftest-$(date +%m%d%H%M%S)
+aa selftest $ST > $ST.out 2>&1 || refuse hard "af_adopt.py selftest failed ($(tail -1 $ST.out))"
+say "  af_adopt.py selftest: $(tail -1 $ST.out)"; rm -rf $ST $ST.out
+FBL=$(aa fallback $CFG $GC $FB1 $BAK 1); say "  $FBL"
+case $FBL in fallback:*) ;; *) refuse hard "the =1 fallback: $FBL";; esac
+FBL=$(aa fallback $CFG $GC $FB2 $BAK 2); say "  $FBL"
+case $FBL in fallback:*) ;; *) refuse hard "the =2 copy: $FBL";; esac
+preflight
+[ -f $WS/tmp/r19/kwatch.pid ] && kill -0 "$(cat $WS/tmp/r19/kwatch.pid)" 2> /dev/null || refuse hard "the kernel-log watcher is not running"
+$LIB/kcheck.sh r23aa-pre > /dev/null 8>&- 9>&- < /dev/null || refuse hard "a kernel check fails before the gap"
+trap on_signal TERM INT HUP
+
+# ================================================================ 1 the gap
+PRE=$(our_exe_pids | tr '\n' ' ')   # the engines running before the gap (the served P028x): never this gap's to stop
+GAP_MAX_MIN=$(( MAXM + 15 )) $KR/port_gap4.sh begin "ADAPT_FETCH=2 adoption: P028x on the fetch build with STRATA_ADAPT_FETCH=2 (Karl 11-09), exact7 + a short speed check, then one restart" 8>&- 9>&- < /dev/null 2>&1 | tee -a $S
+[ -s $LOCKPID ] && kill -0 "$(cat $LOCKPID)" 2> /dev/null || { grep -qF 'ADAPT_FETCH=2 adoption' $HOLD 2> /dev/null && rm -f $HOLD; refuse busy "the gap did not open (this driver's hold removed)"; }
+GAPOPEN=1; T0=$(date +%s); T0T=$(uptk); DEADLINE=$(( T0 + MAXM * 60 ))
+for i in $(seq 60); do [ -z "$(engines_left)" ] && [ "$(memav)" -ge 40 ] && break; sleep 2; done
+say "8080 down: engines left:$(engines_left | sed 's/^/ /;s/^ $/ none/') MemAvailable $(memav) GB"
+end_gap() {   # port_gap4.sh end = the one restart (configs/P028x.json as it now is); never with a failed restore
+  if [ $KFAIL = 0 ] && [ $ROLLED = 0 ] && [ $EDITED = 1 ]; then   # (review 11-09 #1) the new build goes in: one more kernel check first,
+    # after this gap's engines have exited (teardown Xids land there)
+    for i in $(seq 60); do [ -z "$(engines_left)" ] && break; sleep 2; done
+    sleep 15
+    kc pre-restart || say "a kernel error before the restart: the backup goes back (Karl 11-09)"
+  fi
+  if [ $KFAIL = 1 ]; then   # Karl 11-09: stop at once, P028x back, an alert; kwatch not cleared
+    [ $ROLLED = 0 ] && rollback "a kernel error"
+    if [ $ROLLED = 9 ]; then
+      alert "ADAPT_FETCH adoption: kernel error, gap left open" "a kernel error and the config restore failed; 8080 stays down until configs/P028x.json is fixed"
+      finish "KERNEL ERROR and the restore FAILED - the gap is left OPEN (8080 down); $(cfgstate); kwatch not cleared" 3
+    fi
+    say "KERNEL ERROR during the gap: stopping and bringing P028x back as before; kwatch is not cleared"
+    [ -e $KERR ] && head -c 300 $KERR | sed 's/^/  /' | tee -a $S > /dev/null
+    lock_sweep
+    ENDING=1; RESTARTING=1
+    if $KR/port_gap4.sh end 8>&- 9>&- < /dev/null 2>&1 | tee -a $S; then
+      GAPOPEN=0
+      alert "ADAPT_FETCH adoption stopped: kernel error" "a kernel error during the adoption gap; it stopped, P028x is back as before on 8080; kwatch not cleared"
+    else   # (ENDING stays 1: end has run and failed)
+      alert "ADAPT_FETCH adoption: kernel error, 8080 not back" "a kernel error during the adoption gap and port_gap4 end failed: 8080 and the research queue need a look"
+    fi
+    finish "KERNEL ERROR during the gap - stopped, $([ $GAPOPEN = 0 ] && echo 'P028x back on 8080 as before' || echo '8080 NOT back'); $(cfgstate); kwatch not cleared" 3
+  fi
+  if [ $ROLLED = 9 ]; then
+    say "the gap stays OPEN (8080 down): the restore failed after a failed check - Karl decides"
+    alert "ADAPT_FETCH adoption: gap left open" "the config restore failed after a failed check; 8080 stays down until the config is fixed"
+    finish "restore FAILED after a failed check - the gap is left OPEN (8080 down); $(cfgstate); backup configs/P028x.json.before-afetch2-1109" 3
+  fi
+  lock_sweep
+  RESTARTING=1; ENDING=1
+  say "6 port_gap4.sh end: 8080 restarts on configs/P028x.json ($([ $ROLLED = 0 ] && echo 'the fetch build + STRATA_ADAPT_FETCH=2' || echo 'the backup: P028x as before'))"
+  SOFF=$(stat -c %s $(elog $CFG) 2> /dev/null || echo 0)
+  if ! $KR/port_gap4.sh end 8>&- 9>&- < /dev/null 2>&1 | tee -a $S; then
+    if [ -e $KERR ] && [ $ROLLED = 0 ] && [ $EDITED = 1 ]; then   # (review 11-09 #1) a kernel error during the restart: P028x's config back
+      rollback "a kernel error during the restart"
+      alert "ADAPT_FETCH adoption: kernel error during the restart" "port_gap4 end failed with a kernel error recorded; configs/P028x.json is $([ $ROLLED = 1 ] && echo 'P028x again' || echo 'NOT restored'); 8080 and the research queue need a look; kwatch not cleared"
+      finish "KERNEL ERROR during port_gap4.sh end, which FAILED - $(cfgstate); 8080 and the research queue need a look; kwatch not cleared" 3
+    fi
+    say "port_gap4.sh end FAILED: 8080 and the research queue need a look"
+    alert "ADAPT_FETCH adoption: 8080 not back" "port_gap4 end failed after the adoption gap; 8080 and the research queue need a look"
+    finish "port_gap4.sh end FAILED - 8080 and the research queue need a look; $(cfgstate)" 4
+  fi
+  GAPOPEN=0
+}
+kc open || end_gap
+PR2=$(afr priority --state $STATE --override $PRIO_DONE); PRC2=$?
+if [ $PRC2 = 10 ]; then say "PRIORITY RULE once the gap opened: $PR2 - day-one work first; nothing changed"; ROLLED=1; end_gap
+  finish "not adopted: the Qwen4 priority rule ($(echo "$PR2" | cut -c1-160)) - nothing changed, P028x back" 1; fi
+[ -z "$(engines_left)" ] || { say "engine processes still running 120 s after 8080 stopped: $(engines_left) - nothing changed"; ROLLED=1; end_gap; finish "not adopted: engines still running after 8080 stopped ($(engines_left)); $(cfgstate)" 2; }
+
+# ---- 2 the config
+say "2 the config: backup $(basename $BAK), exe engine-r23afetch/strata + env STRATA_ADAPT_FETCH=2"
+ED=$(aa edit $CFG $BAK); say "  $ED"
+case $ED in edited:*|already:*) EDITED=1; gate edit PASS "$ED";; FAIL-WRITTEN:*) EDITED=1; gate edit FAIL "$ED";; *) gate edit FAIL "$ED";; esac
+if [ "$(gst edit)" = PASS ]; then
+  DV=$(aa derive $CFG $GC $S2C $S0C $WS/logs); say "  $DV"
+  case $DV in *": OK") gate derive PASS "$DV";; *) gate derive FAIL "$DV";; esac
+fi
+if [ "$(gst edit)" != PASS ] || [ "$(gst derive)" != PASS ]; then
+  rollback "the config step: edit $(gst edit), derive $(gst derive)"
+  alert "ADAPT_FETCH adoption rolled back" "the config step failed; P028x restarts as before"
+  end_gap; finish "not adopted: the config step failed ($(gst edit) / $(gst derive)); $(cfgstate); served engine has the switch: $(served_sw)" 2
+fi
+
+# ---- 3 exact7: S0 (the gate), then S2 (information)
+say "3 exact7 S0 (the adopted config with the switch unset: the fetch build = P028x bitwise) at pin 2500 against P028x's stored $E7REF"
+e7 S0 $S0C
+if [ "$(gst e7_S0)" != PASS ] || [ "$(gst env_S0_e7)" != PASS ] || [ "$(gst fatal_e7_S0)" = FAIL ] || [ $KFAIL = 1 ]; then
+  E7G=$(gst e7_S0); E7E=$(gst env_S0_e7)
+  if [ $KFAIL = 1 ]; then end_gap; fi
+  rollback "exact7 S0 ${E7G:-missing}, env ${E7E:-missing}"
+  alert "ADAPT_FETCH adoption rolled back" "exact7 with the switch unset did not pass (7/7 matched wanted); P028x restarts as before"
+  end_gap; finish "ROLLED BACK: exact7 S0 ${E7G:-?} (env ${E7E:-?}); $(cfgstate); served engine has the switch: $(served_sw)" 2
+fi
+say "3b exact7 S2 (the switch on) - information only: bit-identity with P028x is not expected (admissions move experts between the CPU and the GPUs)"
+e7 S2 $S2C
+E7S2=$(grep -oE "^exact7 $LP-S2: [0-9?]/7[^;]*" $S 2> /dev/null | tail -1)
+if [ "$(gst env_S2_e7)" != PASS ] || [ "$(gst fatal_e7_S2)" = FAIL ] || [ $KFAIL = 1 ]; then
+  if [ $KFAIL = 1 ]; then end_gap; fi
+  rollback "exact7 S2: env $(gst env_S2_e7), fatal lines $(gst fatal_e7_S2)"
+  alert "ADAPT_FETCH adoption rolled back" "exact7 with the switch on failed its env check or printed a fatal line; P028x restarts as before"
+  F7=$(gst fatal_e7_S2); end_gap; finish "ROLLED BACK: exact7 S2 env $(gst env_S2_e7) / fatal ${F7:-ok}; $(cfgstate)" 2
+fi
+
+# ---- 4 the short speed check (S2)
+say "4 the short speed check on S2 (a fresh engine each, 1 pass): pp16k, pp64k, decode"
+for set in pp16k pp64k decode; do [ $KFAIL = 1 ] && break; bprun $set; done
+[ $KFAIL = 1 ] && end_gap
+NUP=0; BADS=""
+for set in pp16k pp64k decode; do
+  [ "$(gst foreign_S2_$set)" = FAIL ] && { say "  $set: left out (a foreign GPU user)"; continue; }
+  if [ "$(gst env_S2_$set)" = PASS ] && [ "$(gst fatal_S2_$set)" != FAIL ]; then NUP=$((NUP + 1))
+  else e=$(gst env_S2_$set); f=$(gst fatal_S2_$set); BADS="$BADS $set(env ${e:-missing}, fatal ${f:-ok})"; fi
+done
+if [ -n "$BADS" ] || [ $NUP = 0 ]; then
+  WHY=${BADS:+ failed:$BADS}; [ $NUP = 0 ] && WHY="$WHY; no speed-check server came up with its env checked"
+  rollback "the speed check$WHY"
+  alert "ADAPT_FETCH adoption rolled back" "a speed-check server did not come up or failed its env or fatal-line check; P028x restarts as before"
+  end_gap; finish "ROLLED BACK: the speed check$WHY; $(cfgstate); served engine has the switch: $(served_sw)" 2
+fi
+SP=$(aa speed $BO $GAPBP $UBP $MORNING)
+echo "$SP" | grep -q '^SPEED ' || SP="$SP"$'\n'"SPEED NOT COMPUTED (af_adopt.py speed failed; the measurements are in $BO)"
+echo "$SP" | sed 's/^/  /' | tee -a $S
+end_gap
+
+# ---- 7 after the restart
+say "7 after the restart: the served engine, its switch line, the guard, one chat and its fetch line"
+SL=$(elog $CFG)
+for i in $(seq 30); do grep -q '^strata serve: STRATA_ADAPT_FETCH=' < <(tail -c +$((SOFF + 1)) $SL 2> /dev/null) && break; sleep 2; done
+EP=$(srv8080_engine)
+SHA=$([ -n "$EP" ] && sha12 /proc/$EP/exe 2> /dev/null)
+ENVF=$([ -n "$EP" ] && tr '\0' '\n' < /proc/$EP/environ 2> /dev/null | grep -cxE 'STRATA_ADAPT_FETCH=2|STRATA_HC_UPMIX=1')
+BANNER=$(tail -c +$((SOFF + 1)) $SL 2> /dev/null | grep -m1 -E '^strata serve: STRATA_ADAPT_FETCH' | cut -c1-200)
+say "  8080 engine pid ${EP:-none}: sha ${SHA:-?} (want $EAF_SHA); STRATA_ADAPT_FETCH=2 and STRATA_HC_UPMIX=1 in its environment: ${ENVF:-0} of 2"
+say "  its switch line: ${BANNER:-NONE}"
+MODEL=$($P -I -c "import json, sys; print(json.load(open(sys.argv[1]))['model_name'])" $CFG)
+SV=$(aa served http://127.0.0.1:8080 "$MODEL"); SVRC=$?
+echo "$SV" | sed 's/^/  /' | tee -a $S
+FL=$(tail -c +$((SOFF + 1)) $SL 2> /dev/null | grep -E '^strata serve: fetch: [0-9]+ admissions' | tail -1 | cut -c1-120)
+say "  the chat's fetch line: ${FL:-NONE}"
+kc served
+ENVS=$(br envcheck $EAF/strata $CFG --gate env_served --gates $G 2>&1 | tail -1); say "  (info) the served engine's env against configs/P028x.json: $ENVS"
+if [ $KFAIL = 1 ] || [ -e $KERR ]; then   # (review 11-09 #1, Karl 11-09) a kernel error after the switch: P028x back, a second restart
+  KFAIL=1; say "KERNEL ERROR after the switch: configs/P028x.json back to P028x, then 8080 restarts on it (port_gap4.sh begin waits for a quiet boundary)"
+  RB=$(aa restore $CFG $BAK); say "  $RB"
+  case $RB in restored*) ;; *)
+    alert "ADAPT_FETCH adoption: kernel error after the switch" "the restore FAILED; 8080 runs the fetch build; configs/P028x.json needs a look; kwatch not cleared"
+    finish "KERNEL ERROR after the switch and the restore FAILED - 8080 runs the fetch build; configs/P028x.json needs a look; kwatch not cleared" 3;; esac
+  alert "ADAPT_FETCH adoption: kernel error after the switch" "configs/P028x.json is P028x again; 8080 restarts on it at the next quiet boundary; kwatch not cleared"
+  if GAP_MAX_MIN=15 $KR/port_gap4.sh begin "ADAPT_FETCH=2 adoption: P028x back after a kernel error (Karl 11-09)" 8>&- 9>&- < /dev/null 2>&1 | tee -a $S \
+     && $KR/port_gap4.sh end 8>&- 9>&- < /dev/null 2>&1 | tee -a $S; then
+    finish "KERNEL ERROR after the switch - P028x back on 8080 as before (a second restart); kwatch not cleared" 3
+  fi
+  finish "KERNEL ERROR after the switch - configs/P028x.json is P028x again but the second restart did not finish: 8080 and the research queue need a look; kwatch not cleared" 3
+fi
+SPL=$(echo "$SP" | grep -E '^pp16k|^pp64k|^decode' | sed -E 's/ tok\/s//; s/; vs this morning.s /, /g' | tr '\n' ';' | sed 's/;$//')
+if [ "$SHA" != $EAF_SHA ] || [ "${ENVF:-0}" -lt 2 ] || ! echo "$BANNER" | grep -q '^strata serve: STRATA_ADAPT_FETCH=2: the PCIe share takes' \
+   || [ -z "$FL" ] || [ $SVRC != 0 ] || [ $KFAIL = 1 ]; then
+  alert "ADAPT_FETCH adoption: check after restart" "the served checks after the restart did not all pass; see the adoption summary"
+  finish "the change is in and 8080 restarted, but the served checks did not all pass (sha ${SHA:-?}, switch+U in env ${ENVF:-0}/2, switch line ${BANNER:+seen}${BANNER:-NONE}, fetch line ${FL:+seen}${FL:-NONE}, guard/chat rc $SVRC, kernel $([ $KFAIL = 1 ] && echo FAIL || echo ok)); rollback: $ROLLBACK_CMD" 5
+fi
+RES="ADOPTED: 8080 = P028x on the fetch build (153ce47d3ef0) + STRATA_ADAPT_FETCH=2 (one restart; Karl's owner exception). exact7 S0 (switch unset) 7/7 MATCHED vs x28h-e7a; exact7 S2 (switch on, info): ${E7S2:-?}; speed (1 pass): $SPL; $(echo "$SP" | tail -1); switch line + fetch line seen ($FL); guard 400 + chat PASS. Fallback =1: configs/P028x.json.afetch1-1109. Rollback (P028x as before): $ROLLBACK_CMD"
+note "ADAPT_FETCH=2 adopted on 8080" "P028x now runs the fetch build with STRATA_ADAPT_FETCH=2, after one restart. exact7 with the switch unset 7 of 7. $(echo "$SP" | tail -1 | cut -c1-80). Backup and the =1 fallback kept."
+finish "$RES" 0

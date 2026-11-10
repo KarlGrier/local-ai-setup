@@ -1,0 +1,603 @@
+#!/usr/bin/env python3
+"""bench2.py - phase 3/5 measurements (2026-10-17): the frozen question sets on the baseline and the deep profile.
+
+  run SET PROFILE [--ids s01,s02] [--checkable-min 30] [--open-min 120]
+        SET = screen | holdout | hard-screen | hard-holdout, PROFILE = baseline | deep (LDR must be running in that profile: run-ldr.sh with
+        LDR_PROFILE). Runs the questions one at a time through tools/ldr-client.py, each with strata-proxy's capture
+        mode on, into results/bench2/runs/<SET>-<PROFILE>/<id>/. Holds run/bench.lock (the research runner then
+        starts no Jan job and does not stop LDR). Daytime only: a question is started only if its expected end is
+        before 22:30; otherwise it is skipped until 09:00 (finished questions are skipped). 11-03: each question runs
+        with the client's stuck-run watchdog ($WATCHDOG_MIN, default 30 min without a model call; 0 = off); a
+        watchdog stop leaves <id>/faulted.json + bench-fail.json and ends this command with exit code 86.
+Phase 5 (staged 10-29 in staging/phase5, re-based 11-04 onto this file in staging/post7d/tools): set p5-harder (the
+four harder checkable questions, FROZEN-p5-harder.txt; answers-p5-harder.jsonl) and set p5-o01 (o01 with the 8 GB
+card, only if Karl freezes it: FROZEN-p5-o01.txt). Their checkable grade is the blind Answer-section rule
+(staging/phase5/p5.py); `grade` here stays the string cross-check.
+  next                 the queue's next question from results/bench2/queue-plan.json: "SET PROFILE ID" (the first
+                       one not done that fits before 22:30), "wait" (none fits now) or "done"
+  grade SET PROFILE    checkable questions against results/bench2/answers/answers.jsonl -> grades.json + table
+  sort SET PROFILE     every failed checkable question: never found / found but not read / read but dropped /
+                       in the notes but wrong in the report (from the captured calls) -> failures.json + table
+
+Questions: results/bench2/questions-<SET>.jsonl  {"id", "kind": "checkable"|"open", "question", "files": [...]}
+Answers (never read by a run): results/bench2/answers/answers.jsonl, answers-hard.jsonl (the hard sets, 10-18)
+        {"id", "answer", "accept": ["variant", ...], "number": {"value": x, "tol": t} (optional), "sources": [...]}
+"""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import unicodedata
+from datetime import datetime, timedelta
+from pathlib import Path
+
+WS = Path("/home/USER/ai/deep-research")
+B = WS / "results" / "bench2"
+PY = str(WS / ".venv" / "bin" / "python")
+NIGHT_START = (22, 30)      # a question must be expected to end by then: 30 min margin before the 23:00 night rule
+SETS = ["screen", "holdout", "hard-screen", "hard-holdout", "screen-extra", "shop-7e",   # 11-02: item 7e (FROZEN-7e.txt)
+        "p5-harder", "p5-o01"]                                                         # 10-29 / 11-04: Phase 5
+REPORT_ALLOWANCE_MIN = {"deep": {"checkable": 60, "open": 90}, "baseline": {"checkable": 10, "open": 15}}
+# 11-03 (Karl): the stuck-run watchdog - tools/ldr-client.py stops a run with no model call for WATCHDOG_MIN minutes and
+# exits with this code; `run` passes it on (bench2-queue.sh's WD_RC moves the run aside and requeues it once)
+WATCHDOG_RC = 86
+
+
+def watchdog_min() -> float:
+    """The client's watchdog limit for bench runs: $WATCHDOG_MIN, default 30 (0 = off)."""
+    try:
+        return max(0.0, float(os.environ.get("WATCHDOG_MIN") or 30))
+    except ValueError:
+        return 30.0
+
+
+def load_jsonl(p: Path) -> list[dict]:
+    return [json.loads(l) for l in p.read_text().splitlines() if l.strip()] if p.exists() else []
+
+
+def questions(set_: str) -> list[dict]:
+    return load_jsonl(B / f"questions-{set_}.jsonl")
+
+
+def answers() -> dict[str, dict]:
+    return {x["id"]: x for f in ("answers.jsonl", "answers-hard.jsonl", "answers-p5-harder.jsonl")
+            for x in load_jsonl(B / "answers" / f)}
+
+
+def run_dir(set_: str, profile: str, qid: str, label: str = "") -> Path:
+    return B / "runs" / f"{set_}-{profile}{'-' + label if label else ''}" / qid
+
+
+NIGHT_OK = WS / "run" / "night-ok"   # 2026-10-19: the user is away, so the night rule (room heat) is lifted while it exists
+
+
+def night_cut(now: datetime) -> datetime:
+    if NIGHT_OK.exists():
+        return now + timedelta(days=7)
+    cut = now.replace(hour=NIGHT_START[0], minute=NIGHT_START[1], second=0, microsecond=0)
+    if now.hour < 9:
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)   # already night
+    return cut
+
+
+def ldr_fallback() -> str:
+    """"on" when LDR was started with the Tavily search fallback (run-ldr.sh's run/ldr.fallback; 2026-10-19)."""
+    try:
+        return (WS / "run" / "ldr.fallback").read_text().strip() or "off"
+    except OSError:
+        return "off"
+
+
+def ldr_efforts() -> str:
+    try:
+        return (WS / "run" / "ldr.efforts").read_text().strip()
+    except OSError:
+        return "report=default verify=default"     # LDR started before run-ldr.sh wrote the file: the package defaults
+
+
+def ldr_profile() -> str:
+    try:
+        return (WS / "run" / "ldr.profile").read_text().strip()
+    except OSError:
+        return "?"
+
+
+def runfiles():
+    """tools/ldr_runfiles.py (10-29: run/ldr.modelprofile, run/paid-run.json), from this script's folder."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import ldr_runfiles
+    return ldr_runfiles
+
+
+def paid_routes() -> set[str] | None:
+    """Item 7's route profiles ("profiles" in tools/paid-route.json); None when it is not installed or broken."""
+    try:
+        return set(json.loads((WS / "tools" / "paid-route.json").read_text())["profiles"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+# -- run ----------------------------------------------------------------------------------------------------------------
+def cmd_run(a) -> None:
+    qs = questions(a.set)
+    if a.ids:
+        want = set(a.ids.split(","))
+        qs = [q for q in qs if q["id"] in want]
+    # open-ended questions first (2026-10-18): the baseline got all 15 checkable ones right, so they show the least
+    qs.sort(key=lambda q: q.get("kind", "checkable") == "checkable")
+    if ldr_profile() != a.profile:
+        raise SystemExit(f"LDR runs the {ldr_profile()!r} profile; start it with LDR_PROFILE={a.profile} run-ldr.sh restart")
+    # 2026-10-18: a whole deep run at one level (--effort-all): agent + extraction through the proxy mode, report +
+    # citation check through LDR's environment at start (run/ldr.efforts must match, else nothing runs)
+    if a.effort_all:
+        a.effort_agent = a.effort_agent or a.effort_all
+        a.effort_extract = a.effort_extract or a.effort_all
+    if a.profile == "deep":
+        # 2026-10-20 (phase 4): --effort-verify sets the citation check apart (the Jan deep profile: medium, check xhigh)
+        want = f"report={a.effort_all or 'default'} verify={a.effort_verify or a.effort_all or 'default'}"
+        if ldr_efforts() != want:
+            raise SystemExit(f"LDR started with {ldr_efforts()!r}, this run needs {want!r} (LDR_DEEP_REPORT_EFFORT / "
+                             f"LDR_DEEP_VERIFY_EFFORT at run-ldr.sh start)")
+    try:
+        s2 = (WS / "run" / "ldr.s2").read_text().strip() or "off"
+    except OSError:
+        s2 = "off"
+    try:
+        ql = (WS / "run" / "ldr.quicklimits").read_text().strip() or "off"
+    except OSError:
+        ql = "off"
+    if ql != "off":
+        raise SystemExit("LDR runs with the quick-answer limits (run/ldr.quicklimits: no subtopic agents, 12 cycles): "
+                         "measurements never use them; restart LDR without LDR_QUICK_LIMITS")
+    if s2 != "off":
+        raise SystemExit("LDR runs with Semantic Scholar's own engine on (run/ldr.s2): measurements keep it off until "
+                         "phase 4; restart LDR without LDR_RESEARCH_S2")
+    # 2026-10-21 (phase 4 stage 2): --items setup,critic,verify2 needs LDR started with exactly those items
+    # (run/ldr.items, written by run-ldr.sh); every other run needs none (the "without" side must not see them)
+    try:
+        have_items = (WS / "run" / "ldr.items").read_text().split()
+    except OSError:
+        have_items = ["off"]
+    want_items = sorted(x for x in (a.items or "").split(",") if x) or ["off"]
+    if sorted(have_items) != want_items:
+        raise SystemExit(f"LDR runs with phase 4 items {' '.join(have_items)} (run/ldr.items); this run needs "
+                         f"{' '.join(want_items)}")
+    # 10-29 (item 7): an item 7 run (--paid-route) needs LDR with the search hook on (LDR_SEARCH_FALLBACK=1) and a route
+    # item 7's routing table knows; each question's searches count as test run "<runs folder>/<qid>" through
+    # run/paid-run.json (written before the question, removed after it). Every other run keeps SearXNG only.
+    if a.paid_route:
+        known = paid_routes()
+        if known is None:
+            raise SystemExit("--paid-route: item 7's tools/paid-route.json is not installed (or unreadable)")
+        if a.paid_route not in known:
+            raise SystemExit(f"--paid-route {a.paid_route!r} is not a profile in tools/paid-route.json "
+                             f"({', '.join(sorted(known))})")
+        if ldr_fallback() != "on":
+            raise SystemExit(f"an item 7 run needs LDR started with LDR_SEARCH_FALLBACK=1 (run/ldr.fallback: "
+                             f"{ldr_fallback()})")
+    elif a.paid_cache:
+        raise SystemExit("--paid-cache needs --paid-route (item 7 runs only)")
+    elif ldr_fallback() != "off":
+        raise SystemExit("LDR runs with the Tavily search fallback on (run/ldr.fallback): measurements use SearXNG only; "
+                         "restart LDR without LDR_SEARCH_FALLBACK")
+    # 10-29 (C3b): LDR must run the wanted model profile (run/ldr.modelprofile: name + file hash; none = an LDR started
+    # before C3, i.e. flash-next's built-in values)
+    mp = runfiles().modelprofile_mismatch(a.model_profile or os.environ.get("LDR_MODEL_PROFILE"), WS / "run",
+                                          WS / "profiles")
+    if mp:
+        raise SystemExit(f"LDR does not run this run's model profile ({mp}); restart it with "
+                         f"LDR_MODEL_PROFILE={a.model_profile or os.environ.get('LDR_MODEL_PROFILE') or 'flash-next'} "
+                         "run-ldr.sh restart")
+    B.mkdir(parents=True, exist_ok=True)
+    lock = open(WS / "run" / "bench.lock", "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)                     # the research runner leaves LDR alone meanwhile
+    # 10-27 (stage 3 p4s6): a plan step may set its own budgets ("open_min", "checkable_min"); with LDR_DEEP_FIX's
+    # whole-run budget (Fix 6) a step can so match an earlier stage's research time
+    for step in json.loads((B / os.environ.get("BENCH2_PLAN", "queue-plan.json")).read_text()):
+        if (step["set"], step["profile"], step.get("label", "")) == (a.set, a.profile, a.label or ""):
+            a.open_min = step.get("open_min", a.open_min)
+            a.checkable_min = step.get("checkable_min", a.checkable_min)
+            break
+    for q in qs:
+        out = run_dir(a.set, a.profile, q["id"], a.label)
+        if (out / "summary.json").exists():
+            print(f"{q['id']}: done already, skipped", flush=True)
+            continue
+        kind = q.get("kind", "checkable")
+        budget_min = a.checkable_min if kind == "checkable" else a.open_min
+        expect = budget_min + REPORT_ALLOWANCE_MIN[a.profile][kind]
+        now = datetime.now()
+        if now + timedelta(minutes=expect) > night_cut(now):
+            print(f"{q['id']}: would end after 22:30 (expected {expect} min) - skipped until 09:00", flush=True)
+            continue                                     # a shorter question may still fit
+        out.mkdir(parents=True, exist_ok=True)
+        # 10-21: a retry after a failed attempt (bench-fail.json, a search-failure stop) - the old attempt's files go
+        # to their own folder first; the move below skips names that exist, so they would hide the new attempt's
+        old = [f for f in out.iterdir() if not f.name.startswith("failed-attempt-")]
+        if old:
+            keep = out / f"failed-attempt-{datetime.now():%m%d-%H%M%S}"
+            keep.mkdir()
+            for f in old:
+                f.rename(keep / f.name)
+            print(f"{q['id']}: an earlier failed attempt's files moved to {keep.name}", flush=True)
+        tag = f"bench2-{a.set}-{a.profile}{a.label and '-' + a.label}-{q['id']}"
+        cmd = [PY, str(WS / "tools" / "ldr-client.py"), "research", tag, q["question"],
+               "--capture-dir", str(out / "capture"), "--max-minutes", str(budget_min + REPORT_ALLOWANCE_MIN[a.profile][kind] + 30),
+               "--watchdog-min", f"{watchdog_min():g}"]
+        if a.profile == "deep":
+            cmd += ["--budget-s", str(budget_min * 60)]
+            if q.get("files"):
+                cmd += ["--files", ",".join(q["files"])]
+            if a.effort_agent:
+                cmd += ["--effort-agent", a.effort_agent]
+            if a.effort_extract:
+                cmd += ["--effort-extract", a.effort_extract]
+        print(f"{datetime.now():%H:%M} {q['id']} ({kind}, {budget_min} min) ...", flush=True)
+        t0 = time.time()
+        clock0 = _paused_total()
+        paid = None
+        if a.paid_route:    # 10-29 (item 7): this question's LDR searches are test run "<runs folder>/<qid>"
+            paid = runfiles().paid_run_write("test", f"{out.parent.name}/{q['id']}", "bench2", WS / "run",
+                                             route=a.paid_route, cache=None if a.paid_cache is None else a.paid_cache == "on")
+        try:
+            r = subprocess.run(cmd, cwd=WS, env={**os.environ, "LDR_DEEP_TIME_BUDGET_S": str(budget_min * 60)},
+                               stdout=open(out / "client.out", "w"), stderr=subprocess.STDOUT)
+        finally:
+            if paid:
+                runfiles().paid_run_clear(WS / "run", pid=os.getpid())
+        res = WS / "results" / tag
+        if res.exists():
+            for f in res.iterdir():
+                dst = out / f.name
+                if dst.exists():
+                    continue
+                f.rename(dst)
+            try:
+                res.rmdir()
+            except OSError:
+                pass
+        wall = time.time() - t0
+        held = _paused_total() - clock0
+        meta = {"id": q["id"], "kind": kind, "profile": a.profile, "budget_min": budget_min, "rc": r.returncode,
+                "wall_s": round(wall, 1), "held_s": round(held, 1), "research_clock_s": round(wall - held, 1),
+                "effort_agent": a.effort_agent, "effort_extract": a.effort_extract, "effort_all": a.effort_all,
+                "ldr_efforts": ldr_efforts() if a.profile == "deep" else None, "ended": datetime.now().astimezone().isoformat()}
+        # 10-31: "ended" carries its UTC offset, so a run ending in the hour repeated at the 11-01 clock change reads back
+        # exactly in run_work.py / wait_table.py (fromisoformat().timestamp()); older naive values parse as before
+        if paid:
+            meta["paid_run"] = {k: paid[k] for k in ("kind", "run", "route", "cache") if k in paid}
+        # bench.json marks a finished question (the queue counts them); a run that did not complete (e.g. LDR refused the
+        # login) writes bench-fail.json instead and is run again next time
+        done = r.returncode == 0 and (out / "summary.json").exists()
+        faulted = r.returncode == WATCHDOG_RC and not done        # 11-03: the client's watchdog stopped it
+        if faulted:
+            try:
+                meta["faulted"] = json.loads((out / "faulted.json").read_text()).get("reason") or True
+            except (OSError, ValueError):
+                meta["faulted"] = "watchdog (no faulted.json)"
+        (out / ("bench.json" if done else "bench-fail.json")).write_text(json.dumps(meta, indent=1))
+        print(f"{datetime.now():%H:%M} {q['id']}: rc {r.returncode}, {wall / 60:.0f} min wall ({held / 60:.0f} min held)",
+              flush=True)
+        if faulted:     # LDR may still be busy with it: no further question on this LDR (the queue starts a fresh one)
+            print(f"{datetime.now():%H:%M} {q['id']}: FAULTED ({meta['faulted']}) - exit {WATCHDOG_RC}", flush=True)
+            sys.exit(WATCHDOG_RC)
+
+
+def _paused_total() -> float:
+    try:
+        d = json.loads((WS / "run" / "research-clock.json").read_text())
+        t = float(d.get("paused_total_s") or 0)
+        if d.get("gate") == "closed":
+            t += max(0.0, time.time() - float(d.get("updated") or time.time()))
+        return t
+    except (OSError, ValueError):
+        return 0.0
+
+
+# -- answers --------------------------------------------------------------------------------------------------------------
+def norm(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    s = s.replace("’", "'").replace("–", "-").replace("—", "-")
+    s = re.sub(r"[^a-z0-9.%$€£\-' ]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def answer_text(out: Path, profile: str) -> str:
+    """The final answer of a run: the deep report's Answer section, else the start of LDR's report."""
+    for p in (out / "deep" / "report.md", out / "report.md"):
+        if p.exists():
+            t = p.read_text(encoding="utf-8", errors="replace")
+            m = re.search(r"(?ms)^## Answer\s*\n(.*?)(?=^## )", t)
+            if m:
+                return m.group(1)
+            return t[:4000]
+    return ""
+
+
+CITE = re.compile(r"[\[【]\d+(?:\s*[,–-]\s*\d+)*[\]】]")
+
+
+def matches(text: str, ans: dict) -> list[str]:
+    text = CITE.sub(" ", text or "")             # citation markers like [10] are not answers
+    t = norm(text)
+    hits = [v for v in [ans["answer"], *ans.get("accept", [])] if v and norm(v) and norm(v) in t]
+    num = ans.get("number")
+    if num:
+        for m in re.finditer(r"-?\d[\d,]*(?:\.\d+)?", text.replace(" ", "")):
+            try:
+                x = float(m.group(0).replace(",", ""))
+            except ValueError:
+                continue
+            if abs(x - float(num["value"])) <= float(num.get("tol", 0)):
+                hits.append(m.group(0))
+                break
+    return hits
+
+
+def cmd_grade(a) -> None:
+    ans_by_id = answers()
+    rows = []
+    for q in questions(a.set):
+        if q.get("kind") != "checkable":
+            continue
+        out = run_dir(a.set, a.profile, q["id"], a.label)
+        meta = json.loads((out / "bench.json").read_text()) if (out / "bench.json").exists() else {}
+        txt = answer_text(out, a.profile)
+        ans = ans_by_id.get(q["id"])
+        hits = matches(txt, ans) if ans and txt else []
+        rows.append({"id": q["id"], "ran": bool(txt), "correct": bool(hits), "hits": hits,
+                     "research_clock_min": round(meta.get("research_clock_s", 0) / 60, 1),
+                     "wall_min": round(meta.get("wall_s", 0) / 60, 1)})
+    (B / f"grades-{a.set}-{a.profile}{a.label and '-' + a.label}.json").write_text(json.dumps(rows, indent=1))
+    ran = [r for r in rows if r["ran"]]
+    print(f"{a.set} / {a.profile}: {sum(r['correct'] for r in ran)} of {len(ran)} correct "
+          f"(of {len(rows)} checkable); mean {sum(r['wall_min'] for r in ran) / max(1, len(ran)):.0f} min wall per question")
+    for r in rows:
+        print(f"  {r['id']}: {'OK ' if r['correct'] else '-- '} {r['wall_min']:5.0f} min  {r['hits'][:2] if r['hits'] else ''}")
+
+
+# -- the queue's next question ----------------------------------------------------------------------------------------------
+HARD_GATE_IDS = ["h02", "h04", "h05", "h06", "h08"]
+XHIGH_DECISION = B / "xhigh-decision.json"
+
+
+def xhigh_beats_medium_hard() -> bool | None:
+    """The user's rule (2026-10-19): the open-ended xhigh runs (o02/o03/o07/o08) only if deep xhigh answers more of the
+    hard five correctly than deep medium - graded BLIND against the frozen answers, the same way as the rest of phase 3
+    (`bench2.py xhigh-blind`, my grades, `bench2.py xhigh-decide`). None (the queue waits) until xhigh-decision.json
+    exists; nothing here grades or decides by itself. A tie is not a win."""
+    if XHIGH_DECISION.exists():
+        return json.loads(XHIGH_DECISION.read_text())["run_xhigh_open"]
+    return None
+
+
+HARD_ARMS = {"hard-screen-deep-medium": "medium", "hard-screen-deep": "xhigh"}   # runs folder -> arm
+
+
+def cmd_xhigh_blind(a) -> None:
+    """Both arms of the hard five done: blind packets (tools/blind-open.py: each question's two answers relabelled A/B
+    in random order, setup cues taken out; the key sealed in blind/KEY-do-not-open-before-grading.json)."""
+    for qid in HARD_GATE_IDS:
+        for folder in HARD_ARMS:
+            if not (B / "runs" / folder / qid / "bench.json").exists():
+                raise SystemExit(f"{folder}/{qid} has not run yet")
+    for qid in HARD_GATE_IDS:
+        r = subprocess.run([PY, str(WS / "tools" / "blind-open.py"), qid, *HARD_ARMS], cwd=WS)
+        if r.returncode:
+            raise SystemExit(f"blind-open.py {qid} failed")
+    print("packets in results/bench2/blind/<id>/A.md, B.md - grade each against answers/answers-hard.jsonl into "
+          'blind/grades.jsonl ({"id", "graded", "correct": {"A": bool, "B": bool}, "notes"}), then bench2.py xhigh-decide')
+
+
+def cmd_xhigh_decide(a) -> None:
+    """After my blind grades: open the key, count each arm's correct answers, write xhigh-decision.json."""
+    if XHIGH_DECISION.exists():
+        raise SystemExit(f"already decided: {XHIGH_DECISION.read_text()}")
+    grades = {}
+    for line in (B / "blind" / "grades.jsonl").read_text().splitlines():
+        if line.strip():
+            g = json.loads(line)
+            if g.get("id") in HARD_GATE_IDS and isinstance(g.get("correct"), dict):
+                grades[g["id"]] = g
+    missing = [q for q in HARD_GATE_IDS if q not in grades]
+    if missing:
+        raise SystemExit(f"no blind grade yet for {missing}")
+    key = json.loads((B / "blind" / "KEY-do-not-open-before-grading.json").read_text())
+    per, ans_by_id = {"medium": {}, "xhigh": {}}, answers()
+    matcher = {"medium": {}, "xhigh": {}}
+    for qid in HARD_GATE_IDS:
+        for label, folder in key[qid].items():          # the key: label -> runs folder
+            arm = HARD_ARMS[folder]
+            per[arm][qid] = bool(grades[qid]["correct"][label])
+            out = B / "runs" / folder / qid
+            txt, ans = answer_text(out, "deep"), ans_by_id.get(qid)
+            matcher[arm][qid] = bool(ans and txt and matches(txt, ans))
+    m, x = sum(per["medium"].values()), sum(per["xhigh"].values())
+    d = {"decided": datetime.now().isoformat(timespec="seconds"),
+         "graded": ("blind, against the frozen answers (answers/answers-hard.jsonl, FROZEN-hard.txt): tools/blind-open.py "
+                    "relabelled each question's two answers A/B in a random order with the setup cues taken out, and the "
+                    "grades (blind/grades.jsonl) were written before the key was opened - the same way as the rest of "
+                    "phase 3; the grader did not know which arm was which"),
+         "medium_correct": m, "xhigh_correct": x, "per_question": per,
+         "matcher_sanity": {k: sum(v.values()) for k, v in matcher.items()} | {"per_question": matcher},
+         "rule": "run the xhigh open-ended runs (o02/o03/o07/o08) only if xhigh_correct > medium_correct (a tie is not a win)",
+         "run_xhigh_open": x > m}
+    XHIGH_DECISION.write_text(json.dumps(d, indent=1))
+    print(json.dumps({k: d[k] for k in ("medium_correct", "xhigh_correct", "run_xhigh_open")}))
+
+
+QUEUE_FAILURES = B / "queue-failures.tsv"   # 11-05 (Karl): bench2-queue.sh's record of runs that failed (3 = dropped / stop)
+
+
+def queue_dropped(plan: str) -> set[str]:
+    """Run keys (SET/PROFILE/LABEL or -/ID) bench2-queue.sh dropped from this plan after 3 failures: never handed out
+    again, and not done either (no bench.json; the folder is in runs-failed/)."""
+    try:
+        rows = [l.split("\t") for l in QUEUE_FAILURES.read_text().splitlines()]
+    except OSError:
+        return set()
+    return {r[2] for r in rows if len(r) >= 4 and r[1] == plan and r[3] == "dropped"}
+
+
+def cmd_next(a) -> None:
+    """queue-plan.json: [{"set", "profile", "ids": [...] (optional; default all), "needs": "FROZEN-hard.txt" (optional),
+    "effort": "medium" (optional: --effort-all), "label": "medium" (optional: own runs folder),
+    "only_if": "xhigh_beats_medium_hard" (optional: skipped unless deep xhigh beat deep medium on the hard five)}], in
+    priority order. Prints "SET PROFILE ID EFFORT LABEL VERIFY" ("-" for none). A set's question file must exist (and
+    "needs", if given). 2026-10-20 (phase 4): the plan file is $BENCH2_PLAN (default queue-plan.json, phase 3's), and a
+    step's "verify_effort" sets the citation check apart from "effort". 10-29: with --wide (bench2-queue.sh) also
+    "ROUTE CACHE MODEL_PROFILE" from a step's "paid_route" (item 7: "types", "7a", "7b", "7c"), "paid_cache" (true /
+    false) and "model_profile" (profiles/<name>.env; default the queue's LDR_MODEL_PROFILE, else flash-next)."""
+    now, waiting = datetime.now(), False
+    dropped = queue_dropped(os.environ.get("BENCH2_PLAN", "queue-plan.json"))
+    for step in json.loads((B / os.environ.get("BENCH2_PLAN", "queue-plan.json")).read_text()):
+        if step.get("needs") and not (B / step["needs"]).exists():
+            waiting = True                               # not frozen yet: never "done" while it is missing
+            continue
+        if step.get("only_if") == "xhigh_beats_medium_hard":
+            go = xhigh_beats_medium_hard()
+            if go is None:
+                waiting = True                           # the hard five have not run at both levels yet
+                continue
+            if not go:
+                continue                                 # skipped by the rule: counts as done
+        qs = questions(step["set"])
+        if step.get("ids"):
+            qs = [q for q in qs if q["id"] in step["ids"]]
+        qs.sort(key=lambda q: q.get("kind", "checkable") == "checkable")
+        for q in qs:
+            if (run_dir(step["set"], step["profile"], q["id"], step.get("label", "")) / "bench.json").exists():
+                continue
+            if f"{step['set']}/{step['profile']}/{step.get('label') or '-'}/{q['id']}" in dropped:
+                continue                                 # 11-05: failed 3 times, dropped by the queue (its rules allow it)
+            kind = q.get("kind", "checkable")
+            # 10-29 (phase 5): a step's own budgets, as `run` uses them (before: always 30 / 120, so with the night rule
+            # back `next` could pick a 47 / 171-min question that `run` then skips, every 10 min until 09:00)
+            budget = step.get("checkable_min", 30) if kind == "checkable" else step.get("open_min", 120)
+            expect = budget + REPORT_ALLOWANCE_MIN[step["profile"]][kind]
+            if now + timedelta(minutes=expect) > night_cut(now):
+                waiting = True
+                continue
+            row = [step["set"], step["profile"], q["id"], step.get("effort") or "-", step.get("label") or "-",
+                   step.get("verify_effort") or "-", ",".join(step.get("items") or []) or "-"]
+            if a.wide:      # 10-29 (bench2-queue.sh): + item 7's "paid_route", "paid_cache" (on / off), "model_profile"
+                pc = step.get("paid_cache")
+                row += [step.get("paid_route") or "-", "-" if pc is None else ("on" if pc else "off"),
+                        step.get("model_profile") or "-"]
+                bad = [x for x in row if len(str(x).split()) != 1]
+                if bad:
+                    raise SystemExit(f"plan step {step['set']}/{step['profile']}: a value with spaces or empty: {bad}")
+            print(*row)
+            return
+    print("wait" if waiting else "done")
+
+
+# -- failure sorting ---------------------------------------------------------------------------------------------------------
+def _texts(calls: list[dict]) -> dict[str, list[str]]:
+    """What the run saw and wrote, by stage, from the captured calls."""
+    search, pages, notes = [], [], []
+    for c in calls:
+        msgs = c.get("messages") or []
+        if c.get("cls") == "extract":
+            # the page is in the extraction prompt; the extraction is the answer
+            pages.append("\n".join(str(m.get("content") or "") for m in msgs if m.get("role") == "user"))
+            notes.append(c.get("content") or "")
+            continue
+        for m in msgs:
+            if m.get("role") == "tool":
+                body = str(m.get("content") or "")
+                (pages if body.lstrip().startswith("[") and "URL:" in body[:400] else search).append(body)
+        notes.append(c.get("content") or "")
+        for tc in c.get("tool_calls") or []:
+            notes.append(tc.get("arguments") or "")
+    return {"search": search, "pages": pages, "notes": notes}
+
+
+def cmd_sort(a) -> None:
+    ans_by_id = answers()
+    grades = {r["id"]: r for r in json.loads((B / f"grades-{a.set}-{a.profile}{a.label and '-' + a.label}.json").read_text())}
+    out_rows = []
+    for qid, g in grades.items():
+        if g["correct"] or not g["ran"]:
+            continue
+        out = run_dir(a.set, a.profile, qid, a.label)
+        calls = load_jsonl(out / "capture" / "calls.jsonl")
+        t = _texts(calls)
+        ans = ans_by_id[qid]
+        found = any(matches(x, ans) for x in t["search"])
+        read = any(matches(x, ans) for x in t["pages"])
+        kept = any(matches(x, ans) for x in t["notes"])
+        # the deep evidence store has the full page texts too (pages read by subagents in parallel threads)
+        ev = out / "deep" / "evidence.jsonl"
+        if ev.exists() and not read:
+            for line in ev.read_text(encoding="utf-8", errors="replace").splitlines():
+                if '"page_text"' in line and matches(line, ans):
+                    read = True
+                    break
+        if kept:
+            cat = "in the notes but wrong in the report"
+        elif read:
+            cat = "read but dropped"
+        elif found:
+            cat = "found but not read"
+        else:
+            cat = "never found"
+        out_rows.append({"id": qid, "category": cat, "found": found, "read": read, "kept": kept, "calls": len(calls)})
+    (B / f"failures-{a.set}-{a.profile}{a.label and '-' + a.label}.json").write_text(json.dumps(out_rows, indent=1))
+    from collections import Counter
+    c = Counter(r["category"] for r in out_rows)
+    print(f"{a.set} / {a.profile}: {len(out_rows)} failures: " + ", ".join(f"{k} {v}" for k, v in c.most_common()))
+    for r in out_rows:
+        print(f"  {r['id']}: {r['category']}")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+    q = sp.add_parser("run")
+    q.add_argument("set", choices=SETS)
+    q.add_argument("profile", choices=["baseline", "deep"])
+    q.add_argument("--ids", default="")
+    q.add_argument("--checkable-min", type=int, default=30)
+    q.add_argument("--open-min", type=int, default=120)
+    q.add_argument("--effort-agent", default=None)
+    q.add_argument("--effort-extract", default=None)
+    q.add_argument("--effort-all", default=None, choices=["medium", "xhigh"],
+                   help="deep: every call type at this level (LDR must have been started with the matching report/verify)")
+    q.add_argument("--effort-verify", default=None, choices=["medium", "xhigh"],
+                   help="deep: the citation check at this level instead of --effort-all's (phase 4: xhigh)")
+    q.add_argument("--label", default="", help="a variant's name (e.g. medium): its own runs folder")
+    q.add_argument("--items", default="", help="phase 4 stage 2: setup,critic,verify2 - LDR must run with exactly these (run/ldr.items)")
+    q.add_argument("--model-profile", default=None,
+                   help="10-29: the model profile LDR must run (run/ldr.modelprofile); default $LDR_MODEL_PROFILE, else flash-next")
+    q.add_argument("--paid-route", default=None,
+                   help="item 7: a route profile from tools/paid-route.json; LDR must run with LDR_SEARCH_FALLBACK=1, and "
+                        "each question's searches count as test run <runs folder>/<qid> (run/paid-run.json)")
+    q.add_argument("--paid-cache", default=None, choices=["on", "off"],
+                   help="item 7: the paid-answer cache for this run (default: the routing table's setting)")
+    for name in ("grade", "sort"):
+        q = sp.add_parser(name)
+        q.add_argument("set", choices=SETS)
+        q.add_argument("profile", choices=["baseline", "deep"])
+        q.add_argument("--label", default="")
+    q = sp.add_parser("next")
+    q.add_argument("--wide", action="store_true",
+                   help="10-29: also ROUTE CACHE MODEL_PROFILE (item 7's paid_route / paid_cache, model_profile)")
+    sp.add_parser("xhigh-blind")
+    sp.add_parser("xhigh-decide")
+    a = ap.parse_args()
+    {"run": cmd_run, "grade": cmd_grade, "sort": cmd_sort, "next": cmd_next, "xhigh-blind": cmd_xhigh_blind,
+     "xhigh-decide": cmd_xhigh_decide}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    main()

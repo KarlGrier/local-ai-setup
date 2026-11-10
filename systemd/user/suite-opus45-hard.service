@@ -1,0 +1,6 @@
+[Unit]
+Description=Opus 4.5 hard-set suite run (Karl 10-27: 30,000 room, 3 runs, effort high, hard stop $25; only 11-01..11-24)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/USER/ai-speed-testing/strata-compare/work/suite/opus45-hard.sh

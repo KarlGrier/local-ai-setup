@@ -1,0 +1,29 @@
+2026-10-20 13:17:16 === switch point: 0.2.1 (engine c9fe314316c4) to 8080
+2026-10-20 13:17:17 lock held (pid 1260024), 8080 stopped
+PASS greedy: A was restored from the chat cache
+PASS greedy: resumed output = fresh output (17 chars)
+PASS greedy: the session's STATE_HASH after it = fresh
+PASS greedy: strata_checkpoint=false gives the same output
+PASS sampled seed 7: A was restored from the chat cache
+PASS sampled seed 7: resumed output = fresh output (17 chars)
+PASS sampled seed 7: the session's STATE_HASH after it = fresh
+PASS sampled seed 7: strata_checkpoint=false gives the same output
+PASS drop: R (research) dropped
+PASS drop: A (untagged) still parked and restored after the drop
+PASS drop: R is read from scratch afterwards (not restored)
+ALL PASS
+2026-10-20 13:18:23 default config now configs/P021.json (switch-model.sh, run-strata.sh; backups *.before-p021)
+2026-10-20 13:18:23 8080 did not start
+2026-10-20 13:18:53 === switch point: 0.2.1 (engine c9fe314316c4) to 8080 (start)
+answered: stop 30 tokens
+8080: server 1260848 engine 1260860 exe /home/USER/ai-speed-testing/strata-compare/engine-r22p021/strata sha c9fe314316c4
+engine 0.1.46 images True
+reader RSS before: [961] MiB
+{"n": 1, "first_answer_token_s": 4.6, "total_s": 7.5, "thinking_chars": 1312, "answer_chars": 1191, "usage": {"prompt_tokens": 322, "completion_tokens": 956, "total_tokens": 1278, "prompt_tokens_details": {"cached_tokens": 0}}}
+{"n": 2, "first_answer_token_s": 2.3, "total_s": 4.9, "thinking_chars": 957, "answer_chars": 994, "usage": {"prompt_tokens": 322, "completion_tokens": 793, "total_tokens": 1115, "prompt_tokens_details": {"cached_tokens": 317}}}
+reader RSS after: [1116] MiB
+answer_room check: finish length | answer '2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, ' | completion tokens 1100
+2026-10-20 13:19:34 standing 8080 guard: 1261256
+2026-10-20 13:19:34 chat-cache policy ON at 2026-10-20 13:19:34 (logged in deep-research NOTES.md)
+2026-10-20 13:19:34 kcheck clean
+2026-10-20 13:19:34 === done

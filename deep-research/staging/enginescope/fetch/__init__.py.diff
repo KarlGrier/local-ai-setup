@@ -1,0 +1,45 @@
+--- a/local_deep_research/advanced_search_system/tools/fetch/__init__.py
++++ b/local_deep_research/advanced_search_system/tools/fetch/__init__.py
+@@ -65,6 +65,22 @@
+ # 200-char HTTP-client default because these errors feed the agent's
+ # reasoning; credential scrubbing still runs first on the full string (#4633).
+ _TOOL_ERROR_MAX_LEN = 500
++
++
++def _engine_output(collector: Any, idx: Any, url: str, title: str, page: str, body: str, full: bool = False):
++    """10-29 engine-scope labels (deep/enginescope.py, LDR_DEEP_FIX version): the answer with [OTHER ENGINE ...] when
++    the page - or parts of it - describe another engine of the task's project; None otherwise (the caller's own
++    answer stands). The evidence keeps the plain page and extraction."""
++    store = getattr(collector, "deep_store", None)
++    if store is None:
++        return None
++    try:
++        from ....deep import enginescope as _es
++
++        return _es.fetch_output(store, idx, url, title, page, body, full=full)
++    except Exception:  # noqa: BLE001 - a label never breaks a fetch
++        logger.exception("deep: engine-scope label failed")
++        return None
+ 
+ 
+ def _scrub_tool_error(message: str) -> str:
+@@ -394,7 +410,8 @@
+                 cite_idx = _register_in_collector(
+                     collector, url, title, content
+                 )
+-                return f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{content}"
++                return _engine_output(collector, cite_idx, url, title, content, content, full=True) or (
++                    f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{content}")
+             # result['error'] comes from ContentFetcher, which returns a
+             # raw str(exception) — scrub it (and the url) before this
+             # reaches the agent/LLM and user-visible output (#4633).
+@@ -580,7 +597,8 @@
+             cite_idx = _register_in_collector(collector, url, title, summary)
+             if _store is not None:
+                 _store.add_fetch(cite_idx, url, title, focus, content, summary)
+-            return f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{summary}"
++            return _engine_output(collector, cite_idx, url, title, content, summary) or (
++                f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{summary}")
+         except PolicyDeniedError as exc:
+             # Recoverable per-URL denial — return a tool message so both the
+             # lead agent and pooled subagents handle it identically and the

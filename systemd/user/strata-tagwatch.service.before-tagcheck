@@ -1,0 +1,16 @@
+[Unit]
+Description=Hourly check for a final Strata release newer than KNOWN (strata-compare work/r21/tagwatch.sh; read-only ls-remote)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/USER/ai-speed-testing/strata-compare
+Environment=KNOWN=v0.2.3.1
+ExecStart=/bin/bash /home/USER/ai-speed-testing/strata-compare/work/r21/tagwatch.sh
+StandardOutput=append:/home/USER/ai-speed-testing/strata-compare/logs/r21/tagwatch.out
+StandardError=append:/home/USER/ai-speed-testing/strata-compare/logs/r21/tagwatch.out
+# it exits on purpose at a new tag ("NEW TAG ..." in tagwatch.out): the release is looked at, KNOWN raised, then restarted
+Restart=no
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,152 @@
+#!/bin/bash
+# build-port0213.sh MODE - the v0.2.13 port (Karl 11-09: "make v0.2.13 the next port base (carry over r23-port0211's conflict
+# resolutions). Then build our patched engine for upstream's synthetic shapes (q4_mid, q4_big, q4_deep ...)").
+# Branch r23-port0213 (worktree strata-r23p0213 = v0.2.13 + our 29 from r23-port0211). Nothing served, installed or switched:
+# P028x, engine-r22p028x and every other tree are not touched. Flags as build-port0211.sh: Release, CUDA 13.3,
+# "-DCMAKE_CUDA_ARCHITECTURES=89;120", nice, <= BUILD_JOBS jobs - but v0.2.13 vendors its ggml (third_party/strata-ggml), so
+# no -DSTRATA_GGML_DIR (the default build needs no llama.cpp checkout). Run it ONLY under work/r23/nogap-run.sh; the
+# inline memory guard of build-port0211.sh (log logs/r23/build-port0213-memguard.log), BUILD_JOBS 2 beside a serving 8080.
+#   engine        strata, tests OFF, into strata-r23p0213/build -> engine-r23p0213/{strata,SOURCE,SHA256} (flash_next)
+#   tests         our unit tests + upstream's geometry / guard tests, tests ON, into strata-r23p0213/build-tests
+#   geo NAME      -DSTRATA_GEOMETRY=NAME (q4_mid, q4_big, q4_deep), tests ON, into strata-r23p0213/build-NAME, ninja -k 0 (every
+#                 error, not the first): strata + the shape-following parity programs; the error list goes to
+#                 results/r23/port-0213/geo-NAME.txt; a clean build is copied to engine-r23p0213-NAME/ (for the planned gap only)
+#                 geo flash_next (shape gap 11-09): the same targets at the default shape (cmake adds no geometry flag), into
+#                 build-flash_next = the gap's reference row; no engine copy (engine-r23p0213 is that engine; its sha is compared)
+#   geofile NAME HEADER  (shape gap 11-09) -DSTRATA_GEOMETRY_FILE=HEADER (a header from tools/q4geo_synth.py --header), tests ON,
+#                 into build-NAME (NAME like q4_mid-4l), ninja -k 0: strata + patch_guard_test; the error list goes to
+#                 results/r23/port-0213/geofile-NAME.txt; a clean build is copied to engine-r23p0213-NAME/ (for the shape gap only)
+#   stock         (11-10, Karl: the port's baseline gate, release-first exact7) stock v0.2.13, none of our commits: the detached
+#                 worktree strata-v0213stock (already there for upstream's intake tool; its tracked files are not changed),
+#                 strata, tests OFF, into strata-v0213stock/build -> engine-v0213stock/{strata,SOURCE,SHA256}
+set -euo pipefail
+WS=/home/USER/ai-speed-testing/strata-compare
+NVCC=/usr/local/cuda-13.3/bin/nvcc; NC=${PORT_COMMITS:-29}
+MODE=${1:-engine}; GEO=${2:-}; HDR=${3:-}
+W=$WS/strata-r23p0213; BR=r23-port0213
+case $MODE in
+  engine|tests|switchtests) ;;
+  stock) W=$WS/strata-v0213stock;;
+  geo) case $GEO in flash_next|q4_mid|q4_big|q4_deep|q4_lite) ;; *) echo "geo needs flash_next, q4_mid, q4_big, q4_deep or q4_lite"; exit 2;; esac;;
+  geofile)   # NAME = <shape>-<layers>l; HEADER = an existing geometry header (a file outside the tree)
+    [[ $GEO =~ ^[a-z0-9_]+-[0-9]+l$ ]] || { echo "geofile needs NAME like q4_mid-4l (got '$GEO')"; exit 2; }
+    [ -f "$HDR" ] || { echo "geofile needs an existing HEADER (got '$HDR')"; exit 2; }
+    HDR=$(realpath "$HDR")
+    case $HDR in $W/*) echo "geofile: the header must not be inside $W"; exit 2;; esac
+    grep -q 'inline constexpr ModelGeometry kCompiledGeometry' "$HDR" && grep -q 'kGeometryName' "$HDR" \
+      || { echo "geofile: $HDR is not a geometry header (no kCompiledGeometry / kGeometryName)"; exit 2; }
+    HLABEL=$(basename "$HDR" .hpp);;
+  *) sed -n 2,21p "$0"; exit 2;;
+esac
+if [ $MODE = stock ]; then
+  [ "$(git -C $W rev-parse HEAD)" = "$(git -C $WS/strata rev-parse 'v0.2.13^{commit}')" ] || { echo "$W is not at v0.2.13"; exit 1; }
+else
+  [ "$(git -C $W rev-parse --abbrev-ref HEAD)" = $BR ] || { echo "$W is not on $BR"; exit 1; }
+  [ "$(git -C $W rev-list --count v0.2.13..HEAD)" -ge "$NC" ] || { echo "fewer than $NC commits on v0.2.13"; exit 1; }
+fi
+[ -z "$(git -C $W status --porcelain --untracked-files=no)" ] || { echo "$W is dirty"; exit 1; }
+J=${BUILD_JOBS:-2}
+LG=$WS/logs/r23/build-port0213-memguard.log; mkdir -p $WS/logs/r23
+desc() { local c; for c in $(pgrep -P $1); do echo $c; desc $c; done; }
+guard() {   # the memory guard beside a serving 8080 (MB): < 23 GB pauses ninja (no new jobs; its compilers finish), > 23.5 GB
+  # resumes it; < 22 GB also freezes the running compilers (no more growth), thawed > 22.75 GB; < 21 GB stops the build (one
+  # GB above the research queue's 20 GB relief restart of 8080). Re-applied every second, so nogap-run.sh's SIGCONT after
+  # a gap cannot undo a pause or a freeze.
+  set +e; local low=999999 st=run n a p k
+  trap 'for p in $(pgrep -x ninja); do case $(readlink /proc/$p/cwd 2> /dev/null) in $W|$W/*) kill -CONT $p $(desc $p) 2> /dev/null;; esac; done; echo "$(date "+%F %T") $MODE end: lowest MemAvailable $low MB" >> $LG; exit 0' TERM
+  echo "$(date '+%F %T') $MODE start, $J jobs (pause < 23 GB / resume > 23.5 GB, freeze < 22 GB / thaw > 22.75 GB, stop the build < 21 GB)" >> $LG
+  while :; do
+    n=""; for p in $(pgrep -x ninja); do case $(readlink /proc/$p/cwd 2> /dev/null) in $W|$W/*) n="$n $p";; esac; done
+    a=$(awk '/^MemAvailable/ {print int($2 / 1024)}' /proc/meminfo)
+    if [ -n "$n" ]; then
+      [ $a -lt $low ] && low=$a
+      k=""; for p in $n; do k="$k $(desc $p | tr '\n' ' ')"; done
+      if [ $a -lt 21504 ]; then
+        for p in $n $k; do kill -CONT $p 2> /dev/null; kill -TERM $p 2> /dev/null; done
+        echo "$(date '+%F %T') MemAvailable $a MB < 21 GB: build STOPPED (ninja$n)" >> $LG; st=run
+      elif [ $a -lt 22528 ] || { [ $st = frozen ] && [ $a -le 23296 ]; }; then
+        for p in $n $k; do kill -STOP $p 2> /dev/null; done
+        [ $st = frozen ] || echo "$(date '+%F %T') MemAvailable $a MB: ninja$n and its compilers frozen" >> $LG; st=frozen
+      elif [ $a -lt 23552 ] || { [ $st != run ] && [ $a -le 24064 ]; }; then
+        for p in $n; do kill -STOP $p 2> /dev/null; done; for p in $k; do kill -CONT $p 2> /dev/null; done
+        [ $st = paused ] || echo "$(date '+%F %T') MemAvailable $a MB: ninja$n paused (its compilers run)" >> $LG; st=paused
+      elif [ $st != run ]; then
+        for p in $n $k; do kill -CONT $p 2> /dev/null; done; echo "$(date '+%F %T') MemAvailable $a MB: resumed" >> $LG; st=run
+      fi
+    fi
+    sleep 1
+  done
+}
+guard 8>&- 9>&- & GP=$!
+trap 'kill -TERM $GP 2> /dev/null' EXIT
+build() {   # build DIR TESTS(ON|OFF) EXTRA_CMAKE TARGET...   (RESUME=1: an existing, configured DIR is continued)
+  local d=$1 t=$2 x=$3; shift 3
+  if [ "${RESUME:-0}" = 1 ] && [ -f $W/$d/build.ninja ] && grep -q "STRATA_BUILD_TESTS:BOOL=$t" $W/$d/CMakeCache.txt 2> /dev/null; then
+    echo "$(date '+%F %T') resume $W/$d" >> $W/$d.log
+  else
+    rm -rf $W/$d
+    nice -n 5 cmake -G Ninja -S $W -B $W/$d -DCMAKE_BUILD_TYPE=Release -DSTRATA_ENABLE_CUDA=ON -DSTRATA_BUILD_TESTS=$t \
+      "-DCMAKE_CUDA_ARCHITECTURES=89;120" -DCMAKE_CUDA_COMPILER=$NVCC $x > $W/$d-configure.log 2>&1
+    : > $W/$d.log
+  fi
+  grep -q 'windows hold up to 8 rows' $W/$d-configure.log || { echo "$W/$d-configure.log does not say 8-row windows"; exit 1; }
+  nice -n 5 cmake --build $W/$d --target "$@" -j $J -- ${KEEPGOING:-} >> $W/$d.log 2>&1
+}
+NV=$($NVCC --version | tail -1)
+SRC="v0.2.13 + $(git -C $W rev-list --count v0.2.13..HEAD) commits (branch $BR $(git -C $W rev-parse HEAD)), tree $(git -C $W rev-parse 'HEAD^{tree}'); nvcc: $NV; jobs $J"
+GEO_TESTS="gguf_geometry_test patch_guard_test prefill_fused_iq_test prefill_fused_moe_test native_dense_parity native_expert_parity
+  native_grouped_parity gdn_parity gr_parity gr_multi_parity qsa_parity qsa_prompt_attn_parity router_top10_parity shared_expert_parity
+  verify_parity spec_verify_parity"
+case $MODE in
+  engine)
+    build build OFF "" strata
+    E=$WS/engine-r23p0213; mkdir -p $E && cp $W/build/strata $E/strata
+    echo "$SRC; geometry flash_next (default)" > $E/SOURCE; sha256sum $E/strata > $E/SHA256; cat $E/SOURCE $E/SHA256;;
+  switchtests)   # (Karl 11-10: the port's switch checks) every parity / unit test our patches' files need: the tests set, the
+    # shape gap's GEO_TESTS at the default shape, and REVIEW-1105 4.3's list, into build-switch (ninja -k 0: every error)
+    set +e; KEEPGOING="-k 0" build build-switch ON "" $(echo patch_guard_test cost_gate_test draft_cum_test spec_prob_test gated_proposal_test \
+      spec_verify_parity spec_proposal_parity prefill_fused_iq_test native_expert_parity gguf_geometry_test $GEO_TESTS verify_parity \
+      verify_batch_parity sampler_parity gr_parity gr_multi_parity gr_upmix_parity elementwise_parity q8k_quant_parity native_dense_ple_key_test \
+      | tr ' ' '\n' | sort -u); rc=$?; set -e
+    echo "switchtests: build rc $rc in $W/build-switch at $(git -C $W rev-parse HEAD); nvcc: $NV"; exit $rc;;
+  stock)
+    build build OFF "" strata
+    E=$WS/engine-v0213stock; mkdir -p $E && cp $W/build/strata $E/strata
+    echo "stock v0.2.13 ($(git -C $W rev-parse HEAD), detached worktree strata-v0213stock), none of our commits, tree $(git -C $W rev-parse 'HEAD^{tree}'); nvcc: $NV; jobs $J" > $E/SOURCE
+    sha256sum $E/strata > $E/SHA256; cat $E/SOURCE $E/SHA256;;
+  tests)
+    build build-tests ON "" patch_guard_test cost_gate_test draft_cum_test spec_prob_test gated_proposal_test spec_verify_parity \
+      spec_proposal_parity prefill_fused_iq_test native_expert_parity gguf_geometry_test
+    echo "tests built in $W/build-tests at $(git -C $W rev-parse HEAD); nvcc: $NV";;
+  geo)
+    R=$WS/results/r23/port-0213; mkdir -p $R; set +e
+    KEEPGOING="-k 0" build build-$GEO ON "-DSTRATA_GEOMETRY=$GEO" strata $GEO_TESTS; rc=$?; set -e
+    grep -q "compiled geometry $GEO" $W/build-$GEO-configure.log || { echo "configure did not select $GEO"; exit 1; }
+    # (11-09 fix: a clean build has no error line, and grep's exit 1 under set -e / pipefail ended the script here)
+    { echo "geometry $GEO: build rc $rc ($SRC)"; grep -nE 'error|FAILED:' $W/build-$GEO.log | grep -vE '^[0-9]+:\s*$' | head -400 || true; } > $R/geo-$GEO.txt
+    if [ $rc = 0 ] && [ $GEO = flash_next ]; then
+      # the reference row's build: no engine copy (engine-r23p0213 is the flash_next engine); the sha comparison is information
+      a=$(sha256sum $W/build-$GEO/strata | cut -c1-12); b=$(sha256sum $WS/engine-r23p0213/strata | cut -c1-12)
+      echo "INFO build-flash_next/strata $a, engine-r23p0213/strata $b ($([ "$a" = "$b" ] && echo same || echo 'differ: tests ON vs OFF build'))" >> $R/geo-$GEO.txt
+    elif [ $rc = 0 ]; then
+      E=$WS/engine-r23p0213-$GEO; mkdir -p $E && cp $W/build-$GEO/strata $E/strata
+      echo "$SRC; geometry $GEO (test shape; for the planned gap only, never served)" > $E/SOURCE; sha256sum $E/strata > $E/SHA256
+    fi
+    echo "geo $GEO: rc $rc, $(grep -c 'error' $R/geo-$GEO.txt || true) error lines -> $R/geo-$GEO.txt"; exit $rc;;
+  geofile)
+    R=$WS/results/r23/port-0213; mkdir -p $R; HSHA=$(sha256sum "$HDR" | cut -c1-12)
+    # RESUME=1 continues only a directory configured for this very header
+    if [ "${RESUME:-0}" = 1 ] && [ -f $W/build-$GEO/CMakeCache.txt ] && ! grep -qx "STRATA_GEOMETRY_FILE:FILEPATH=$HDR" $W/build-$GEO/CMakeCache.txt; then
+      echo "build-$GEO was configured for another geometry file: not resumed"; exit 1
+    fi
+    set +e
+    KEEPGOING="-k 0" build build-$GEO ON "-DSTRATA_GEOMETRY_FILE=$HDR" strata patch_guard_test; rc=$?; set -e
+    grep -qF "compiled geometry $HLABEL ($HDR)" $W/build-$GEO-configure.log || { echo "configure did not select $HDR"; exit 1; }
+    { echo "geometry file $HDR (label $HLABEL, sha256 $HSHA): build rc $rc ($SRC)"; grep -nE 'error|FAILED:' $W/build-$GEO.log | grep -vE '^[0-9]+:\s*$' | head -400 || true; } > $R/geofile-$GEO.txt
+    if [ $rc = 0 ]; then
+      E=$WS/engine-r23p0213-$GEO; mkdir -p $E && cp $W/build-$GEO/strata $E/strata
+      echo "$SRC; geometry file $HDR (label $HLABEL, header sha256 $HSHA; test shape for the shape gap only, never served)" > $E/SOURCE
+      sha256sum $E/strata > $E/SHA256
+    fi
+    echo "geofile $GEO: rc $rc, $(grep -c 'error' $R/geofile-$GEO.txt || true) error lines -> $R/geofile-$GEO.txt"; exit $rc;;
+esac

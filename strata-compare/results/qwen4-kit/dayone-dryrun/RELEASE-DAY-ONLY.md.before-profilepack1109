@@ -1,0 +1,140 @@
+# Qwen4 day one: what only the release can tell us
+
+The Flash-Next dry run (`DRYRUN.md`) checked every step that needs no GPU. Each item below depends on the real Qwen4
+files, the release's engine or this PC under the new model, so it can only be settled on release day.
+
+Run `dayone.py plan` live first (no `--offline`). That fixes items 1-3 and 11. The rest come from the pre-gap checks and
+the three gaps.
+
+## Files and identity
+
+1. **The repo, its layout and the commit.**
+   - Which repos exist on the day (Unsloth first; ISTA's timing is unknown).
+   - The file and folder naming: `classify()`'s quant regex was tested on today's names only.
+   - The commit to pin. Re-uploads are common: v3.1 re-made 8 quants on 11-04, and 10-05 had another round.
+2. **The architecture string.**
+   - `qwen4exp` loads today.
+   - `qwen4`, `qwen4moe` or anything else is refused by name (`gguf_reader.hpp:681`), and the pack tool's nextn key and
+     the server's family tables refuse it too.
+   - day1 reports it. The release tree must know it.
+3. **The headers of the boundary quants.**
+   - The size pre-screen is only an estimate: UD-Q4_K_XL came out at 72.6 GiB estimated against 71.7 GiB actual.
+   - A live `plan` reads the headers near the fit boundary before the pick stands. The dry run left them PROVISIONAL.
+4. **Shape changes** (SHAPES.md section 5): n_embd, n_ff, layers, experts, top-k, hc / hc_lr, heads, GDN.
+   - Each change decides whether the release has a path at all: its `kCompiledGeometry`, the asserted and unasserted
+     sites, the helper tier (2560 / 640 / top-10), and the prompt path (`NE = 512`, `K = 10`).
+5. **Expert width against down types.**
+   - If `n_ff % 256 == 0`, the low quants carry IQ3_XXS / IQ2_XS / Q2_K / Q3_K downs. We have no kernels for those, so
+     REPORT option (b) becomes day-one work.
+   - day1 prints the allowed-down-types line for each file.
+6. **The silent n-gram and PLE items:**
+   - the hash constants in `ngram.cpp:46-65` against `ple.*`;
+   - `ple.layers`, the eos and image token ids;
+   - `rope.freq_base` and `context_length`, which the engine does not read.
+
+## The engine
+
+7. **The release's stock build.**
+   - The real `exe`, `server` and `--rel` tree. The dry run used P028x's.
+   - Its engine process name: add it to the drivers' `ENGINES` line, or the preflight and the waits miss it.
+   - The location of its gguf-py, for iq_pack.
+   - Whether it supports `STRATA_HC_Q8` as 0.2.8 / 0.2.11 do.
+   - Any new lossy defaults. `patchtest.sh lossless` knows 0.2.7's only, so 0.2.10's 14 pins come from day1; anything
+     newer needs a pin first.
+8. **iq_pack on the new file.**
+   - `--compat-bf16` is chosen from day1's verdict (exact vs rounding). The real conversions are in `conversions.json`.
+   - The pack size is estimated high: 4.7 GB budgeted. The v3.1 pack was about 1.4 GB.
+
+## Tokenizer, template, prompts
+
+9. **Same tokenizer as Flash-Next?** If not:
+   - re-tokenize the prompt files with `day1.py retok`; exact7 and pf_yardstick read the result through `PROMPT_DIR`;
+   - check the long40 cuts against the new lengths with `day1.py pfy --check` (the KL driver records it as INFO);
+   - check that R2 (~54K Flash-Next tokens) still fits the served context;
+   - check the think tags, the effort names the screen and suite send, the `enable_thinking` kwarg and the turn token.
+10. **The KL data mode follows from 9 and 4.**
+    - dump mode (many positions) needs Flash-Next's tokenizer and head shapes. score.py's `Head` and ud31_rules' heads
+      are wired to N_EMBD 2560, HC 4, HC_LR 320 and VOCAB 248,320.
+    - For a new model the driver falls back to pf_yardstick long40: the engine's own logits, about 36 NLL positions, NLL
+      INFO only, with the same whole-text treatment.
+    - Generalising the head is release-day work if many-positions NLL is wanted.
+
+## Drafter
+
+11. **The drafter source**, in order:
+    1. in-file nextn;
+    2. Qwen's checkpoint via `tools/mtp_fetch.py`;
+    3. the publisher's BF16 MTP GGUF via `mtp_from_gguf.py`. dayone plans this one: it downloads the file, converts it
+       to `bringup/out/<name>/mtp-rt`, and the config points there.
+
+    `mtp_from_gguf.py` was proven only at 48 x 512 (`mtp_rt.py:27` NE). No reference rt exists for a new model, so run
+    CHECK-PLAN.md's acceptance check (~45 min with 8080 down) before trusting any speed number. Without a drafter there
+    is no `--spec`; say so in the speed numbers.
+
+## Slots and fit
+
+12. **An expert profile of Qwen4's shape**, from the release's `data/expert-profile.bin` or `make_profile.py` on a
+    routing trace. Without one, the 5080 holds uniform slots only. On Flash-Next that would be 3,526 instead of 4,583
+    (-23 %). The slot model handles both cases.
+13. **Measured slot counts.**
+    - The configs carry explicit counts:
+      - `--expert-cache` is the 5080 room minus a 64 MiB margin, in largest blobs;
+      - `--expert-cache-device1` uses today's measured-safe 6.21 GiB on the 4060 Ti, or P028x's 3,300 when it fits
+        (swap mode).
+    - Unknown until the first start: the new CUDA context, dense part, K/V, and the helper's scratch at the new widths.
+      day1's 2.11 GiB overhead and the 4060 Ti's 7.56 GiB free are Flash-Next measurements.
+    - The drivers log the measured "expert cache N slots" / "CUDA1: N additional experts" next to the prediction
+      (`slots_*` INFO gates). Adjust the margin or the helper rule from that line.
+    - exact7's pin for a new model is 70 % of the 5080's uniform count.
+14. **The RAM tier.**
+    - The 16.3 GiB "everything else" was measured on Flash-Next.
+    - MemAvailable must stay >= 12 GB at the served context with the new K/V and chat-cache cap.
+    - Above 60 GiB page-locked, run stressapptest first.
+    - Watch MemAvailable in a full-context prompt before trusting a TIGHT margin (UD-Q4_K_XL-class: 0.7 GiB).
+
+## Disk and download
+
+15. **Disk on the day.**
+    - 192 GB is free now.
+    - An IQ3-class quant (~84 GB) plus the pack fits.
+    - A Q4-class quant (~111 GB) does not fit under the 100 GB floor. Freeing space is Karl's decision, before the
+      release if possible.
+16. **The download line** (Karl 11-05: "start as soon as I run it ... Rate-limit it only if LDR fetches would be
+    starved").
+    - The default `--window measure` pauses only while a gap is open.
+    - The LDR share (25 % of the line this download measures itself, 35 MB/s before a measurement) applies only while
+      `run/bench.lock` is held.
+    - Still to check on the day: whether a research run's fetches stay healthy at that share, and whether Jan's
+      deep-research jobs (proxy 8090) also hold bench.lock. If they do not, add their lock with `--ldr-lock`.
+
+## Quality
+
+17. **The KL reference.**
+    - A larger local quant of the same model: its own download (disk!) and pack. If its experts exceed the RAM tier it
+      streams from the SSD (slow, quality only; `--resident-budget-gib` = RAM tier - 5, Karl 11-05).
+    - The memory wait and watch (q4_rules `memwait` / `memwatch`) use a guessed need: experts in RAM + 12 + 6 GiB. Only
+      the first R run shows its real peak; an 'aborted: memory' means lower the budget, never relax the watch.
+    - Or Karl names one.
+    - Record the publisher's KLD next to it. It uses the publisher's data and BF16 reference, so it is not comparable.
+18. **`--prefer`.** `auto` reads the v3.1 gap's decision once `gap-ud31.sh` has run. Today it is `any`, so a tie goes to
+    quality.
+19. **The pack-rounding tag.**
+    - It applies to a file with Q8_0 hyper-connections packed with `--compat-bf16`.
+    - Such a file's lost tie is RECORDED AS INCLUDES PACK ROUNDING (Karl's frozen rule). A decode-path follow-up in
+      `gap-ud31-dec.sh`'s manner would separate the two.
+
+## Speed
+
+20. **Real speeds.**
+    - The screen against P028x: two different models, so a LOSS means "slower than today's service", not a bug.
+    - Karl's 40-60 tok/s target, checked on Q's decode geomean.
+    - The minutes budgets: Flash-Next's, scaled by the active-parameter ratio (a guess).
+    - Prompt speed on any layers off the fused prompt path.
+
+## Process
+
+21. Strata support itself (QWEN4-DAY1-PLAN step 0a, tagwatch). Upstream has no Qwen4 preparation (UPSTREAM-QWEN4.md).
+22. **Review before use.**
+    - Claude reviews each generated driver and writes its `.ready` file. The generator never does.
+    - Then the drivers go into `work/r23/gap-series.sh`, or start by hand.
+    - Each gap, and anything served, is Karl's call.

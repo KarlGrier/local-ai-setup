@@ -1,0 +1,12 @@
+{
+  "_note": "USD per million tokens, Anthropic first-party API. Sonnet 5.5 rates as given in SONNET55-LDR-PLAN-1027.md (cached 2026-10-06) and in the claude-api reference (shared/model-migration.md, 'Migrating to Claude Sonnet 5.5': $2 / $10, 5-minute cache writes $2.50, 1-hour cache writes $4, cache reads $0.20). NOT re-checked against the live pricing page: re-check on the day of the run and edit here (the guard prints the rates it loaded at start). long_context: null = no premium above a prompt size; if the pricing page lists one for this model, set {\"threshold\": N, \"input_mult\": x, \"output_mult\": y}.",
+  "claude-sonnet-5-5": {
+    "input": 2.0,
+    "output": 10.0,
+    "cache_write_5m": 2.5,
+    "cache_write_1h": 4.0,
+    "cache_read": 0.2,
+    "long_context": null,
+    "checked": "2026-10-06 (plan + bundled reference); not re-checked"
+  }
+}

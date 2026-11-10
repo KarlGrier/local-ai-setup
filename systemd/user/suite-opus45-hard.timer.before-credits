@@ -1,0 +1,9 @@
+[Unit]
+Description=Start the Opus 4.5 hard-set suite run on 2026-11-02 09:00 (a missed start runs at the next boot)
+
+[Timer]
+OnCalendar=2026-11-02 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,45 @@
+[90006] Title: Niko1221/Strata@v0.2.4: src/dsv41/ds4_main.cpp lines 60-100 (source code)
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/dsv41/ds4_main.cpp#L60-L100
+
+60:     char line[128];
+61:     long long v = -1;
+62:     while (std::fgets(line, sizeof line, f) != nullptr)
+63:         if (std::sscanf(line, "read_bytes: %lld", &v) == 1) break;
+64:     std::fclose(f);
+65:     return v;
+66: #else
+67:     return -1;
+68: #endif
+69: }
+70: 
+71: std::vector<int> parse_ids(const std::string& s) {
+72:     std::vector<int> v;
+73:     const char* p = s.c_str();
+74:     while (*p) {
+75:         char* e = nullptr;
+76:         const long x = std::strtol(p, &e, 10);
+77:         if (e == p) break;
+78:         v.push_back((int) x);
+79:         p = e;
+80:         while (*p == ',' || *p == ' ') ++p;
+81:     }
+82:     return v;
+83: }
+84: 
+85: void usage() {
+86:     std::fprintf(stderr,
+87:                  "maya-ds4 --pack <model>/maya-ds4 [--gpus 0,1,...] [--max-context N] [--reserve-mib N]\n"
+88:                  "           [--vram-experts F] [--cpu-threads N] [--expert-profile FILE|none] [--ssd-cache GB] [--ssd-policy lru|lfu|lfulru] [--no-expert-cache] [--verbose]\n"
+89:                  "           [--tp N] [--threads on|off] [--prefill-chunk N] [--dspark on|off|none|auto] [--dspark-block N] [--dspark-conf F]\n"
+90:                  "           [--vision on|off] [--mmap-experts on|off|auto]\n"
+91:                  "           (--ids I,J,... [--images FILE] [--n N] [--dump-logits FILE] | --serve\n"
+92:                  "           | --encode-image FILE.rgb --size WxH --dump-image OUT\n"
+93:                  "           | --pack-info)\n");
+94: }
+95: 
+96: // stdin lines on a thread, so a request can see STOP while it decodes
+97: struct Lines {
+98:     std::mutex mu;
+99:     std::condition_variable cv;
+100:     std::deque<std::string> q;
+(src/dsv41/ds4_main.cpp has 1508 lines.)

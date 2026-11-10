@@ -1,0 +1,18 @@
+work/r10/tagcheck.sh "C*12.1 build"
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r10/build-cstar121.sh v38-c12
+.venv/bin/python work/r10/buildrec.py Cstar121 configs/Cstar121.json "C*12.1 candidate: clean clone of v0.1.38 + patches/r10c38 (= v38-c12)"
+work/r10/servertests.sh /home/USER/ai-speed-testing/strata-compare/strata-cstar121
+work/r10/startcheck.sh C121s configs/C121.json
+work/r10/startcheck.sh C121s1 configs/Cstar121-single.json
+work/r10/exact7.sh c121full configs/C121.json
+grep -E '^(c12full|c121full)-' logs/r10/batch.log | awk '{print $1, $3}' | sort -k1.4 | paste - - | head -8
+work/r10/soak121.sh 120
+.venv/bin/python work/r6/webreplay.py replay --base http://127.0.0.1:8080 --label WR121
+work/r10/soakdec.sh SOAKD121 configs/Cstar121.json
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r10/decscreen.sh FRESHD121 configs/C121.json
+.venv/bin/python work/r10/ab_table.py fresh=FRESHD121 soaked=SOAKD121 | tee results/r10/ab-c121-soaked-vs-fresh.md
+work/r10/tagcheck.sh "C*12.1 checked"
+work/r10/phase_end.sh pC121 keep
+work/r10/hold.sh promote121

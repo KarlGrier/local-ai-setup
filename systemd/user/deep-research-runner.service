@@ -1,0 +1,15 @@
+[Unit]
+Description=Deep research jobs from Jan (LDR on Strata; ~/ai/deep-research/tools/research-runner.py)
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/home/USER/ai/deep-research/.venv/bin/python -I /home/USER/ai/deep-research/tools/research-runner.py
+WorkingDirectory=/home/USER/ai/deep-research
+Restart=on-failure
+RestartSec=10
+# the runner starts LDR, SearXNG and (through strata-ensure.sh) Strata in their own process groups / scope
+KillMode=process
+
+[Install]
+WantedBy=default.target

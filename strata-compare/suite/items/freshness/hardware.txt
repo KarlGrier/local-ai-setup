@@ -1,0 +1,1 @@
+a desktop PC with an NVIDIA GeForce RTX 5080 (16 GB) and an NVIDIA GeForce RTX 4060 Ti (8 GB), an AMD Ryzen 9 9950X3D (16 cores), 96 GB of DDR5-6000 RAM and a fast NVMe SSD, running Linux

@@ -1,0 +1,21 @@
+=== 2026-10-23 21:56:27 DS4.1 speed test: v0.2.4 stock strata-dsv41, IST-DAS 2.00 bpw (IQ2_XXS), both cards (--tp 2), prompt skip 0, disk skip off -> /home/USER/ai-speed-testing/strata-compare/results/ds41/speed-v024-1023-2156
+2026-10-23 21:56:27 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 510265 (engine 510292)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-10-23 21:57:00 port_gap4: gap open: test lock held (pid 510753), 8080 stopped
+=== 2026-10-23 21:57:00 before: MemAvailable 86.0 GB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-23 21:57:10 ready after 10 s: MemAvailable 44.3 GB, engine RSS 42516 MB; vram 0, 15359 MiB, 575 MiB;1, 7299 MiB, 591 MiB;
+=== 2026-10-23 22:17:11 requests done (rc 0): 11 responses
+monitor: lowest MemAvailable 33.9 GB, peak engine RSS 52552 MB, peak VRAM used 5080 15433 MiB / 4060 Ti 7375 MiB
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-10-23 22:20:35 port_gap4: served build back (7b38796237f5), policy on, queue released
+=== 2026-10-23 22:20:35 8080 back on P021m
+=== 2026-10-23 22:20:35 kcheck clean
+P4K: prompt [4124, 4399] tokens, [178.3, 209.7] tok/s (TTFT [23.133, 20.98] s), disk [103.6, 87.503] GB
+P20K: prompt [19755, 18888] tokens, [328.7, 330.6] tok/s (TTFT [60.099, 57.136] s), disk [240.606, 226.827] GB
+W1-think: decode [18.63, 22.23] tok/s (mean 20.43), [3072, 3072] tokens, prompt [123, 124] at [21.0, 22.3] tok/s, finish ['length', 'length'], disk [0.0829, 0.0763] GB/token
+W2-code: decode [19.87, 21.39] tok/s (mean 20.63), [3072, 3072] tokens, prompt [141, 143] at [17.2, 18.2] tok/s, finish ['length', 'length'], disk [0.104, 0.0945] GB/token
+W3-research: decode [16.9, 17.04] tok/s (mean 16.97), [2048, 2048] tokens, prompt [23552, 23551] at [340.4, 363.8] tok/s, finish ['length', 'length'], disk [0.2589, 0.24] GB/token
+W1-W3 decode mean 19.34 tok/s over 6 responses
+=== 2026-10-23 22:20:35 done

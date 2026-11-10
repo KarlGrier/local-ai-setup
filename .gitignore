@@ -1,0 +1,112 @@
+# local-ai-setup: keep data, builds, private files and secrets out of the repo.
+# The export (setup-stage/export.py) already leaves these out; this file stops them coming back by accident.
+
+# --- models and weights ---
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.npy
+*.npz
+*.onnx
+models/
+/strata-compare/models/
+
+# --- builds, engine trees and worktrees (the engine is its own repo) ---
+build/
+builds/
+/strata-compare/engine-*/
+/strata-compare/strata/
+/strata-compare/strata-*/
+/strata-compare/ext/
+*.o
+*.a
+*.so
+*.whl
+
+# --- logs, run outputs, dumps ---
+logs/
+*.log
+*.englog
+*.startlog
+*.out
+*.stdout
+*.stderr
+*.jsonl
+*.nll
+*.logits
+dumps/
+outputs/
+/strata-compare/bringup/out/
+/strata-compare/suite/results/
+/deep-research/results/deep-runs/
+/deep-research/results/quick-runs/
+/deep-research/results/bench2/runs/
+/deep-research/results/bench2/replays/
+/deep-research/results/bench2/codetool/
+scratch*/
+tmp/
+
+# --- caches and virtual environments ---
+__pycache__/
+*.pyc
+.cache/
+cache/
+webcache/
+.hf-home/
+.venv/
+venv/
+venv-*/
+.venv-*/
+node_modules/
+site-packages/
+
+# --- private: chats, research jobs and reports, ratings ---
+/deep-research/jobs/
+/deep-research/reports/
+/deep-research/data/
+/deep-research/run/
+/deep-research/results/bench2/my-research/
+next-research.used-*
+To-rate/
+*rating*
+*ranking*
+blind*/
+grades-*.json
+.dsh-deepseek/
+Jan/
+
+# --- secrets: API keys, tokens, credentials, the ntfy topic ---
+*key*
+*Key*
+*KEY*
+*token*
+*Token*
+*TOKEN*
+*credential*
+*secret*
+*passw*
+.env
+.env.*
+topic
+ldr-credentials*
+*.pem
+id_rsa*
+id_ed25519*
+auth.json
+.netrc
+# (the SearXNG settings*.yml files ARE in the repo: the export replaces each server.secret_key with a placeholder)
+
+# --- reviewed exceptions (Karl 11-10): code files whose NAMES match the patterns above; checked, no secrets ---
+!/deep-research/ldr-deep/local_deep_research/deep/tokens.py
+!/deep-research/ldr-deep/local_deep_research/deep/tokens.py.before-c3
+!/deep-research/staging/bundle-1028/deep/tokens.py
+!/deep-research/staging/c3/deep/tokens.py
+!/deep-research/staging/c3/deep/tokens.py.orig
+!/strata-compare/work/r21/think_tokens.py
+!/strata-compare/work/r21/token_gate2.sh
+!/strata-compare/suite/items/agentic/a2_textstats/fix/textstats/tokenize.py
+!/strata-compare/suite/items/agentic/a2_textstats/repo/textstats/tokenize.py
+!/systemd/user/power-key-revert.service
+!/systemd/user/power-key-revert.timer

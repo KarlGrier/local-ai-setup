@@ -1,0 +1,22 @@
+GDN prompt paths ON vs OFF on STOCK v0.2.10 at many positions - decision (2026-11-04 20:19:18; rules: work/r23/gdn_nll_rules.py, written before the gap)
+  arms: s210 = configs/s0210-h.json (both paths off), s210gdn = configs/s0210-h-gdn.json (STRATA_GDN_TC=1 + STRATA_GDN_CONVL2=2, as stock server.py sets them); engine-v0210stock c8fe72abe45a
+  pre-gap checks: PASS PRE OK: the NLL gap validated the scorer (JUDGED, validate_ref PASS: offline head AGREES with the engine's window rows (mean KL <; ADOPTED-BOUND.json); borrowable band 0.1365 (P028x's own rounding pair) | s0210-h.json -> s0210-h-gdn.json: only STRATA_GDN_TC 0 -> 1, STRATA_GDN_CONVL2 0 -> 2 (= stock 
+  validation (score.py's own head on the stock build, arm s210): PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02) [gdn 11-04 20:13]
+positions: 31408 in 129 blocks (dump rows (offline head), positions >= 1024, every 8th row; blocks: 2048 tokens); NLL of s210 there 3.7306; statistics /home/USER/ai-speed-testing/strata-compare/results/r23/nll-many/gap/ADOPTED-BOUND.json (z 1.645, se cap 0.01, bootstrap 10000, seed 20261104)
+band: 0.1365 nats/token = 1.10 x max(|d s210unf| 0.1241, |d s210cpu| 0.0999): the stock build's own rounding pair (s210 + STRATA_PF_FUSED=0, s210 + STRATA_PREFILL_CPU_SHARE=0.4); KL bounds mean <= 0.168114, p90 <= 0.287034, KL>1 rows <= 887, changed top-1 <= 3432.0 (at 31408 positions)
+NLL  s210gdn d -0.1844 [-0.2288, -0.1400] se 0.0227; band 0.1365 + margin 0.0373 -> OUTSIDE (lower NLL)
+KL   KL(s210 || s210gdn) mean 0.180333 p90 0.343350 KL>1 1046 changed top-1 3495 of 31408 -> OUTSIDE (mean, p90, KL>1 rows, top-1)
+=> the GDN paths' distance is OUTSIDE the rounding band (NLL lower with the paths ON: d -0.1844 vs band 0.1365 + margin 0.0373; KL mean, p90, KL>1 rows, top-1)
+INFO with the borrowed band (0.1365; borrowed from the NLL gap: P028x's own rounding pair (x28h vs x28h-unfused, x28h-cpushare)): NLL OUTSIDE (lower NLL), KL OUTSIDE (mean, p90, KL>1 rows, top-1) -> OUTSIDE
+INFO the adopted gate rule (nll-many 11-04, one-sided) on s210gdn as a candidate against s210: FAIL
+INFO mean |per-position NLL difference|: s210gdn 0.5230; the band's references s210unf 0.4849, s210cpu 0.4931
+INFO s210unf: d -0.1241 se 0.0229, KL mean 0.147783 p90 0.254088 >1 886 top-1 3115, exactly-0 positions 0.000
+INFO s210cpu: d -0.0999 se 0.0247, KL mean 0.152831 p90 0.260940 >1 842 top-1 3120, exactly-0 positions 0.000
+INFO per text: 32k-32768 n 3968 d -0.2894 KL 0.2166 top-1 568; tf-long28k-28672 n 3456 d -0.1884 KL 0.2572 top-1 401; tf-long40k-32768 n 3968 d -0.1459 KL 0.1558 top-1 347; tf-long64k-32768 n 3968 d -0.2451 KL 0.1562 top-1 412; tf-long112k-32768 n 3968 d -0.1979 KL 0.1377 top-1 374; pp4k-4096 n 384 d +0.4543 KL 0.1748 top-1 58; ldrsyn20k-16110 n 1886 d -0.0016 KL 0.2178 top-1 231; rep9k-9010 n 999 d +0.5971 KL 0.0001 top-1 0; pp32k-32768 n 3968 d -0.2894 KL 0.2166 top-1 568; tf-long96k-32768 n 3968 d -0.2451 KL 0.1562 top-1 412; pp8k-8019 n 875 d -0.3455 KL 0.1993 top-1 124
+INFO per range: 1-4K n 4224 d -0.1410 KL 0.1470 top-1 502; 4-16K n 13360 d -0.2660 KL 0.1903 top-1 1550; 16-32K n 13824 d -0.1188 KL 0.1809 top-1 1443
+INFO block scan  1024 (246 blocks): se s210gdn 0.0181, s210unf 0.0174, s210cpu 0.0190
+INFO block scan  4096 (65 blocks): se s210gdn 0.0294, s210unf 0.0288, s210cpu 0.0316
+INFO block scan  text (11 blocks): se s210gdn 0.0389, s210unf 0.0458, s210cpu 0.0420
+INFO gap 19 (pf_yardstick long40, results/r22/gap19/decision.txt), stock ON against stock OFF: KL mean 0.648253, p90 1.031009, KL>1 4, changed top-1 4/40, NLL -0.3055 (36 positions with a next token)
+INFO validate on the other arms: s210gdn PASS, s210unf PASS, s210cpu PASS
+NOTHING SWITCHES: P028x stays served; what goes upstream is Karl's call.

@@ -1,0 +1,12 @@
+work/r9/tagcheck.sh "phase A track 6: draft layer's prompt pass on its own stream"
+work/r9/exact7.sh a6on configs/A6-on.json
+ENVX=STRATA_MTP_ASYNC=1 work/r9/run.sh a6-on-32k-1 configs/A6-off.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+work/r9/run.sh a6-off-32k-1 configs/A6-off.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+work/r9/run.sh a6-off-32k-2 configs/A6-off.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX=STRATA_MTP_ASYNC=1 work/r9/run.sh a6-on-32k-2 configs/A6-off.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX=STRATA_MTP_ASYNC=1 work/r9/run.sh a6-on-112k-1 configs/A6-off.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+work/r9/run.sh a6-off-112k-1 configs/A6-off.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+work/r9/run.sh a6-off-112k-2 configs/A6-off.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX=STRATA_MTP_ASYNC=1 work/r9/run.sh a6-on-112k-2 configs/A6-off.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+.venv/bin/python work/r9/p0_table.py a6-off-32k-1 a6-on-32k-1 a6-off-32k-2 a6-on-32k-2 a6-off-112k-1 a6-on-112k-1 a6-off-112k-2 a6-on-112k-2
+work/r9/tagcheck.sh "track 6 CLI done"

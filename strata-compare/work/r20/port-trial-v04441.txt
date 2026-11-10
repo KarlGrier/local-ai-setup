@@ -1,0 +1,29 @@
+OK    a2d60926 serve: --side-stash N keeps the cached conversation through unrelated 
+OK    1b9126ff serve: --chat-cache N keeps other conversations in RAM
+CONFL 6da0c4ee web app: several chats, and attached files keep their text :: serve/web/app.css 
+OK    02682f18 serve: --chat-cache keeps the shared-prefix checkpoint with the sessio
+CONFL a9e21ea9 serve + web app: Web search switch - web_search / fetch_page run by th :: serve/server.py serve/web/app.css serve/web/index.html 
+CONFL 541b06df web search: tell the model today's date (in web_search's description); :: serve/websearch.py 
+CONFL 38a717ce web app: two tabs keep each other's chats :: serve/web/app.js 
+CONFL b1e9c116 sampling: exact speculative sampling for sampled requests (STRATA_SPEC :: src/core/mtp.cpp 
+OK    5cfd890c serve: commit only the tokens a verify window hands out (upstream PR #
+OK    075d12be round 11 A.2: STRATA_ROUTER_Q8K=1 - the doorbell also writes ggml's Q8
+OK    bc933135 round 11 A.2: the Q8_K rounding is ggml's nearest_int bit for bit (mag
+OK    06daab74 round 11 A.2: bsums sum the stored int8 values, as ggml does
+OK    a67e4087 round 11 A.2: a NaN product rounds as x86's default NaN does (0)
+OK    9e30d72a round 11 B.2: STRATA_QSA_SPLIT_ATTN=1 - the decode attention (verify w
+CONFL d55268b0 round 11 B.1: STRATA_GR_FORK=1 - fork Eddoursul's hyper-connection rea :: src/kernels/cuda/fused_gr.cu 
+CONFL 2c328178 round 11 B.1 on v0.1.39: the fork read gets its own scratch - 0.1.39's :: src/core/verify.cpp 
+OK    f3eb4c54 serve: the prompt is tokenised from the last shared prefix, not from t
+OK    e9ebc998 round 11: STRATA_PROMPT_ENCODER_OLD=1 = the full prompt encode (A/B sw
+OK    8a722d27 round 11 G: #567's tests call the renamed _encode_rendered (0.1.39 has
+OK    1af79aeb round 13 P1.2: #567's IncrementalPrompts tests with #931 - the referen
+CONFL 295454bf round 13 P2.3: patch guards - every local engine patch's assumptions a :: include/strata/kernels/fused_gr.hpp src/kernels/cuda/fused_gr.cu 
+CONFL 729de4a4 #619 (code only; its docs conflict with 0.1.39's MODELS.md): read qwen :: include/strata/artifact/gguf_reader.hpp 
+CONFL 44ef3d89 round 13 P2.3: the gr_fork guard does not check the GGUF's hc weight t :: include/strata/core/patch_guard.hpp src/core/patch_guard.cpp src/core/patch_guard_test.cpp 
+CONFL 4ecf7dd1 round 13 P3.4: serve/model_check.py - the server's fixed template stri :: serve/server.py 
+CONFL 18665733 round 12 B (A1): STRATA_COST_GATE=FILE - a cost-aware draft length: dr :: src/core/mtp.cpp 
+OK    05b3cc3b verify: STRATA_SIDE_MIXER=1 / =2 - the GDN gates and the QSA indexer c
+CONFL a6f136e9 round 15: the B.3 guard (mmvq_il) goes with B.3 - on v0.1.40.2 STRATA_ :: src/core/patch_guard.cpp 
+OK    8dbb8fa6 round 18: the side mixer's branches read F4's interleaved copy, and qk
+OK    d4e3905a chat cache: dropped with v0.1.43's non-finite guard (#879) - after a n

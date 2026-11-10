@@ -1,0 +1,58 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/ext/maya-v1.1.28-src/build/maya-ds4",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/maya-ds4",
+  "--max-context",
+  "32768",
+  "--eos",
+  "1",
+  "--dspark",
+  "none",
+  "--vision",
+  "off",
+  "--tp",
+  "2",
+  "--prefill-chunk",
+  "8192",
+  "--mmap-experts",
+  "on",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/ext/maya-v1.1.28-src",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/maya-ds4/tokenizer",
+ "model_name": "deepseek-v4.1-flash",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "host": "127.0.0.1",
+ "fit_max_tokens": true,
+ "thinking_budget": 32768,
+ "sampling": {
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/ds41/engine-maya-M1.log",
+ "env": {
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX4060TI,GPU-UUID-RTX5080",
+  "DS4_SPLIT": "10,30",
+  "MAYA_DS4_SLOT_KEEP": "0",
+  "MAYA_DS4_STREAM": "0",
+  "STRATA_SERVER_LOG": "0",
+  "DS4_CACHE_DECAY": "0.8",
+  "DS4_ENGRAM_CACHE_MB": "16",
+  "MAYA_DS4_PROMPT_SKIP": "0",
+  "DS4_FAT_ROWS": "0",
+  "DS4_ATTN_MMA": "0",
+  "DS4_ATTN_SLAB_MB": "8",
+  "DS4_W16_MB": "16",
+  "DS4_IQ_Q8K": "0",
+  "DS4_CACHE_THREADS": "1",
+  "DS4_LANE_CAL": "none"
+ },
+ "_comment": "PREPARED 10-25 (not run): M1 = Maya v1.1.28 with Strata v0.2.6's arithmetic - prompt skip off, FAT_ROWS off, ATTN_MMA off, slabs 8/16 MB (Strata's fixed sizes), IQ_Q8K off (q8_1 per 32), PCIe lane off, slot keep off, chunk 8192, DS4_SPLIT 10,30 with the 4060 Ti first, 6 experts (the pack's ds4.txt; no flag), no DSpark, experts in place (--mmap-experts on: never copied). DS4_CACHE_THREADS 1 = Strata's default (Maya's is 4 on 2 GPUs) - drop it if M1 should keep Maya's cache threads. Lossy switches unset: DS4_YOCO_KEEP, MAYA_DS4_DISK_SKIP_W, MAYA_DS4_RAM_SKIP_W, DS4_INDEX_TC. Paths (exe, cwd, pack) are proposals until the build."
+}

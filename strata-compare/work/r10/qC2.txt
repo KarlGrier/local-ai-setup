@@ -1,0 +1,12 @@
+NO32K=1 work/r10/decscreen.sh FKd32-a configs/FK32.json
+NO32K=1 work/r10/decscreen.sh V36d32-a configs/V36.json
+NO32K=1 work/r10/decscreen.sh V36d32-b configs/V36.json
+NO32K=1 work/r10/decscreen.sh FKd32-b configs/FK32.json
+.venv/bin/python work/r10/ab_table.py base=V36d32-a,V36d32-b fork32=FKd32-a,FKd32-b | tee results/r10/ab-fork32.md
+work/r10/decscreen.sh FKd131-a configs/FK131.json
+work/r10/decscreen.sh V36d-a configs/V36.json
+work/r10/decscreen.sh V36d-b configs/V36.json
+work/r10/decscreen.sh FKd131-b configs/FK131.json
+.venv/bin/python work/r10/ab_table.py base=V36d-a,V36d-b fork131=FKd131-a,FKd131-b | tee results/r10/ab-fork131.md
+work/r10/tagcheck.sh "C.2 served done"
+work/r10/basecheck.sh

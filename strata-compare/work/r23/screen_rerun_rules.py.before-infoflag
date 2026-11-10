@@ -1,0 +1,411 @@
+#!/usr/bin/env python3
+# AMENDMENT 2026-11-07 (Karl, 11-07, on results/r23/port-0211/HUNT-1107.md) - it applies from now on, not to finished gates:
+#   "Measurement rule: yes, as a dated amendment applying from now on. Per-workload prompt numbers exclude the
+#   chat-cache save. Time the save as its own line in every screen, and judge it separately against its own noise,
+#   taking its two-speed pattern into account, so a real regression in saving still shows."
+# This file's own screen code is the pre-amendment client clock of its finished gate(s) and is kept as it ran. A new
+# gate takes the amended numbers and the chat-cache save line from work/r22/g17_rules.py ("11-07 park amendment":
+# screen_rows / screen_passes / baseline_speed / wl_noloss / save_rule), not from a copy of this file's code.
+"""screen_rerun_rules.py - r23 (11-05): the rules of work/r23/gap-screen-rerun.sh, written BEFORE it ran. Decode gap b's
+9-workload-screen arm-passes that a DeepSeek engine killed at start (strata-dsv41, pid 1135004, 15.0 GiB on the 5080,
+started 11-05 ~06:50:33, inside gap b): LO3 (06:50:34), Bs3 (06:50:39), L3 (06:50:42), each with "cudaMalloc ... out of
+memory" and "other programs on it: strata-dsv41" in results/r23/decode-timing/gap-b/speed/<n>.engine.log. They are rerun
+on engine-r23decode with gap b's configs, and then decode part b is decided from the merged data. Measurement only:
+nothing is served or switched. decode_rules.py (gap b's rules) is NOT edited: its decide-b runs unchanged on the merge.
+
+WHAT IS RERUN (missing): an arm-pass of gap b's screen that decode_rules.py does not count (a complete clean pass = env
+  PASS, lines PASS, no fatal gate, all 9 workloads with decode and prompt tok/s), among the arms gap b screened, AND whose
+  engine-log slice (gap-b/speed/<n>.engine.log) has both of the collision's lines (the cudaMalloc out-of-memory line and
+  "other programs on it: ... strata-dsv41"). Any other uncounted arm-pass is KEPT as gap b judged it (a rerun could
+  replace a real failure). Order: the original pass's positions (pass 3 "O B Os LO Bs L" -> LO Bs L). --only limits it.
+  Found 11-05 from gap b's files: LO3, Bs3, L3. Bs3 is the one-card base: without it Os vs Bs has 2 base passes, so item O
+  cannot be decided.
+MERGE (final): first decpath_rules.py merge-b, unchanged (the decode-path gap's own merge): gap b's speed/*.jsonl,
+  gates.txt and bp90/cold-*.jsonl, with the decode-path gap's bp90 rerun (results/r23/decpath/bp90-rerun, if it ran) in
+  place of gap b's failed Basalt arm-passes; without a rerun, gap b's bp90 as it is. Then this gap's screen arm-passes
+  over it: for a label N this gap ran (a gate env_N or lines_N in screen-rerun/gates.txt), gap b's speed/N{n,a,r}.jsonl +
+  N.wu.jsonl and its env_N / lines_N / pcie_N / fatal_N gate lines are replaced by this gap's. Never overlaid: a label
+  gap b already counts (a clean pass is never replaced), and a VOID label (a foreign_N FAIL gate: a GPU compute process
+  or engine process that is not engine-r23decode's was seen during the arm) - gap b's failed state stays for it
+  (NOT DECIDED). Gap b's and the decode-path gap's files are only read.
+DECIDE: decode_rules.py decide-b MERGED --a gap-a (unchanged: 3 complete clean passes per arm, no loss / GAIN, bp90)
+  -> MERGED/decision.{txt,json}; decision-b-final.txt = the sources (what came from where, what is still missing) + that
+  decision; decision-b-final.json = the same as data.
+
+Subcommands: missing [--gap-b D] [--only "LO3 L3"] | final [--gap-b D --gap-a D --rerun D --bp-rerun D --out D] |
+  selftest [--dir D] (synthetic data in work/r23/scratch-screen-rerun/; gap b's real files are only read)
+"""
+import argparse
+import contextlib
+import hashlib
+import importlib.util
+import io
+import json
+import re
+import shutil
+import sys
+import time
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+WS = Path("/home/USER/ai-speed-testing/strata-compare")
+D = WS / "results/r23/decode-timing"
+GAPB, GAPA, OUT = D / "gap-b", D / "gap-a", D / "screen-rerun"
+BPRR = WS / "results/r23/decpath/bp90-rerun"
+DR_PATH, DP_PATH = WS / "work/r23/decode_rules.py", WS / "work/r23/decpath_rules.py"
+SCRATCH = WS / "work/r23/scratch-screen-rerun"
+ORDER = {1: "B L O LO Bs Os", 2: "Os Bs LO O L B", 3: "O B Os LO Bs L"}   # gap b's turned order
+ARMS = ("B", "L", "O", "LO", "Bs", "Os")
+RECORDED = ["LO3", "Bs3", "L3"]                                           # found 11-05 from gap b's files
+OOM = re.compile(r"cudaMalloc\(.*out of memory")
+DSV = re.compile(r"other programs on it:.*strata-dsv41")
+OWN = ("env", "lines", "pcie", "fatal")
+_M = {}
+
+
+def mod(name, path):
+    if name not in _M:
+        spec = importlib.util.spec_from_file_location(name, path)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        _M[name] = m
+    return _M[name]
+
+
+def dr():
+    return mod("decode_rules_sr", DR_PATH)
+
+
+def dp():
+    return mod("decpath_rules_sr", DP_PATH)
+
+
+def key(line):
+    return line.split(" ", 1)[0]
+
+
+def screened(g):
+    return [a for a in ARMS if any(re.fullmatch(rf"(env|lines)_{a}[123]", k) for k in g)]
+
+
+def not_counted(gb):
+    """gap b's arm-passes decode_rules.py does not count (arms it screened): [(label, arm, pass)] in pass order"""
+    m = dr()
+    g = m.read_gates(gb)
+    arms = screened(g)
+    got = {a: m.passes(gb, g, a) for a in arms}
+    return [(f"{a}{k}", a, k) for k in (1, 2, 3) for a in ORDER[k].split() if a in arms and k not in got[a]]
+
+
+def collided(gb, n):
+    p = Path(gb) / "speed" / f"{n}.engine.log"
+    t = p.read_text(errors="replace") if p.exists() else ""
+    return bool(OOM.search(t) and DSV.search(t))
+
+
+def cmd_missing(a):
+    only = set(a.only.split()) if a.only else None
+    rr = []
+    for n, arm, k in not_counted(a.gap_b):
+        if not collided(a.gap_b, n):
+            print(f"KEPT {n}: not counted in gap b, and its engine log has no DeepSeek-collision lines - not rerun "
+                  "(gap b's verdict stands)")
+        elif only is not None and n not in only:
+            print(f"KEPT {n}: collision lines present, left out by --only")
+        else:
+            print(f"RERUN {n} {arm} {k}")
+            rr.append(n)
+    print(f"INFO {len(rr)} to rerun: {' '.join(rr) or 'none'}; found 11-05: {' '.join(RECORDED)}"
+          + (" (= that)" if rr == RECORDED else ""))
+    return 0
+
+
+def cmd_final(a):
+    m, p = dr(), dp()
+    gb, ga, sr, bprr, out = (Path(x) for x in (a.gap_b, a.gap_a, a.rerun, a.bp_rerun, a.out))
+    merged = out / "merged"
+    nc = [n for n, _, _ in not_counted(gb)]
+    with contextlib.redirect_stdout(io.StringIO()) as buf:   # the decode-path gap's merge, unchanged
+        p.cmd_merge_b(argparse.Namespace(gap_b=str(gb), rerun=str(bprr), merged=str(merged)))
+    merge_line = buf.getvalue().strip()
+    bp_labels = sorted({json.loads(x)["label"] for f in (bprr.glob("cold-*.jsonl") if bprr.exists() else [])
+                        for x in f.read_text().splitlines() if x.strip()})
+    sgf = sr / "gates.txt"
+    sl = sgf.read_text().splitlines() if sgf.exists() else []
+    ran = []
+    for x in sl:
+        mm = re.fullmatch(r"(?:env|lines)_((?:B|L|O|LO|Bs|Os)[123])", key(x))
+        if mm and mm.group(1) not in ran:
+            ran.append(mm.group(1))
+    foreign = {key(x)[8:]: x.split(" ", 2)[2] if x.count(" ") >= 2 else "" for x in sl
+               if key(x).startswith("foreign_") and x.split(" ")[1:2] == ["FAIL"]}
+    gm_ = merged / "gates.txt"
+    gl = gm_.read_text().splitlines()
+    used, notes = [], []
+    for n in ran:
+        if n not in nc:
+            notes.append(f"{n}: gap b already counts it - this gap's run is not used")
+            continue
+        if n in foreign:
+            notes.append(f"{n}: VOID ({foreign[n][:160]}) - not merged, gap b's failed state stays")
+            continue
+        own = {f"{q}_{n}" for q in OWN}
+        gl = [x for x in gl if key(x) not in own] + [x for x in sl if key(x) in own]
+        for s in ("n.jsonl", "a.jsonl", "r.jsonl", ".wu.jsonl"):
+            (merged / "speed" / f"{n}{s}").unlink(missing_ok=True)
+            src = sr / "speed" / f"{n}{s}"
+            if src.exists():
+                shutil.copy(src, merged / "speed" / src.name)
+        used.append(n)
+    for n, why in foreign.items():
+        if n not in ran:
+            notes.append(f"{n}: not started ({why[:160]})")
+    gm_.write_text("\n".join(gl) + "\n")
+    with contextlib.redirect_stdout(io.StringIO()):
+        m.decide_b(argparse.Namespace(outdir=str(merged), a=str(ga)))
+    dec = (merged / "decision.txt").read_text()
+    g = m.read_gates(merged)
+    still = [n for n, _, _ in not_counted(merged)]
+    bp_still = [f"{x}-{y}-{z}" for x, y, z in p.bp_missing(merged / "bp90")]
+    st_of = lambda n: (f"env {g.get(f'env_{n}', ('MISSING',))[0]}, lines {g.get(f'lines_{n}', ('MISSING',))[0]}"
+                       + (", FATAL" if f"fatal_{n}" in g else "") + (", counted" if n not in still else ", NOT counted"))
+    L = [f"decode part b - FINAL decision ({time.strftime('%F %T')}; work/r23/screen_rerun_rules.py final; the rules: "
+         "decode_rules.py decide-b, unchanged, on the merged records in merged/)",
+         "sources (gap b's and the decode-path gap's files are only read):",
+         f"  part b ({gb}): every arm-pass it counts; not counted there: {' '.join(nc) or 'none'}",
+         f"  screen rerun ({sr}): " + ("; ".join(f"{n} {st_of(n)}" for n in used) or "none merged"),
+         f"  bp90 rerun of the decode-path gap ({bprr}): " + (f"{len(bp_labels)} arm-passes ({' '.join(bp_labels)})"
+                                                              if bp_labels else "not run - bp90 = gap b's own passes"),
+         f"  still missing after the merge: screen {' '.join(still) or 'none'}; bp90 {' '.join(bp_still) or 'none'}"]
+    L += [f"  note: {x}" for x in notes] + [f"  merge-b: {merge_line}", ""]
+    (out / "decision-b-final.txt").write_text("\n".join(L) + "\n" + dec)
+    dj = json.loads((merged / "decision.json").read_text())
+    (out / "decision-b-final.json").write_text(json.dumps(
+        {"written": time.strftime("%F %T"), "screen_rerun_used": used, "notes": notes, "bp90_rerun": bp_labels,
+         "not_counted_in_gap_b": nc, "still_missing": {"screen": still, "bp90": bp_still}, "decision": dj}, indent=1))
+    print("\n".join(L[:6]))
+    print("\n".join(x for x in dec.splitlines() if x.startswith("=> item")))
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ selftest
+def tree_hash(d):
+    h = hashlib.sha256()
+    for f in sorted(Path(d).rglob("*")):
+        if f.is_file():
+            h.update(str(f.relative_to(d)).encode())
+            h.update(f.read_bytes())
+    return h.hexdigest()
+
+
+FAC = {"B": 1.0, "L": 1.05, "O": 1.0, "LO": 1.05, "Bs": 0.9, "Os": 0.9}
+JIT = (1.0, 1.004, 0.997)
+
+
+def rows(arm, k):
+    wl = dr().WL9
+    out = {}
+    for s, ids in (("n", wl[:3]), ("a", wl[3:5]), ("r", wl[5:])):
+        out[s] = "".join(json.dumps({"arm": f"{arm}{k}{s}", "id": w, "decode_tps": round(150 * FAC[arm] * JIT[k - 1] * (1 + i / 10), 2),
+                                     "prompt_tps": round(2000 * JIT[k - 1] * (1 + i / 10), 1)}) + "\n" for i, w in enumerate(ids))
+    return out
+
+
+def put_pass(d, arm, k, gates):
+    (d / "speed").mkdir(parents=True, exist_ok=True)
+    for s, txt in rows(arm, k).items():
+        (d / "speed" / f"{arm}{k}{s}.jsonl").write_text(txt)
+    (d / "speed" / f"{arm}{k}.wu.jsonl").write_text('{"id": "warmup"}\n')
+    gates += [f"env_{arm}{k} PASS synthetic", f"lines_{arm}{k} PASS synthetic", f"pcie_{arm}{k} INFO synthetic"]
+
+
+def bp_recs(arm, sets_passes, f=1.0):
+    out = []
+    for s, k in sets_passes:
+        for t in {"decode": ("conv", "struct", "prose"), "pp16k": ("pp16k",), "pp64k": ("pp64k",)}[s]:
+            key_ = "decode_tps" if s == "decode" else "prompt_tps"
+            out.append({"label": f"bp{arm}-{s}-{k}", "test": t, "pass": k, key_: round((150 if s == "decode" else 3000) * f * JIT[k - 1], 2)})
+    return "".join(json.dumps(r) + "\n" for r in out)
+
+
+def fake_gapb(d, broken=()):
+    d.mkdir(parents=True)
+    gates = []
+    for k in (1, 2, 3):
+        for arm in ORDER[k].split():
+            n = f"{arm}{k}"
+            (d / "speed").mkdir(exist_ok=True)
+            if n in RECORDED:
+                (d / "speed" / f"{n}.engine.log").write_text(
+                    "strata generate: cudaMalloc(1538035200) for the weight arena failed (out of memory): 306 MiB free\n"
+                    "strata generate:   CUDA0 (NVIDIA GeForce RTX 5080): 306 MiB free of 15933 MiB; other programs on it: "
+                    "strata-dsv41 (pid 1135004) 15.0 GiB, Xorg (pid 1831) 4 MiB\n")
+                gates.append(f"lines_{n} " + ("PASS synthetic" if arm == "Bs" else "FAIL synthetic UNEXERCISED"))
+            elif n in broken:
+                (d / "speed" / f"{n}.engine.log").write_text("strata serve: fatal GPU error (synthetic)\n")
+                put_pass(d, arm, k, gates)
+                gates.append(f"fatal_{n} FAIL synthetic")
+            else:
+                (d / "speed" / f"{n}.engine.log").write_text("ok\n")
+                put_pass(d, arm, k, gates)
+    (d / "gates.txt").write_text("\n".join(gates) + "\n")
+    (d / "bp90").mkdir()
+    keep = [(s, k) for k in (1, 2, 3) for s in ("decode", "pp16k", "pp64k") if k > 1]
+    (d / "bp90" / "cold-B.jsonl").write_text(bp_recs("B", keep))
+    (d / "bp90" / "cold-LO.jsonl").write_text(bp_recs("LO", [x for x in keep if x != ("decode", 2)], 1.01))
+
+
+def fake_bprr(d, empty=False):
+    d.mkdir(parents=True)
+    if empty:
+        return
+    (d / "cold-B.jsonl").write_text(bp_recs("B", [("decode", 1), ("pp16k", 1), ("pp64k", 1)]))
+    (d / "cold-LO.jsonl").write_text(bp_recs("LO", [("decode", 1), ("pp16k", 1), ("pp64k", 1), ("decode", 2)], 1.01))
+    (d / "gates.txt").write_text("".join(f"env_bp{x} PASS synthetic\n" for x in
+                                         ("B-decode-1", "B-pp16k-1", "B-pp64k-1", "LO-decode-1", "LO-pp16k-1", "LO-pp64k-1", "LO-decode-2")))
+
+
+def fake_sr(d, labels=RECORDED, extra=()):
+    d.mkdir(parents=True)
+    gates = []
+    for n in labels:
+        mm = re.fullmatch(r"(B|L|O|LO|Bs|Os)([123])", n)
+        put_pass(d, mm.group(1), int(mm.group(2)), gates)
+    (d / "gates.txt").write_text("\n".join(gates + list(extra)) + "\n")
+
+
+def verdicts(out):
+    j = json.loads((Path(out) / "decision-b-final.json").read_text())
+    return {k: v["verdict"] for k, v in j["decision"]["items"].items()}, j
+
+
+def selftest(a):
+    sc = Path(a.dir)
+    if sc.exists():
+        shutil.rmtree(sc)
+    sc.mkdir(parents=True)
+    bad = []
+
+    def chk(name, ok, detail=""):
+        print(f"{'ok  ' if ok else 'FAIL'} {name}{(': ' + detail) if detail else ''}")
+        if not ok:
+            bad.append(name)
+
+    def missing(gb, only=None):
+        with contextlib.redirect_stdout(io.StringIO()) as b:
+            cmd_missing(argparse.Namespace(gap_b=str(gb), only=only))
+        t = b.getvalue().splitlines()
+        return [x.split()[1] for x in t if x.startswith("RERUN")], [x.split()[1].rstrip(":") for x in t if x.startswith("KEPT")]
+
+    def final(name, gb, sr, bprr, ga):
+        o = sc / name
+        o.mkdir(exist_ok=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            cmd_final(argparse.Namespace(gap_b=str(gb), gap_a=str(ga), rerun=str(sr), bp_rerun=str(bprr), out=str(o)))
+        return o
+
+    real_h = tree_hash(GAPB) if GAPB.exists() else None
+    ga = sc / "gapa"
+    ga.mkdir()
+    (ga / "decision.json").write_text(json.dumps({"items": {"L": {"exact": "PASS"}, "O": {"exact": "PASS"}}}))
+    gb1, gb2 = sc / "gapb1", sc / "gapb2"
+    fake_gapb(gb1)
+    fake_gapb(gb2, broken=("Os2",))
+    h1 = tree_hash(gb1)
+    # 1-3 missing
+    r, k = missing(gb1)
+    chk("missing: the 3 collided arm-passes, in pass 3's positions (LO Bs L)", r == ["LO3", "Bs3", "L3"] and not k, f"{r} kept {k}")
+    r, k = missing(gb2)
+    chk("missing: an uncounted pass without collision lines is KEPT, not rerun", r == ["LO3", "Bs3", "L3"] and k == ["Os2"], f"{r} kept {k}")
+    r, k = missing(gb1, "LO3 L3")
+    chk("missing --only LO3 L3: LO3, L3 (Bs3 kept)", r == ["LO3", "L3"] and k == ["Bs3"], f"{r} kept {k}")
+    if GAPB.exists():
+        r, k = missing(GAPB)
+        chk("missing on gap b's real files (read only): LO3 Bs3 L3, nothing kept", r == RECORDED and not k, f"{r} kept {k}")
+    # 5 full merge
+    bp_full, bp_empty = sc / "bprr-full", sc / "bprr-empty"
+    fake_bprr(bp_full)
+    fake_bprr(bp_empty, empty=True)
+    sr = sc / "sr-full"
+    fake_sr(sr)
+    o = final("f-full", gb1, sr, bp_full, ga)
+    v, j = verdicts(o)
+    chk("final, all three rerun + the bp90 rerun: L GAIN, O PASS, L+O GAIN, bp90 PASS, nothing missing",
+        v == {"L": "GAIN", "O": "PASS", "L+O": "GAIN"} and j["decision"]["bp90"] == "PASS"
+        and j["still_missing"] == {"screen": [], "bp90": []}, f"{v} {j['decision']['bp90']} {j['still_missing']}")
+    chk("final: merged gates hold this gap's lines_L3 PASS, not gap b's FAIL",
+        dr().read_gates(o / "merged")["lines_L3"][0] == "PASS")
+    chk("final: the synthetic gap b is unchanged", tree_hash(gb1) == h1)
+    # 6 Bs3 not run (deadline)
+    sr = sc / "sr-noBs3"
+    fake_sr(sr, ["LO3", "L3"])
+    v, j = verdicts(final("f-noBs3", gb1, sr, bp_full, ga))
+    chk("final, Bs3 not rerun: item O NOT DECIDED, L GAIN, Bs3 still missing",
+        v["O"] == "NOT DECIDED" and v["L"] == "GAIN" and j["still_missing"]["screen"] == ["Bs3"], f"{v} {j['still_missing']}")
+    # 7 a fatal line in the rerun L3
+    sr = sc / "sr-fatalL3"
+    fake_sr(sr, extra=["fatal_L3 FAIL synthetic"])
+    v, _ = verdicts(final("f-fatal", gb1, sr, bp_full, ga))
+    chk("final, a fatal line in the rerun L3: item L FAIL", v["L"] == "FAIL", f"{v}")
+    # 8 a foreign process during L3: void
+    sr = sc / "sr-foreignL3"
+    fake_sr(sr, extra=["foreign_L3 FAIL synthetic: pid 1 (strata-dsv41)"])
+    o = final("f-foreign", gb1, sr, bp_full, ga)
+    v, j = verdicts(o)
+    chk("final, a foreign GPU process during L3: L3 VOID (not merged), item L NOT DECIDED",
+        v["L"] == "NOT DECIDED" and "L3" not in j["screen_rerun_used"] and "VOID" in (o / "decision-b-final.txt").read_text(), f"{v}")
+    # 9 the decode-path gap's bp90 rerun did not run
+    v, j = verdicts(final("f-nobp", gb1, sc / "sr-full", bp_empty, ga))
+    chk("final, no bp90 rerun: bp90 NOT DECIDED, items NOT DECIDED, the header says so",
+        j["decision"]["bp90"] == "NOT DECIDED" and set(v.values()) == {"NOT DECIDED"}
+        and "not run - bp90 = gap b's own passes" in (sc / "f-nobp" / "decision-b-final.txt").read_text(), f"{v}")
+    # 10 a label gap b already counts is never replaced
+    sr = sc / "sr-extraB3"
+    fake_sr(sr, RECORDED + ["B3"])
+    for s in "nar":
+        f = sr / "speed" / f"B3{s}.jsonl"
+        f.write_text(f.read_text().replace('"decode_tps": ', '"decode_tps": 1'))
+    o = final("f-extra", gb1, sr, bp_full, ga)
+    chk("final: a pass gap b counts (B3) keeps gap b's rows",
+        (o / "merged/speed/B3n.jsonl").read_bytes() == (gb1 / "speed/B3n.jsonl").read_bytes())
+    # 11 gap b's real files + a synthetic rerun (pass 2's real rows relabelled), no bp90 rerun: the merge on real data
+    if GAPB.exists() and (GAPA / "decision.json").exists():
+        sr = sc / "sr-real"
+        (sr / "speed").mkdir(parents=True)
+        gates = []
+        for n in RECORDED:
+            for s in "nar":
+                t = (GAPB / "speed" / f"{n[:-1]}2{s}.jsonl").read_text()
+                (sr / "speed" / f"{n}{s}.jsonl").write_text(t.replace(f'"arm": "{n[:-1]}2{s}"', f'"arm": "{n}{s}"'))
+            gates += [f"env_{n} PASS synthetic", f"lines_{n} PASS synthetic (relabelled pass 2)"]
+        (sr / "gates.txt").write_text("\n".join(gates) + "\n")
+        o = final("f-real", GAPB, sr, bp_empty, GAPA)
+        txt = (o / "merged/decision.txt").read_text()
+        _, j = verdicts(o)
+        chk("final on gap b's real files: L, LO and Os vs their bases decided (3 passes each), bp90 still 2 of 3",
+            all(f"{x} decode:" in txt for x in ("L vs B", "LO vs B", "Os vs Bs")) and "complete clean passes" not in txt
+            and j["decision"]["bp90"] == "NOT DECIDED", f"screen missing {j['still_missing']['screen']}")
+        chk("gap b's real files are unchanged", tree_hash(GAPB) == real_h)
+    print(f"selftest: {len(bad)} failure(s)" + (": " + ", ".join(bad) if bad else ""))
+    return 1 if bad else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+    p = sp.add_parser("missing")
+    p.add_argument("--gap-b", default=str(GAPB))
+    p.add_argument("--only")
+    p = sp.add_parser("final")
+    p.add_argument("--gap-b", default=str(GAPB))
+    p.add_argument("--gap-a", default=str(GAPA))
+    p.add_argument("--rerun", default=str(OUT))
+    p.add_argument("--bp-rerun", default=str(BPRR))
+    p.add_argument("--out", default=str(OUT))
+    sp.add_parser("selftest").add_argument("--dir", default=str(SCRATCH / "selftest"))
+    a = ap.parse_args()
+    return {"missing": cmd_missing, "final": cmd_final, "selftest": selftest}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""gate_speed.py BASE OUTDIR PASSES NPROMPT [LONG_JSON] - 11-03 (Karl's DeepSeek gate A / B / C): the speed client of
+one arm, run by work/ds41/tune/tunearm.sh as CLIENT (inside the gap that gate.sh opens). work/sweep/speed_sweep.py's
+requests and records, unchanged (speed3.py's: warm-up; P4K x NPROMPT and P20K x NPROMPT - prompt reading, thinking off,
+8 tokens: prompts/speed.json's 4k prompts and its 32k prompts cut to 78,000 characters; a decode warm-up (W1, 1,024
+tokens, not measured); then PASSES passes of W1, W2, W3 - thinking on, effort medium, T 1.0 / 0.95 / 20 / min-p 0.05;
+a fresh nonce line in every request) -> OUTDIR/ds41.jsonl (abrun's records, rep = pass; work/ds41/tune/summ.py reads
+them) and OUTDIR/disk.jsonl. Added per request in disk.jsonl:
+  - MemAvailable before / lowest while it runs (sampled every 0.5 s) / after, the engine's RSS before / after;
+  - the engine log lines the request added (GATE_LOG): "maya ds4 serve: prompt N tokens = R reused + X read ...,
+    G generated ...; CPU lane P% of the experts", "drafts A of O kept; per position (kept / reached): 1: k/r ..." (the
+    drafter's acceptance, C1 / C2), "prompt skip" lines, slot saves.
+LONG_JSON (gate.sh's long-prompt arms AL / BL, run with PASSES 0 NPROMPT 1: the warm-up, one P20K - it streams most
+experts, so the RAM store fills as in daily use - and no decode passes): then the long prompts in that file
+(make_long.py: L64 ~64K tokens, L97 ~97K) - thinking off, 128 tokens, T 1.0 / 0.95 / 20 / min-p 0.05, a nonce line
+each - with the same memory records, and OUTDIR/long.json (per long prompt: tokens, read tok/s, TTFT, decode at that
+length, MemAvailable before / low / after). Their own arms on purpose: B's layer-major prompt path pins ~92 KB of host
+RAM per prompt token (the study, 1.5), and a memory stop (tunearm.sh: MemAvailable < 14 soft / < 12 hard, the swap
+rule) then ends only that arm.
+A request that fails (the arm's guard stopped the server) ends the client (exit 1); what was measured is kept.
+GATE_EXE (default strata-dsv41): the engine, found by /proc/PID/exe's basename (no command-line patterns).
+"""
+import json
+import os
+import re
+import sys
+import threading
+import time
+
+sys.path.insert(0, "/home/USER/ai-speed-testing/basalt-ab/scripts")
+import abrun  # noqa: E402
+
+SC = "/home/USER/ai-speed-testing/strata-compare"
+EXE = os.environ.get("GATE_EXE", "strata-dsv41")
+LOG = os.environ.get("GATE_LOG", f"{SC}/logs/ds41/engine-DS41-v024.log")
+PROMPT = re.compile(r"maya ds4 serve: prompt (\d+) tokens = (\d+) reused \+ (\d+) read in ([\d.]+) ms \(([\d.]+) tok/s\), "
+                    r"(\d+) generated in ([\d.]+) ms \(([\d.]+) tok/s\); CPU lane ([\d.]+)% of the experts")
+DRAFTS = re.compile(r"maya ds4 serve: drafts (\d+) of (\d+) kept; per position \(kept / reached\):([^\n]*)")
+POS = re.compile(r"(\d+): (\d+)/(\d+)")
+
+
+def engine_pid():
+    for p in os.listdir("/proc"):
+        if p.isdigit():
+            try:
+                if os.path.basename(os.readlink(f"/proc/{p}/exe")) == EXE:
+                    return int(p)
+            except OSError:
+                pass
+    return None
+
+
+def io(pid):
+    r = {}
+    try:
+        for line in open(f"/proc/{pid}/io"):
+            k, v = line.split(":")
+            r[k] = int(v)
+    except (OSError, ValueError, TypeError):
+        return None, None
+    return r.get("read_bytes"), r.get("write_bytes")
+
+
+# 11-03: the drive holding the model files, from the mount (NVMe names change between boots; nvme0 is not it since 10-31)
+import subprocess as _sp
+MODEL_DISK = _sp.run(["lsblk", "-no", "PKNAME", _sp.run(["df", "--output=source", "/home/USER/ai-speed-testing/strata-compare/models"],
+                     capture_output=True, text=True).stdout.split()[-1]], capture_output=True, text=True).stdout.split()[0]
+
+
+def dev_read():
+    try:
+        return int(open(f"/sys/block/{MODEL_DISK}/stat").read().split()[2]) * 512
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def memavail_gb():
+    try:
+        return round(int(next(l for l in open("/proc/meminfo") if l.startswith("MemAvailable")).split()[1]) / 1048576, 2)
+    except (OSError, StopIteration, ValueError):
+        return None
+
+
+def rss_mb(pid):
+    try:
+        return int(next(l for l in open(f"/proc/{pid}/status") if l.startswith("VmRSS")).split()[1]) // 1024
+    except (OSError, StopIteration, ValueError, TypeError):
+        return None
+
+
+class Low:
+    """the lowest MemAvailable while a request runs (every 0.5 s)"""
+    def __init__(self):
+        self.low, self.run = 999.0, True
+        self.t = threading.Thread(target=self.loop, daemon=True)
+        self.t.start()
+
+    def loop(self):
+        while self.run:
+            m = memavail_gb()
+            if m is not None:
+                self.low = min(self.low, m)
+            time.sleep(0.5)
+
+    def stop(self):
+        self.run = False
+        self.t.join()
+        return None if self.low == 999.0 else round(self.low, 2)
+
+
+def log_size():
+    try:
+        return os.path.getsize(LOG)
+    except OSError:
+        return None
+
+
+def engine_lines(o0, o1):
+    if o0 is None or o1 is None or o1 <= o0:
+        return {}
+    with open(LOG, "rb") as f:
+        f.seek(o0)
+        t = f.read(o1 - o0).decode("utf-8", "replace")
+    out = {"prompt": [{"prompt": int(a), "reused": int(b), "read": int(c), "read_ms": float(d), "read_tps": float(e),
+                       "generated": int(g), "gen_ms": float(h), "gen_tps": float(i), "cpu_lane_pct": float(j)}
+                      for a, b, c, d, e, g, h, i, j in PROMPT.findall(t)],
+           "drafts": [{"kept": int(k), "offered": int(o), "per_pos": [[int(p), int(x), int(y)] for p, x, y in POS.findall(pp)]}
+                      for k, o, pp in DRAFTS.findall(t)],
+           "skip": [l[:200] for l in t.splitlines() if "prompt skip" in l][:4],
+           "slots": [l[:200] for l in t.splitlines() if l.startswith("ds4 slots: saved")][:4],
+           "other": [l[:240] for l in t.splitlines() if l.startswith("ds4:") and "prompt skip" not in l][:6]}
+    return out
+
+
+def one(base, w, rep, out, sampling):
+    pid = engine_pid()
+    r0, w0 = io(pid)
+    d0, t0, o0, m0, s0 = dev_read(), time.time(), log_size(), memavail_gb(), rss_mb(pid)
+    low = Low()
+    err = None
+    rec = {}
+    try:
+        rec = abrun.one(base, "ds41", w, sampling, {}, rep, f"{out}/ds41.jsonl")
+    except Exception as e:  # noqa: BLE001  (the server went away: an arm guard, or a failure)
+        err = f"{type(e).__name__}: {e}"
+    time.sleep(2)   # the request's engine lines follow its last streamed token
+    lo = low.stop()
+    r1, w1 = io(pid)
+    d1, t1, o1 = dev_read(), time.time(), log_size()
+    d = {"id": w["id"], "rep": rep,
+         "disk_read_gb": round((r1 - r0) / 1e9, 3) if r0 is not None and r1 is not None else None,
+         "disk_write_gb": round((w1 - w0) / 1e9, 4) if w0 is not None and w1 is not None else None,
+         "device_read_gb": round((d1 - d0) / 1e9, 3) if d0 is not None and d1 is not None else None,
+         "t_start": round(t0, 1), "t_end": round(t1, 1),
+         "completion_tokens": rec.get("completion_tokens"), "prompt_tokens": rec.get("prompt_tokens"),
+         "memavail_before_gb": m0, "memavail_low_gb": lo, "memavail_after_gb": memavail_gb(),
+         "engine_rss_before_mb": s0, "engine_rss_after_mb": rss_mb(pid), "engine": engine_lines(o0, o1)}
+    if err:
+        d["error"] = err
+    if d["disk_read_gb"] is not None and rec.get("completion_tokens") and w.get("thinking", True):
+        d["disk_gb_per_token"] = round(d["disk_read_gb"] / rec["completion_tokens"], 4)
+    with open(f"{out}/disk.jsonl", "a") as f:
+        f.write(json.dumps(d) + "\n")
+    dr = d["engine"].get("drafts") or []
+    print(f"  disk {d['disk_read_gb']} GB read; MemAvailable {m0} -> low {lo} GB; engine RSS {s0} -> {d['engine_rss_after_mb']} MB"
+          + (f"; drafts {dr[0]['kept']} of {dr[0]['offered']} kept" if dr else "") + (f"; ERROR {err}" if err else ""), flush=True)
+    return rec, d, err
+
+
+def main():
+    base, out = sys.argv[1], sys.argv[2]
+    passes = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+    nprompt = int(sys.argv[4]) if len(sys.argv) > 4 else 3
+    longf = sys.argv[5] if len(sys.argv) > 5 else None
+    os.makedirs(out, exist_ok=True)
+    wl = json.load(open(abrun.WL))
+    sp = json.load(open(f"{SC}/prompts/speed.json"))
+    p4 = [p for p in sp if p["size"] == "4k"]
+    p32 = [p for p in sp if p["size"] == "32k"]
+    cut = lambda m: [dict(m[0], content=m[0]["content"][:78000])] + m[1:]  # noqa: E731
+    jobs = [(dict(wl["normal"][1], id="warmup", max_tokens=384), 0)]
+    if passes > 0:
+        jobs += [({"id": "P4K", "messages": p4[i % len(p4)]["messages"], "max_tokens": 8, "thinking": False}, i) for i in range(nprompt)]
+    # (PASSES 0 = a long-prompt arm: the warm-up, NPROMPT x P20K - it streams most experts, so the RAM store fills as in
+    #  daily use - then the long prompts; no decode passes)
+    jobs += [({"id": "P20K", "messages": cut(p32[i % len(p32)]["messages"]), "max_tokens": 8, "thinking": False}, i) for i in range(nprompt)]
+    ws = [w for w in wl["normal"] if w["id"].startswith(("W1", "W2", "W3"))]
+    if passes > 0:
+        jobs.append((dict(ws[0], id="warmup-decode", max_tokens=1024), 0))
+    for r in range(passes):
+        jobs += [(w, r) for w in ws]
+    longs = json.load(open(longf)) if longf else []
+    jobs += [({"id": lp["id"], "messages": lp["messages"], "max_tokens": 128, "thinking": False}, 0) for lp in longs]
+    print(f"engine pid {engine_pid()}; {len(jobs)} requests ({len(longs)} long)", flush=True)
+    res = []
+    for w, rep in jobs:
+        rec, d, err = one(base, w, rep, out, abrun.NORMAL)
+        if w["id"] in {lp["id"] for lp in longs}:
+            p = (d["engine"].get("prompt") or [{}])[0]
+            res.append({"id": w["id"], "prompt_tokens": rec.get("prompt_tokens"), "ttft_s": rec.get("ttft_s"),
+                        "prompt_tps_client": rec.get("prompt_tps"), "read_tps_engine": p.get("read_tps"),
+                        "read_s_engine": round(p["read_ms"] / 1000, 1) if p.get("read_ms") else None,
+                        "decode_tps": rec.get("decode_tps"), "decode_tps_engine": p.get("gen_tps"),
+                        "completion_tokens": rec.get("completion_tokens"), "finish": rec.get("finish"),
+                        **{k: d.get(k) for k in ("memavail_before_gb", "memavail_low_gb", "memavail_after_gb",
+                                                 "engine_rss_before_mb", "engine_rss_after_mb", "disk_read_gb", "error")}})
+            json.dump(res, open(f"{out}/long.json", "w"), indent=1)
+        if err:
+            print(f"request {w['id']} r{rep} failed ({err}) - the client stops here", flush=True)
+            return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

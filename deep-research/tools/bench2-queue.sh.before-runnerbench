@@ -1,0 +1,116 @@
+#!/bin/bash
+# bench2-queue.sh - phase 3 runs, daytime only (2026-10-17; one question at a time since 10-18; medium pass 10-18).
+# Before each question, `bench2.py next` picks the first one in results/bench2/queue-plan.json that is not done and is
+# expected to end by 22:30, with its effort level and runs-folder label. LDR is restarted only when the profile or the
+# report/citation-check effort it was started with changes (run/ldr.profile, run/ldr.efforts). Waits while another
+# bench2 run holds run/bench.lock. Pauses at a clean point when a Strata release
+# changes the engine or server (since 10-23 work/r22/tagcheck.sh decides by what changed and raises the release baseline
+# itself for the rest, with a NOTES.md line; a pause sends a desktop alert - the user, 10-23), or when tmp/bench2.stop
+# exists. Log: logs/bench2-queue.log
+WS=/home/USER/ai/deep-research; cd $WS
+LOG=$WS/logs/bench2-queue.log
+say() { echo "$(date '+%F %T') $*" >> $LOG; }
+newtag() {   # 10-23 (the user): pause only for a release that changes the engine or server (10-24: our served Qwen build's path only, work/r22/qwenpath.py); prints "PAUSE <tag> <baseline> <n> <why>"
+  local r; r=$(/home/USER/ai-speed-testing/strata-compare/work/r22/tagcheck.sh --max-age 3600 --who queue 2>> $LOG)   # ls-remote at most hourly
+  case "$r" in
+    RAISED*) say "Strata ${r##* }: nothing on our Qwen build's path changed - release baseline raised, carrying on" ;;
+    UNKNOWN*) say "release check: ${r#UNKNOWN } - carrying on" ;;
+    PAUSE*) echo "$r" ;;
+  esac
+}
+day() { [ -e run/night-ok ] && return 0; local h=$(date +%-H); [ $h -ge 9 ] && [ $h -lt 22 ]; }   # new work starts 09:00-22:00 (and must end by 22:30); run/night-ok (the user away, 10-19) lifts it
+wait_day() { while ! day; do [ -e tmp/bench2.stop ] && exit 0; sleep 300; done; }
+SC=/home/USER/ai-speed-testing/strata-compare
+avail() { awk '/MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo; }
+ensure_strata() {   # Strata up (on demand), and its chat cache emptied if memory is short (same config, ~15 s)
+  env -u HTTP_PROXY -u HTTPS_PROXY $SC/configs/usability/bin/strata-ensure.sh "Deep research" >> $LOG 2>&1 || { say "Strata not ready"; return 1; }
+  if [ "$(avail)" -lt 20 ] && curl -s -m 5 http://127.0.0.1:8080/metrics | grep -q '"state": "idle"'; then
+    say "MemAvailable $(avail) GB: restarting Strata to empty its chat cache"
+    (cd $SC && STRATA_PORT=8080 ./run-strata.sh stop) >> $LOG 2>&1
+    for i in $(seq 60); do pgrep -f "(^|/)llama-server( |$)|strata --serve" > /dev/null || break; sleep 1; done
+    env -u HTTP_PROXY -u HTTPS_PROXY $SC/configs/usability/bin/strata-ensure.sh "Deep research" >> $LOG 2>&1 || { say "Strata did not come back"; return 1; }
+  fi
+  return 0
+}
+user_jobs() {   # a Jan job queued (not paused by you) or active
+  /usr/bin/python3 -I -c "
+import sys; sys.path.insert(0, '$WS/tools'); import research_common as rc
+sys.exit(0 if any(j.get('state') in rc.ACTIVE or (j.get('state') == 'queued' and not j.get('user_paused') and not j.get('cancel_requested')) for j in rc.all_jobs()) else 1)"
+}
+bench_busy() { ! flock -n $WS/run/bench.lock true; }   # a bench2 run (e.g. one started by the previous queue) is going
+say "queue started (pid $$)"
+while :; do
+  if bench_busy; then say "a bench2 run holds run/bench.lock: waiting for it"; while bench_busy; do sleep 60; done; fi
+  wait_day
+  T=$(newtag)
+  if [ -n "$T" ]; then
+    read -r _ PT PB PN PWHY <<< "$T"
+    say "Strata $PT changes our Qwen build's engine/server path ($PN files since $PB; ${PWHY#*: }): pausing the measurements until it is reviewed"
+    notify-send -a "Deep research" -u critical "Measurements paused: Strata $PT" "$PT changes our Qwen build's engine or server ($PN files since $PB). The research queue stopped at a clean point. After the review: work/r22/tagcheck.sh --accept $PT, then start deep-research-bench.service again." 2> /dev/null || true
+    exit 0
+  fi
+  [ -e tmp/bench2.stop ] && { say "stop file: stopping"; exit 0; }
+  # 2026-10-19: tmp/bench2.hold = a gap for the 0.2.0 port's builds and tests: no new run starts while it exists
+  if [ -e tmp/bench2.hold ]; then say "hold file: waiting ($(head -c 200 tmp/bench2.hold 2>/dev/null))"; while [ -e tmp/bench2.hold ]; do [ -e tmp/bench2.stop ] && exit 0; sleep 30; done; say "hold released"; continue; fi
+  # your own research from Jan goes first: wait while a job is queued or running
+  if user_jobs; then say "a research job from Jan is queued or running: waiting for it"; while user_jobs; do sleep 120; done; say "Jan job done: continuing"; continue; fi
+  read -r SET PROF ID EFF LABEL VEFF ITEMS <<< "$(.venv/bin/python tools/bench2.py next 2>> $LOG)"   # VEFF: phase 4 (10-20), the citation check apart
+  case "$SET" in
+    done) break ;;
+    wait|"") sleep 600; continue ;;      # nothing fits before 22:30 (or an error, logged): look again later
+  esac
+  [ "$EFF" = "-" ] && EFF=""; [ "$LABEL" = "-" ] && LABEL=""; [ "$VEFF" = "-" ] && VEFF=""
+  # 10-21: phase 4 stage 2 - a plan step's "items" (setup, critic, verify2) run on an LDR started with exactly those
+  [ "${ITEMS:--}" = "-" ] && ITEMS=""
+  ITEMENV="LDR_DEEP_SETUP_PROFILE= LDR_DEEP_CRITIC= LDR_DEEP_VERIFY2= LDR_DEEP_TRIED= LDR_DEEP_NOTYET= LDR_DEEP_CODE= LDR_DEEP_FIX="
+  case ",$ITEMS," in *,setup,*) ITEMENV="$ITEMENV LDR_DEEP_SETUP_PROFILE=$PWD/user-setup.md";; esac
+  case ",$ITEMS," in *,critic,*) ITEMENV="$ITEMENV LDR_DEEP_CRITIC=1";; esac
+  case ",$ITEMS," in *,verify2,*) ITEMENV="$ITEMENV LDR_DEEP_VERIFY2=flag";; esac
+  case ",$ITEMS," in *,tried,*) ITEMENV="$ITEMENV LDR_DEEP_TRIED=1";; esac       # 10-23: item 4
+  case ",$ITEMS," in *,notyet,*) ITEMENV="$ITEMENV LDR_DEEP_NOTYET=1";; esac     # 10-23: item 2, in item 4's runs
+  case ",$ITEMS," in *,code,*) ITEMENV="$ITEMENV LDR_DEEP_CODE=1";; esac         # 10-27: the read-only code tool
+  FIX=""; case ",$ITEMS," in *,fixes,*) FIX=all;; esac                            # 10-27: phase 4's six fixes + consistency
+  case ",$ITEMS," in *,read,*) FIX="${FIX:+$FIX,}read";; esac                       # 10-28: bundle item 6 (every cited source read)
+  case ",$ITEMS," in *,claims,*) FIX="${FIX:+$FIX,}claims";; esac                   # 10-28: bundle item 5 (claims: quote, URL, date)
+  [ -n "$FIX" ] && ITEMENV="$ITEMENV LDR_DEEP_FIX=$FIX"
+  WANT_ITEMS=$(echo "$ITEMS" | tr ',' '\n' | grep . | sort | tr '\n' ' ' | sed 's/ $//'); WANT_ITEMS=${WANT_ITEMS:-off}
+  WANT_EFF="report=${EFF:-default} verify=${VEFF:-${EFF:-default}}"
+  if [ "$(cat run/ldr.profile 2>/dev/null)" != "$PROF" ] || { [ "$PROF" = deep ] && [ "$(cat run/ldr.efforts 2>/dev/null || echo 'report=default verify=default')" != "$WANT_EFF" ]; } \
+     || [ "$(tr ' ' '\n' < run/ldr.items 2>/dev/null | grep . | sort | tr '\n' ' ' | sed 's/ $//' || true)" != "$WANT_ITEMS" ] \
+     || [ "$(cat run/ldr.fallback 2>/dev/null || echo off)" != off ] || [ "$(cat run/ldr.s2 2>/dev/null || echo off)" != off ] || [ "$(cat run/ldr.quicklimits 2>/dev/null || echo off)" != off ] \
+     || ! curl -s -m 5 -o /dev/null http://127.0.0.1:5000/auth/login; then
+    say "LDR -> $PROF profile${EFF:+, report at $EFF, citation check at ${VEFF:-$EFF}}"
+    ./run-ldr.sh stop >> $LOG 2>&1
+    ensure_strata || { sleep 600; continue; }
+    if [ -n "$EFF" ]; then
+      env -u LDR_SEARCH_FALLBACK -u LDR_RESEARCH_S2 -u LDR_QUICK_LIMITS $ITEMENV LDR_DEEP_REPORT_EFFORT=$EFF LDR_DEEP_VERIFY_EFFORT=${VEFF:-$EFF} LDR_PROFILE=$PROF ./run-ldr.sh start >> $LOG 2>&1
+    else
+      env -u LDR_DEEP_REPORT_EFFORT -u LDR_DEEP_VERIFY_EFFORT -u LDR_SEARCH_FALLBACK -u LDR_RESEARCH_S2 -u LDR_QUICK_LIMITS $ITEMENV LDR_PROFILE=$PROF ./run-ldr.sh start >> $LOG 2>&1
+    fi || { say "LDR start failed; retry in 10 min"; sleep 600; continue; }
+  fi
+  ensure_strata || { sleep 600; continue; }
+  # 10-21 (the user): every service the run uses answers before it starts - SearXNG 8889 (LDR's), 8890, 8888, the proxy, LDR
+  /usr/bin/python3 -I tools/services_check.py --proxy --ldr >> $LOG 2>&1 || { say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: a service is down (above); retry in 10 min"; sleep 600; continue; }
+  say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: running"
+  .venv/bin/python tools/bench2.py run $SET $PROF --ids $ID ${EFF:+--effort-all $EFF} ${VEFF:+--effort-verify $VEFF} ${LABEL:+--label $LABEL} ${ITEMS:+--items $ITEMS} >> $LOG 2>&1
+  rc=$?
+  RD=results/bench2/runs/$SET-$PROF${LABEL:+-$LABEL}/$ID
+  # 10-21 (the user): a run whose searches mostly failed is FAILED (tools/ldr-client.py: search-failed.json, no
+  # summary); three such runs in a row stop the queue with an alert instead of retrying all day
+  if [ -e $RD/search-failed.json ] && [ ! -e $RD/bench.json ]; then
+    SFAIL=$(( ${SFAIL:-0} + 1 )); mv $RD/search-failed.json $RD/search-failed-$(date +%H%M%S).json
+    say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: FAILED - web searches failing ($SFAIL in a row)"
+    if [ $SFAIL -ge 3 ]; then
+      say "three runs in a row FAILED on web searches - queue stopped"
+      notify-send -a "Deep research" -u critical "Measurement queue stopped" "Three runs in a row failed because web searches failed (see logs/bench2-queue.log)." 2> /dev/null || true
+      exit 1
+    fi
+  elif [ -e $RD/bench.json ]; then SFAIL=0; fi
+  [ -e $RD/bench.json ] || { say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: not completed (rc $rc); retry in 10 min"; sleep 600; }
+done
+say "all planned questions done"
+[ -n "${BENCH2_PLAN:-}" ] && { say "queue finished ($BENCH2_PLAN)"; exit 0; }   # phase 4: graded by hand
+for s in "screen deep" "screen deep --label medium" "hard-screen baseline" "hard-screen deep" "hard-screen deep --label medium"; do
+  .venv/bin/python tools/bench2.py grade $s >> $LOG 2>&1
+done
+say "queue finished"

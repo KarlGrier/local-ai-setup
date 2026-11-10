@@ -1,0 +1,40 @@
+38 hit(s) for /--trim-stage-weights/ in Niko1221/Strata@v0.2.4:
+bench/results/2026-10-06-community-2x-rtx-pro-4500-engine-0.1.40.1/run-series.sh:72: [OTHER ENGINE: Strata's Qwen engine] if start B2-b2g2 0 --vram-reserve-mib $R --batch 2 --batch-groups 2 --trim-stage-weights; then
+bench/results/2026-10-06-community-2x-rtx-pro-4500-engine-0.1.40.1/run-series.sh:83: [OTHER ENGINE: Strata's Qwen engine] if start B4-b4g2 0 --vram-reserve-mib $R --batch 4 --batch-groups 2 --trim-stage-weights; then
+bench/results/2026-10-06-community-2x-rtx-pro-4500-engine-0.1.40.1/config-batch4.json:32: [OTHER ENGINE: Strata's Qwen engine] "--trim-stage-weights"
+bench/results/2026-10-06-community-2x-rtx-pro-4500-engine-0.1.40.1/config-batch2.json:32: [OTHER ENGINE: Strata's Qwen engine] "--trim-stage-weights"
+bench/results/2026-10-06-community-2x-rtx-pro-4500-engine-0.1.40.1/README.md:21: [OTHER ENGINE: Strata's Qwen engine] - Batch runs: no vision, `--vram-reserve-mib 700`, `--batch 2` or `--batch 4`, each with `--batch-groups 2 --trim-stage-weights`. **No `STRATA_*` environment overrides**; in particular no `STRATA_VERIFY_ALL_RESIDENT=0`
+bench/results/2026-10-06-llamacpp-0.6.0/prompt-32k.txt:182: [OTHER ENGINE: Strata's Qwen engine] and a Thunderbolt RTX 3090, IQ2_XS with `--mmap-experts --layer-split 12 --trim-stage-weights` raised median available
+bench/results/2026-10-09-community-p4-prefill-roofline/p4_prefill_runner.py:20: [OTHER ENGINE: Strata's Qwen engine] if '--trim-stage-weights' in a:a.remove('--trim-stage-weights')
+bench/results/2026-10-08-community-2x-rtx3080-20gb-ud-q4-k-xl-512k-pool/strata-q4xl-prod.json:29: [OTHER ENGINE: Strata's Qwen engine] "--trim-stage-weights",
+bench/results/2026-10-08-community-2x-rtx3080-20gb-ud-q4-k-xl-512k-pool/README.md:87: [OTHER ENGINE: Strata's Qwen engine] page-locked RAM), adaptive tier `--adapt-every 2 --adapt-async 1`, `--ple-io direct`, `--trim-stage-weights`,
+bench/results/2026-10-08-community-2x-rtx3080-20gb-ud-q4-k-xl-512k-pool/README.md:107: [OTHER ENGINE: Strata's Qwen engine] | `--kv int8`, `--kv-resident`, `--spec 4`, `--spec-min-p`, `--mtp`, `--vision`, `--expert-cache auto`, `--resident-experts`, `--trim-stage-weights`, `--layer-split`, `--batch`, `--adapt-every`, `--expert-profile-save`, `--conversation-cach
+bench/results/2026-10-08-community-2x-rtx3080-20gb-ud-q4-k-xl-512k-pool/start-command.txt:21: [OTHER ENGINE: Strata's Qwen engine] --trim-stage-weights \
+bench/results/2026-10-05-community-rtx-5060-ti-x2/strata-iq3_xxs.json:33: [OTHER ENGINE: Strata's Qwen engine] "--trim-stage-weights"
+bench/results/2026-10-05-community-rtx-5060-ti-x2/README.md:61: [OTHER ENGINE: Strata's Qwen engine] `--remote-expert-opt --conversation-cache-mib 8192 --trim-stage-weights`
+bench/results/2026-10-05-community-rtx-5060-ti-x2/README.md:75: [OTHER ENGINE: Strata's Qwen engine] #   --conversation-cache-mib 8192 --trim-stage-weights --layer-split 25
+tools/batch_test.py:6: --extra "--layer-split 12,24,36 --trim-stage-weights --pcie-frac 0 --adapt-every 1000000"
+sycl/src/program/generate.cpp:839: [OTHER ENGINE: Strata's Qwen engine] "  --trim-stage-weights an explicit --layer-split: each GPU loads only its own layers' dense weights\n"
+sycl/src/program/generate.cpp:1914: [OTHER ENGINE: Strata's Qwen engine] else if (a == "--trim-stage-weights") o.trim_stage_weights = true;
+sycl/src/program/generate.cpp:2884: [OTHER ENGINE: Strata's Qwen engine] // --trim-stage-weights (PR #559) is the same switch as STRATA_STAGE_TRIM=1 (PR #639)
+sycl/src/program/generate.cpp:2897: [OTHER ENGINE: Strata's Qwen engine] std::fprintf(stderr, "strata generate: --trim-stage-weights needs a layer split across GPUs (ignored)\n");
+docs/release-notes-0.2.1.md:71: [OTHER ENGINE: Strata's Qwen engine] - **Docs.** Build from git on Linux (#3191), the dual-socket CPU pool measurements, IOMMU check and no-numactl note (#3201; the NUMA-split pool from that report is not merged), and a two-card gfx906 tip with `--pipeline-windows 2` (+36% dec
+docs/MULTI_GPU.md:531: [OTHER ENGINE: Strata's Qwen engine] With a layer split, `--batch N --batch-groups G --trim-stage-weights` decodes several conversations together and
+docs/DETAILS.md:257: [OTHER ENGINE: Strata's Qwen engine] and a Thunderbolt RTX 3090, IQ2_XS with `--mmap-experts --layer-split 12 --trim-stage-weights` raised median available
+docs/DETAILS.md:2072: [OTHER ENGINE: Strata's Qwen engine] Measured on 4x RTX 3090, UD-IQ4_XS, split `12,24,36` with `--trim-stage-weights` and `--batch 16` (every expert
+docs/BATCHING.md:84: [OTHER ENGINE: Strata's Qwen engine] "args": [ ..., "--batch", "8", "--batch-groups", "4", "--trim-stage-weights" ],
+docs/BATCHING.md:93: [OTHER ENGINE: Strata's Qwen engine] | `--trim-stage-weights` | with an **explicit** `--layer-split` (e.g. `12,24,36`, not `auto`): every GPU loads only the dense weights of its own layers instead of the whole model's (the same as `STRATA_STAGE_TRIM=1`, PR #639). The VRAM this
+docs/BATCHING.md:318: [OTHER ENGINE: Strata's Qwen engine] Measured on 2x RTX 5090 (Swift 1.5 IQ3_S, `--layer-split 25 --trim-stage-weights --batch 6 --batch-groups 2
+docs/BATCHING.md:460: [OTHER ENGINE: Strata's Qwen engine] A 4-GPU layer split (4 x 16 GB, PCIe Gen3), IQ3_S, `--batch 8 --batch-groups 4 --trim-stage-weights`, through
+docs/BATCHING.md:473: [OTHER ENGINE: Strata's Qwen engine] `--trim-stage-weights` alone raised the share of experts held in VRAM on that machine from 76-85 % to 84-100 %
+docs/BATCHING.md:531: [OTHER ENGINE: Strata's Qwen engine] --extra "--layer-split 12,24,36 --trim-stage-weights --batch-groups 4 --pcie-frac 0 --adapt-every 1000000"
+docs/AMD_HIP.md:894: [OTHER ENGINE: Strata's Qwen engine] loop's up to CPU rounding; nobody has compared them on gfx906 yet. Add `--trim-stage-weights` (with the explicit `--layer-split`): prompt reading 353 -> 371 tok/s, decode +2%.
+docs/AMD_HIP.md:895: [OTHER ENGINE: Strata's Qwen engine] In the config: `"args": [ ..., "--pipeline-windows", "2", "--trim-stage-weights" ]`. One machine, one model, one run protocol: measure it
+src/program/generate.cpp:921: [OTHER ENGINE: Strata's Qwen engine] "  --trim-stage-weights an explicit --layer-split: each GPU loads only its own layers' dense weights\n"
+src/program/generate.cpp:2611: [OTHER ENGINE: Strata's Qwen engine] else if (a == "--trim-stage-weights") o.trim_stage_weights = true;
+src/program/generate.cpp:3802: [OTHER ENGINE: Strata's Qwen engine] // --trim-stage-weights (PR #559) is the same switch as STRATA_STAGE_TRIM=1 (PR #639)
+src/program/generate.cpp:3815: [OTHER ENGINE: Strata's Qwen engine] std::fprintf(stderr, "strata generate: --trim-stage-weights needs a layer split across GPUs (ignored)\n");
+src/program/generate.cpp:4728: [OTHER ENGINE: Strata's Qwen engine] // measured on 4x R9700 with --trim-stage-weights, 6,36,41 read a 32K prompt at 1,750 tok/s and 12,24,36 at 2,780,
+strata_control/tune_knobs.py:48: BOOL_FLAGS = frozenset({"--kv-grow", "--trim-stage-weights", "--no-host-worker", "--no-pool", "--mmap-experts",
+strata_control/tune_knobs.py:97: Arm("trim_stage", "Trim stage weights on two cards", "exact", {"--trim-stage-weights": True},
+(35 hit(s) marked [OTHER ENGINE: Strata's Qwen engine] are in that engine's files or doc parts; the task is about its DeepSeek engine - not evidence for the DeepSeek engine's flags or settings.)

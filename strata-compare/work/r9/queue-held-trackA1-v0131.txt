@@ -1,0 +1,11 @@
+work/r9/decscreen.sh EOFF-b configs/R9e.json
+work/r9/decscreen.sh EON-b configs/R9e-on.json
+work/r9/decscreen.sh EON-c configs/R9e-on.json
+work/r9/decscreen.sh EOFF-c configs/R9e.json
+work/r9/screen.sh EONf-a configs/R9e-on.json
+work/r9/screen.sh EOFFf-a configs/R9e.json
+work/r9/screen.sh EOFFf-b configs/R9e.json
+work/r9/screen.sh EONf-b configs/R9e-on.json
+work/r9/tagcheck.sh "track 1 A/B done"
+work/r9/ess_probe.sh 1500
+work/r9/tagcheck.sh "track 1 probe done"

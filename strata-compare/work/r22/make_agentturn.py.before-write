@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""make_agentturn.py - round 22 port tests (the user, 10-21: "Measure the adaptive draft length at T 1.0 with thinking
+on, not just greedy: W1-W3, plus a tool-call-heavy, OpenCode-style turn, since JSON and code are where longer drafts
+should pay"). Writes prompts/agentturn.json: two synthetic coding-agent turns in the OpenAI chat format with function
+tools (read / edit / write / bash / grep / glob), earlier tool calls and their results, so the next assistant turn is
+tool calls whose JSON arguments carry code. Everything here is made up for the test (a small inventory CLI); nothing
+comes from a real session.
+  A-edit   the model has read two files and is asked to add a --format json option and its tests: edit + write calls
+  B-write  a new module from a short spec, plus its tests: write calls with whole files
+"""
+import json
+import pathlib
+
+OUT = pathlib.Path(__file__).resolve().parents[2] / "prompts" / "agentturn.json"
+
+SYSTEM = """You are a coding agent working in the user's repository. You can call tools to read, search, edit and write
+files and to run shell commands. Work in small, verifiable steps. When you change code, use the edit tool with an exact
+old_string taken from the file (it must match once) and the full new_string; use write for new files. Keep the style of
+the surrounding code. After editing, run the tests with bash. Do not explain at length: act through the tools, then give
+a two-line summary."""
+
+def fn(name, desc, props, req):
+    return {"type": "function", "function": {"name": name, "description": desc,
+            "parameters": {"type": "object", "properties": props, "required": req}}}
+
+S = {"type": "string"}
+TOOLS = [
+    fn("read", "Read a file. Returns the file with line numbers.", {"path": S, "offset": {"type": "integer"},
+       "limit": {"type": "integer"}}, ["path"]),
+    fn("edit", "Replace old_string with new_string in a file. old_string must occur exactly once.",
+       {"path": S, "old_string": S, "new_string": S}, ["path", "old_string", "new_string"]),
+    fn("write", "Write a whole file (creates or overwrites).", {"path": S, "content": S}, ["path", "content"]),
+    fn("bash", "Run a shell command in the repository root and return its output.", {"command": S,
+       "timeout_s": {"type": "integer"}}, ["command"]),
+    fn("grep", "Search file contents with a regular expression.", {"pattern": S, "path": S, "glob": S}, ["pattern"]),
+    fn("glob", "List files matching a glob pattern.", {"pattern": S}, ["pattern"]),
+]
+
+CLI = '''import argparse
+import sys
+
+from invtrack.store import Store
+from invtrack.report import build_report, render_text
+
+
+def cmd_add(store, args):
+    item = store.add(args.sku, args.name, qty=args.qty, location=args.location)
+    print(f"added {item.sku} ({item.qty} at {item.location})")
+    return 0
+
+
+def cmd_move(store, args):
+    try:
+        item = store.move(args.sku, args.to, qty=args.qty)
+    except KeyError:
+        print(f"unknown sku: {args.sku}", file=sys.stderr)
+        return 2
+    except ValueError as e:
+        print(f"cannot move: {e}", file=sys.stderr)
+        return 3
+    print(f"moved {args.qty} of {item.sku} to {args.to}")
+    return 0
+
+
+def cmd_report(store, args):
+    report = build_report(store, low_stock=args.low_stock, location=args.location)
+    sys.stdout.write(render_text(report))
+    return 0
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="invtrack")
+    p.add_argument("--db", default="inventory.sqlite")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    a = sub.add_parser("add")
+    a.add_argument("sku"); a.add_argument("name")
+    a.add_argument("--qty", type=int, default=0); a.add_argument("--location", default="main")
+    m = sub.add_parser("move")
+    m.add_argument("sku"); m.add_argument("to"); m.add_argument("--qty", type=int, required=True)
+    r = sub.add_parser("report")
+    r.add_argument("--low-stock", type=int, default=5)
+    r.add_argument("--location")
+    args = p.parse_args(argv)
+    store = Store(args.db)
+    try:
+        return {"add": cmd_add, "move": cmd_move, "report": cmd_report}[args.cmd](store, args)
+    finally:
+        store.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+REPORT = '''from dataclasses import dataclass, field
+
+
+@dataclass
+class ReportLine:
+    sku: str
+    name: str
+    location: str
+    qty: int
+    low: bool
+
+
+@dataclass
+class Report:
+    lines: list = field(default_factory=list)
+    total_qty: int = 0
+    low_count: int = 0
+    locations: dict = field(default_factory=dict)
+
+
+def build_report(store, low_stock=5, location=None):
+    rep = Report()
+    for item in store.items(location=location):
+        low = item.qty <= low_stock
+        rep.lines.append(ReportLine(item.sku, item.name, item.location, item.qty, low))
+        rep.total_qty += item.qty
+        rep.low_count += int(low)
+        rep.locations[item.location] = rep.locations.get(item.location, 0) + item.qty
+    rep.lines.sort(key=lambda l: (l.location, l.sku))
+    return rep
+
+
+def render_text(rep):
+    out = []
+    w = max([len(l.name) for l in rep.lines] + [4])
+    out.append(f"{'SKU':<10} {'NAME':<{w}} {'LOCATION':<10} {'QTY':>6}")
+    for l in rep.lines:
+        flag = "  LOW" if l.low else ""
+        out.append(f"{l.sku:<10} {l.name:<{w}} {l.location:<10} {l.qty:>6}{flag}")
+    out.append("")
+    out.append(f"total quantity: {rep.total_qty}")
+    out.append(f"low-stock items: {rep.low_count}")
+    for loc, q in sorted(rep.locations.items()):
+        out.append(f"  {loc}: {q}")
+    return "\\n".join(out) + "\\n"
+'''
+
+TEST_REPORT = '''from invtrack.report import build_report, render_text
+from invtrack.store import Store
+
+
+def make_store(tmp_path):
+    s = Store(str(tmp_path / "t.sqlite"))
+    s.add("A-100", "bolt", qty=40, location="main")
+    s.add("A-200", "nut", qty=3, location="main")
+    s.add("B-300", "washer", qty=12, location="annex")
+    return s
+
+
+def test_totals(tmp_path):
+    rep = build_report(make_store(tmp_path), low_stock=5)
+    assert rep.total_qty == 55
+    assert rep.low_count == 1
+    assert rep.locations == {"main": 43, "annex": 12}
+
+
+def test_render_text_marks_low(tmp_path):
+    text = render_text(build_report(make_store(tmp_path), low_stock=5))
+    assert "A-200" in text and "LOW" in text
+'''
+
+def numbered(src):
+    return "\n".join(f"{i + 1:>4}\t{line}" for i, line in enumerate(src.split("\n")))
+
+def call(cid, name, args):
+    return {"id": cid, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+
+A_MSGS = [
+    {"role": "system", "content": SYSTEM},
+    {"role": "user", "content": "Add a `--format` option to `invtrack report` with values `text` (the default, as now) "
+     "and `json`. JSON output should be one object with `lines` (each with sku, name, location, qty, low), "
+     "`total_qty`, `low_count` and `locations`, pretty-printed with 2-space indent and sorted keys. Put the JSON "
+     "rendering in report.py next to render_text, wire it into the CLI, and add tests for it in "
+     "tests/test_report.py (including that the CLI prints valid JSON). Then run the tests."},
+    {"role": "assistant", "content": "", "tool_calls": [call("c1", "read", {"path": "invtrack/cli.py"}),
+                                                       call("c2", "read", {"path": "invtrack/report.py"})]},
+    {"role": "tool", "tool_call_id": "c1", "content": numbered(CLI)},
+    {"role": "tool", "tool_call_id": "c2", "content": numbered(REPORT)},
+    {"role": "assistant", "content": "", "tool_calls": [call("c3", "read", {"path": "tests/test_report.py"})]},
+    {"role": "tool", "tool_call_id": "c3", "content": numbered(TEST_REPORT)},
+]
+
+SPEC = """Create `invtrack/config.py`: load settings for invtrack from (lowest to highest precedence) built-in
+defaults, a TOML file (`~/.config/invtrack/config.toml` or the path in `INVTRACK_CONFIG`), and environment variables
+`INVTRACK_<KEY>`. Keys and types: `db` (str, default "inventory.sqlite"), `low_stock` (int, default 5),
+`default_location` (str, default "main"), `currency` (str, default "EUR"), `report_format` (str, "text" or "json",
+default "text"), `max_moves_per_minute` (int, default 120, must be > 0). Expose `load_config(env=None, path=None) ->
+Config` (a frozen dataclass) and `ConfigError` for bad values (wrong type, unknown report_format, non-positive
+limits, unknown keys in the file - name the key and the source in the message). Use `tomllib`. Then write
+`tests/test_config.py` with pytest covering precedence, every validation error, and env parsing of ints. Run the tests
+when done."""
+
+B_MSGS = [
+    {"role": "system", "content": SYSTEM},
+    {"role": "user", "content": SPEC},
+    {"role": "assistant", "content": "", "tool_calls": [call("d1", "glob", {"pattern": "invtrack/*.py"}),
+                                                       call("d2", "read", {"path": "invtrack/report.py", "limit": 20})]},
+    {"role": "tool", "tool_call_id": "d1", "content": "invtrack/__init__.py\ninvtrack/cli.py\ninvtrack/report.py\n"
+     "invtrack/store.py"},
+    {"role": "tool", "tool_call_id": "d2", "content": numbered("\n".join(REPORT.split("\n")[:20]))},
+]
+
+data = [
+    {"id": "A-edit", "messages": A_MSGS, "tools": TOOLS, "max_tokens": 3072, "thinking": True},
+    {"id": "B-write", "messages": B_MSGS, "tools": TOOLS, "max_tokens": 3072, "thinking": True},
+]
+OUT.write_text(json.dumps(data, indent=1))
+print(f"wrote {OUT}: " + ", ".join(f"{d['id']} ({len(json.dumps(d['messages']))} chars)" for d in data))

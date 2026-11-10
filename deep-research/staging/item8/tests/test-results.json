@@ -1,0 +1,244 @@
+{
+ "unit_tests": 34,
+ "o01-2": {
+  "merged": "o01-2",
+  "runs": [
+   "p4s6",
+   "p4s7"
+  ],
+  "sources_per_run": [
+   6656,
+   6660
+  ],
+  "merged_sources": 10535,
+  "store_stats": {
+   "searches": 360,
+   "sources_seen": 10535,
+   "pages_read": 393,
+   "fetches": 517,
+   "subagents": 30
+  },
+  "pages_with_text": 599,
+  "claims_records_kept": 5323,
+  "unreadable_kept": 42,
+  "lead_tokens": 21458,
+  "lead_share_tokens": 0,
+  "tool_counts": {
+   "claims_dropped_duplicate": 158,
+   "claims_kept": 5323,
+   "primary_dropped_duplicate": 7,
+   "refs_in_code_left": 14,
+   "refs_left": 1,
+   "refs_neutralised": 6,
+   "refs_renumbered": 21897,
+   "unreadable_dropped_duplicate": 2
+  },
+  "checks": {
+   "citation_numbers_checked": 22967,
+   "citations_checked": 21897,
+   "claims_checked": 5481,
+   "dangling_after": 2,
+   "fetches_checked": 517,
+   "non_citations_checked": 7,
+   "page_texts_checked": 773,
+   "refs_in_code": 14,
+   "sources_checked": 13316,
+   "texts_checked": 125
+  },
+  "verify_s": 1.5,
+  "merge_s": 1.4
+ },
+ "o01-3": {
+  "merged": "o01-3",
+  "runs": [
+   "p4s3",
+   "p4s6",
+   "p4s7"
+  ],
+  "sources_per_run": [
+   6235,
+   6656,
+   6660
+  ],
+  "merged_sources": 14624,
+  "store_stats": {
+   "searches": 535,
+   "sources_seen": 14624,
+   "pages_read": 515,
+   "fetches": 723,
+   "subagents": 46
+  },
+  "pages_with_text": 732,
+  "claims_records_kept": 5323,
+  "unreadable_kept": 41,
+  "lead_tokens": 32419,
+  "lead_share_tokens": 0,
+  "tool_counts": {
+   "claims_dropped_duplicate": 158,
+   "claims_kept": 5323,
+   "primary_dropped_duplicate": 7,
+   "refs_in_code_left": 40,
+   "refs_left": 1,
+   "refs_neutralised": 9,
+   "refs_renumbered": 31922,
+   "unreadable_dropped_duplicate": 2,
+   "unreadable_dropped_read_elsewhere": 1
+  },
+  "checks": {
+   "citation_numbers_checked": 34869,
+   "citations_checked": 31922,
+   "claims_checked": 5481,
+   "dangling_after": 3,
+   "fetches_checked": 723,
+   "non_citations_checked": 10,
+   "page_texts_checked": 992,
+   "refs_in_code": 40,
+   "sources_checked": 19551,
+   "texts_checked": 190
+  },
+  "verify_s": 2.1,
+  "merge_s": 1.6
+ },
+ "o03-2": {
+  "merged": "o03-2",
+  "runs": [
+   "p4s6",
+   "p4s7"
+  ],
+  "sources_per_run": [
+   7594,
+   5947
+  ],
+  "merged_sources": 9086,
+  "store_stats": {
+   "searches": 446,
+   "sources_seen": 9086,
+   "pages_read": 381,
+   "fetches": 653,
+   "subagents": 33
+  },
+  "pages_with_text": 569,
+  "claims_records_kept": 4090,
+  "unreadable_kept": 71,
+  "lead_tokens": 24373,
+  "lead_share_tokens": 0,
+  "tool_counts": {
+   "claims_dropped_duplicate": 423,
+   "claims_kept": 4090,
+   "refs_left": 2,
+   "refs_renumbered": 18049,
+   "unreadable_dropped_duplicate": 18
+  },
+  "checks": {
+   "citation_numbers_checked": 20077,
+   "citations_checked": 18049,
+   "claims_checked": 4513,
+   "dangling_after": 0,
+   "fetches_checked": 653,
+   "non_citations_checked": 2,
+   "page_texts_checked": 856,
+   "sources_checked": 13541,
+   "texts_checked": 122
+  },
+  "verify_s": 1.2,
+  "merge_s": 1.3
+ },
+ "o03-3": {
+  "merged": "o03-3",
+  "runs": [
+   "p4s3",
+   "p4s6",
+   "p4s7"
+  ],
+  "sources_per_run": [
+   7702,
+   7594,
+   5947
+  ],
+  "merged_sources": 12859,
+  "store_stats": {
+   "searches": 684,
+   "sources_seen": 12859,
+   "pages_read": 502,
+   "fetches": 961,
+   "subagents": 51
+  },
+  "pages_with_text": 678,
+  "claims_records_kept": 4090,
+  "unreadable_kept": 71,
+  "lead_tokens": 40068,
+  "lead_share_tokens": 0,
+  "tool_counts": {
+   "claims_dropped_duplicate": 423,
+   "claims_kept": 4090,
+   "refs_left": 2,
+   "refs_renumbered": 28511,
+   "unreadable_dropped_duplicate": 18
+  },
+  "checks": {
+   "citation_numbers_checked": 31568,
+   "citations_checked": 28511,
+   "claims_checked": 4513,
+   "dangling_after": 0,
+   "fetches_checked": 961,
+   "non_citations_checked": 2,
+   "page_texts_checked": 1126,
+   "sources_checked": 21243,
+   "texts_checked": 187
+  },
+  "verify_s": 1.8,
+  "merge_s": 1.6
+ },
+ "o01-3opt": {
+  "merged": "o01-3opt",
+  "runs": [
+   "p4base",
+   "p4s6",
+   "p4s4"
+  ],
+  "sources_per_run": [
+   7383,
+   6682,
+   5850
+  ],
+  "merged_sources": 14868,
+  "store_stats": {
+   "searches": 513,
+   "sources_seen": 14868,
+   "pages_read": 469,
+   "fetches": 668,
+   "subagents": 54
+  },
+  "pages_with_text": 664,
+  "claims_records_kept": 0,
+  "unreadable_kept": 34,
+  "lead_tokens": 9470,
+  "lead_share_tokens": 10000,
+  "tool_counts": {
+   "primary_dropped_duplicate": 1,
+   "refs_in_code_left": 34,
+   "refs_left": 4,
+   "refs_neutralised": 1,
+   "refs_renumbered": 34464
+  },
+  "checks": {
+   "citation_numbers_checked": 39140,
+   "citations_checked": 33837,
+   "dangling_after": 0,
+   "fetches_checked": 668,
+   "non_citations_checked": 5,
+   "page_texts_checked": 891,
+   "refs_in_code": 34,
+   "sources_checked": 19915,
+   "texts_checked": 207
+  },
+  "verify_s": 2.1,
+  "merge_s": 1.7
+ },
+ "determinism": {
+  "merge": "o01-2",
+  "files": 7,
+  "identical": true
+ },
+ "failed": 0
+}

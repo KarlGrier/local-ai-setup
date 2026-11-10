@@ -1,0 +1,135 @@
+#!/bin/bash
+# gap-mock-test.sh - runs gap-shape0213.sh --mock against stubs under work/r23/shape-gap/scratch/mock and checks its outputs.
+# Every tool the driver calls is a stub there (ctest, with_server.sh, run.sh, srv.sh, kcheck.sh, port_gap4.sh, the test
+# programs, the engines); the driver's mock mode also skips the real preflight, never kills a process, never queries the GPU
+# and never writes NOTES.md / alerts / ntfy. Nothing outside scratch/mock is written; nothing real runs. The stubs make q4_big's
+# PLE-on start fail (so the --no-ple retry runs) and its qsa_parity fail, and skip the _ws variant and qsa_prompt_attn_parity
+# (77), so the parity counts, the retry, the verdict and the result line are all exercised. Exit 0 = every check passed.
+set -u -o pipefail
+WS=/home/USER/ai-speed-testing/strata-compare; SG=$WS/work/r23/shape-gap; M=$SG/scratch/mock
+rm -rf $M; mkdir -p $M/bin $M/lib $M/kr $M/prep $M/models $M/engines $M/prof $M/res
+SHAPES="q4_mid q4_big q4_deep"
+# ---- the registered tests the mock ctest knows (name program), a non-GEO entry among them
+cat > $M/names-all.txt <<'EOF'
+gguf_geometry_test gguf_geometry_test
+gr_parity gr_parity
+gr_multi_parity gr_multi_parity
+qsa_parity qsa_parity
+prefill_fused_iq_test prefill_fused_iq_test
+prefill_fused_iq_test_ws prefill_fused_iq_test
+prefill_fused_v2_test prefill_fused_iq_test
+native_expert_parity_q4_K_q8_0 native_expert_parity
+cost_gate_test cost_gate_test
+EOF
+cat > $M/bin/ctest <<EOF
+#!/bin/bash
+# mock ctest: --show-only=json-v1 lists \$M/names-all.txt; a run writes a log + junit (q4_big's qsa_parity fails, *_ws skips)
+td=""; re=""; junit=""; show=0
+while [ \$# -gt 0 ]; do case \$1 in --test-dir) td=\$2; shift;; -R) re=\$2; shift;; --output-junit) junit=\$2; shift;; --show-only=json-v1) show=1;; esac; shift; done
+row=\$(basename \$td); row=\${row#build-}
+if [ \$show = 1 ]; then
+  echo -n '{"kind": "ctestInfo", "tests": ['; first=1
+  while read -r n p; do [ \$first = 1 ] || echo -n ', '; first=0; echo -n "{\"name\": \"\$n\", \"command\": [\"\$td/\$p\"], \"properties\": []}"; done < $M/names-all.txt
+  echo ']}'; exit 0
+fi
+echo "Test project \$td"; i=0; tot=\$(awk '{print \$1}' $M/names-all.txt | grep -cE "\$re")
+echo '<?xml version="1.0" encoding="UTF-8"?>' > \$junit; echo '<testsuite name="mock">' >> \$junit
+while read -r n p; do
+  echo "\$n" | grep -qE "\$re" || continue; i=\$((i + 1))
+  if [ \$row = q4_big ] && [ \$n = qsa_parity ]; then printf '%3d/%d Test  #%d: %s ....***Failed    0.40 sec\n' \$i \$tot \$i \$n; echo "<testcase name=\"\$n\" time=\"0.4\" status=\"fail\"><failure message=\"Failed\"/></testcase>" >> \$junit
+  elif [[ \$n == *_ws ]]; then printf '%3d/%d Test  #%d: %s ....***Skipped   0.01 sec\n' \$i \$tot \$i \$n; echo "<testcase name=\"\$n\" time=\"0.01\" status=\"notrun\"><skipped message=\"SKIP_RETURN_CODE=77\"/></testcase>" >> \$junit
+  else printf '%3d/%d Test  #%d: %s ....   Passed    0.30 sec\n' \$i \$tot \$i \$n; echo "<testcase name=\"\$n\" time=\"0.3\" status=\"run\"/>" >> \$junit; fi
+done < $M/names-all.txt
+echo '</testsuite>' >> \$junit
+echo "mock: tests run \$i"
+EOF
+# ---- lib stubs
+for x in kcheck.sh srv.sh stopmon.sh; do printf '#!/bin/bash\necho "mock %s $*"\nexit 0\n' $x > $M/lib/$x; done
+printf '#!/bin/bash\nexit 0\n' > $M/lib/ntfy-note.py
+cat > $M/lib/run.sh <<EOF
+#!/bin/bash
+# mock run.sh LABEL CFG TOKENS NEW: the guard lines a 4-layer build prints (gr_fork OFF at q4_mid / q4_big)
+L=\$1 CFG=\$2; s=\$(basename \$(dirname \$CFG))
+{ if [ \$s = q4_deep ]; then echo "strata patch guard: gr_fork on - B.1"; off=0; list="gr_fork"
+  else echo "strata patch guard: gr_fork OFF (STRATA_GR_FORK=0; upstream's path): this build is compiled for n_embd 3072, 4 streams, low rank 384; the fork read is built for Flash-Next's 2560 / 4 / 320 only"; off=1; list="gr_fork(off)"; fi
+  echo "strata patch guard: prefill_v2 on - v2 fused prompt expert kernels"
+  echo "strata patch guards: 7 checked, \$off off [spec_exact side_mixer router_q8k qsa_split_attn \$list draft_cum prefill_v2]; model qwen4exp x 4 layers"
+  echo "decode 16 tokens (mock)"; } > $M/prof/\$L.out
+echo "mock stderr" > $M/prof/\$L.err
+echo "=== mock run \$L"; echo "exit 0"
+EOF
+cat > $M/lib/with_server.sh <<EOF
+#!/bin/bash
+# mock with_server.sh LABEL CFG -- CMD: q4_big's first (PLE-on) start fails; otherwise "ready", a manifest, the env and chat files
+L=\$1 CFG=\$2; shift 3; CMD="\$*"
+echo "=== mock \$L start (\$CFG)"
+if [[ \$L == *-q4_big ]]; then echo "server exited"; exit 1; fi
+echo "server ready (guard pid 1, server pid 2) load_time_s 3.2 log /mock"
+man=\$(nice -n 19 $WS/.venv/bin/python -I -B -c "import json, sys; print(json.load(open(sys.argv[1]))['env']['STRATA_MANIFEST'])" \$CFG)
+echo '{"manifest_version": 1, "stage": "ready", "engine": {"gdn_tc": "0", "gdn_convl2": "0", "engine": "native-layer-split", "drafter": "none-or-lookup", "kv_format": "int8"}, "budgets": {}, "paths": [{"area": "prefill", "name": "experts", "selected": true, "reason": "", "detail": "v2 down"}], "tensors": {}}' > \$man
+outs=(\$(echo "\$CMD" | grep -oE -- '--out [^ ;]+' | awk '{print \$2}'))
+printf 'engine pid 123: 52 config env keys checked, 2 GPU(s), --native mock\nENV CHECK OK\n' | tee \${outs[0]}
+echo '{"reply": {"choices": [{"finish_reason": "length", "message": {"content": "x"}}], "usage": {"completion_tokens": 32}}, "problems": []}' > \${outs[1]}
+echo "chat: finish length, usage {'completion_tokens': 32}, 1.0 s; CHAT OK"
+echo "=== mock \$L done"
+EOF
+cat > $M/kr/port_gap4.sh <<EOF
+#!/bin/bash
+case \$1 in
+  begin) sleep 600 > /dev/null 2>&1 < /dev/null & echo \$! > $M/lockpid; echo "mock port_gap4: gap open";;
+  end) kill \$(cat $M/lockpid) 2> /dev/null; rm -f $M/lockpid; echo "mock port_gap4: served build back";;
+esac
+EOF
+chmod +x $M/bin/* $M/lib/* $M/kr/*
+# ---- the builds, models, engines, prep records
+for r in flash_next $SHAPES; do
+  mkdir -p $M/tree/build-$r
+  printf '#!/bin/bash\necho mock prefill edge; exit 0\n' > $M/tree/build-$r/prefill_fused_iq_test
+  printf '#!/bin/bash\necho "SKIP (mock)"; exit 77\n' > $M/tree/build-$r/qsa_prompt_attn_parity
+  printf '#!/bin/bash\necho "patch_guard_test: 0 failures"; exit 0\n' > $M/tree/build-$r/patch_guard_test
+  chmod +x $M/tree/build-$r/*
+  grep -v cost_gate_test $M/names-all.txt | awk '{print $1}' > $M/prep/names-$r.txt
+done
+for s in $SHAPES; do
+  mkdir -p $M/models/pack-$s-4l/tokenizer $M/engines/engine-r23p0213-$s-4l
+  : > $M/models/$s-4l.gguf; : > $M/models/pack-$s-4l/expert-profile-4x256.bin
+  printf '#!/bin/bash\nexit 1\n' > $M/engines/engine-r23p0213-$s-4l/strata
+done
+printf 'flash_next=build rc 0\nq4_mid=full shape build rc 0, 4-layer build rc 0\nq4_big=full shape build rc 0, 4-layer build rc 0\nq4_deep=full shape build rc 0, 4-layer build rc 0\n' > $M/prep/builds.txt
+echo '{"recipe": "fused-iq"}' > $M/prep/READY.json
+
+# ---- run it
+SG_MAX_MIN=30 timeout 600 bash $SG/gap-shape0213.sh --mock > $M/driver.out 2>&1; rc=$?
+echo "driver rc $rc"
+O=$M/out; F=0
+chk() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1"; F=1; fi; }
+chk "driver exit 0" "[ $rc = 0 ]"
+chk "result line DONE" "grep -q '^DONE (information only' $O/result.txt"
+chk "flash_next row 9 pass / 2 skip / 0 fail" "grep -q 'flash_next (reference): builds build rc 0, parity programs 9 pass / 2 skip / 0 fail' $O/decision.txt"
+chk "q4_mid answers yes" "grep -q 'q4_mid: builds full shape build rc 0, 4-layer build rc 0, parity programs 9 pass / 2 skip / 0 fail, loads and answers yes' $O/decision.txt"
+chk "q4_big qsa_parity fail + answers no" "grep -q 'q4_big: .*8 pass / 2 skip / 1 fail, loads and answers no (the server did not start' $O/decision.txt"
+chk "q4_big no-ple retry recorded" "grep -q 'q4_big nople: with --no-ple: started yes, env OK, chat OK, fatal lines none' $O/decision.txt"
+chk "q4_big env not judged without a start" "grep -q 'q4_big env: not checked (the server did not start)' $O/decision.txt && ! grep -q '^env_q4_big ' $O/gates.txt"
+chk "result line names the reference row" "grep -q 'flash_next (ref): builds build rc 0, parity programs 9 pass' $O/result.txt"
+chk "q4_deep answers yes" "grep -q 'q4_deep: .*loads and answers yes' $O/decision.txt"
+chk "guards as expected (3 shapes)" "[ \$(grep -c 'guards: GUARDS AS EXPECTED' $O/decision.txt) = 3 ]"
+chk "manifest pins 0 / 0 (q4_mid, q4_deep)" "[ \$(grep -c 'manifest: MANIFEST GDN PINS AS CONFIGURED' $O/decision.txt) = 2 ]"
+chk "order: q4_deep smoke before q4_deep parity" "[ \$(grep -n '2b q4_deep' $O/summary.txt | head -1 | cut -d: -f1) -lt \$(grep -n '2a q4_deep' $O/summary.txt | head -1 | cut -d: -f1) ]"
+chk "the ctest list re-check saw the non-GEO entry dropped" "! grep -q '^list_' $O/gates.txt"
+chk "the mock gap closed (no lock left)" "[ ! -e $M/lockpid ]"
+chk "driver.pid removed at exit" "[ ! -e $O/driver.pid ]"
+chk "nothing written to NOTES.md (mock)" "grep -q 'dry run: would add to NOTES.md' $O/summary.txt"
+echo "--- decision.txt"; cat $O/decision.txt
+echo "--- result.txt"; cat $O/result.txt
+# ---- (11-09 rerun) a kernel error recorded: no step runs, P028x is brought back, the result says so
+touch $M/kernel_error
+SG_STEPS="parity:q4_big smoke:q4_mid" SG_MAX_MIN=30 timeout 600 bash $SG/gap-shape0213.sh --mock > $M/driver-kerr.out 2>&1; krc=$?
+rm -f $M/kernel_error
+chk "kernel error: exit 3" "[ $krc = 3 ]"
+chk "kernel error: the result says stopped, P028x back" "grep -q '^KERNEL ERROR during the gap - stopped at once, P028x back on 8080' $O/result.txt"
+chk "kernel error: port_gap4 end ran (served build back)" "grep -q 'mock port_gap4: served build back' $O/summary.txt"
+chk "kernel error: no row ran" "! grep -qE '^=== .* 2[ab] ' $O/summary.txt"
+chk "kernel error: the mock gap closed (no lock left)" "[ ! -e $M/lockpid ]"
+chk "SG_STEPS: an unknown step refuses (exit 2)" "SG_STEPS=parity:q4_huge bash $SG/gap-shape0213.sh --mock > /dev/null 2>&1; [ \$? = 2 ]"
+echo "gap-mock-test: $([ $F = 0 ] && echo 'ALL CHECKS PASSED' || echo 'FAILED')"
+exit $F

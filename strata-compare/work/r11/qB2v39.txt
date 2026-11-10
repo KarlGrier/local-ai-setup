@@ -1,0 +1,54 @@
+work/r11/tagcheck.sh "Phase B served A/Bs"
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r11/build.sh strata-v39-b1 engine-v39b1 && .venv/bin/python work/r11/buildrec.py V39B1 configs/V39B1.json "B.1 on v0.1.39 + fixes, the fork read with its own scratch (5ebfe3a)"
+BDIR=build work/r11/build.sh strata-v39-b1m engine-v39b1m && .venv/bin/python work/r11/buildrec.py V39B1m configs/V39B1m-tf-helper.json "B.1 twin, own scratch"
+[ -x engine-v39b1/strata ] && REF=v39 work/r11/exact7.sh v39b1off2 configs/V39B1-off.json && REF=v39 work/r11/exact7.sh v39b1on2 configs/V39B1.json
+[ -x engine-v39b1m/strata ] && work/r11/tf.sh V39B1mtf-helper configs/V39B1m-tf-helper.json engine-v39b1m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+[ -x engine-v39b1m/strata ] && work/r11/tf.sh V39B1mtf-single configs/V39B1m-tf-single.json engine-v39b1m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r11/tf_compare9.py V39B1mtf-helper=V39mtf-helper V39B1mtf-single=V39mtf-single | tee results/r11/tf-v39b1-vs-v39.txt
+(.venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-helper V39mtf-helper V39B1mtf-helper; .venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-single V39mtf-single V39B1mtf-single) | tee results/r11/tf-v39b1-vs-fp16.md
+[ -x engine-v39b1/strata ] && work/r11/with_server.sh N-V39B1b configs/V39B1.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label NV39B1b --temperature 1.0"
+[ -x engine-v39b1/strata ] && work/r11/repeat3.sh rep-v39b1b configs/V39B1.json
+work/r11/ldrscreen.sh B2L-o1 configs/V39B2-off.json
+work/r11/ldrscreen.sh B2L-n1 configs/V39B2.json
+work/r11/ldrscreen.sh B2L-n2 configs/V39B2.json
+work/r11/ldrscreen.sh B2L-o2 configs/V39B2-off.json
+.venv/bin/python work/r11/ldr_table.py off=B2L-o1,B2L-o2 split=B2L-n1,B2L-n2 | tee results/r11/ab-B2-ldr.md
+work/r11/screen.sh B2S-o1 configs/V39B2-off.json
+work/r11/screen.sh B2S-n1 configs/V39B2.json
+work/r11/screen.sh B2S-n2 configs/V39B2.json
+work/r11/screen.sh B2S-o2 configs/V39B2-off.json
+.venv/bin/python work/r11/ab_table.py off=B2S-o1,B2S-o2 split=B2S-n1,B2S-n2 | tee results/r11/ab-B2-full.md
+work/r11/ldrscreen.sh B3L-o1 configs/V39B3-off.json
+work/r11/ldrscreen.sh B3L-n1 configs/V39B3.json
+work/r11/ldrscreen.sh B3L-n2 configs/V39B3.json
+work/r11/ldrscreen.sh B3L-o2 configs/V39B3-off.json
+.venv/bin/python work/r11/ldr_table.py off=B3L-o1,B3L-o2 il=B3L-n1,B3L-n2 | tee results/r11/ab-B3-ldr.md
+work/r11/decscreen.sh B3D-o1 configs/V39B3-off.json
+work/r11/decscreen.sh B3D-n1 configs/V39B3.json
+work/r11/decscreen.sh B3D-n2 configs/V39B3.json
+work/r11/decscreen.sh B3D-o2 configs/V39B3-off.json
+.venv/bin/python work/r11/ab_table.py off=B3D-o1,B3D-o2 il=B3D-n1,B3D-n2 | tee results/r11/ab-B3-decode.md
+work/r11/ldrscreen.sh HLL-o1 configs/V39HL-off.json
+work/r11/ldrscreen.sh HLL-n1 configs/V39HL.json
+work/r11/ldrscreen.sh HLL-n2 configs/V39HL.json
+work/r11/ldrscreen.sh HLL-o2 configs/V39HL-off.json
+.venv/bin/python work/r11/ldr_table.py off=HLL-o1,HLL-o2 late=HLL-n1,HLL-n2 | tee results/r11/ab-HL39-ldr.md
+work/r11/decscreen.sh HLD-o1 configs/V39HL-off.json
+work/r11/decscreen.sh HLD-n1 configs/V39HL.json
+work/r11/decscreen.sh HLD-n2 configs/V39HL.json
+work/r11/decscreen.sh HLD-o2 configs/V39HL-off.json
+.venv/bin/python work/r11/ab_table.py off=HLD-o1,HLD-o2 late=HLD-n1,HLD-n2 | tee results/r11/ab-HL39-decode.md
+work/r11/hold.sh B1ab
+work/r11/ldrscreen.sh B1L-o1 configs/V39B1-off.json
+work/r11/ldrscreen.sh B1L-n1 configs/V39B1.json
+work/r11/ldrscreen.sh B1L-n2 configs/V39B1.json
+work/r11/ldrscreen.sh B1L-o2 configs/V39B1-off.json
+.venv/bin/python work/r11/ldr_table.py off=B1L-o1,B1L-o2 fork=B1L-n1,B1L-n2 | tee results/r11/ab-B1-ldr.md
+work/r11/decscreen.sh B1D-o1 configs/V39B1-off.json
+work/r11/decscreen.sh B1D-n1 configs/V39B1.json
+work/r11/decscreen.sh B1D-n2 configs/V39B1.json
+work/r11/decscreen.sh B1D-o2 configs/V39B1-off.json
+.venv/bin/python work/r11/ab_table.py off=B1D-o1,B1D-o2 fork=B1D-n1,B1D-n2 | tee results/r11/ab-B1-decode.md
+work/r11/phase_end.sh pB2 keep
+echo "=== $(date -Is) MARK qB2v39"

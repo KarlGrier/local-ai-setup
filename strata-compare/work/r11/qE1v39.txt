@@ -1,0 +1,38 @@
+work/r11/tagcheck.sh "Phase E (accuracy)"; work/r11/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r11/tf.sh V39Efp8tf-helper configs/V39E-fp8-tf-helper.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r11/tf.sh V39Efp8tf-single configs/V39E-fp8-tf-single.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r11/tf.sh V39Erottf-helper configs/V39E-rot-tf-helper.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r11/tf.sh V39Erottf-single configs/V39E-rot-tf-single.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r11/tf.sh V39Eropetf-helper configs/V39E-rope-tf-helper.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r11/tf.sh V39Eropetf-single configs/V39E-rope-tf-single.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r11/tf.sh V39Eembdtf-helper configs/V39E-embd-tf-helper.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r11/tf.sh V39Eembdtf-single configs/V39E-embd-tf-single.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r11/tf.sh V39Ebf16x2tf-helper configs/V39E-bf16x2-tf-helper.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r11/tf.sh V39Ebf16x2tf-single configs/V39E-bf16x2-tf-single.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r11/tf_compare9.py V39Efp8tf-helper=V39Wmtf-helper V39Efp8tf-single=V39Wmtf-single | tee results/r11/tf-E-fp8-vs-w.txt
+(.venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-helper V39Wmtf-helper V39Efp8tf-helper; .venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-single V39Wmtf-single V39Efp8tf-single) | tee results/r11/tf-E-fp8-vs-fp16.md
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r11/tf_compare9.py V39Erottf-helper=V39Wmtf-helper V39Erottf-single=V39Wmtf-single | tee results/r11/tf-E-rot-vs-w.txt
+(.venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-helper V39Wmtf-helper V39Erottf-helper; .venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-single V39Wmtf-single V39Erottf-single) | tee results/r11/tf-E-rot-vs-fp16.md
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r11/tf_compare9.py V39Eropetf-helper=V39Wmtf-helper V39Eropetf-single=V39Wmtf-single | tee results/r11/tf-E-rope-vs-w.txt
+(.venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-helper V39Wmtf-helper V39Eropetf-helper; .venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-single V39Wmtf-single V39Eropetf-single) | tee results/r11/tf-E-rope-vs-fp16.md
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r11/tf_compare9.py V39Eembdtf-helper=V39Wmtf-helper V39Eembdtf-single=V39Wmtf-single | tee results/r11/tf-E-embd-vs-w.txt
+(.venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-helper V39Wmtf-helper V39Eembdtf-helper; .venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-single V39Wmtf-single V39Eembdtf-single) | tee results/r11/tf-E-embd-vs-fp16.md
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r11/tf_compare9.py V39Ebf16x2tf-helper=V39Wmtf-helper V39Ebf16x2tf-single=V39Wmtf-single | tee results/r11/tf-E-bf16x2-vs-w.txt
+(.venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-helper V39Wmtf-helper V39Ebf16x2tf-helper; .venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-single V39Wmtf-single V39Ebf16x2tf-single) | tee results/r11/tf-E-bf16x2-vs-fp16.md
+work/r11/with_server.sh N-Efp8 configs/V39E-fp8.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label NEfp8 --temperature 1.0"
+work/r11/with_server.sh N-Erot configs/V39E-rot.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label NErot --temperature 1.0"
+work/r11/with_server.sh N-Erope configs/V39E-rope.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label NErope --temperature 1.0"
+work/r11/with_server.sh N-Eembd configs/V39E-embd.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label NEembd --temperature 1.0"
+work/r11/with_server.sh N-Ebf16x2 configs/V39E-bf16x2.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label NEbf16x2 --temperature 1.0"
+work/r11/with_server.sh RT-rW configs/V39W-rt.json -- ".venv/bin/python work/r11/roundtrip.py direct small rW-direct1"
+work/r11/with_server.sh RT-rW configs/V39W-rt.json -- ".venv/bin/python work/r11/roundtrip.py direct small rW-direct2"
+work/r11/with_server.sh RT-rW configs/V39W-rt.json -- ".venv/bin/python work/r11/roundtrip.py park small rW-park"
+work/r11/with_server.sh RT-rW configs/V39W-rt.json -- ".venv/bin/python work/r11/roundtrip.py editref small rW-editref"
+work/r11/with_server.sh RT-rE configs/V39E-rot-rt.json -- ".venv/bin/python work/r11/roundtrip.py direct small rE-direct1"
+work/r11/with_server.sh RT-rE configs/V39E-rot-rt.json -- ".venv/bin/python work/r11/roundtrip.py direct small rE-direct2"
+work/r11/with_server.sh RT-rE configs/V39E-rot-rt.json -- ".venv/bin/python work/r11/roundtrip.py park small rE-park"
+work/r11/with_server.sh RT-rE configs/V39E-rot-rt.json -- ".venv/bin/python work/r11/roundtrip.py editref small rE-editref"
+.venv/bin/python work/r11/rt_compare.py rW > results/r11/roundtrip-E-ref.md; .venv/bin/python work/r11/rt_compare.py rE > results/r11/roundtrip-E-rot.md; cat results/r11/roundtrip-E-rot.md
+work/r11/phase_end.sh pE1 keep
+echo "=== $(date -Is) MARK qE1"

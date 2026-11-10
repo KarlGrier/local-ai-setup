@@ -1,0 +1,16 @@
+[Unit]
+Description=Deep research measurements (fresh baseline since 11-04: queue-plan-p4s9.json - p4s8's setup + the subagent step fix (fix:steps), o01-o03, SearXNG only; ~/ai/deep-research/tools/bench2-queue.sh)
+After=default.target deep-research-runner.service
+
+[Service]
+Type=simple
+# waits for 09:00; new work only 09:00-22:00; stops between questions for a new Strata release or tmp/bench2.stop
+ExecStart=/bin/bash /home/USER/ai/deep-research/tools/bench2-queue.sh
+WorkingDirectory=/home/USER/ai/deep-research
+Environment=BENCH2_PLAN=queue-plan-p4s9.json
+Restart=on-failure
+RestartSec=60
+KillMode=process
+
+[Install]
+WantedBy=default.target

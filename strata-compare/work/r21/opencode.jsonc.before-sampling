@@ -1,0 +1,40 @@
+// OpenCode 2 (2.0.30) for Strata C*18 on 127.0.0.1:8080 - usability round, 2026-10-15.
+// Used through configs/usability/bin/opencode-strata (OPENCODE_CONFIG points here); ~/.config/opencode is not used.
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "strata/qwen3.8-flash",
+  "update": "disable",
+  "providers": {
+    "strata": {
+      "name": "Strata (local)",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:8080/v1",
+        "apiKey": "local-no-key",
+        // a 120K-token prompt reads in ~30 s and an xhigh answer can think for many minutes: no client-side limits
+        "headerTimeout": false,
+        "chunkTimeout": false
+      },
+      "models": {
+        "qwen3.8-flash": {
+          "modelID": "strata-qwen3.8-flash-next-iq3s",
+          "name": "Qwen3.8 Flash (Strata C*18, IQ3_S)",
+          "capabilities": { "tools": true, "input": ["text"], "output": ["text"] },
+          "limit": { "context": 131072, "output": 32768 },
+          "compatibility": { "reasoningField": "reasoning_content" },
+          "settings": { "reasoningEffort": "xhigh" },
+          // Strata C*18's own defaults (configs/Cstar18.json "sampling"), sent explicitly so OpenCode's model-family
+          // defaults cannot apply; Codex cannot send sampling at all, so all three harnesses run at these
+          "body": { "temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.05 }
+        }
+      }
+    }
+  },
+  // the hidden title agent would send a second request (at xhigh) with every new session: Strata answers one at a time
+  "agents": { "title": { "disabled": true } },
+  "permissions": [
+    // web tools would go to the internet or a cloud search API: off (127.0.0.1 only)
+    { "action": "webfetch", "resource": "*", "effect": "deny" },
+    { "action": "websearch", "resource": "*", "effect": "deny" }
+  ]
+}

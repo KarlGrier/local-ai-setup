@@ -1,0 +1,108 @@
+#!/bin/bash
+# bringup/acceptance.sh LABEL CONFIG.json TWIN_CONFIG.json [LLAMA_GGUF] — Part 5: the acceptance suite against llama.cpp.
+# One command, one pass / fail table (bringup/out/accept/LABEL/table.md). The same GGUF in both engines, identical token
+# ids where the row compares numbers. Needs the GPUs free (no model server): run through the queue.
+#   CONFIG.json       the Strata build under test as served (its engine, flags, env; its server tree's serve/)
+#   TWIN_CONFIG.json  its MEASUREMENT twin (--teacher-force, force / prefix hooks, STRATA_STATE_HASH, --adapt-swaps 0)
+#   LLAMA_GGUF        default: the config's own --native file (10-27; was the IQ3_S file) (llama.cpp: bringup/lib/server-L.sh,
+#                     Round 4's build, q8_0 KV, experts on CPU)
+# 10-27 (v0.2.6 refresh): the llama.cpp rows run only for an architecture our local llama.cpp builds were checked on
+# (ACCEPT_LLAMA_ARCHS, default qwen4exp): a new model's arch needs a llama.cpp that knows it first - else those rows are
+# skipped and say so; the spec-test build takes ggml from the llama.cpp checkout the tree pins (v0.2.x has no
+# third_party/llama.cpp); NEEDLE_DIR's documents are Qwen-tokenized (bringup/lib/needle2.py build for a new tokenizer).
+# Rows: 1 tokenizer + template ids  2 teacher-forced NLL (9 texts; short / long; clipped 5 nats and unclipped; text-level
+# se)  3 needles (6 documents x 6 questions, 32K-120K)  4 chat-cache round trip  5 samplers (the exact-sampling chi-square
+# harness; Strata's frequencies at near-ties vs llama.cpp's probabilities, plain and inside a speculative window)
+# 6 stop / tool-call / control-text probes, live on both engines + every boundary split through the server's parser.
+set -u
+WS=/home/USER/ai-speed-testing/strata-compare; cd $WS
+source bringup/lib/env.sh
+L=$1 CFG=$(realpath $2) TWIN=$(realpath $3)
+P=$WS/.venv/bin/python
+LM=${4:-$($P -c "import json; a=json.load(open('$CFG'))['args']; print(a[a.index('--native')+1] if '--native' in a else '')")}
+LM=${LM:-$WS/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf}
+O=$WS/bringup/out/accept/$L; mkdir -p $O/sp
+LARCH=$($P -c "import sys; sys.path.insert(0, '$WS/bringup'); from gguf_head import read_model; print(read_model('$LM').arch())" 2>/dev/null)
+LLAMA_OK=0; for x in ${ACCEPT_LLAMA_ARCHS:-qwen4exp}; do [ "$x" = "$LARCH" ] && LLAMA_OK=1; done
+TREE=$($P -c "import json,pathlib; print(pathlib.Path(json.load(open('$CFG'))['server']).parent.parent)")
+GGD=$TREE/third_party/llama.cpp
+[ -f $TREE/third_party/ggml/VERSION.txt ] && GGD=$(readlink -f ${RB_LLAMA:-$WS/strata/third_party/llama.cpp})
+TWTREE=$($P -c "import json,pathlib; print(pathlib.Path(json.load(open('$TWIN'))['server']).parent.parent)")
+TP=$($P -c "import json; print(json.load(open('$CFG'))['tokenizer'])")
+TFEXE=$($P -c "import json; print(json.load(open('$TWIN'))['exe'])")
+export NEEDLE_DIR=${NEEDLE_DIR:-$WS/work/r5/needle2} STRATA_TOKENIZER_DIR=$TP STRATA_SERVE_TREE=$TREE
+NR=${NEEDLE_RUNS:-0,1}
+t0=$(date +%s)
+stamp() { echo "=== $(date -Is) accept $L: $1 ($(( $(date +%s) - t0 )) s)" | tee -a $O/steps.log; }
+
+stamp "split probe (server parser + stop matcher, every boundary split)"
+$P bringup/lib/split_probe.py $TREE $O/split.json > $O/split.txt 2>&1; tail -1 $O/split.txt
+
+SPECPROB=$($P -c "import json; e=json.load(open('$CFG')).get('env', {}); print(1 if e.get('STRATA_SPEC_PROB') == '1' and e.get('STRATA_SPEC_EXACT', '0') != '1' else 0)")
+if [ "$SPECPROB" = 1 ]; then
+  # round 19: a build on upstream's STRATA_SPEC_PROB (our exact sampling dropped, C*17) - its sampler row is upstream's own
+  # tests from the config's tree: spec_prob_test (CPU chi-square, 2M trials per case) and spec_verify_parity (the GPU
+  # verifier against the host reference), built in a scratch directory
+  stamp "STRATA_SPEC_PROB tests (upstream's spec_prob_test + spec_verify_parity, the config's tree)"
+  SB=$O/spbuild; rm -rf $SB
+  { nice -n 5 cmake -G Ninja -S $TREE -B $SB -DCMAKE_BUILD_TYPE=Release -DSTRATA_ENABLE_CUDA=ON -DSTRATA_BUILD_TESTS=ON \
+      -DCMAKE_CUDA_ARCHITECTURES=120 -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.3/bin/nvcc -DSTRATA_GGML_DIR="$GGD" \
+    && nice -n 5 cmake --build $SB --target spec_prob_test spec_verify_parity -j 16; } > $O/spbuild.log 2>&1
+  { echo "== spec_prob_test"; $SB/spec_prob_test; r1=$?; echo "rc $r1"
+    echo "== spec_verify_parity"; STRATA_OLD_SAMPLER=0 STRATA_SAMPLER_ONE_BLOCK=0 $SB/spec_verify_parity; r2=$?; echo "rc $r2"
+    [ $r1 = 0 ] && [ $r2 = 0 ] && echo "SPEC_PROB TESTS ALL PASS" || echo "SPEC_PROB TESTS FAIL"; } > $O/spec.txt 2>&1
+  tail -1 $O/spec.txt
+else
+stamp "exact-sampling chi-square (the build's kernels, tiny vocabularies)"
+TREE=$(basename $TREE) bash bringup/lib/ess_test.sh > $O/ess.txt 2>&1; grep -E "ALL PASS|FAIL" $O/ess.txt | tail -1
+fi
+
+if [ $LLAMA_OK = 1 ]; then
+stamp "llama.cpp session: ids, needles, sampler probabilities, probes"
+cp -n $WS/work/r5/sp-cases.json $O/sp/ 2>/dev/null
+LLAMA_MODEL=$LM bringup/lib/with_llama.sh $L-llama -- "$P bringup/lib/accept_ids.py http://127.0.0.1:8081 $TREE $TP $O/ids.json > $O/ids.txt 2>&1; \
+  $P bringup/lib/needle2.py ask --base http://127.0.0.1:8081 --label $L-llama --temperature 1.0 --runs $NR > $O/needle-llama.txt 2>&1; \
+  SP_DIR=$O/sp $P bringup/lib/sampling_probe.py llama http://127.0.0.1:8081 > $O/sp-llama.txt 2>&1; \
+  $P bringup/lib/stoptest.py http://127.0.0.1:8081 $L-llama > $O/stop-llama.txt 2>&1; \
+  $P bringup/lib/tooltag_test.py http://127.0.0.1:8081 $L-llama 3 > $O/tool-llama.txt 2>&1; \
+  $P bringup/lib/p12_probe.py http://127.0.0.1:8081 $L-llama > $O/ctl-llama.txt 2>&1" > $O/llama-session.txt 2>&1
+tail -1 $O/ids.txt
+
+stamp "llama.cpp teacher-forced NLL (Round 4's scorer and flags, 9 texts)"
+J=(); for T in math corpus long16k long24k long28k long40k long64k long96k long112k; do
+  J+=(--tf ${PROMPT_DIR:-$WS/work/prof}/tf-$T.prompt ${PROMPT_DIR:-$WS/work/prof}/tf-$T.text $O/tf-llama-$T.nll); done
+$P scripts/evict.py ${EVICT_GLOB:-$WS/models/ISTA-GSQ-RCO/IQ3_S/*.gguf} > /dev/null
+env -u LLAMA_ARG_HOST CUDA_VISIBLE_DEVICES=GPU-UUID-RTX5080 $P bringup/lib/guard.py acc-$L-llamatf -- \
+  $WS/work/r4/llama_tf-6fcaa16 "${J[@]}" --model $LM --ctx-size 131072 --kv-unified --cache-type-k q8_0 --cache-type-v q8_0 \
+  --flash-attn on --fit off --gpu-layers all --override-tensor 'blk\.[0-9]+\.ffn_(up|gate|down)_exps\.weight=CPU' \
+  --ubatch-size 4096 --batch-size 4096 --load-mode mmap --lazy-mode on --parallel 1 > $O/llamatf.out 2> $O/llamatf.err
+else
+stamp "llama.cpp rows SKIPPED: $LM is '$LARCH', not one of ACCEPT_LLAMA_ARCHS (${ACCEPT_LLAMA_ARCHS:-qwen4exp}) - no reference engine for it here"
+fi
+
+stamp "Strata served session: needles, probes"
+bringup/lib/with_server.sh $L-strata $CFG -- "$P bringup/lib/needle2.py ask --base http://127.0.0.1:8081 --label $L-strata --temperature 1.0 --runs $NR > $O/needle-strata.txt 2>&1; \
+  $P bringup/lib/stoptest.py http://127.0.0.1:8081 $L-strata > $O/stop-strata.txt 2>&1; \
+  $P bringup/lib/tooltag_test.py http://127.0.0.1:8081 $L-strata 3 > $O/tool-strata.txt 2>&1; \
+  $P bringup/lib/p12_probe.py http://127.0.0.1:8081 $L-strata > $O/ctl-strata.txt 2>&1" > $O/strata-session.txt 2>&1
+
+stamp "Strata twin session: sampler frequencies at the near-ties, chat-cache round trips"
+for step in "sp:SP_DIR=$O/sp SP_LABEL=$L STRATA_SERVE_TREE=$TWTREE $P bringup/lib/sampling_probe.py strata http://127.0.0.1:8081 ${SP_N:-200} 0.6" \
+            "spl:SP_DIR=$O/sp SP_LABEL=$L STRATA_SERVE_TREE=$TWTREE $P bringup/lib/sampling_probe.py strata_logp http://127.0.0.1:8081" \
+            "rt1:$P bringup/lib/roundtrip.py direct small $L-direct1" "rt2:$P bringup/lib/roundtrip.py direct small $L-direct2" \
+            "rtp:$P bringup/lib/roundtrip.py park small $L-park" "rte:$P bringup/lib/roundtrip.py editref small $L-editref"; do
+  n=${step%%:*}; c=${step#*:}
+  bringup/lib/with_server.sh $L-twin-$n $TWIN -- "$c" > $O/twin-$n.txt 2>&1
+done
+SP_DIR=$O/sp SP_LABEL=$L STRATA_SERVE_TREE=$TWTREE $P bringup/lib/sampling_probe.py analyze > $O/sp-analyze.txt 2>&1      # vs llama.cpp's probabilities (reported)
+SP_DIR=$O/sp SP_LABEL=$L STRATA_SERVE_TREE=$TWTREE $P bringup/lib/sampling_probe.py analyze own > $O/sp-analyze-own.txt 2>&1   # vs Strata's own (the criterion)
+$P bringup/lib/rt_compare.py $L > $O/roundtrip.md 2>&1
+
+stamp "Strata teacher-forced NLL (the twin, 9 texts)"
+bringup/lib/tf.sh acc-$L $TWIN $TFEXE math corpus long16k long24k long28k long40k long64k long96k long112k > $O/tf-strata.txt 2>&1
+for T in math corpus long16k long24k long28k long40k long64k long96k long112k; do
+  cp $WS/bringup/out/results/tf-acc-$L-$T.nll $O/tf-strata-$T.nll 2>/dev/null; done
+
+stamp "table"
+$P bringup/lib/accept_table.py $O | tee $O/table.md
+echo "suite run time: $(( $(date +%s) - t0 )) s" | tee -a $O/table.md

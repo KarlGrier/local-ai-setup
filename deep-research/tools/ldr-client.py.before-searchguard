@@ -1,0 +1,537 @@
+#!/usr/bin/env python3
+"""ldr-client.py — set up an LDR account for Strata and run measured research tests against the local LDR web UI.
+
+  setup [--user karl]                 create the account if needed (password kept in run/ldr-credentials, mode 600)
+                                      and apply the per-account settings LDR 1.10.7 cannot take from the environment
+  research TAG "question" [--mode quick|detailed] [--cancel-after S] [--effort-extract low|medium|off]
+                          [--max-minutes M]
+                                      run one research, measure it, save everything to results/TAG/ (a deep-profile
+                                      run's own files — report.md, verification.json, evidence.jsonl, ... — are
+                                      copied to results/TAG/deep/)
+  analyze TAG                         recompute results/TAG/summary.json from the saved raw data
+
+Measurements (all passive): the proxy's per-call log (logs/llm-calls.jsonl), Strata's GET /metrics?requests=all,
+and Strata's engine log (chat cache: parked / restored / dropped lines, counted between the run's line offsets).
+A MemAvailable guard terminates the research if it drops below 12 GB (the floor since 2026-10-19 evening; 16 / 20 before).
+"""
+import argparse
+import json
+import os
+import re
+import secrets
+import stat
+import sys
+import threading
+import time
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import requests
+
+WS = Path("/home/USER/ai/deep-research")
+LDR = "http://127.0.0.1:5000"
+STRATA = "http://127.0.0.1:8080"
+CREDS = WS / "run" / "ldr-credentials"
+SESSION = WS / "run" / "ldr-session.json"           # the session cookie (mode 600), reused across runs
+CALL_LOG = WS / "logs" / "llm-calls.jsonl"
+MODE_FILE = WS / "run" / "proxy-mode.json"
+MIN_AVAIL_GB = 12.0   # the standing floor (2026-10-19 evening; 16 that morning, 20 before)
+# the deep profile's efforts for the call types LDR cannot set itself (the proxy adds them; README "Thinking effort")
+DEEP_EFFORTS = {"agent_effort": "xhigh", "extract_effort": "xhigh"}
+UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"
+
+# Per-account settings (not settable through LDR_* in 1.10.7: the keys are not in LDR's defaults).
+ACCOUNT_SETTINGS = {
+    # streamed calls: Strata stops a request when LDR hangs up (cancel/timeout) and sends keep-alives during long
+    # prompt reads; a non-streamed call keeps running on Strata after the client gave up (measured)
+    "llm.streaming": (True, "checkbox"),
+    # the openai client's timeout is per read (time between bytes). Streamed, the only silent phase is the wait in
+    # Strata's queue (one request at a time): 1800 s covers a full 128K-token answer ahead in the queue.
+    "llm.request_timeout": (1800, "number"),
+    # a retry after a timeout re-sends the whole prompt; one is enough
+    "llm.max_retries": (1, "number"),
+    # explicit (it is 1.10.7's default too); not env-locked so the UI can still pick another strategy
+    "search.search_strategy": ("langgraph-agent", None),
+    # 2026-10-19: Semantic Scholar's engine (on as an agent tool only in the user's research, LDR_RESEARCH_S2=1 in
+    # run-ldr.sh) without its LLM relevance filter (~10 parallel calls per search flooded Strata in September); the
+    # key is not in LDR's defaults, so an LDR_* env value would be ignored - it lives in the account
+    "search.engine.web.semantic_scholar.default_params.enable_llm_relevance_filter": (False, "checkbox"),
+}
+# SearXNG only: engines the langgraph agent would otherwise get as extra tools and that have no registered
+# agent_enabled flag (the registered ones are env-locked off in run-ldr.sh)
+for _e in ("gutenberg", "openlibrary", "pubchem", "stackexchange", "zenodo"):
+    ACCOUNT_SETTINGS[f"search.engine.web.{_e}.agent_enabled"] = (False, "checkbox")
+
+
+def engine_log_path() -> Path:
+    """Strata's engine log for the running config (from the running server's --config)."""
+    pid = None
+    for line in os.popen("ss -H -ltnp '( sport = :8080 )'"):
+        m = re.search(r"pid=(\d+)", line)
+        if m:
+            pid = m.group(1)
+    if pid:
+        cmd = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+        cwd = os.readlink(f"/proc/{pid}/cwd")
+        if b"--config" in cmd:
+            cfg = Path(cwd) / cmd[cmd.index(b"--config") + 1].decode()
+            return Path(json.loads(cfg.read_text())["log"])
+    raise SystemExit("cannot find Strata's engine log (is Strata on 8080?)")
+
+
+def avail_gb() -> float:
+    for line in open("/proc/meminfo"):
+        if line.startswith("MemAvailable"):
+            return int(line.split()[1]) / 1048576
+    return 0.0
+
+
+class Client:
+    def __init__(self):
+        self.s = requests.Session()
+        self.csrf = None
+
+    def _csrf(self):
+        self.csrf = self.s.get(f"{LDR}/auth/csrf-token", timeout=10).json()["csrf_token"]
+        return self.csrf
+
+    def login(self, user, password, register=False):
+        tok = self._csrf()
+        if register:
+            r = self.s.post(f"{LDR}/auth/register", data={"username": user, "password": password,
+                            "confirm_password": password, "acknowledge": "true", "csrf_token": tok},
+                            timeout=120, allow_redirects=False)
+            if r.status_code not in (200, 302):
+                raise SystemExit(f"register failed: HTTP {r.status_code} {r.text[:300]}")
+            tok = self._csrf()
+        waited = 0
+        while True:
+            r = self.s.post(f"{LDR}/auth/login", data={"username": user, "password": password, "csrf_token": tok},
+                            timeout=120, allow_redirects=False)
+            # LDR allows 5 logins per 15 min (the runner's and the UI's count too): wait it out instead of failing
+            if r.status_code != 429 or waited >= 1200:
+                break
+            print(f"login: HTTP 429 (LDR's login rate limit) - retrying in 60 s ({waited // 60} min waited)", flush=True)
+            time.sleep(60)
+            waited += 60
+            tok = self._csrf()
+        if r.status_code != 302:
+            raise SystemExit(f"login failed: HTTP {r.status_code} {r.text[:300]}")
+        self._csrf()
+
+    def resume(self) -> bool:
+        """Reuse the session saved by an earlier run (valid while the same LDR process runs): no login needed."""
+        try:
+            self.s.cookies.update(json.loads(SESSION.read_text()))
+            self._csrf()
+            return self.s.get(f"{LDR}/settings/api", timeout=30, allow_redirects=False).status_code == 200
+        except (OSError, ValueError, KeyError, requests.RequestException):
+            return False
+
+    def save(self) -> None:
+        with os.fdopen(os.open(SESSION, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+            f.write(json.dumps(self.s.cookies.get_dict()))
+
+    def api(self, method, path, **kw):
+        h = kw.pop("headers", {})
+        h["X-CSRFToken"] = self.csrf
+        r = self.s.request(method, f"{LDR}{path}", headers=h, timeout=kw.pop("timeout", 60), **kw)
+        return r
+
+
+def creds():
+    if CREDS.exists():
+        d = json.loads(CREDS.read_text())
+        return d["username"], d["password"], False
+    return None
+
+
+def cmd_setup(a):
+    c = Client()
+    have = creds()
+    if have:
+        user, pw, _ = have
+        c.login(user, pw)
+        print(f"logged in as {user} (credentials in {CREDS})")
+    else:
+        user, pw = a.user, secrets.token_urlsafe(18)
+        CREDS.write_text(json.dumps({"username": user, "password": pw}))
+        CREDS.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        c.login(user, pw, register=True)
+        print(f"created account {user!r}; password in {CREDS} (mode 600) — change it in the UI if you like")
+    for key, (value, ui) in ACCOUNT_SETTINGS.items():
+        body = {"value": value}
+        if ui:
+            body["ui_element"] = ui
+        r = c.api("PUT", f"/settings/api/{key}", json=body)
+        print(f"  {key} = {value!r}: HTTP {r.status_code} {r.text[:120].strip()}")
+    r = c.api("GET", "/settings/api")
+    allv = r.json()
+    allv = allv.get("settings", allv)
+    for key in list(ACCOUNT_SETTINGS) + ["llm.provider", "llm.model", "llm.openai_endpoint.url", "llm.temperature",
+                                         "llm.max_tokens", "llm.context_window_size", "llm.context_window_unrestricted",
+                                         "llm.local_context_window_size", "langgraph_agent.max_subagent_workers",
+                                         "search.tool", "search.engine.web.searxng.default_params.instance_url",
+                                         "search.engine.web.searxng.default_params.result_format"]:
+        v = allv.get(key)
+        v = v.get("value") if isinstance(v, dict) else v
+        print(f"  effective {key} = {v!r}")
+
+
+def login_default() -> Client:
+    have = creds()
+    if not have:
+        raise SystemExit("no account yet: run `tools/ldr-client.py setup` first")
+    c = Client()
+    if c.resume():
+        return c
+    c = Client()
+    c.login(have[0], have[1])
+    c.save()
+    return c
+
+
+def strata_requests():
+    return requests.get(f"{STRATA}/metrics?requests=all", timeout=10).json()["requests"]
+
+
+def line_count(p: Path) -> int:
+    try:
+        with open(p, "rb") as f:
+            return sum(1 for _ in f)
+    except OSError:
+        return 0
+
+
+def cmd_research(a):
+    out = WS / "results" / a.tag
+    out.mkdir(parents=True, exist_ok=True)
+    elog = engine_log_path()
+    profile = (WS / "run" / "ldr.profile").read_text().strip() if (WS / "run" / "ldr.profile").exists() else "?"
+    sx = 8889                                   # both profiles search the main instance since 2026-10-17 (run-ldr.sh)
+    try:                                        # ... unless LDR runs with another instance URL
+        env = Path(f"/proc/{(WS / 'run' / 'ldr.pid').read_text().strip()}/environ").read_bytes().split(b"\0")
+        url = next((e.split(b"=", 1)[1].decode() for e in env
+                    if e.startswith(b"LDR_SEARCH_ENGINE_WEB_SEARXNG_DEFAULT_PARAMS_INSTANCE_URL=")), "")
+        sx = int(url.rsplit(":", 1)[1]) if url else sx
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        requests.get(f"http://127.0.0.1:{sx}/healthz", timeout=20).raise_for_status()
+    except requests.RequestException as e:
+        raise SystemExit(f"LDR's SearXNG (127.0.0.1:{sx}) does not answer: {e}")
+    if not a.max_minutes:
+        # deep runs: the research budget plus room for the report and citation check; baseline as before
+        budget = (a.budget_s or int(os.environ.get("LDR_DEEP_TIME_BUDGET_S", "10800"))) / 60
+        a.max_minutes = budget + 150 if profile == "deep" else 90
+    if profile == "deep" and (a.budget_s or a.files):
+        # this research's own settings for the deep patch (as the research runner passes them; deep/control.py)
+        (WS / "run" / "next-research.json").write_text(json.dumps(
+            {"job_id": a.tag, "question": a.question, "budget_s": a.budget_s or None,
+             "files": [f for f in (a.files or "").split(",") if f], "seed_dirs": [], "written": time.time()}))
+    live = requests.get(f"{STRATA}/metrics", timeout=10).json()["live"]
+    if live["state"] != "idle" or live["queued"]:
+        print(f"warning: Strata is busy ({live}) — someone else is using it; results will be mixed", flush=True)
+    # proxy mode for this run. 2026-10-17: Strata's own default became medium, so the deep settings (agent and
+    # extraction at xhigh, which they got from the server default until then) are sent explicitly now.
+    mode = dict(DEEP_EFFORTS) if profile == "deep" else {}
+    if a.effort_extract:
+        mode["extract_effort"] = a.effort_extract
+    if a.effort_agent:
+        mode["agent_effort"] = a.effort_agent
+    for k, v in (("report_effort", a.effort_report), ("verify_effort", a.effort_verify)):
+        if v:
+            mode[k] = v
+    if a.capture_dir:
+        mode["capture_dir"] = a.capture_dir          # every call's input and output (strata-proxy capture mode)
+    if mode:
+        MODE_FILE.write_text(json.dumps(mode))
+    else:
+        MODE_FILE.unlink(missing_ok=True)
+    c = login_default()
+    marks = {"engine_log": str(elog), "engine_log_line0": line_count(elog), "call_log_line0": line_count(CALL_LOG),
+             "effort_extract": a.effort_extract, "proxy_mode": mode, "question": a.question, "mode": a.mode, "profile": profile,
+             "workers": os.environ.get("LDR_WORKERS")}
+    body = {"query": a.question, "mode": a.mode}
+    t0 = time.time()
+    r = c.api("POST", "/api/start_research", json=body, timeout=120)
+    if r.status_code != 200:
+        raise SystemExit(f"start failed: HTTP {r.status_code} {r.text[:500]}")
+    rid = r.json().get("research_id")
+    marks.update(research_id=rid, t_start=t0)
+    print(f"[{a.tag}] research {rid} started", flush=True)
+    samples, status, cancel_at, mem_abort, poll_fail = [], None, None, False, 0
+    min_avail = avail_gb()
+    last_print = 0
+    while True:
+        time.sleep(3)
+        now = time.time()
+        av = avail_gb()
+        min_avail = min(min_avail, av)
+        try:
+            st = c.api("GET", f"/api/research/{rid}/status").json()
+            poll_fail = 0
+        except (requests.RequestException, ValueError) as e:
+            st = {"status": f"poll-error {e}"}
+            poll_fail += 1
+            if poll_fail >= 100:                       # ~5 min: LDR is gone (2026-10-18: ldr-web crashed mid-run)
+                raise SystemExit(f"[{a.tag}] LDR unreachable for {poll_fail * 3} s: giving up (the queue retries)")
+        try:
+            lv = requests.get(f"{STRATA}/metrics", timeout=5).json()["live"]
+        except (requests.RequestException, ValueError):
+            lv = {}
+        samples.append({"t": round(now - t0, 1), "status": st.get("status"), "progress": st.get("progress"),
+                        "strata": lv.get("state"), "queued": lv.get("queued"), "avail_gb": round(av, 1)})
+        if av < MIN_AVAIL_GB and not mem_abort:
+            print(f"[{a.tag}] MemAvailable {av:.1f} GB < {MIN_AVAIL_GB} — terminating", flush=True)
+            c.api("POST", f"/api/terminate/{rid}")
+            mem_abort = True
+        if a.cancel_after and cancel_at is None and now - t0 >= a.cancel_after:
+            cancel_at = now
+            rr = c.api("POST", f"/api/terminate/{rid}")
+            print(f"[{a.tag}] terminate sent at {now - t0:.0f} s: HTTP {rr.status_code} {rr.text[:150]}", flush=True)
+        if now - last_print > 60:
+            last_print = now
+            print(f"[{a.tag}] {now - t0:6.0f} s  {st.get('status')}  {st.get('progress')}%  strata={lv.get('state')}"
+                  f"  mem={av:.1f} GB  calls={line_count(CALL_LOG) - marks['call_log_line0']}", flush=True)
+        status = st.get("status")
+        if status in ("completed", "failed", "error", "suspended", "cancelled", "terminated"):
+            break
+        if a.max_minutes and now - t0 > a.max_minutes * 60:
+            print(f"[{a.tag}] over {a.max_minutes} min — terminating", flush=True)
+            c.api("POST", f"/api/terminate/{rid}")
+            a.max_minutes = 0
+    t_end = time.time()
+    # after a cancel: how long until Strata is idle
+    idle_after = None
+    if cancel_at:
+        for _ in range(600):
+            lv = requests.get(f"{STRATA}/metrics", timeout=5).json()["live"]
+            if lv["state"] == "idle" and not lv["queued"]:
+                idle_after = round(time.time() - cancel_at, 1)
+                break
+            time.sleep(0.5)
+    time.sleep(2)   # let the last proxy line land
+    marks.update(t_end=t_end, final_status=status, cancel_at=cancel_at, strata_idle_after_cancel_s=idle_after,
+                 min_avail_gb=round(min_avail, 1), mem_abort=mem_abort,
+                 engine_log_line1=line_count(elog), call_log_line1=line_count(CALL_LOG))
+    rep = c.api("GET", f"/api/report/{rid}")
+    report = rep.json() if rep.status_code == 200 else {"http": rep.status_code, "text": rep.text[:2000]}
+    (out / "report.json").write_text(json.dumps(report, indent=1, ensure_ascii=False))
+    if isinstance(report, dict) and report.get("content"):
+        (out / "report.md").write_text(report["content"])
+    det = c.api("GET", f"/api/research/{rid}")
+    (out / "research.json").write_text(det.text)
+    logs = c.api("GET", f"/api/research/{rid}/logs")
+    (out / "research-logs.json").write_text(logs.text)
+    (out / "samples.json").write_text(json.dumps(samples))
+    # raw slices
+    with open(CALL_LOG, encoding="utf-8") as f:
+        calls = [json.loads(l) for i, l in enumerate(f) if marks["call_log_line0"] <= i < marks["call_log_line1"]]
+    (out / "calls.jsonl").write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in calls))
+    with open(elog, encoding="utf-8", errors="replace") as f:
+        elines = [l for i, l in enumerate(f) if marks["engine_log_line0"] <= i < marks["engine_log_line1"]]
+    (out / "engine-log.txt").write_text("".join(elines))
+    reqs = [x for x in strata_requests() if t0 - 5 <= x["time"] <= t_end + 5]
+    (out / "strata-requests.json").write_text(json.dumps(sorted(reqs, key=lambda x: x["time"])))
+    (out / "marks.json").write_text(json.dumps(marks, indent=1))
+    MODE_FILE.unlink(missing_ok=True)
+    deep_dir = WS / "results" / "deep-runs" / f"research-{rid}"
+    if deep_dir.is_dir():
+        import shutil
+        shutil.copytree(deep_dir, out / "deep", dirs_exist_ok=True)
+    s = analyze(out, check_urls=not a.no_url_check)
+    print(json.dumps(s, indent=1))
+
+
+def check_citations(report_md: str):
+    """[N] markers in the text vs. the sources list, and whether each source URL loads."""
+    body, _, sources = report_md.partition("## Sources")
+    if not sources:
+        m = re.search(r"\n#+\s*(Sources|References)\b", report_md)
+        body, sources = (report_md[:m.start()], report_md[m.start():]) if m else (report_md, "")
+    cited = sorted({int(n) for n in re.findall(r"\[(\d{1,3})\]", body)})
+    listed, last = {}, None
+    for line in sources.splitlines():
+        m = re.match(r"\s*\[(\d{1,3})\]", line)
+        urls = re.findall(r"https?://[^\s)\]>\"']+", line)
+        if m and urls:
+            listed[int(m.group(1))] = urls[0].rstrip(".,;")
+        elif m:
+            last = int(m.group(1))                   # LDR: "[n] title" with "   URL: ..." on the next line
+        elif urls and last is not None and last not in listed:
+            listed[last] = urls[0].rstrip(".,;")
+        elif urls:
+            listed.setdefault(len(listed) + 1000, urls[0].rstrip(".,;"))
+    # also linked citations inside the text, e.g. [[1]](url)
+    inline_urls = set(re.findall(r"\]\((https?://[^\s)]+)\)", body))
+    return cited, listed, inline_urls
+
+
+def linked_numbers(report_md: str):
+    """citation numbers that carry their own link in the text, e.g. [[6]](https://...)"""
+    return {int(n) for n in re.findall(r"\[\[(\d{1,3})\]\]\(https?://", report_md)}
+
+
+def url_ok(u: str):
+    try:
+        r = requests.get(u, headers={"User-Agent": UA}, timeout=20, allow_redirects=True, stream=True)
+        code = r.status_code
+        r.close()
+        return code
+    except requests.RequestException as e:
+        return type(e).__name__
+
+
+def analyze(out: Path, check_urls=True):
+    marks = json.loads((out / "marks.json").read_text())
+    calls = [json.loads(l) for l in (out / "calls.jsonl").read_text().splitlines() if l.strip()]
+    calls = [x for x in calls if x.get("path", "").endswith("/chat/completions")]
+    elog = (out / "engine-log.txt").read_text()
+    sreq = json.loads((out / "strata-requests.json").read_text())
+    by_cls = {}
+    for x in calls:
+        u = x.get("usage") or {}
+        d = by_cls.setdefault(x.get("cls"), {"calls": 0, "prompt_tokens": 0, "cached_tokens": 0, "completion_tokens": 0,
+                                             "seconds": 0.0, "reasoning_chars": 0, "content_chars": 0})
+        d["calls"] += 1
+        d["prompt_tokens"] += u.get("prompt_tokens") or 0
+        d["cached_tokens"] += (u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+        d["completion_tokens"] += u.get("completion_tokens") or 0
+        d["seconds"] += x.get("duration_s") or 0
+        d["reasoning_chars"] += x.get("reasoning_chars") or 0
+        d["content_chars"] += x.get("content_chars") or 0
+    for d in by_cls.values():
+        d["seconds"] = round(d["seconds"], 1)
+    pt = sum(d["prompt_tokens"] for d in by_cls.values())
+    ct = sum(d["cached_tokens"] for d in by_cls.values())
+    # re-reads: a call of an agent conversation that did not reuse its own previous prompt
+    convs, rereads = {}, []
+    for x in calls:
+        u = x.get("usage") or {}
+        p, cached = u.get("prompt_tokens") or 0, (u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+        prev = convs.get(x.get("conv"))
+        if prev is not None and x.get("cls") == "agent" and p > prev and cached < prev * 0.9:
+            rereads.append({"id": x["id"], "conv": x["conv"], "prompt": p, "cached": cached, "prev_prompt": prev})
+        convs[x.get("conv")] = p + (u.get("completion_tokens") or 0)
+    conv_calls = {}
+    for x in calls:
+        if x.get("cls") == "agent":
+            conv_calls[x["conv"]] = conv_calls.get(x["conv"], 0) + 1
+    lead = next((x["conv"] for x in calls if x.get("cls") == "agent"), None)   # the lead makes the first agent call
+    lead_calls = [x for x in calls if x.get("conv") == lead]
+    lead_rereads = [r for r in rereads if r["conv"] == lead]
+    errors = [{"id": x["id"], "status": x.get("status"), "err": x.get("error") or x.get("stream_error"),
+               "finish": x.get("finish")} for x in calls
+              if (x.get("status") not in (200, None)) or x.get("error") or x.get("stream_error")
+              or x.get("finish") in ("length", None)]
+    report_md = (out / "report.md").read_text() if (out / "report.md").exists() else ""
+    s = {
+        "tag": out.name, "question": marks["question"], "research_id": marks.get("research_id"),
+        "final_status": marks.get("final_status"), "effort_extract": marks.get("effort_extract"),
+        "wall_s": round(marks["t_end"] - marks["t_start"], 1),
+        "llm_calls": len(calls), "llm_calls_by_class": by_cls,
+        "prompt_tokens": pt, "cached_prompt_tokens": ct, "reread_prompt_tokens": pt - ct,
+        "generated_tokens": sum(d["completion_tokens"] for d in by_cls.values()),
+        "largest_prompt": max(((x.get("usage") or {}).get("prompt_tokens") or 0 for x in calls), default=0),
+        "largest_context": max((((x.get("usage") or {}).get("prompt_tokens") or 0) +
+                                ((x.get("usage") or {}).get("completion_tokens") or 0) for x in calls), default=0),
+        "llm_seconds": round(sum(x.get("duration_s") or 0 for x in calls), 1),
+        "agent_conversations": len(conv_calls), "lead_conv": lead, "lead_calls": len(lead_calls),
+        "lead_rereads": len(lead_rereads), "lead_reread_tokens": sum(r["prompt"] - r["cached"] for r in lead_rereads),
+        "agent_rereads": len(rereads), "agent_reread_tokens": sum(r["prompt"] - r["cached"] for r in rereads),
+        "chat_cache": {"parked": len(re.findall(r"chat cache: parked", elog)),
+                       "restored": len(re.findall(r"chat cache: restored", elog)),
+                       "dropped": len(re.findall(r"chat cache: dropped", elog))},
+        "strata_requests": len(sreq),
+        "strata_prompt_s": round(sum((x.get("prompt_ms") or 0) for x in sreq) / 1000, 1),
+        "strata_decode_s": round(sum((x.get("decode_ms") or 0) for x in sreq) / 1000, 1),
+        "strata_finish": {f: sum(1 for x in sreq if x.get("finish") == f) for f in {x.get("finish") for x in sreq}},
+        "errors": errors, "min_avail_gb": marks.get("min_avail_gb"),
+        "cancel": {"at_s": round(marks["cancel_at"] - marks["t_start"], 1) if marks.get("cancel_at") else None,
+                   "strata_idle_after_s": marks.get("strata_idle_after_cancel_s"),
+                   "ldr_status_after": marks.get("final_status")} if marks.get("cancel_at") else None,
+        "report_chars": len(report_md),
+        "profile": marks.get("profile"),
+        "workers": marks.get("workers"),
+    }
+    # how busy Strata was (union of this run's call intervals) and the throughput: what extra workers could change
+    iv = sorted((max(x["t0"], marks["t_start"]), min(x.get("t_end") or x["t0"], marks["t_end"])) for x in calls
+                if x.get("t_end"))
+    busy, cur = 0.0, None
+    for a_, b_ in iv:
+        if cur is None or a_ > cur[1]:
+            if cur:
+                busy += cur[1] - cur[0]
+            cur = [a_, b_]
+        else:
+            cur[1] = max(cur[1], b_)
+    if cur:
+        busy += cur[1] - cur[0]
+    wall = marks["t_end"] - marks["t_start"]
+    s["strata_busy_share"] = round(busy / wall, 3) if wall else None
+    s["generated_tokens_per_wall_s"] = round(s["generated_tokens"] / wall, 1) if wall else None
+    deep_stats = out / "deep" / "stats.json"
+    if deep_stats.exists():
+        d = json.loads(deep_stats.read_text())
+        d.pop("calls", None)
+        s["deep"] = d
+    if report_md:
+        cited, listed, inline = check_citations(report_md)
+        urls = sorted(set(listed.values()) | inline)
+        s["citations"] = {"cited_numbers": len(cited), "sources_listed": len(listed),
+                          "cited_but_not_listed": [n for n in cited if n not in listed
+                                                   and n not in linked_numbers(report_md)],
+                          "listed_urls": len(urls)}
+        if check_urls and urls:
+            res = {}
+            threads = []
+            def chk(u):
+                res[u] = url_ok(u)
+            for u in urls:
+                t = threading.Thread(target=chk, args=(u,))
+                t.start()
+                threads.append(t)
+            for t in threads:
+                t.join()
+            ok = [u for u, c in res.items() if isinstance(c, int) and c < 400]
+            s["citations"]["urls_resolving"] = len(ok)
+            s["citations"]["urls_failing"] = {u: c for u, c in res.items() if u not in ok}
+    (out / "summary.json").write_text(json.dumps(s, indent=1, ensure_ascii=False))
+    return s
+
+
+def main():
+    p = argparse.ArgumentParser()
+    sp = p.add_subparsers(dest="cmd", required=True)
+    q = sp.add_parser("setup")
+    q.add_argument("--user", default="karl")
+    q = sp.add_parser("research")
+    q.add_argument("tag")
+    q.add_argument("question")
+    q.add_argument("--mode", default="quick")
+    q.add_argument("--cancel-after", type=float, default=0)
+    q.add_argument("--effort-extract", choices=["low", "medium", "xhigh", "off"], default=None)
+    q.add_argument("--effort-agent", choices=["low", "medium", "xhigh"], default=None)
+    q.add_argument("--effort-report", choices=["low", "medium", "xhigh"], default=None,
+                   help="note: the deep patch sets report/verify effort itself; the proxy only fills it where none is sent")
+    q.add_argument("--effort-verify", choices=["low", "medium", "xhigh"], default=None)
+    q.add_argument("--budget-s", type=int, default=0, help="deep: this research's time budget (next-research.json)")
+    q.add_argument("--files", default="", help="deep: comma-separated files for read_file")
+    q.add_argument("--capture-dir", default="", help="strata-proxy capture mode: every call's input/output")
+    q.add_argument("--max-minutes", type=float, default=0, help="0 = by profile (baseline 90, deep budget + 150)")
+    q.add_argument("--no-url-check", action="store_true")
+    q = sp.add_parser("analyze")
+    q.add_argument("tag")
+    q.add_argument("--no-url-check", action="store_true")
+    a = p.parse_args()
+    if a.cmd == "setup":
+        cmd_setup(a)
+    elif a.cmd == "research":
+        cmd_research(a)
+    else:
+        print(json.dumps(analyze(WS / "results" / a.tag, check_urls=not a.no_url_check), indent=1))
+
+
+if __name__ == "__main__":
+    main()

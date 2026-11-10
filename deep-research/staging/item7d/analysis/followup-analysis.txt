@@ -1,0 +1,43 @@
+Item 7d evidence - staged rule {'mode': 'followup', 'late': 100, 'follow_after_s': 900, 'per_sub': 3, 'per_lead': 10, 'skip_unknown': 30}
+
+run                       searches  1st lead follow-up (#, s)  | first come: agents lead fu-phase sxnew% | rule: paid agents lead fu-phase pos      sxnew% product
+screen-deep-p7b/o01          190     129   4310           |      4    1        0     74  |   30     10    3       24  101-178     52       0
+screen-deep-p7b/o02          201      83   2627           |      3    2        0     66  |   30      9   10       30   83-196     51       9
+screen-deep-p7b/o03          202      81   3619           |      4    2        0     63  |   30      8   10       30   81-199     31       0
+screen-deep-p7c/o01          145       5   1941           |      5    2       26     84  |   30     10    4       30    5-124     73       0
+screen-deep-p7c/o02          273     109   3327           |      3    3        0     65  |   30     10    5       27  101-228     46      14
+screen-deep-p7c/o03          244      97   3171           |      4    2        0     64  |   30      8   10       30   97-210     33       0
+screen-deep-p7a/o01          149    None   None           |      5    2        0     75  |   15      5    0        0  101-146     60       0
+screen-deep-p7a/o02          269      97   2951           |      3    3        0     71  |   30      8    9       30   97-239     51       5
+screen-deep-p7a/o03          232      78   2718           |      3    2        0     65  |   30      8   10       30   78-195     44       0
+screen-deep-p4s8/o01         275     151   3573           |      4    2        0     61  |   30      9    6       21  101-250     50       0
+screen-deep-p4s8/o02         244     122   3384           |      3    2        0     61  |   30      8    9       24  101-225     47      13
+screen-deep-p4s8/o03         243      83   2949           |      4    2        0     66  |   30      8   10       30   83-221     42       0
+shop-7e-deep-p7ex/s1         237      91   2960           |      4    2        0     76  |   30      8   10       30   91-220     45       5
+shop-7e-deep-p7ex/s2         325     156   3174           |      3    2        0     59  |   30      8   10       21  101-232     47      14
+shop-7e-deep-p7ex/s3         237      93   2770           |      3    1        0     68  |   28      7   10       28   93-220     46      24
+shop-7e-deep-p7ex/s4         178    None   None           |      4    2        0     69  |   19      7    0        0  101-162     55      12
+shop-7e-deep-p7ew/s1         111     109   2905           |      3    4        0     68  |    6      2    3        3  101-111     48       4
+shop-7e-deep-p7ew/s2         340     129   3256           |      3    2        0     82  |   30      8   10       27  101-268     48      11
+shop-7e-deep-p7ew/s3         330      66   1784           |      3    3        0     74  |   30      8   10       30   66-180     46      10
+shop-7e-deep-p7ew/s4         156      87   3235           |      4    2        0     65  |   20      5   10       20   87-149     49      18
+MEAN                         229                              |    3.6  2.1      1.3     69  | 26.9    7.7  7.5     23.2              48     7.0
+
+hard five (lead only): p4s8/h02 3 searches -> 0 paid, p4s8/h04 3 searches -> 0 paid, p4s8/h05 8 searches -> 0 paid, p4s8/h06 3 searches -> 0 paid, p4s8/h08 4 searches -> 0 paid, p7b/h02 3 searches -> 0 paid, p7b/h04 4 searches -> 0 paid, p7b/h05 17 searches -> 0 paid, p7b/h06 3 searches -> 0 paid, p7b/h08 5 searches -> 0 paid, p7c/h02 6 searches -> 0 paid, p7c/h04 4 searches -> 0 paid, p7c/h05 3 searches -> 0 paid, p7c/h06 4 searches -> 0 paid, p7c/h08 2 searches -> 0 paid, p7a/h02 3 searches -> 0 paid, p7a/h04 4 searches -> 0 paid, p7a/h05 15 searches -> 0 paid, p7a/h06 3 searches -> 0 paid, p7a/h08 3 searches -> 0 paid
+
+what the searches look like (all 20 runs):
+group           n     words quoted% number% operator% store% product% | SearXNG new-to-run% used%
+lead-open         41   11.2       0      95         0      2       27 |                  94  16.6
+searches 1-30    600   12.3      54      82        12     16       20 |                  69   7.6
+wave1           2034   12.4      53      81        10     16       25 |                  61   6.6
+lead-follow      317   13.6      32      95         5     30       42 |                  44   9.2
+wave2+          2189   12.0      58      87        13     19       26 |                  47   6.2
+searches 31+    3981   12.2      54      85        11     19       28 |                  51   6.6
+
+SearXNG URLs new to the run, by search position: 1-30: 69%, 31-60: 59%, 61-100: 58%, 101-150: 51%, 151-999: 45%
+
+paid URLs (not in any SearXNG list of the run) later fetched / read / cited, sent searches of p7b / p7c / p7ex (all at positions 1-30):
+  rank 1   searches  37  paid URLs  207  used  22.2% (SearXNG URLs of the same searches 13.3%)  used per search 1.24
+  rank 2-3 searches  60  paid URLs  383  used  20.4% (SearXNG URLs of the same searches 10.6%)  used per search 1.30
+  rank 4+  searches 203  paid URLs 1330  used  13.5% (SearXNG URLs of the same searches  5.4%)  used per search 0.88
+  all      searches 300  paid URLs 1920  used  15.8% (SearXNG URLs of the same searches  7.5%)  used per search 1.01

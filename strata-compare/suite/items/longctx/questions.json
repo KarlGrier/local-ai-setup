@@ -1,0 +1,56 @@
+[
+ {
+  "id": "la_needles",
+  "doc": "docs/doc_a.txt",
+  "type": "needles",
+  "question": "From the log, report the current combination of the blue equipment locker, the archive number of Dr. Okonkwo's ice core sample, the serial plate of the backup generator, the name of the supply ship booked for the winter season, and the emergency radio frequency in MHz as it stands at the end of the log. Reply with only a JSON object with exactly these keys: \"locker_combination\", \"ice_core_archive\", \"generator_serial\", \"supply_ship\", \"radio_frequency_mhz\" (all values as strings).",
+  "answer": {
+   "locker_combination": "4-1-7-9",
+   "ice_core_archive": "KP-2209",
+   "generator_serial": "GX-55871",
+   "supply_ship": "Morning Albatross",
+   "radio_frequency_mhz": "8.364"
+  }
+ },
+ {
+  "id": "la_count",
+  "doc": "docs/doc_a.txt",
+  "type": "count",
+  "question": "How many log entries (lines) mention snow petrels (singular or plural)? Count entries, not birds. Give the final answer as the last line in the form `ANSWER: <integer>`.",
+  "answer": 43
+ },
+ {
+  "id": "la_track",
+  "doc": "docs/doc_a.txt",
+  "type": "track",
+  "question": "How many litres of fuel are in the main tank at the end of the log? Give the final answer as the last line in the form `ANSWER: <integer>`.",
+  "answer": 11160
+ },
+ {
+  "id": "lb_needles",
+  "doc": "docs/doc_b.txt",
+  "type": "needles",
+  "question": "From the chronicle, report: who cast the great bell of the Lantern Tower that still rings today, the river toll per barge in copper bits as it stands at the end of the chronicle, how many scrolls the Great Archive held when it reopened after the fire, the name of the harbour master's cat, and the city's motto at the end of the chronicle. Reply with only a JSON object with exactly these keys: \"bell_founder\", \"river_toll_copper_bits\", \"archive_scrolls_after_reopening\", \"harbour_master_cat\", \"current_motto\" (all values as strings).",
+  "answer": {
+   "bell_founder": "Ysolde Marrek",
+   "river_toll_copper_bits": "7",
+   "archive_scrolls_after_reopening": "4312",
+   "harbour_master_cat": "Pemberton",
+   "current_motto": "Steady the Oar"
+  }
+ },
+ {
+  "id": "lb_count",
+  "doc": "docs/doc_b.txt",
+  "type": "count",
+  "question": "How many times is the Marrow Bridge mentioned in the chronicle? (Marrowgate, Marrow Street and Barrow Bridge are different places.) Give the final answer as the last line in the form `ANSWER: <integer>`.",
+  "answer": 37
+ },
+ {
+  "id": "lb_track",
+  "doc": "docs/doc_b.txt",
+  "type": "track",
+  "question": "How many crowns are in the city treasury at the end of the chronicle? Only the city treasury counts, not guild treasuries. Give the final answer as the last line in the form `ANSWER: <integer>`.",
+  "answer": 17944
+ }
+]

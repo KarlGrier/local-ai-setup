@@ -1,0 +1,27 @@
+work/r8/tagcheck.sh phaseD-gates-start
+work/r8/build-cstar10.sh
+.venv/bin/python work/r8/buildrec.py C10-clean configs/Cstar10.json "clean clone build of the Phase D candidate (v0.1.31 + patches/r9)"
+work/r8/build.sh strata-r9m engine-r9m
+work/r8/run.sh pE-x-c10-math configs/Cstar10.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pE-s-c10-math configs/Cstar10.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pE-x-c10-code configs/Cstar10.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pE-s-c10-code configs/Cstar10.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pE-x-c10-p2000 configs/Cstar10.json p2000 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pE-x-c10-32k configs/Cstar10.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pE-x-c10-tf-long112k configs/Cstar10.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/tf.sh R10mtf3500-helper configs/R10m-tf3500-helper.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R10m-tf3500-helper.json'))['exe'])") math corpus long16k long24k long28k long40k long64k
+work/r8/tf.sh R10mtf3500-single configs/R10m-tf3500-single.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R10m-tf3500-single.json'))['exe'])") math corpus long16k long24k long28k long40k long64k
+work/r8/with_server.sh RT10-ours-direct configs/R10m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py direct small r10-ours-direct1"
+work/r8/with_server.sh RT10-ours-direct configs/R10m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py direct small r10-ours-direct2"
+work/r8/with_server.sh RT10-ours-park configs/R10m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py park small r10-ours-park"
+work/r8/with_server.sh RT10-ours-editref configs/R10m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py editref small r10-ours-editref"
+.venv/bin/python work/r8/rt_compare.py r10-ours > results/r8/roundtrip-c10.md; cat results/r8/roundtrip-c10.md
+work/r8/with_server.sh N10 configs/Cstar10.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label S10 --temperature 1.0"
+work/r8/with_server.sh FAIL10 configs/Cstar10.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r8/holdscreen.sh H10-a configs/Cstar10.json
+work/r8/holdscreen.sh H9h-a configs/Cstar9.json
+work/r8/holdscreen.sh H9h-b configs/Cstar9.json
+work/r8/holdscreen.sh H10-b configs/Cstar10.json
+WEB=1 work/r8/with_server.sh BR10 configs/BR10.json -- ".venv/bin/python work/r5/browser_test.py --engine-log \$ELOG --tag b10 --web"
+work/r8/fallback_test10.sh
+work/r8/tagcheck.sh phaseD-gates-done

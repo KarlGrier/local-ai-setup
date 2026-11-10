@@ -1,0 +1,37 @@
+# q4geo synthetic models of the v0.2.13 shape gap (Karl 11-09) - the EXACT commands that make them, kept after the files are
+# deleted (Karl: "Keep the generator script and its exact command so they can be remade"). Written by work/r23/shape-gap/shape_prep.sh (run, 2026-11-09 16:20:47).
+# tree: /home/USER/ai-speed-testing/strata-compare/strata-r23p0213 at 66d4f9b65c90d97c542f0032f60b0552d2718df0 (branch r23-port0213); generator tools/q4geo_synth.py sha256 2f1513ec3267c51a; packer tools/iq_pack.py sha256 0e52682d571791c2
+# python 3.12.3 numpy 2.5.3 (the bytes follow numpy's default_rng(seed): same numpy -> same file)
+# tokenizer: /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf (54817524224 bytes); gguf-py for the packer: /home/USER/ai-speed-testing/strata-compare/strata/third_party/llama.cpp/gguf-py (llama.cpp 3cf0325)
+# recipe fused-iq, 4 layers, seed 1, --exact-bf16 --small-ple (why: shape_prep.sh's header). The prep writes OUT.part and renames it.
+# Run the lines below from any directory (absolute paths); the headers are kept in /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/geo.
+
+## q4_mid
+nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/tools/q4geo_synth.py --shape q4_mid --layers 4 --label q4_mid_4l --header /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/geo/q4_mid_4l.hpp
+nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/tools/q4geo_synth.py --shape q4_mid --layers 4 --recipe fused-iq --seed 1 --exact-bf16 --small-ple --tokenizer-from /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf --label q4_mid_4l --out /home/USER/ai-speed-testing/strata-compare/models/q4geo/q4_mid-4l.gguf
+env PYTHONDONTWRITEBYTECODE=1 STRATA_GGUF_PY=/home/USER/ai-speed-testing/strata-compare/strata/third_party/llama.cpp/gguf-py nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/tools/iq_pack.py --gguf /home/USER/ai-speed-testing/strata-compare/models/q4geo/q4_mid-4l.gguf --out /home/USER/ai-speed-testing/strata-compare/models/q4geo/pack-q4_mid-4l --compat-bf16
+nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/shape_rules.py profile /home/USER/ai-speed-testing/strata-compare/models/q4geo/q4_mid-4l.gguf /home/USER/ai-speed-testing/strata-compare/models/q4geo/pack-q4_mid-4l --shipped /home/USER/ai-speed-testing/strata-compare/strata-cstar18/data/expert-profile.bin
+/home/USER/ai-speed-testing/strata-compare/work/r23/build-port0213.sh geofile q4_mid-4l /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/geo/q4_mid_4l.hpp      # under work/r23/nogap-run.sh
+# plan: 7117779680 bytes (6944782472 allocated; the PLE table is a hole)
+# written: 7117779680 bytes, sha256 659cfea849f9c7e3a25ccedcffbe308bc4c1aef53da6330c62d59c572e80908c, 6944788480 allocated, 9 s (2026-11-09 14:57:07)
+
+## q4_big
+nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/tools/q4geo_synth.py --shape q4_big --layers 4 --label q4_big_4l --header /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/geo/q4_big_4l.hpp
+nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/tools/q4geo_synth.py --shape q4_big --layers 4 --recipe fused-iq --seed 1 --exact-bf16 --small-ple --tokenizer-from /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf --label q4_big_4l --out /home/USER/ai-speed-testing/strata-compare/models/q4geo/q4_big-4l.gguf
+env PYTHONDONTWRITEBYTECODE=1 STRATA_GGUF_PY=/home/USER/ai-speed-testing/strata-compare/strata/third_party/llama.cpp/gguf-py nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/tools/iq_pack.py --gguf /home/USER/ai-speed-testing/strata-compare/models/q4geo/q4_big-4l.gguf --out /home/USER/ai-speed-testing/strata-compare/models/q4geo/pack-q4_big-4l --compat-bf16
+nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/shape_rules.py profile /home/USER/ai-speed-testing/strata-compare/models/q4geo/q4_big-4l.gguf /home/USER/ai-speed-testing/strata-compare/models/q4geo/pack-q4_big-4l --shipped /home/USER/ai-speed-testing/strata-compare/strata-cstar18/data/expert-profile.bin
+/home/USER/ai-speed-testing/strata-compare/work/r23/build-port0213.sh geofile q4_big-4l /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/geo/q4_big_4l.hpp      # under work/r23/nogap-run.sh
+# plan: 15890701216 bytes (15660038272 allocated; the PLE table is a hole)
+# written: 15890701216 bytes, sha256 3b89e705a5d9e7d3b77b8d500d4b6972fcccdabf849d9ebc297c358bbd40581c, 15660048384 allocated, 20 s (2026-11-09 14:57:27)
+
+## q4_deep
+nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/tools/q4geo_synth.py --shape q4_deep --layers 4 --label q4_deep_4l --header /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/geo/q4_deep_4l.hpp
+nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/tools/q4geo_synth.py --shape q4_deep --layers 4 --recipe fused-iq --seed 1 --exact-bf16 --small-ple --tokenizer-from /home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf --label q4_deep_4l --out /home/USER/ai-speed-testing/strata-compare/models/q4geo/q4_deep-4l.gguf
+env PYTHONDONTWRITEBYTECODE=1 STRATA_GGUF_PY=/home/USER/ai-speed-testing/strata-compare/strata/third_party/llama.cpp/gguf-py nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/tools/iq_pack.py --gguf /home/USER/ai-speed-testing/strata-compare/models/q4geo/q4_deep-4l.gguf --out /home/USER/ai-speed-testing/strata-compare/models/q4geo/pack-q4_deep-4l --compat-bf16
+nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/shape_rules.py profile /home/USER/ai-speed-testing/strata-compare/models/q4geo/q4_deep-4l.gguf /home/USER/ai-speed-testing/strata-compare/models/q4geo/pack-q4_deep-4l --shipped /home/USER/ai-speed-testing/strata-compare/strata-cstar18/data/expert-profile.bin
+/home/USER/ai-speed-testing/strata-compare/work/r23/build-port0213.sh geofile q4_deep-4l /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/geo/q4_deep_4l.hpp      # under work/r23/nogap-run.sh
+# plan: 6832217344 bytes (6688053004 allocated; the PLE table is a hole)
+# written: 6832217344 bytes, sha256 2ea2cbd3e08b7b7f10d5f538e599702ab158475a7f8da338384194a4c12b6737, 6688063488 allocated, 9 s (2026-11-09 14:57:36)
+
+## the reference row's build
+/home/USER/ai-speed-testing/strata-compare/work/r23/build-port0213.sh geo flash_next      # under work/r23/nogap-run.sh

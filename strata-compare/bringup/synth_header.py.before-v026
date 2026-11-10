@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""synth_header.py SRC-00001-of-0000N.gguf OUT_DIR — header-only synthetic GGUFs (metadata + tensor table, NO tensor data)
+from a real model's header, one change each, for testing inspect_model.py / fitplan.py (they read headers only):
+
+  hidden3072      embedding_length 3072 and every 2560-wide tensor dimension -> 3072 (10240 -> 12288 for the 4 streams)
+  mtp2            nextn_predict_layers 2, block_count 50, blk.48 / blk.49 carry #619's nextn tensors (an extra MTP layer)
+  mtp1            nextn_predict_layers 1, block_count 49, blk.48 nextn tensors (#619's case: must still run)
+  mtp_undeclared  block_count 49 and blk.48 nextn tensors, no nextn_predict_layers key
+  embd_q4_0       token_embd.weight stored as Q4_0 (a type the embedding does not take)
+Written as one-shard files (the source's shards merged); value types are re-inferred (ints u32 / u64, floats f32)."""
+from __future__ import annotations
+
+import struct
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gguf_head import TYPE_BY_NAME, read_model  # noqa: E402
+
+
+def w_str(b: bytearray, s: str):
+    e = s.encode()
+    b += struct.pack("<Q", len(e)) + e
+
+
+def w_val(b: bytearray, v):
+    if isinstance(v, bool):
+        b += struct.pack("<I?", 7, v)
+    elif isinstance(v, int):
+        b += struct.pack("<Iq", 11, v) if v < 0 else (struct.pack("<II", 4, v) if v < 2**32 else struct.pack("<IQ", 10, v))
+    elif isinstance(v, float):
+        b += struct.pack("<If", 6, v)
+    elif isinstance(v, str):
+        b += struct.pack("<I", 8)
+        w_str(b, v)
+    elif isinstance(v, list):
+        b += struct.pack("<I", 9)
+        if v and isinstance(v[0], str):
+            b += struct.pack("<IQ", 8, len(v))
+            for x in v:
+                w_str(b, x)
+        elif v and isinstance(v[0], float):
+            b += struct.pack("<IQ", 6, len(v)) + struct.pack(f"<{len(v)}f", *v)
+        else:
+            big = any(x >= 2**31 or x < -2**31 for x in v)
+            b += struct.pack("<IQ", 11 if big else 5, len(v)) + struct.pack(f"<{len(v)}{'q' if big else 'i'}", *v)
+    else:
+        raise TypeError(type(v))
+
+
+def write(path: Path, meta: dict, tensors: list):
+    b = bytearray(b"GGUF") + struct.pack("<IQQ", 3, len(tensors), len(meta))
+    for k, v in meta.items():
+        w_str(b, k)
+        w_val(b, v)
+    off = 0
+    for name, t, shape in tensors:
+        w_str(b, name)
+        b += struct.pack("<I", len(shape)) + b"".join(struct.pack("<Q", d) for d in shape)
+        b += struct.pack("<IQ", t, off)
+        off += 32
+    path.write_bytes(bytes(b))
+
+
+def main():
+    src, out = sys.argv[1], Path(sys.argv[2])
+    out.mkdir(parents=True, exist_ok=True)
+    m = read_model(src)
+    meta = {k: v for k, v in m.meta.items() if not k.startswith("split.")}
+    base = [(t.name, t.type, list(t.shape)) for t in m.tensors.values()]
+    arch = meta["general.architecture"]
+    nextn_names = ["nextn.eh_proj.weight", "nextn.hc_head_down.weight", "nextn.hc_head_up.weight", "nextn.enorm.weight",
+                   "nextn.hnorm.weight"]
+
+    def layer48(i):
+        return [(f"blk.{i}.{n}", 30 if n.endswith("proj.weight") or "hc_head" in n else 0,
+                 [5120, 2560] if "eh_proj" in n else ([10240, 4] if "down" in n else [4, 10240]) if "hc_head" in n else [2560])
+                for n in nextn_names] + [(f"blk.{i}.ffn_gate_exps.weight", 21, [2560, 640, 512])]
+
+    cases = {}
+    md = dict(meta); md[f"{arch}.embedding_length"] = 3072
+    cases["hidden3072"] = (md, [(n, t, [3072 if d == 2560 else 12288 if d == 10240 else d for d in s]) for n, t, s in base])
+    md = dict(meta); md[f"{arch}.nextn_predict_layers"] = 2; md[f"{arch}.block_count"] = 50
+    cases["mtp2"] = (md, base + layer48(48) + layer48(49))
+    md = dict(meta); md[f"{arch}.nextn_predict_layers"] = 1; md[f"{arch}.block_count"] = 49
+    cases["mtp1"] = (md, base + layer48(48))
+    md = dict(meta); md[f"{arch}.block_count"] = 49
+    cases["mtp_undeclared"] = (md, base + layer48(48))
+    cases["embd_q4_0"] = (meta, [(n, TYPE_BY_NAME["Q4_0"] if n == "token_embd.weight" else t, s) for n, t, s in base])
+    for name, (md, tens) in cases.items():
+        p = out / f"synth-{name}.gguf"
+        write(p, md, tens)
+        print(p, p.stat().st_size, "bytes")
+
+
+if __name__ == "__main__":
+    main()

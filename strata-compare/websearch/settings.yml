@@ -1,0 +1,47 @@
+# SearXNG settings for the Strata chat page's web search (round 5). Local only: 127.0.0.1:8888, JSON API on.
+use_default_settings: true
+general:
+  instance_name: "local search (strata)"
+  enable_metrics: false
+server:
+  bind_address: "127.0.0.1"
+  port: 8888
+  secret_key: "<generate: openssl rand -hex 32>"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+valkey:
+  url: false
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 10.0
+  pool_connections: 50
+  pool_maxsize: 10
+engines:
+  # 2026-10-19 (README proposal B, the user's OK): the engine set that answers from this address, from the week's
+  # logs and live probes (LDR's 8889: 1,261 searches 10-17..10-19; this instance 10-12..10-19). Previous file:
+  # settings.yml.before-r22 (brave + google + google cse + yahoo).
+  - {name: google, disabled: true}                    # access denied in 100 % of LDR's searches this week, suspended here
+  - {name: brave, disabled: true}                     # suspended: too many requests (since round 8)
+  - {name: google cse, disabled: false}               # answers here (10-19 probes: 20 results each)
+  - {name: duckduckgo, disabled: false}               # CAPTCHA in ~1/3 of searches, answers the rest
+  - {name: startpage, disabled: false, inactive: false}   # CAPTCHA in ~1/2, answers the rest
+  - {name: bing, disabled: false, weight: 0.5}        # answers; sometimes off-topic
+  - {name: yahoo, disabled: false, weight: 0.8}
+  - {name: yandex, disabled: false, weight: 0.8}      # timeout in ~8 %
+  - {name: yep, disabled: false, weight: 0.8}
+  - {name: seznam, disabled: false, weight: 0.5}      # timeout in ~18 %
+  - {name: mwmbl, disabled: false, weight: 0.5}       # timeout in ~35 %
+  - {name: wikipedia, disabled: false}
+  - {name: wikidata, disabled: false}
+  # Tor-only
+  - {name: ahmia, inactive: true}
+  - {name: torch, inactive: true}

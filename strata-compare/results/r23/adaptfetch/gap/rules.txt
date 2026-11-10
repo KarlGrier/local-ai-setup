@@ -1,0 +1,149 @@
+afetch_rules.py - r23 (written 2026-11-09 at the desk, NOT RUN on real data; only its selftest ran, on synthetic data):
+the rules of THE ADAPT_FETCH GAP (work/r23/afetch-gap/gap-afetch.sh; results/BACKLOG-1027.md section I; the design and
+estimate results/r23/ADAPTFETCH-DESK-1109.md; Karl's decisions of 11-09 in section I / J). Written before any run; the
+driver freezes this text (plus the sha256 of every rule file it imports) into the gap's rules.txt before the gap opens,
+and `decide` flags a change. NOTHING SWITCHES: P028x stays served; a PASS is a proposal to Karl.
+
+THE ARMS (configs written by `arms` into OUTDIR/configs/, checked by `cfgcheck`; each arm its own engine log
+logs/engine-r23af-NAME.log; every arm two GPUs, the helper cache on (--expert-cache-device1 3300), adaptation on, as served):
+  P   configs/P028x.json as served for tests: without the picture reader (the --vision flag and the vision / fallback /
+      model_not_running keys: sq.py's STRIP_ARGS / STRIP_KEYS, u_adopt.py's form) = configs/x28h.json + STRATA_HC_UPMIX=1
+      key by key; engine-r22p028x (f4c4f654fb24), server strata-r22p028x
+  F0  P on engine-r23afetch (153ce47d3ef0; branch r23-adaptfetch f381bfdf5 = r22-port028x + 24c6c2f68 + our helper-cache
+      patch), STRATA_ADAPT_FETCH unset (build vs switch only)
+  F1  F0 + STRATA_ADAPT_FETCH=1     F2  F0 + STRATA_ADAPT_FETCH=2
+  P, F1 and F2 are the sampled test's R1, X1 and X2 (sq.py's own build of spec-adaptfetch.json) without the harness's
+  STRATA_DEBUG=1 and log: cfgcheck compares them.
+
+STEP 1 BUILD VS SWITCH (with the switch unset, the fetch build must be bitwise P028x; gap-basalt-speed.sh's e7 / pfy40):
+  e7_F0          exact7 F0 at pin 2500 against P028x's stored exact7 x28h-e7a: 7/7 identical AND slots MATCHED
+                 (basalt_rules e7gate); env_F0_e7 = every exact7 engine's environment as configured (basalt_rules envcli
+                 --mode e7: the config's env, no other STRATA_*, the harness args)
+  logits_F0L40   pf_yardstick long40 on F0 against gap 16's stored x28h long40 (results/r22/gap16/pfy/x28h): 0 of 40
+                 first-token logit files differ (basalt_rules same); env_F0_pfy-F0L40 = its engine as configured
+  BUILD VS SWITCH PASS = all four PASS; FAIL = e7_F0 or logits_F0L40 FAIL with its env PASS; NOT DECIDED otherwise (not
+  run, or an env gate failed: the run was not the arm). Not PASS -> steps 2 and 3 are NOT RUN, and the decision says so.
+  (x28h-e7a and gap 16's long40 are x28h without U; U is exact on P028x: the Basalt speed gap's PU EXACT and the U
+  adoption gap of 11-09, exact7 7/7 MATCHED vs x28h-e7a.)
+
+STEP 2 SPEED, THE USUAL RULES (the target is decode: admissions act only in decode, after the first windows; no cold
+prompt fixtures are run):
+  B2  Basalt's decode fixtures (bp90_client.py --sets decode: conv, struct, prose), a fresh engine per start, 3 passes in
+      turned order (a Latin square: P F1 F2 / F2 P F1 / F1 F2 P) -> bp90/ARM-decode-K.jsonl
+  B3  the 9-workload screen (work/r22/abarm.sh: warm-up, W1-W3, agent x2, research4 x4; T 1.0 / 0.95 / 20 / min-p 0.05),
+      a fresh engine per arm-pass, 3 passes in the same Latin square -> speed/ARMK{n,a,r}.*
+  Every start: no foreign GPU user before it (60 s) or during it (a 5 s watch), else it is left out (foreign_ARM_STEP
+  FAIL); its engine's environment checked before it measures (basalt_rules envcheck: env_ARM_STEP; and fenv_ARM_STEP:
+  the STRATA_ADAPT_FETCH* keys and STRATA_DEBUG exactly as the config has them, the running binary's sha256 the arm's);
+  its start line (line_ARM_STEP: F1 / F2 print "STRATA_ADAPT_FETCH=N: the PCIe share takes ..." with their N and no
+  "STRATA_ADAPT_FETCH is off"; P prints no STRATA_ADAPT_FETCH line); the fatal-line check (fatal_ARM_STEP); a kernel check.
+  WHICH STARTS COUNT (basalt_speed_rules.py excluded / arm_void, imported): a foreign GPU user = the start is left out (the
+  driver moves its files to void/); an env or fatal FAIL = the arm VOID (P VOID = every verdict VOID); here also a fenv
+  FAIL = the arm VOID, and a line FAIL = UNEXERCISED -> NOT DECIDED (P: VOID).
+  THE NUMBERS (gap b's / the Basalt speed gap's thresholds; spread = max / min - 1 over the counted passes, basalt_rules
+  spread, imported):
+    DECODE GAIN of X (F1, F2) against P, on each decode target:
+      - each decode fixture: change = mean_X / mean_P - 1 over the counted passes; noise = the larger of the two arms'
+        spreads; it needs 2 or more counted passes of both arms, else NOT DECIDED;
+      - the screen's decode geomean: per complete pass the geometric mean of the 9 workloads' decode tok/s (g17_rules
+        screen_passes, the 11-07 amendment); an arm = the geometric mean of its passes; noise = the larger arm's pass
+        spread; 3 complete passes of both arms, else NOT DECIDED.
+      GAIN: by the switch GAIN_FORM (below). "above" = change > +max(noise, 1.0 %); "below" = change < -noise.
+    B2 CHECK (gap b's decode check, basalt_speed_rules.decode_check, imported): each fixture's decode of X >= P's x (1 -
+      noise), noise = gap 17's 3-pass spread of that fixture on P028x (results/r22/gap17/bp90/cold-M.jsonl; 3 % missing).
+    B3 CHECK (the screen under the 11-07 amendment; g17_rules wl_noloss / save_rule / pair_problems, imported):
+      - per-workload no-loss (Karl 11-03): per workload, decode and prompt tok/s each, X's pass mean >= P's x (1 - the
+        larger of the two arms' spreads there); the per-workload prompt is on the engine clock minus the chat-cache save;
+      - the screen's prompt geomean (client clock minus the save) against P's: by the switch B3_PROMPT_FORM (below);
+        the other form is reported as INFO;
+      - the chat-cache save line (save_rule): FAIL is a loss, NOT DECIDED leaves B3 undecided, NOT JUDGED is INFO;
+      - the outside-engine flag: INFO (on the no-loss line), never a verdict;
+      - 3 complete passes of both arms, every record paired with its engine-log line, else NOT DECIDED.
+  SPEED VERDICT of X against P: CANDIDATE = GAIN + B2 PASS + B3 PASS (+ under GAIN_FORM screen no fixture below -noise);
+  NO GAIN = the same without the gain; FAIL (decode / screen) = B2 or B3 FAILS, or (GAIN_FORM screen) a decode fixture
+  below -noise; VOID; NOT DECIDED (missing passes, UNEXERCISED); NOT RUN (step 1 not PASS, the read-back mismatch, the
+  priority rule, the deadline).
+  INFO beside it: the same GAIN with noise = half the range (spread / 2); F2 against F1 (the =2 part's own effect).
+
+STEP 3 QUALITY, THE SAMPLED-DISTRIBUTION TEST (work/r23/sampled-qwen/: sq.py, sq_stat.py, sq_client.py; design
+results/r23/SAMPLED-QWEN-DESIGN-1109.md, Karl 11-09 "approved as designed"; its own rule = sq.py rule -> sampled/rule.txt,
+written before the gap opens; sq.py decide judges and refuses a changed rule). The fixed plan: R1 = P (K 8 = 32 requests),
+X1 = F1 (K 8), X2 = F2 (K 8), R2 = P again with its own seeds (K 4 = 16 requests; always run: the noise bound), VF = X2 +
+STRATA_ADAPT_FETCH_VERIFY=1 + STRATA_ADAPT_CHECKRES=1 (K 2, read-back only, not scored). Order (STEPS-adaptfetch.txt):
+VF first (sq.py verify; its verdict is read from verify-VF.json: a read-back mismatch skips the served arms and the
+scorer: both candidates FAIL overall), then R1 X1 X2 R2, sq.py ids, the scorer (only with R1's samples), sq.py decide.
+Where VF runs is set by the switch ORDER_FORM (below).
+  The gap's own gates on the sampled starts count: an env FAIL (env_sqARM: basalt_rules envcheck; envsq_ARM: sq.py
+  envcheck), a fatal line (fatal_sqARM), a foreign GPU user before or during it (foreign_sqARM) or a start voided for a
+  test server left behind (void_sqARM) makes R1 or R2 ->
+  both candidates NOT DECIDED; X1 / X2 -> that candidate NOT DECIDED; VF -> a read-back PASS becomes NOT DECIDED (a FAIL
+  stays FAIL); the scorer's env FAIL (env_sqscore) -> both NOT DECIDED.
+  Per candidate: SAMPLED = sq decision.json candidates[X].verdict; READ-BACK = verify-VF.json (PASS = 0 mismatch lines,
+  0 differ, >= 200 admitted slots read back, >= 4 requests finished; FAIL = any mismatch; the VF start covers X1 and X2);
+  QUALITY = sq decision.json overall[X]: PASS = SAMPLED PASS and READ-BACK PASS, FAIL = either FAILS, else NOT DECIDED
+  (Karl 11-09: "PASS = each candidate passes the sampled test AND the read-back shows 0 mismatches").
+
+REPORTED per arm (INFO, never a verdict): admissions per window, from the engine's per-request line "strata serve: fetch:
+N admissions in W windows (X per window)": sum N / sum W over the arm's requests, for B2, B3 and the sampled arms; the
+expert placement split of the decode lookups (main / helper / PCIe / CPU over all routed entries: work/r23/scratch-
+adaptfetch/agg.py's parsing, copied verbatim and compared by `copycheck` and the selftest: main = H, CPU = L - H, helper
+= the CUDA1 entries N, PCIe = O - N); the engine's decode tok/s over those requests.
+
+THE PRIORITY RULE (Karl 11-09): day-one work goes first. A find = work/qwen4-kit/hfwatch/state.json has a repo entry of
+kind "Flash" with access private false and gated false and a non-empty weights map. Before the gap opens a find HOLDS
+this gap (final; an alert); inside the gap it is checked again after the gap opens and before each long part (each
+exactness run, each speed pass, the sampled part and each of its arms): a find stops new steps and the gap ends cleanly
+(P028x back); the decision lists what ran. A state file that is missing or cannot be read: before the gap a busy
+refusal (retried; the rule cannot be checked), inside it a FLAG (the next check reads it again). THE OVERRIDE: tmp/afetch-priority-done whose first line starts with a
+date (YYYY-MM-DD) and gives the reason - Claude writes it only when Karl says the day-one work is done; with it present
+the hold no longer applies, and the summary, the decision and the result line name it (a marker without a dated first
+line is ignored: the hold applies).
+
+THE QUEUE ORDER (Karl 11-09: after the v0.2.13 shape gap): the shape gap has RUN only when its result.txt's first line
+starts "DONE" (and its unit shape-gap0213 is inactive - the driver and the starter check that). Anything else keeps this
+gap waiting: "kernel check FAILED ...", "KERNEL ERROR ..." and "port_gap4.sh end FAILED ..." (Karl looks at those first),
+"not started ...", "INTERRUPTED ...", "not run: ...", none.
+
+THE SWITCHES (one constant each at the top of the code; their values at the freeze are written into rules.txt). KARL
+ANSWERED 11-09 - his forms are the frozen settings, marked [KARL 11-09]; the other forms stay implemented and selftested.
+Noise stays the full range (max / min - 1), as the rule files define it.
+  B3_PROMPT_FORM  "tol1" [KARL 11-09]: the screen's prompt geomean not below P's x (1 - 1 %), with the per-workload no-loss
+                  (no workload slower beyond its noise) and the save line; the strict form is reported as INFO only
+                  "strict": not below P's (basalt_speed_rules.screen, gap b's form)
+  GAIN_FORM       "screen" [KARL 11-09]: ONE primary target, the screen's decode geomean above +max(noise, 1 %); the 3
+                  decode fixtures are no-loss checks only: one below -noise is a decode no-loss FAILURE (the speed
+                  verdict FAIL (decode: FIXTURE below -noise)), not "no gain"
+                  "any4": a decode target (the 3 fixtures and the screen decode geomean) above, none below
+                  (basalt_speed_rules.gain's form with decode as the target)
+  ORDER_FORM      "vf-first" [KARL 11-09]: the VF read-back start (=2) right after exact7 + long40, before the speed runs;
+                  on a read-back mismatch the speed and sampled parts do not run for either candidate (the decision says
+                  why; sq.py decide still writes its decision); otherwise speed, then R1 X1 X2 R2, ids, the scorer, sq.py
+                  decide
+                  "speed-first": build vs switch, speed, then the sampled part (VF first within it)
+
+THE DECISION (decide -> OUTDIR/decision.txt, decision.json, result-line.txt), per candidate F1 / F2: build vs switch
+(shared), the speed verdict with its numbers, SAMPLED, READ-BACK, QUALITY, the admissions per window; then
+  PROPOSAL for Karl  = build vs switch PASS + QUALITY PASS + speed CANDIDATE
+  QUALITY PASS, NO SPEED GAIN = build vs switch PASS + QUALITY PASS + speed NO GAIN
+  FAIL               = build vs switch FAIL, or QUALITY FAIL, or speed FAIL
+  NOT DECIDED        = otherwise (what is missing is named)
+NOTHING SWITCHES: P028x stays served; Karl decides.
+
+Subcommands: priority, shapecheck, arms, cfgcheck, fetchenv, startline, exact, fetchstats, rules, decide, copycheck,
+selftest. Python: .venv/bin/python -I -B at nice 19.
+
+THE SWITCHES AT THE FREEZE:
+  B3_PROMPT_FORM = tol1
+  GAIN_FORM = screen
+  ORDER_FORM = vf-first
+
+This file and the rule files it imports or the harness reads (sha256, first 16 hex, at the freeze; this file's own sha covers its code, not only this text):
+  work/r23/afetch-gap/afetch_rules.py 355cac03de462a0d
+  work/r23/basalt_speed_rules.py d06be79c9e193b6c
+  work/r23/basalt_fix_rules.py 57e084be7983d644
+  work/r23/basalt_rules.py 5fb44880d107f797
+  work/r22/g17_rules.py e8c0aa7ea7344717
+  work/r23/sampled-qwen/sq.py 79e6841fd9261494
+  work/r23/sampled-qwen/sq_stat.py 66166af044092eca
+  work/r23/sampled-qwen/sq_client.py 69b80e052a1eccbd
+  work/r23/sampled-qwen/spec-adaptfetch.json 2b7c873f5c46c225

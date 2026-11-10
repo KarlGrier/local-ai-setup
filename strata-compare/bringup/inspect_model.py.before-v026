@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+"""inspect_model.py MODEL-00001-of-0000N.gguf [--mtp DIR] [--tree ENGINE_TREE] [--json OUT] — what a GGUF needs from this
+engine, from its HEADERS only (gguf_head.py: metadata + tensor table, never the tensor data; every shard is read).
+
+Reports:
+  1. tensor roles (blk.N.<role>): shapes, formats, bytes; routed experts per layer
+  2. trunk layers vs an MTP / nextn block (block_count, nextn_predict_layers, blk indices, nextn tensors)
+  3. tokenizer: model / pre-tokenizer, vocabulary, end-of-text / BOS / pad ids and their text, control (type 3) and
+     always-special (type 4) tokens, the chat template's markers
+  4. the n-gram (PLE) table: type, shape, ngram size / heads / row length
+  5. against the engine: upstream's fixed geometry and formats (the values the engine's code asserts: layout.hpp
+     ModelGeometry, gguf_reader.hpp Qwen4ExpGuard, ngram.hpp, generate.cpp's embedding vocabulary, the kernels' format
+     lists), then each guarded local patch's assumption (patches/LEDGER.md; the compiled constants are parsed from
+     ENGINE_TREE's own source, so a new upstream release is what is compared)
+Verdict, one of:
+  RUNS | RUNS WITH THESE PATCHES OFF: ... | NEEDS UPSTREAM SUPPORT FOR EXACTLY THIS: ...
+The format lists below are this engine's (v0.1.39 + r13): update them with a release (bringup/RUNBOOK.md step 1).
+#911 (setup --inspect) was the starting point; its filename / byte fingerprints are not used here."""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from collections import Counter, defaultdict
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gguf_head import GGML_TYPES, read_model  # noqa: E402
+
+WS = Path("/home/USER/ai-speed-testing/strata-compare")
+TN = {k: v[0] for k, v in GGML_TYPES.items()}
+
+# ---- the engine's format support (v0.1.39 + r13; the code that decides, for the runbook's update step)
+IS_IQ = {16, 17, 18, 20, 21, 22, 23, 29, 42, 11, 12, 13, 7, 6, 8}            # iq_kernels.cu is_iq(): routed experts
+EMBED_OK = IS_IQ | {30}                                                     # embed_type_supported(): + BF16
+MMVQ_OK = {2, 6, 7, 8, 11, 12, 13, 14, 20, 23, 42, 16, 17, 18, 21, 22, 29}  # native_mmvq_supported(): head, dense
+DENSE_FLOAT = {0, 1, 30}                                                    # F32 / F16 / BF16 (norms, hc, router, ...)
+PLE_OK = {20: "IQ4_NL", 6: "Q5_0", 7: "Q5_1 (#896)", 8: "Q8_0 (#896)"}       # ngram.cpp PleTable (+ I8 = FP8)
+MMQ_KQUANT = {12, 13, 7}                                                    # prompt MMQ needs -DSTRATA_MMQ_KQUANTS=ON
+MTP_LAYERS_SUPPORTED = 1                                                    # the drafter: one MTP layer (--mtp)
+
+
+def compiled_constants(tree: Path) -> dict:
+    """The constants upstream's (and our patches') code is compiled for, read from the source tree."""
+    c = {}
+
+    def grab(rel, names):
+        p = tree / rel
+        if not p.exists():
+            return
+        s = p.read_text(errors="replace")
+        for n, key in names.items():
+            m = re.search(rf"\b{re.escape(n)}\s*=\s*(\d+)", s)
+            if m:
+                c[key] = int(m.group(1))
+
+    grab("include/strata/core/layout.hpp", {"n_embd": "n_embd", "n_layers": "n_layers", "qsa_interval": "qsa_interval",
+                                             "ssm_state_size": "ssm_state", "ssm_k_heads": "ssm_groups",
+                                             "ssm_v_heads": "ssm_v_heads", "ssm_d_conv": "ssm_conv",
+                                             "ssm_value_dim": "ssm_inner", "n_head": "n_head", "n_head_kv": "n_head_kv",
+                                             "head_dim": "head_dim", "idx_q_heads": "idx_heads", "idx_key_dim": "idx_key",
+                                             "hc": "hc", "hc_lr": "hc_lr", "n_ff": "n_ff"})
+    grab("include/strata/artifact/gguf_reader.hpp", {"block_count": "guard_blocks", "hidden": "guard_hidden",
+                                                     "head_count": "guard_heads", "head_count_kv": "guard_heads_kv"})
+    grab("include/strata/kernels/ngram.hpp", {"PLE_HEAD_DIM": "ple_dim", "NGRAM_SIZE": "ple_ngram",
+                                              "HEADS_PER_NGRAM": "ple_heads", "PLE_CONV_KERNEL": "ple_conv",
+                                              "PLE_EOS_TOKEN_ID": "ple_eos"})
+    grab("src/kernels/cuda/fused_gr.cu", {"N": "gr_n", "HC": "gr_hc", "LR": "gr_lr"})
+    grab("src/kernels/cuda/qsa_prompt_attn.cu", {"HD": "attn_hd", "G": "attn_g"})
+    p = tree / "src/program/generate.cpp"
+    if p.exists():
+        m = re.search(r"native_embed\.load\([^;]*?g0\.n_embd,\s*(\d+)", p.read_text(errors="replace"), re.S)
+        if m:
+            c["embed_vocab"] = int(m.group(1))
+    return c
+
+
+def expert_types_of(tree: Path | None):
+    """Round 15: the routed-expert formats the TREE's iq_kernels.cu is_iq() takes: (always, opt-in build -> its option).
+    v0.1.40.2 puts Q6_K behind `#ifdef STRATA_Q6K_EXPERTS` (-DSTRATA_Q6K_EXPERTS=ON); falls back to IS_IQ."""
+    src = (tree / "src/kernels/cuda/iq_kernels.cu") if tree else None
+    if not src or not src.exists():
+        return set(IS_IQ), {}
+    m = re.search(r"bool is_iq\(int t\)\s*\{(.*?)\n\}", src.read_text(errors="replace"), re.S)
+    if not m:
+        return set(IS_IQ), {}
+    body = m.group(1)
+    mi = re.search(r"#ifdef (\w+)\n(.*?)#else\n(.*?)#endif", body, re.S)
+    nums = lambda x: {int(v) for v in re.findall(r"t == (\d+)", x)}
+    if not mi:
+        return nums(body), {}
+    head = body[:mi.start()]
+    base = nums(head) | nums(mi.group(3))
+    opt = {t: "-D" + mi.group(1) + "=ON" for t in nums(head) | nums(mi.group(2)) if t not in base}
+    return base, opt
+
+
+def role_of(name: str) -> str:
+    return re.sub(r"^blk\.\d+\.", "blk.N.", name)
+
+
+def inspect(path: str, mtp: str | None = None, tree: str | None = None) -> dict:
+    m = read_model(path)
+    arch = m.arch()
+    a = m.a
+    C = compiled_constants(Path(tree) if tree else WS / "strata-r13")
+    rep: dict = {"file": m.paths, "arch": arch, "gguf_version": m.version, "notes": [], "upstream": [], "patches": [],
+                 "build": []}
+    # ---- 1. roles
+    roles = defaultdict(lambda: {"types": Counter(), "shape": None, "bytes": 0, "n": 0})
+    layers = set()
+    for t in m.tensors.values():
+        r = roles[role_of(t.name)]
+        r["types"][t.type_name] += 1
+        r["shape"] = r["shape"] or list(t.shape)
+        r["bytes"] += t.nbytes
+        r["n"] += 1
+        mm = re.match(r"blk\.(\d+)\.", t.name)
+        if mm:
+            layers.add(int(mm.group(1)))
+    rep["roles"] = {k: {"types": dict(v["types"]), "shape": v["shape"], "gib": round(v["bytes"] / 2**30, 3), "n": v["n"]}
+                    for k, v in sorted(roles.items())}
+    exp_bytes = sum(v["bytes"] for k, v in roles.items() if k.endswith("_exps.weight"))
+    ple_t = m.tensors.get("per_layer_token_embd.weight")
+    if ple_t is not None:
+        rep["ple_shard"] = m.paths[ple_t.shard]           # the shard that holds the n-gram table (--ple-gguf)
+    rep["bytes"] = {"experts_gib": round(exp_bytes / 2**30, 2),
+                    "ngram_table_gib": round(ple_t.nbytes / 2**30, 2) if ple_t else 0,
+                    "dense_gib": round((sum(t.nbytes for t in m.tensors.values()) - exp_bytes - (ple_t.nbytes if ple_t else 0)) / 2**30, 2),
+                    "total_gib": round(sum(t.nbytes for t in m.tensors.values()) / 2**30, 2)}
+    # ---- 2. trunk vs MTP
+    bc = a("block_count", 0)
+    nextn = a("nextn_predict_layers", 0)
+    nextn_tensors = sorted({role_of(t.name) for t in m.tensors.values() if "nextn" in t.name or ".mtp" in t.name})
+    trunk = bc - nextn
+    beyond = sorted(i for i in layers if i >= trunk)
+    rep["layers"] = {"block_count": bc, "nextn_predict_layers": nextn, "trunk": trunk,
+                     "blk_indices": f"{min(layers) if layers else '-'}..{max(layers) if layers else '-'} ({len(layers)})",
+                     "blocks_past_trunk": beyond, "nextn_roles": nextn_tensors}
+    if nextn_tensors and not nextn:
+        rep["upstream"].append(f"the file holds nextn / MTP tensors ({', '.join(nextn_tensors[:3])}) but declares no "
+                               f"nextn_predict_layers: block_count {bc} would be read as a {bc}-layer trunk")
+    if beyond and not nextn:
+        rep["upstream"].append(f"blk.{beyond[0]}..{beyond[-1]} past a {trunk}-layer trunk with no nextn_predict_layers: "
+                               f"the file holds an MTP / extra block the architecture key does not declare "
+                               f"(block_count {bc} would be read as {bc} trunk layers)")
+    if nextn > MTP_LAYERS_SUPPORTED:
+        rep["upstream"].append(f"nextn_predict_layers = {nextn}: an MTP block of {nextn} layers; the drafter runs "
+                               f"{MTP_LAYERS_SUPPORTED} MTP layer (--mtp)")
+    elif nextn == 1:
+        rep["notes"].append("the file declares a 1-layer nextn (MTP) block: read past by #619; the drafter still comes "
+                            "from --mtp (the file's own block is not used as the drafter)")
+    # ---- 3. tokenizer and template
+    toks = m.get("tokenizer.ggml.tokens") or []
+    ttype = m.get("tokenizer.ggml.token_type") or []
+    ctl = [toks[i] for i, x in enumerate(ttype) if x == 3]
+    always = [toks[i] for i, x in enumerate(ttype) if x == 4]
+    tid = lambda k: m.get(f"tokenizer.ggml.{k}")  # noqa: E731
+    tmpl = m.get("tokenizer.chat_template") or ""
+    markers = ["<|im_start|>", "<|im_end|>", "<|endoftext|>", "<think>", "</think>", "<tool_call>", "</tool_call>",
+               "<function=", "<parameter=", "<tool_response>", "<|vision_start|>", "<|image_pad|>"]
+    rep["tokenizer"] = {"model": m.get("tokenizer.ggml.model"), "pre": m.get("tokenizer.ggml.pre"), "vocab": len(toks),
+                        "eos": [tid("eos_token_id"), toks[tid("eos_token_id")] if isinstance(tid("eos_token_id"), int) and tid("eos_token_id") < len(toks) else None],
+                        "bos": [tid("bos_token_id"), toks[tid("bos_token_id")] if isinstance(tid("bos_token_id"), int) and tid("bos_token_id") < len(toks) else None],
+                        "pad": tid("padding_token_id"), "control_tokens": len(ctl), "control_sample": ctl[:6],
+                        "always_special": always, "chat_template_chars": len(tmpl),
+                        "template_markers": {k: (k in tmpl) for k in markers}}
+    # ---- 4. n-gram table
+    if ple_t is not None:
+        fmt = PLE_OK.get(ple_t.type) or ("FP8 (I8)" if ple_t.type == 24 else None)
+        rep["ngram_table"] = {"type": ple_t.type_name, "shape": list(ple_t.shape), "gib": round(ple_t.nbytes / 2**30, 2),
+                              "ngram_size": a("ple.ngram_size"), "heads_per_ngram": a("ple.heads_per_ngram"),
+                              "row": a("embedding_length_per_layer_input"), "supported": fmt is not None}
+        if fmt is None:
+            rep["upstream"].append(f"per_layer_token_embd.weight is {ple_t.type_name}: the n-gram table reader takes "
+                                   f"IQ4_NL, Q5_0, Q5_1, Q8_0 or FP8 (I8)")
+    else:
+        rep["ngram_table"] = None
+        rep["upstream"].append("no per_layer_token_embd (n-gram / PLE) table: the engine's graph has a PLE stage")
+    # ---- 5a. upstream's fixed geometry
+    if arch != "qwen4exp":
+        rep["upstream"].append(f"architecture '{arch}': the engine runs 'qwen4exp' only")
+    want = [("embedding_length", C.get("n_embd", 2560), "layout.hpp ModelGeometry::n_embd, Qwen4ExpGuard::hidden, ngram.hpp NG_N_EMBD, fused_gr.cu N"),
+            ("attention.head_count", C.get("n_head", 24), "ModelGeometry::n_head, Qwen4ExpGuard::head_count"),
+            ("attention.head_count_kv", C.get("n_head_kv", 2), "ModelGeometry::n_head_kv, Qwen4ExpGuard::head_count_kv"),
+            ("attention.key_length", C.get("head_dim", 256), "ModelGeometry::head_dim, qsa kernels HD"),
+            ("full_attention_interval", C.get("qsa_interval", 4), "ModelGeometry::qsa_interval"),
+            ("ssm.state_size", C.get("ssm_state", 128), "ModelGeometry::ssm_state_size"),
+            ("ssm.group_count", C.get("ssm_groups", 16), "ModelGeometry::ssm_k_heads"),
+            ("ssm.time_step_rank", C.get("ssm_v_heads", 48), "ModelGeometry::ssm_v_heads"),
+            ("ssm.conv_kernel", C.get("ssm_conv", 4), "ModelGeometry::ssm_d_conv"),
+            ("ssm.inner_size", C.get("ssm_inner", 6144), "ModelGeometry::ssm_value_dim"),
+            ("hyper_connection.count", C.get("hc", 4), "ModelGeometry::hc, fused_gr.cu HC, ngram.hpp NG_HC"),
+            ("hyper_connection.low_rank", C.get("hc_lr", 320), "ModelGeometry::hc_lr, fused_gr.cu LR"),
+            ("attention.indexer.head_count", C.get("idx_heads", 4), "ModelGeometry::idx_q_heads"),
+            ("attention.indexer.key_length", C.get("idx_key", 128), "ModelGeometry::idx_key_dim"),
+            ("expert_feed_forward_length", C.get("n_ff", 640), "ModelGeometry::n_ff")]
+    for key, w, where in want:
+        v = a(key)
+        if v is None:
+            rep["upstream"].append(f"{arch}.{key} missing (the engine requires {w}: {where})")
+        elif v != w:
+            rep["upstream"].append(f"{arch}.{key} = {v}, the engine is built for {w} ({where})")
+    if trunk != C.get("n_layers", 48):
+        rep["upstream"].append(f"trunk of {trunk} layers (block_count {bc} - nextn {nextn}); the engine is built for "
+                               f"{C.get('n_layers', 48)} (ModelGeometry::n_layers, Qwen4ExpGuard::block_count)")
+    if ple_t is not None:
+        for key, ck, where in (("ple.ngram_size", "ple_ngram", "ngram.hpp NGRAM_SIZE"),
+                               ("ple.heads_per_ngram", "ple_heads", "ngram.hpp HEADS_PER_NGRAM"),
+                               ("embedding_length_per_layer_input", "ple_dim", "ngram.hpp PLE_HEAD_DIM"),
+                               ("ple.conv_kernel", "ple_conv", "ngram.hpp PLE_CONV_KERNEL"),
+                               ("ple.eos_token_id", "ple_eos", "ngram.hpp PLE_EOS_TOKEN_ID")):
+            v = a(key)
+            if ck in C and v is not None and v != C[ck]:
+                rep["upstream"].append(f"{arch}.{key} = {v}, the engine is built for {C[ck]} ({where})")
+    if "embed_vocab" in C and len(toks) != C["embed_vocab"]:
+        rep["upstream"].append(f"vocabulary of {len(toks)}; the token embedding loader is called with {C['embed_vocab']} "
+                               f"rows (generate.cpp native_embed.load)")
+    # formats
+    te = m.tensors.get("token_embd.weight")
+    if te is None or te.type not in EMBED_OK:
+        rep["upstream"].append(f"token_embd.weight is {te.type_name if te else 'missing'}: the embedding takes the native "
+                               f"IQ / K / Q5 / Q8_0 types and BF16 (iq_kernels.cu embed_type_supported)"
+                               + (" — Round 11's Q6_K dequantizer (branch v39-f6k) adds Q6_K" if te and te.type == 14 else ""))
+    out = m.tensors.get("output.weight")
+    if out is None or out.type not in MMVQ_OK:
+        rep["upstream"].append(f"output.weight is {out.type_name if out else 'missing'}: the head takes "
+                               f"native_mmvq_supported types")
+    # round 15: a shard without tensors whose header is not padded to the alignment - the engine's GGUF reader
+    # (gguf_reader.hpp) computes its data section at the aligned offset and refuses "data section starts past EOF"
+    # (Unsloth's UD-Q5_K_XL shard 1: 10,946,618 bytes; llama.cpp / gguf-py read it)
+    align = m.get("general.alignment", 32) or 32
+    for i, (hend, fsize, nt) in enumerate(m.shard_layout):
+        if nt == 0 and (hend + align - 1) // align * align > fsize:
+            rep["upstream"].append(f"shard {i + 1} ({Path(m.paths[i]).name}) has no tensors and ends {((hend + align - 1) // align * align) - fsize} "
+                                   f"byte(s) before its aligned data section: the engine's GGUF reader refuses it (\"data section "
+                                   f"starts past EOF\") - your fallback 2 (splice) or 3 (a loader fix)")
+    exp_types = Counter()
+    exp_ok, exp_opt = expert_types_of(Path(tree) if tree else None)   # round 15: read from the tree (Q6_K: an opt-in build)
+    for t in m.tensors.values():
+        if t.name.endswith("_exps.weight"):
+            exp_types[t.type_name] += 1
+            if t.type in exp_opt:
+                if exp_opt[t.type] not in rep["build"]:
+                    rep["build"].append(exp_opt[t.type])
+                if "-DSTRATA_MMQ_KQUANTS=ON" not in rep["build"]:   # the Q6_K prompt kernels come with both options
+                    rep["build"].append("-DSTRATA_MMQ_KQUANTS=ON")
+            elif t.type not in exp_ok:
+                rep["upstream"].append(f"{t.name} is {t.type_name}: routed experts take {sorted(TN[x] for x in exp_ok)}"
+                                       + (f" (+ {', '.join(TN[x] + ' with ' + o for x, o in exp_opt.items())})" if exp_opt else ""))
+            if t.type in MMQ_KQUANT and "-DSTRATA_MMQ_KQUANTS=ON" not in rep["build"]:
+                rep["build"].append("-DSTRATA_MMQ_KQUANTS=ON")
+    rep["expert_types"] = dict(exp_types)
+    for t in m.tensors.values():
+        if t.name.endswith("_exps.weight") or t.name in ("token_embd.weight", "output.weight", "per_layer_token_embd.weight"):
+            continue
+        if len(t.shape) >= 2 and t.type not in MMVQ_OK and t.type not in DENSE_FLOAT:
+            rep["upstream"].append(f"{t.name} is {t.type_name}: dense projections take native_mmvq types or F32/F16/BF16")
+    # ---- 5b. the guarded patches (the same checks as patch_guard.cpp)
+    f = {"n_embd": a("embedding_length", 0), "n_ff": a("expert_feed_forward_length", 0), "hc": a("hyper_connection.count", 0),
+         "hc_lr": a("hyper_connection.low_rank", 0), "key": a("attention.key_length", 0),
+         "g": (a("attention.head_count", 0) // a("attention.head_count_kv", 1)) if a("attention.head_count_kv") else 0,
+         "fai": a("full_attention_interval", 0)}
+    gdn = any(t.name.endswith(".ssm_alpha.weight") for t in m.tensors.values())
+    qsa = any(t.name.endswith(".indexer.q_proj.weight") for t in m.tensors.values())
+    bad_dense = [t.name for t in m.tensors.values() if t.type in (23, 12, 13, 14, 8) and len(t.shape) == 2 and "_exps" not in t.name
+                 and t.name not in ("token_embd.weight", "per_layer_token_embd.weight") and t.shape[0] % (32 if t.type == 8 else 256)]
+    pg = []
+    if not (f["n_ff"] % 32 == 0 and f["n_embd"] % 32 == 0):
+        pg.append(("pr245", "STRATA_EXPERTS_OLD=1", f"n_embd {f['n_embd']} / n_ff {f['n_ff']} not multiples of 32"))
+    if ple_t is None or (a("ple.ngram_size"), a("ple.heads_per_ngram"), a("embedding_length_per_layer_input")) != (C.get("ple_ngram", 3), C.get("ple_heads", 8), C.get("ple_dim", 160)):
+        pg.append(("ple_prefetch", "STRATA_PLE_PREFETCH=0", "the n-gram table's shape is not ngram.hpp's"))
+    if not (gdn and qsa and f["fai"] == 4):
+        pg.append(("side_mixer", "STRATA_SIDE_MIXER=0", "not 0.1.39's GDN x3 + QSA-with-indexer window"))
+    if f["n_embd"] % 256:
+        pg.append(("router_q8k", "STRATA_ROUTER_Q8K=0", f"n_embd {f['n_embd']} not a multiple of 256"))
+    if (f["key"], f["g"]) != (C.get("attn_hd", 256), C.get("attn_g", 12)):
+        pg.append(("qsa_split_attn", "STRATA_QSA_SPLIT_ATTN=0", f"head size {f['key']} / group {f['g']} vs compiled {C.get('attn_hd')} / {C.get('attn_g')}"))
+    if bad_dense:
+        pg.append(("mmvq_il", "STRATA_MMVQ_IL=0", f"{bad_dense[0]}: rows not whole blocks"))
+    if (f["n_embd"], f["hc"], f["hc_lr"]) != (C.get("gr_n", 2560), C.get("gr_hc", 4), C.get("gr_lr", 320)):
+        pg.append(("gr_fork", "STRATA_GR_FORK=0", f"n_embd / streams / low rank {f['n_embd']} / {f['hc']} / {f['hc_lr']} vs compiled "
+                   f"{C.get('gr_n')} / {C.get('gr_hc')} / {C.get('gr_lr')}"))
+    # round 14: only the guards the tree has (v0.1.40.1's series dropped pr245 and ple_prefetch with their patches)
+    pgf = (Path(tree) if tree else WS / "strata-r13") / "src/core/patch_guard.cpp"
+    if pgf.exists():
+        have = set(re.findall(r'\{"([a-z0-9_]+)", "', pgf.read_text(errors="replace")))
+        pg = [g for g in pg if g[0] in have]
+    # the drafter
+    if mtp:
+        dv = Path(mtp) / "draft_vocab.bin"
+        dense = Path(mtp) / "dense.txt"
+        if dv.exists():
+            import struct
+            raw = dv.read_bytes()
+            ids = struct.unpack(f"<{len(raw) // 4}i", raw)
+            rep["drafter"] = {"dir": mtp, "draft_vocab": len(ids), "max_id": max(ids)}
+            if max(ids) >= len(toks):
+                pg.append(("spec_exact", "STRATA_SPEC_EXACT=0", f"draft id {max(ids)} outside the vocabulary of {len(toks)}"))
+                rep["upstream"].append(f"the drafter's draft vocabulary has ids up to {max(ids)}, past the model's {len(toks)}: "
+                                       f"a drafter for another vocabulary")
+        if dense.exists():
+            fc = [l.split() for l in dense.read_text().splitlines() if l.startswith("fc_hidden.weight")]
+            if fc and int(fc[0][2]) != f["n_embd"]:
+                rep["upstream"].append(f"the drafter in {mtp} is {fc[0][2]} wide, the model {f['n_embd']}: another model's MTP layer")
+    else:
+        rep["notes"].append("no --mtp given: the drafter's fit was not checked (the engine needs --mtp for MTP drafts)")
+    rep["patches"] = [{"guard": g, "off": o, "why": w} for g, o, w in pg]
+    # ---- verdict
+    if rep["upstream"]:
+        rep["verdict"] = "NEEDS UPSTREAM SUPPORT FOR EXACTLY THIS: " + " | ".join(rep["upstream"])
+    elif rep["patches"]:
+        rep["verdict"] = "RUNS WITH THESE PATCHES OFF: " + ", ".join(f"{p['guard']} ({p['why']})" for p in rep["patches"])
+    else:
+        rep["verdict"] = "RUNS"
+    if rep["build"]:
+        rep["verdict"] += " [build option: " + " ".join(rep["build"]) + (" for the Q6_K expert kernels and the prompt path's K-quant experts]" if any("Q6K" in b for b in rep["build"]) else " for the prompt path's K-quant experts]")
+    return rep
+
+
+def show(rep: dict):
+    print(f"# {Path(rep['file'][0]).name} ({len(rep['file'])} shard(s), GGUF v{rep['gguf_version']}, {rep['arch']})")
+    b = rep["bytes"]
+    print(f"bytes: experts {b['experts_gib']} GiB, n-gram table {b['ngram_table_gib']} GiB, the rest {b['dense_gib']} GiB, "
+          f"total {b['total_gib']} GiB")
+    print("roles:")
+    for k, v in rep["roles"].items():
+        print(f"  {k:42s} x{v['n']:<3d} {str(v['shape']):22s} {v['gib']:8.3f} GiB  {v['types']}")
+    L = rep["layers"]
+    print(f"layers: block_count {L['block_count']}, nextn {L['nextn_predict_layers']}, trunk {L['trunk']}, blk {L['blk_indices']}, "
+          f"past the trunk {L['blocks_past_trunk'] or '-'}, nextn roles {L['nextn_roles'] or '-'}")
+    t = rep["tokenizer"]
+    print(f"tokenizer: {t['model']} / {t['pre']}, vocabulary {t['vocab']}, eos {t['eos']}, bos {t['bos']}, pad {t['pad']}; "
+          f"{t['control_tokens']} control tokens ({', '.join(t['control_sample'])}, ...), always-special {t['always_special']}")
+    print(f"chat template: {t['chat_template_chars']} chars; markers " +
+          " ".join(f"{k}{'+' if v else '-'}" for k, v in t["template_markers"].items()))
+    print(f"n-gram table: {rep['ngram_table']}")
+    print(f"routed experts: {rep['expert_types']}")
+    if rep.get("drafter"):
+        print(f"drafter: {rep['drafter']}")
+    for n in rep["notes"]:
+        print(f"note: {n}")
+    for u in rep["upstream"]:
+        print(f"UPSTREAM: {u}")
+    for p in rep["patches"]:
+        print(f"PATCH OFF: {p['guard']} ({p['off']}): {p['why']}")
+    print(f"VERDICT: {rep['verdict']}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("gguf")
+    ap.add_argument("--mtp")
+    ap.add_argument("--tree", default=str(WS / "strata-r13"))
+    ap.add_argument("--json")
+    a = ap.parse_args()
+    rep = inspect(a.gguf, a.mtp, a.tree)
+    show(rep)
+    if a.json:
+        Path(a.json).write_text(json.dumps(rep, indent=1))
+    return 0 if rep["verdict"].startswith("RUNS") else 3
+
+
+if __name__ == "__main__":
+    sys.exit(main())

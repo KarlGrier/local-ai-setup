@@ -1,0 +1,61 @@
+**AMD cards on Windows (new), an MCP server so your AI assistant can set Strata up, a shorter README - and a cancelled request now frees the engine within a second.**
+
+**AMD on Windows (new, #247 #325):** an AMD card on Windows is set up like an NVIDIA one: double-click
+`START-HERE.bat`. On a PC with no NVIDIA card Strata can use, setup picks the AMD card by itself and downloads the
+ready-made AMD engine (`strata-windows-x64-hip.zip`, below). It carries the ROCm libraries it needs, so the AMD
+driver (AMD Software: Adrenalin Edition) is the only thing to install. Cards: RX 7900 XT / XTX, RX 7800 XT /
+7700 XT, RX 9060 XT, RX 9070 / 9070 XT, Radeon AI PRO R9700, RX 6800 / 6900 series.
+- **This is new:** #325's author ran this port on an RX 9070 XT. Here, the zip's own runtime finds a Radeon iGPU, and
+  a test build of the same code ran a hipBLAS GEMM correctly on it. But the release zip hasn't run a model on a
+  discrete card yet. Please report how it runs (docs/AMD_HIP.md, "Reporting a Windows AMD run").
+- **For now on Windows:** one card per model, no images. Linux AMD is unchanged: multi-GPU, and images through the
+  CPU.
+- Thanks to jagsan-cyber (#247), dvasdekis (#325) and araujoluks (#302) for the Windows work this builds on.
+
+**Let your AI set it up (#133):** paste one line into Claude Code, Cursor, Codex or Copilot (in the README). It
+checks the PC, picks the model, installs, starts and tells you how to connect. `tools/strata_mcp.py` is an MCP server
+that lets AI tools install, start, check and stop Strata themselves (docs/MCP_SERVER.md).
+
+**A shorter README:** what Strata is, how fast it is (now with an AMD PC next to the NVIDIA one), what you need, how
+to install, which model to pick. The details moved to docs/INSTALL.md, MODELS.md, TROUBLESHOOTING.md and
+HOW_IT_WORKS.md. AMD is no longer called experimental.
+
+**Fixes:**
+- **A request whose client hangs up is cancelled within about a second** (#430, #431, jkuepker). Before, a
+  non-streamed request ran to `max_tokens`, and a streamed one read its whole prompt, while the next request waited
+  (17-33 s in the reports).
+- **The prompt path no longer aborts when llama.cpp's MMQ has no tile that fits a card** (`J_best=0`, #420,
+  qni-live). That product takes the FP16 path, and the engine says which type and card. Where everything fits,
+  nothing changes.
+- **Setup:**
+  - a resumed download needs disk room only for what is still missing (#425, jctaborda);
+  - UD-Q4_K_XL on an AMD card is asked about before its 111 GB download, since it is untested there (#429, jkuepker).
+- **Docs:** the AMD router's decode gain with a user's repeated measurement next to ours, and their
+  `STRATA_HIP_WMMA=1` numbers (#432, jkuepker).
+
+**Checked before the release:**
+- **Same answers as 0.1.33 on all four quants** (Q2_0, IQ3_XXS, IQ3_S, the Coder), 10/10 each with a fixed cache,
+  including the prompt path's internal state at 4K and 20K tokens. Checked both after the merge and on the final
+  engine.
+- **The same speed:** 5-pair A/B on Q2_0 and IQ3_S, +1.2 / +0.9 / -0.2 / +0.4%, with the same expert slots.
+- **Real use at a 57K-token prompt** through the server on Q2_0 and the Coder. A long prompt whose client hung up,
+  followed by a short question: the question was answered in 0.6 s (17 s in #431's report).
+- **Linux (WSL, RTX 5070):** Q2_0 byte-identical to 0.1.33 (10/10), and the default settings pass.
+- **AMD on Linux (R9700):** the HIP build of the release and its tests, all passing except the two that need a model
+  fixture or an AVX-512 CPU, as before. The README's AMD numbers were measured on an RX 9070 XT + Ryzen 9 3900X +
+  47 GB RAM with setup's own install.
+- **AMD on Windows:** the zip built and packaged. Its `strata-device` with only the zip's libraries lists this PC's
+  integrated Radeon and correctly reports that the engine has no code for it (gfx1036).
+- **Tests:** setup's (132, including the golden check that NVIDIA `--yes` configs are unchanged), the other tools' and
+  the MCP server's (236 together), the server's (146, including client hang-ups, streamed and not).
+- **#410:** reproduced on IQ3_XXS: `--pcie-frac 0` was the missing switch for byte-identical repeats (DETAILS.md).
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` (Linux:
+`./setup.sh`). Setup installs engine 0.1.34.
+
+The ready-made Strata engines for Windows, which `START-HERE.bat` fetches by itself:
+- `strata-windows-x64.zip`: NVIDIA (RTX 20 / 30 / 40 / 50: sm_75, sm_86, sm_89, sm_120 + PTX), CUDA 13.0, needs an
+  NVIDIA driver 580 or newer. Contents: `strata.exe`, `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+- `strata-windows-x64-hip.zip`: AMD (gfx1100, gfx1101, gfx1102, gfx1200, gfx1201, gfx1030), ROCm 10.2.0a20260930
+  from AMD's TheRock builds, needs a current AMD driver. Contents: `strata.exe`, `strata-device.exe`, `BUILD.json`,
+  `rocm\` (the ROCm libraries and their licenses).

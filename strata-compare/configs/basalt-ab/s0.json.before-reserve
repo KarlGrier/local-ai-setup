@@ -1,0 +1,52 @@
+{
+    "exe": "/home/USER/ai-speed-testing/strata-compare/engine-v021stock/strata",
+    "cwd": "/home/USER/ai-speed-testing/strata-compare/bringup/out/r20a",
+    "tokenizer": "/home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack/tokenizer",
+    "model_name": "strata-qwen3.8-flash-next-iq3s",
+    "lib_dirs": [
+        "/usr/local/cuda-13.3/bin",
+        "/usr/local/cuda-13.3/lib64"
+    ],
+    "port": 8081,
+    "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.05
+    },
+    "host": "127.0.0.1",
+    "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-ab-s0.log",
+    "server": "/home/USER/ai-speed-testing/strata-compare/strata-v021stock/serve/server.py",
+    "answer_room": false,
+    "_comment": "Basalt round 2 (10-21): STOCK Strata v0.2.1 (engine-v021stock, none of our commits) as upstream's own setup configures this machine class (tools/test_setup_golden.json '96GB-1x16GB qwen recommended': spec 4, spec-min-p 0.5, kv int8, 32K resident, 64K context, expert cache auto, prefill auto; its default MTP folder = our converted layer + the default 'cjk' draft vocabulary, models/mtp-stock/rt) minus --vision; the 5080 alone; env only STRATA_ROUTE_TAIL_SKIP=0 (the default tail skip is lossy on one GPU), so upstream's per-card defaults (src/core/nv_defaults.cpp) apply as they would for a user; answer_room off like every A/B arm",
+    "args": [
+        "--pack",
+        "/home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack",
+        "--native",
+        "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+        "--ple-gguf",
+        "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+        "--expert-profile",
+        "/home/USER/ai-speed-testing/strata-compare/strata-cstar18/data/expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "/home/USER/ai-speed-testing/strata-compare/models/mtp-stock/rt",
+        "--max-context",
+        "65536",
+        "--kv",
+        "int8",
+        "--kv-resident",
+        "32768"
+    ],
+    "env": {
+        "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX5080",
+        "STRATA_ROUTE_TAIL_SKIP": "0"
+    }
+}

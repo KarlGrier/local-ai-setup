@@ -1,0 +1,58 @@
+**The image encoder runs on every CPU again, and setup recommends instead of forcing: a longer context, more GPUs or a bigger RAM budget you choose is kept, with a note about the risk.**
+
+**Images (#411, #412):** 0.1.32's ready-made `strata-vision.exe` was built with AVX-512 and OpenMP and stopped at
+start on CPUs without AVX-512 (most AMD Ryzen before Zen 4, many Intel desktop CPUs): "illegal instruction" or "the
+vision encoder did not start". 0.1.33's is built portable again (AVX2, no OpenMP), like 0.1.31's, and keeps 0.1.32's
+RTX 20 code. Running `START-HERE.bat` once installs it.
+
+**Setup recommends, you choose (#406, #403, #364, #384):**
+- **Context:** setup still recommends 128K for IQ3_XXS / IQ3_S on a 64 GB PC, but a longer one you pick (or
+  `--context 262144`) is kept, with a note that it may run out of RAM under load. An update keeps your earlier
+  context, and in the low-RAM mode the context no longer counts against RAM.
+- **Several GPUs on a low-RAM PC:** setup asks whether to use one GPU (the default: experts kept in RAM, steady RAM
+  use) or all of them (experts read through the OS file cache: 1.3-1.6x faster in two users' measurements, but RAM
+  can fill up during long prompts). `--gpus 0,1` is honoured. The engine runs `--resident-experts` with a layer split
+  as `--mmap-experts`, with a warning, instead of refusing to start.
+- **RAM budget (`--resident-budget-gib`):** a budget larger than the free RAM no longer fails the safety check after
+  the engine lowers it (#403), and a budget that can't be kept at all is a warning. Setup takes `--resident-budget-gib N`.
+- Setup asks instead of stopping when a model is above its RAM estimate, or a named card has under 8 GB for a
+  split. `--yes` alone keeps the recommended choices. `--kv-streaming on|off|auto` is new.
+- With `--yes` or Enter for every question, setup writes exactly the same config as 0.1.32 (checked on 23
+  PC/model combinations).
+
+**Fixes:**
+- V100 (sm_70) in a layer split: the prompt's attention uses the kernel that card supports again (#371, AxalotLDev).
+- `--expert-cache-per-layer` starts on native packs and fills every layer (#369, dag08).
+- `STRATA_GR_V3=1` (opt-in) keeps the default read on cards where its two-half split fails its checks (Turing; #375,
+  kenh0u); its test compares within float rounding (#379, sergqwer).
+- Server: a request the chat template refuses ("No user query found in messages.") gets a 400 error instead of a
+  dropped connection (#365); a temporary image file is removed when the encoder fails (#352, Tsury); the image encoder
+  can run on its own GPU, `"cuda_device"` in the vision section (#408, Efs-O).
+- Setup stops when its input ends instead of answering yes, e.g. to installing the build tools (#393, #398 by
+  Bortlesboat); a setup test no longer fails on a PC with CUDA installed (#414, rwkeyes).
+- Docs: byte-identical greedy repeats through the server also need `--prompt-cache 0 --adapt-swaps 0` (#410).
+
+**Checked before the release:**
+- **Same answers as 0.1.32 on all four quants** (Q2_0, IQ3_XXS, IQ3_S, the Coder), 10/10 each with a fixed cache.
+  The prompt path's internal state at 4K and 20K tokens is identical too. The default speed is unchanged within noise
+  (5-pair A/B, same expert slots). The merged release was checked again on Q2_0 and IQ3_XXS.
+- **The image encoder:** no AVX-512 instructions and no OpenMP (the same profile as 0.1.31's, which ran on CPUs
+  without AVX-512), and the image test passes behind the server (greedy colour and three sampled descriptions).
+- **Real use at a 57K-token prompt** through the server on Q2_0 and the Coder.
+- **Linux (WSL, RTX 5070):** Q2_0 byte-identical to 0.1.32 (10/10), and the default settings pass.
+- **AMD (R9700):** the HIP build and its tests. All pass except the two that need a model fixture or an AVX-512 CPU,
+  as in 0.1.32.
+- **Tests:** setup's tests (120, including a golden check that `--yes`/Enter configs are byte-identical to 0.1.32's
+  on 23 PC/model combinations), the server's (141), the tools', and the parity tests of the changed kernels (QSA
+  prompt attention, the hyper-connection read with and without V3, the per-layer expert cache).
+- **#403:** an engine started with `--resident-budget-gib 500` lowers the budget with its margin, starts and answers.
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` (Linux:
+`./setup.sh`). Setup installs engine 0.1.33.
+
+The ready-made Strata engine for Windows (RTX 20 / 30 / 40 / 50: sm_75, sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler
+or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.

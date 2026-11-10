@@ -1,0 +1,137 @@
+VERSION CHECK FIX, DESK REPLAY (2026-11-10)
+============================================
+Nothing installed, switched or re-enabled. No model, GPU, network, paid search or sudo was used. The owner decides.
+
+WHERE THE CHECK LIVES
+- Installed: .venv/lib/python3.12/site-packages/local_deep_research/deep/checks.py (sha256 d801fc40...),
+  section "Fix 1: versions": setting_names (720), version_evidence (1497), version_check (1575-1708: 2 engine_dirs
+  model calls per pinned clone + 1 VERSION_PROMPT call per 40 names, then rules in code), BAD_KINDS (1636),
+  _attributed_in_text (1657), version_flagged / version_marks / version_section (1676-1721).
+- Called from deep/report.py _finish_fixed (827-833: run + versioncheck.json; 900: inline marks; 915: section).
+- Switched by LDR_DEEP_FIX "version"; deep jobs: tools/research-runner.py:276 JOB_DEEP_FIX (version off since 11-09).
+- tools/fix-replay.py "check --fix version" re-runs it through the model on 8090 (not used here).
+- How it marks: a name gets "[Version check: `name` - <kind> (<model's note>); unverified for X / not an option of X
+  as far as the code shows]" on the first sentence naming it in each section, when its kind is other-engine,
+  other-version, other-project, not-found or launcher-only and its use is recommended or described.
+
+METHOD (replay.py)
+The model's part is held fixed: each stored versioncheck.json keeps the model's verdicts (the rules' changes undone
+from "use_was" / "was"), its engine folders, and the report text (deep/report-unverified.md, or a replay's input.md).
+The code part is run twice on that: BASELINE = the installed checks.py (imported read-only, no bytecode),
+FIXED = the staged copy. Code evidence: `git archive` trees of the local Strata clone at v0.2.6 / v0.2.4 (trees/),
+wrapped in the code tool's own Repo class. Sources: each run's deep/evidence.jsonl.
+The baseline reproduces the live marks exactly: o01 13, o04 4, o05 8; Fix 1c's replays 21 / 48 / 4 / 1.
+Not replayable at the desk: a new model answer. A live check also sends fewer names (the ones skipped below), so
+the model's answers for the others can differ from run to run.
+
+REPLAY SET
+Phase 5 automated test runs: p5-o01-deep-p5final/o01; holdout-deep-p5final o04, o05, o06 + c03..c30 (15);
+hard-holdout-deep-p5final h11-h20; p5-harder-deep-p5final p5c1b/p5c2/p5c5/p5c6 (33 reports; 6 name any setting).
+Regression ("keep true marks"): Fix 1c's own replays b-f1c-full / -fixes / -p4s6o01-code / -p4s6o02-code
+(judged in fixes/fix1-judge), and b-f1b-* (the same reports with the 10-29 model answers, before the relabel rule).
+b-*-jan1024 left out: it is a replay of the owner's own 10-24 report.
+
+BASELINE (current check) -> FIXED, inline marks per report
+report  names  before  after  marks before (verdict from fix1c-holdout/judged.jsonl)
+o01       37     13     10    STRATA_ADAPT_HELPER 5, STRATA_COST_GATE 1, STRATA_WARM 1 (correct);
+                              SECOND_GPU 2, DISJOINT_EXPERT_CACHE 1, --mtp-device 1, --draft-device 1,
+                              --head-device 1 (false: 6 inline)
+o04       33      4      0    Q4_K_M 2, --load-mode 2 (false)
+o05        3      8      0    IQ3_S 8 (false)
+c26 2 / h14 1 / h20 7 names: 0 -> 0. The other 27 reports name no setting: 0 -> 0.
+False marks: 18 of 25 before (o04 4, o05 8, o01 6); 0 after.
+
+THE FIX (staged/checks.py; patch: version-fix-1110.patch, +403 / -30 lines, checks.py only)
+The model prompts and calls are unchanged. The rules after the calls moved into version_settle() (no model call,
+so tools can replay it on saved answers).
+1. Quantization types (IQ3_S, Q4_K_M, IQ2_K_R4, TQ2_0, MXFP4_MOE: QUANT_RE) are model-file formats, not settings:
+   not sent, listed as not-a-setting, never marked.                                         [patterns 1, 3]
+2. A name that occurs only as a cited file's stem (SECOND_GPU.md): not sent. It is marked only as "a doc of another
+   engine" when the task is about one engine of a mapped project and the doc at the user's version is the other
+   engine's (engine map, or the doc's text names only that engine 3+ times). b-f1-full's MULTI_GPU.md (Qwen engine's
+   split doc offered for DeepSeek, judged correct) stays marked; o01's docs (a whole-project task) do not.   [5]
+3. A name the report says does not exist, in every place it names it ("No `--mtp-device`, `--draft-device`, or
+   `--head-device` flag appears in the v0.2.6 flag list"): not sent, never marked. Negating a use ("do not set X",
+   "without any X override", "X has no effect") does not count.                                [4]
+4. The attributed -> described relabel: a table cell is read with its row's first cell (o04: "| **llama.cpp** ..."),
+   bold/code marks are removed before the owner test ("PR **#29191**"), and "other-engine" is relabelled only when the
+   project's own code has the name (not only docs, tests or bench notes, where other programs' flags are written down
+   too: --load-mode in a llama.cpp run's README, --prefetch in a Metal test comment).          [2]
+5. With no code read at all (o05): any mark left says "unverified for X: its code was not read", and the section
+   says so too.                                                                                [3]
+6. other-version / not-found with no hit at the user's version, where the only sources naming it are the user's
+   own attached files: kind "own-build" ("not in the code at your version; only your own files name it (your own
+   build's setting?)") instead of "another version". The mark count is unchanged.             [6]
+7. Engine split for "this-version" names: exactly one engine's code reads the name at the user's version (engine
+   map; no hit in shared/unmapped code, nor of the name's tail elsewhere), and sentences set it for the other engine
+   (that engine's markers in the name's clause, plus a set/enable/config cue) -> marked "a setting of another engine
+   of the same project" at those sentences, one per section.                                 [7]
+Not covered: a report's description compared with the code (o01's STRATA_ROUTE_TAIL_SKIP, STRATA_ADAPT_OVERLAP).
+That needs a model call per name, with the report's sentences and the code lines where it is read, so it would need
+8090. I stopped there and did not build it.
+
+AFTER THE FIX: EVERY REMAINING MARK
+o01 (10 inline marks, 4 names):
+- STRATA_ADAPT_HELPER x5, STRATA_COST_GATE x1, STRATA_WARM x1: "not in the code at your version; only your own files
+  name it (your own build's setting?)". Judged correct on 11-09: the user's own fork knobs, in no upstream tag; the
+  old kind "another version" was the imprecise part.
+- STRATA_DISJOINT_ADAPT x3 (NEW; on 11-09 it was judged a MISSED mark): "a setting of another engine of the same
+  project (only the Qwen engine's code reads it at v0.2.6 (src/program/generate.cpp:6779); the report sets it for the
+  DeepSeek engine); not read by the DeepSeek engine at Niko1221/Strata v0.2.6 as far as the code shows". It is placed at
+  report-unverified.md L9 (the Answer's lead step, "in the active DeepSeek-V4.1-Flash config"), L37 and L239. Checked:
+  no DISJOINT_ADAPT in src/dsv41, include/strata/dsv41, serve, strata_cli, strata_control or apps at v0.2.6.
+o04: none. o05: none. Every other report in the replay set: none.
+Still missed on o01 (not marked before or after): STRATA_ROUTE_TAIL_SKIP and STRATA_ADAPT_OVERLAP (description vs
+code, see above). Borderline and not counted: STRATA_STAGE_TRIM, -march=native.
+
+KEEP-TRUE-MARKS REGRESSION (inline marks before -> after; verdicts from fixes/fix1-judge)
+b-f1c-full 21 -> 21 (7 names, all judged correct, MULTI_GPU included); b-f1c-fixes 48 -> 48 (18 names, all correct);
+b-f1c-p4s6o01-code 4 -> 4, b-f1c-p4s6o02-code 1 -> 1 (not judged, unchanged).
+b-f1b-full 14 -> 14 (4 correct); b-f1b-fixes 45 -> 45 (15 correct, among them --experts / --full-quality / --speed,
+which only the relabel rule marks); b-f1b-p4s6o02-code 1 -> 1.
+b-f1b-p4s6o01-code 9 -> 8: --prefetch dropped. The report gives it to BigMoeOnEdge, and at v0.2.6 it occurs only in a
+comment in metal/tests/token_chain.cpp:178, so it is the o04 kind of false mark (it had not been judged).
+Every judged-right mark is kept: 25 on the f1c replays, 19 on the f1b answers.
+A first draft also required a "tie to the user's program" before relabelling. It lost 3 right marks on b-f1b-fixes
+("The user must set: `--full-quality --experts 6`"), so I dropped it.
+
+FILTERS OVER EVERY STORED TEST-RUN CHECK (replay/scan.txt, scan-filters.json)
+67 stored checks name 1,964 names. 252 are no longer sent: 223 quantization types (34 distinct, all real types),
+26 Strata doc-name stems (MULTI_GPU, SECOND_GPU, DISJOINT_EXPERT_CACHE, AMD_HIP, A770_SPEED_SPEC) and 3 denials
+(o01's device flags only). Outside the replay set this drops earlier marks that nobody judged: quant names on p4s9/o01,
+p8c/o01 (ik_llama types the report itself gives to ik_llama.cpp), pc3c/o01 and the shop-7e runs, plus doc names on
+p4s8/o02, p7a/o02, p7c/o02, pc3c/o02 and shop-7e p7d/s3. The doc names would still be marked in a live run if rule 2
+finds another engine's doc.
+Gap the quant filter opens: this check no longer marks a report that claims the program runs a format it cannot.
+That is a format-support question, not a settings one.
+
+OWNER'S RE-ENABLE CONDITION (no false marks on o04, o05 and o01)
+On this replay it is met: o04 0 marks, o05 0 marks, o01 10 marks on 4 names, all true by the 11-09 judging (3 correct
+plus the 1 missed name now marked). The owner decides. Caveats:
+(a) the model's answers are the stored ones; a live check re-asks the model;
+(b) the wording and placement of the new DISJOINT_ADAPT and own-build marks have not been judged by anyone else;
+(c) o01 still has the 2 description misses;
+(d) o05's root cause stays: the run never cloned Strata, and neither the task nor the profile links its repo, so the
+    check had no code. An optional follow-up (not built) would open the pinned project's repo from the engine map
+    (deep/engines/strata.json "repos") in CodeTool.pinned_repos. That changes the model's input, so it needs a live
+    replay through 8090.
+A live confirmation replay (tools/fix-replay.py check --fix version --run <run>) would need the patched checks.py on
+the import path, the model (8090/8080, holding run/bench.lock) and a GitHub clone of Niko1221/Strata@v0.2.6. I did not
+run it.
+
+TO INSTALL LATER (owner's decision; not while a run is live)
+patch -p1 -d /home/USER/ai/deep-research/.venv/lib/python3.12/site-packages < version-fix-1110.patch
+(It applies to checks.py sha256 d801fc40...; the result is sha256 32a5d54b..., identical to staged/checks.py; checked
+by applying it to a copy in scratch/apply.) Re-enabling "version" in JOB_DEEP_FIX is a separate step for the owner.
+
+FILES (this folder)
+version-fix-1110.patch      the staged patch (unified diff of deep/checks.py)
+staged/checks.py            the patched copy; orig/checks.py = the installed file as of 11-10 (unchanged)
+replay.py                   the replay (baseline vs fixed); replay/table.txt its output
+replay/<label>.json         per report: pins, code, live/baseline/fixed marks, flagged names, skipped names, changes
+replay/<label>.marked.txt   the report text with the FIXED check's marks; replay/summary.json the table + verdicts
+replay/scan.txt, scan-filters.json   the filters over all 67 stored checks
+replay/selftest.txt         22 unit checks of the new helpers (all ok); scratch/ helper scripts (smoke.py: the staged
+                            version_check end to end with a stand-in model answering from the stored verdicts:
+                            o01 10, o04 0, o05 0)
+trees/                      git archive of Strata v0.2.6 / v0.2.4 (181 MB; only needed to re-run; can be deleted)

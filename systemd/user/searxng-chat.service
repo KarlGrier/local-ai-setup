@@ -1,0 +1,13 @@
+[Unit]
+Description=The chat page's SearXNG (127.0.0.1:8888; strata-compare websearch/searxng.sh run) - its own service since 2026-10-21, independent of run-strata.sh and the test scripts
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/USER/ai-speed-testing/strata-compare/websearch
+ExecStart=/bin/bash /home/USER/ai-speed-testing/strata-compare/websearch/searxng.sh run
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

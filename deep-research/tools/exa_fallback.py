@@ -1,0 +1,170 @@
+"""exa_fallback.py - an Exa search when SearXNG fails or returns too few results (2026-10-19, the user's request).
+
+Exa 3.0 (released 2026-10-19). The first fallback; Tavily (tavily_fallback.py) is the second. search_fallback.py
+chains them for LDR (patch 0005, only with LDR_SEARCH_FALLBACK=1: the Jan research runner sets it, the measurement
+queue never does) and for the Strata chat page's web_search (serve/websearch.py). Standard library only.
+
+* Dormant until the key file exists: ~/.config/deep-research/exa.key (one line). The key is read only when a request
+  is sent, and is never printed, logged or put in the environment.
+* POST https://api.exa.ai/search, type "lite" (Exa 3.0's cheapest search, $4 per 1,000 requests for up to 10
+  results; cached pages only, and it rejects parameters it does not support with HTTP 400), with highlights (the
+  relevant passages of each page, included in the request price).
+* A monthly spending counter shared by every client (~/.config/deep-research/exa-usage.json, file-locked), in US
+  dollars: Exa's free tier gives $10 of credit that resets on the first of each month (plus a one-time $10 onboarding
+  bonus, not counted here). We stop at EXA_MONTHLY_CAP_USD (default 9.00). Each search reserves its estimated price
+  before it is sent (so parallel clients cannot overshoot) and is corrected to Exa's reported costDollars.total
+  afterwards; a failed request keeps its estimate. HTTP 402 (out of credit) closes the month at once.
+* Every use is one line in ~/ai/deep-research/logs/exa-fallback.jsonl (time, client, reason, query, result count,
+  month spend; errors by type and HTTP status only).
+* Item 7 (Karl's paid-search rule, 10-27; staged 10-28): paid_budget.py decides per caller. Tests and Karl's research
+  stop at 25 % of the month's $10 left ($7.50 spent), every caller at 10 % left ($9.00, the old cap); a test run gets
+  at most 30 paid searches, a research run 100 (both providers together).
+"""
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+import threading
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+import paid_budget
+
+KEY_FILE = Path.home() / ".config" / "deep-research" / "exa.key"
+USAGE_FILE = Path.home() / ".config" / "deep-research" / "exa-usage.json"
+LOG_FILE = Path("/home/USER/ai/deep-research/logs/exa-fallback.jsonl")
+URL = os.environ.get("EXA_URL", "https://api.exa.ai/search")      # tests point this at a local mock
+SEARCH_TYPE = os.environ.get("EXA_SEARCH_TYPE", "lite")
+CAP_USD = float(os.environ.get("EXA_MONTHLY_CAP_USD", "9.00"))    # of the $10 monthly free credit (every caller)
+MONTH_CREDIT_USD = 10.0                                           # Exa's free tier, resets on the 1st
+PRICE_USD = {"lite": 0.004, "instant": 0.004, "auto": 0.007, "fast": 0.007}   # per request, up to 10 results
+TIMEOUT_S = 20.0
+_status = threading.local()     # item 7 router (10-29): why the last search() in this thread gave what it gave
+
+
+def last_status() -> str:
+    """'sent', 'off', 'refused: ...' or 'error: ...' for this thread's last search()."""
+    return getattr(_status, "s", "")
+
+
+def available() -> bool:
+    """The key file is there (not read here)."""
+    try:
+        return KEY_FILE.is_file() and KEY_FILE.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _month() -> str:
+    return time.strftime("%Y-%m", time.gmtime())
+
+
+def usage() -> dict:
+    try:
+        d = json.loads(USAGE_FILE.read_text())
+    except (OSError, ValueError):
+        d = {}
+    if d.get("month") != _month():
+        d = {"month": _month(), "usd": 0.0, "searches": 0, "closed": False}
+    d["cap_usd"] = CAP_USD
+    return d
+
+
+def _update(fn) -> dict:
+    """Apply fn to this month's record under the file lock; returns the record."""
+    USAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(USAGE_FILE.with_suffix(".lock"), "a") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        d = usage()
+        fn(d)
+        tmp = USAGE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({k: d[k] for k in ("month", "usd", "searches", "closed")}))
+        os.replace(tmp, USAGE_FILE)
+        return d
+
+
+def _reserve(est: float, limit: float = CAP_USD) -> tuple[bool, dict]:
+    ok = []
+
+    def fn(d):
+        if d.get("closed") or d["usd"] + est > limit:
+            ok.append(False)
+            return
+        d["usd"] = round(d["usd"] + est, 6)
+        d["searches"] += 1
+        ok.append(True)
+    d = _update(fn)
+    return ok[0], d
+
+
+def _log(rec: dict) -> None:
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": time.strftime("%Y-%m-%dT%H:%M:%S"), **rec}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def search(query: str, max_results: int = 10, client: str = "?", reason: str = "") -> list[dict] | None:
+    """Exa results as [{"title", "url", "content", "score", "published_date"}] (content = the page's highlights), or
+    None (no key, over the cap, or the request failed). Never raises."""
+    query = (query or "").strip()
+    _status.s = "off"
+    if not query or not available():
+        return None
+    est = PRICE_USD.get(SEARCH_TYPE, 0.015)
+    k = paid_budget.kind(client)
+    limit = min(CAP_USD, paid_budget.month_limit(MONTH_CREDIT_USD, k))
+    rec = {"client": client, "kind": k, "run": paid_budget.run_id(client) or None, "reason": reason, "type": SEARCH_TYPE,
+           "query": query[:300]}
+    run_ok, why = paid_budget.run_reserve(k, client)
+    if not run_ok:
+        _log({**rec, "skipped": why, "month_usd": usage()["usd"]})
+        _status.s = f"refused: {why}"
+        return None
+    ok, d = _reserve(est, limit)
+    if not ok:
+        paid_budget.run_release(k, client)
+        why = f"{k} month limit ${limit:.2f} reached" + (" (Exa said out of credit)" if d.get("closed") else "")
+        _log({**rec, "skipped": why, "month_usd": d["usd"]})
+        _status.s = f"refused: {why}"
+        return None
+    try:
+        key = KEY_FILE.read_text().strip()
+        body = json.dumps({"query": query, "type": SEARCH_TYPE, "numResults": max(1, min(10, int(max_results))),
+                           "contents": {"highlights": True}}).encode()
+        req = urllib.request.Request(URL, data=body, method="POST",
+                                     headers={"Content-Type": "application/json", "x-api-key": key,
+                                              "User-Agent": "deep-research-fallback"})
+        del key
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=TIMEOUT_S) as r:
+            data = json.loads(r.read(5_000_000))
+        cost = (data.get("costDollars") or {}).get("total") if isinstance(data.get("costDollars"), dict) else None
+        if isinstance(cost, (int, float)) and cost >= 0:
+            d = _update(lambda u: u.__setitem__("usd", round(max(0.0, u["usd"] + float(cost) - est), 6)))
+        out = []
+        for x in data.get("results") or []:
+            if not isinstance(x, dict) or not x.get("url"):
+                continue
+            hl = x.get("highlights") or []
+            text = " … ".join(str(h).strip() for h in hl if h) if isinstance(hl, list) else str(hl)
+            out.append({"title": str(x.get("title") or ""), "url": str(x["url"]),
+                        "content": (text or str(x.get("text") or ""))[:2000], "score": x.get("score"),
+                        "published_date": x.get("publishedDate")})
+        _log({**rec, "results": len(out), "cost_usd": cost, "month_usd": d["usd"]})
+        _status.s = "sent"
+        return out
+    except urllib.error.HTTPError as e:
+        if e.code == 402:                       # out of credit (Exa rejects, it does not bill without a payment method)
+            _update(lambda u: u.__setitem__("closed", True))
+        _log({**rec, "error": f"HTTP {e.code}", "month_usd": d["usd"]})
+        _status.s = f"error: HTTP {e.code}"
+    except Exception as e:  # noqa: BLE001 - the caller keeps SearXNG's results
+        _log({**rec, "error": type(e).__name__, "month_usd": d["usd"]})
+        _status.s = f"error: {type(e).__name__}"
+    return None

@@ -1,0 +1,44 @@
+# Round 19 — where it stopped (2026-10-10 15:58) and how to resume after the reboot
+
+**Why it stopped:** at 15:42:58 the kernel's memory-compaction thread (kcompactd0) oopsed (page fault in
+`isolate_migratepages_block`, kernel 7.0.0-34, tainted D since). From then on reclaim is broken on that boot: every large
+allocation was OOM-killed (6 kills 15:43–15:57, last one a plain IQ3_S run, then C\*16.1 itself). A reboot is needed; it also
+loads kernel 7.0.0-38 (installed 2026-10-10 01:15). The previous boot had a similar event (10-07 18:49 "Bad pagetable" /
+"Bad page map in process strata") and then went down unexplained (10-09 03:30). See NOTES.md, "ROUND 19".
+
+## Done (valid)
+
+- Reading, the 48-hour monitor of C\*16.1 stopped (15:32).
+- fio on the Q8_0 expert shards (15:36, before the oops): 9,386 / 9,704 MB/s (psync), 7,803 MB/s (libaio) — results/r19/a1-fio-*.txt.
+- #1682 unbuffered runs with STRATA_IO_THREADS unset (15:39, 15:41, before the oops): 14.45 / 14.52 tok/s.
+- STRATA_IO_THREADS reading (code): on Linux it sizes only DirectFile's pool (default 16), used by the PLE row reader.
+- The port (git only): branch r19-port = v0.1.42 + C\*16.1's 28 commits (4 conflicts, both sides kept), r19-meas = + the 4
+  MEASUREMENT commits; patches/r19p28, patches/r19-meas28; runbook r19 cloned and built them (bringup/out/r19, 15:57,
+  engine-stock / engine-patched / engine-twin) — the builds are fine to reuse.
+- Stock v0.1.42 K-quant build: tmp/r19/engine-v42-kq (for the Q4 file).
+- The defaults list: results/r19/v042-defaults.md (start-up-line checks still to add).
+- Configs: work/r19/cfg (Part A), configs/r19-* (Part B; work/r19/mk_bcfg.py).
+
+## Not valid / redo after the reboot
+
+- Every run after 15:42:58 (#1682's 16- and 64-thread unbuffered runs, every OOM-killed run).
+- #1682's rule arm (never completed), #1683's 72 / 66 / --resident-experts arms.
+- The first drafts (now work/r19/old-drafts/x-HOLD-*.md; their OOM explanation is wrong). Rewritten 2026-10-10 at the
+  user's request: publish/r19/01-reply-1682.md, 02-reply-1683.md (the missing runs = a kernel problem the user is checking;
+  the follow-ups will come). Privacy check CLEAN. Not posted; each needs the user's explicit OK.
+
+**Cause found (2026-10-10 evening): unstable RAM at 6200 MT/s, now 6000 MT/s 1:1, memtest clean. The user lifted the 60 GiB rule: stressapptest -M 80000 -s 3600 -W must PASS before the first run above 60 GiB; check the kernel log after each big run, stop at the first error.** (Earlier: no run above 60 GiB of locked RAM.) The Part B queue was emptied
+(saved in work/r19/queue-held.txt); the machine was left idle for the reboot.
+
+## Resume (after the reboot; your OK first for the high-memory Part A arms)
+
+1. Check: `uname -r` (7.0.0-38?), `cat /proc/sys/kernel/tainted` (0 or 4096), `journalctl -k -b 0 | grep -i oops` (none).
+2. C\*16.1 on 8080 is NOT started by the reboot; `./switch-model.sh strata` starts it (the launchers' default = Cstar161).
+3. Part A (needs your OK — these are the runs that page-lock 64–70 GiB): work/r19/partA.sh's steps (the #1682 A/B with
+   threads unset / 16 / 64, each block B A A B; #1683's 72 / --resident-experts / 66), with a watch on the kernel log for
+   any oops (stop at the first).
+4. Part B through the queue (IQ3_S only): `printf '%s\n' work/r19/b1_port.sh work/r19/b2_tail.sh work/r19/b3_share.sh
+   work/r19/b4_hs.sh work/r19/b5_spec.sh > bringup/lib/queue.txt` (with their log redirects, as in the notes), then
+   `bringup/lib/queue.sh`. b1 re-runs the runbook (`clone` wipes and re-clones; or start it at `build`); each script ends
+   with C\*16.1 on 8080. Then B.6 (work/r19/b6_screens.sh CANDIDATE), the gates, the acceptance suite, the soak, promotion.
+5. Part C (#1684) after b3's 0.4 result.

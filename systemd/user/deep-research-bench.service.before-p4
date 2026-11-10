@@ -1,0 +1,15 @@
+[Unit]
+Description=Deep research phase 3 measurements, daytime only (~/ai/deep-research/tools/bench2-queue.sh)
+After=default.target deep-research-runner.service
+
+[Service]
+Type=simple
+# waits for 09:00; new work only 09:00-22:00; stops between questions for a new Strata release or tmp/bench2.stop
+ExecStart=/bin/bash /home/USER/ai/deep-research/tools/bench2-queue.sh
+WorkingDirectory=/home/USER/ai/deep-research
+Restart=on-failure
+RestartSec=60
+KillMode=process
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,17 @@
+work/r8/tf.sh R9mtf3500-single configs/R9m-tf3500-single.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R9m-tf3500-single.json'))['exe'])") math corpus long16k long24k long28k long40k long64k
+work/r8/with_server.sh RT9-ours-direct configs/R9m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py direct small r9-ours-direct1"
+work/r8/with_server.sh RT9-ours-direct configs/R9m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py direct small r9-ours-direct2"
+work/r8/with_server.sh RT9-ours-park configs/R9m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py park small r9-ours-park"
+work/r8/with_server.sh RT9-ours-editref configs/R9m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py editref small r9-ours-editref"
+.venv/bin/python work/r8/rt_compare.py r9-ours > results/r8/roundtrip-c9.md; cat results/r8/roundtrip-c9.md
+work/r8/with_server.sh N9 configs/Cstar9.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label S9 --temperature 1.0"
+work/r8/with_server.sh FAIL9 configs/Cstar9.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r8/screen.sh C9-a configs/Cstar9.json
+work/r8/screen.sh C8-a configs/Cstar8.json
+work/r8/screen.sh C8-b configs/Cstar8.json
+work/r8/screen.sh C9-b configs/Cstar9.json
+work/r8/decscreen.sh C9d-a configs/Cstar9.json
+work/r8/decscreen.sh C8d-a configs/Cstar8.json
+work/r8/decscreen.sh C8d-b configs/Cstar8.json
+work/r8/decscreen.sh C9d-b configs/Cstar9.json
+work/r8/tagcheck.sh phaseC-ab-done

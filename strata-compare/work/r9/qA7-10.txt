@@ -1,0 +1,11 @@
+work/r9/tagcheck.sh "phase A track 7: MMQ tile sizes (measurement)"
+ENVX=STRATA_PREFILL_TIMING=1 work/r9/run.sh a7-jdef configs/A7-j.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_MMQ_J=32' work/r9/run.sh a7-j32 configs/A7-j.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_MMQ_J=64' work/r9/run.sh a7-j64 configs/A7-j.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_MMQ_J=96' work/r9/run.sh a7-j96 configs/A7-j.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_MMQ_J=128' work/r9/run.sh a7-j128 configs/A7-j.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_MMQ_J=48' work/r9/run.sh a7-j48 configs/A7-j.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_MMQ_J=80' work/r9/run.sh a7-j80 configs/A7-j.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_MMQ_J=112' work/r9/run.sh a7-j112 configs/A7-j.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+ENVX=STRATA_PREFILL_TIMING=1 work/r9/run.sh a7-jdef2 configs/A7-j.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -1
+work/r9/tagcheck.sh "track 7 done"

@@ -1,0 +1,36 @@
+# Item 7e (Exa shopping) - product questions for Karl to approve (draft 10-27; region decided: US / USD)
+
+**What item 7e tests:** whether Exa's shopping index (≤ 30 Exa searches per run) makes product answers better:
+- prices,
+- where to buy,
+- availability,
+- dated.
+
+The questions are frozen once approved. Before any run, I write my own reference research and a grading checklist for
+each, as for o01-o08. Each question then gets a "without" run (SearXNG only) and a "with" run, graded blind.
+
+**DECIDED 10-28 (Karl): s1, s2, s3, s4; s5 dropped. Frozen as written: questions-shop-7e.jsonl (FROZEN-7e.txt).**
+Answer keys from primary sources before any run: my-research/s1-pcie5-ssd.md, s2-192gb-ram.md, s2 also a judgment
+test (Karl expects 192 GB at >= 6000 MT/s is not realistic on this board; the key records whether and why),
+s3-second-gpu.md, s4-cold-storage.md. The region (US / USD) is not in the question text: the 7e runs get a copy
+of the profile with a location line, so the main profile and the other runs stay as they are.
+
+**For Karl to decide:**
+1. Which 3-5 questions (or replace any).
+2. ~~The country and currency for prices and stores.~~ **Decided 10-27: United States, prices in USD** (US stores;
+   the references and the ~15 % price check use USD).
+
+| # | question (draft) | why it fits this PC |
+|---|---|---|
+| s1 | Which PCIe 5.0 NVMe SSD of 2-4 TB gives the best sustained random-read speed at queue depth 1-8 (streaming MoE experts from SSD) for a Ryzen 9 9950X3D on an X870E AORUS ELITE WIFI7, and what does it cost today and where can I buy it? | the DeepSeek setup reads 75-104 GB from SSD per long prompt |
+| s2 | What is the cheapest way to go from 96 GB to 192 GB of DDR5 on the X870E AORUS ELITE WIFI7 without dropping below 6000 MT/s: two or four sticks, which kits are on the board's support list, current prices and stores? | larger expert stores; the 12 GB memory floor |
+| s3 | Which NVIDIA card with at least 16 GB that fits the chipset slot (PCIe 4.0 x4, power and length) would best replace the RTX 4060 Ti 8 GB as the second card, new or used, at today's prices, and where to buy it? | a follow-up to o02 (which asked about a third card, not a replacement) |
+| s4 | Which 4-8 TB drive gives the lowest price per TB for keeping model files I am not running (cold storage, sequential reads), and where is it cheapest now? | model files: 83.6 GB + 249 GB DeepSeek + the GLM / Gyro-L files |
+| s5 | Which quiet CPU cooler or case fans would lower the 9950X3D's temperature during long CPU-expert runs, at what price, and where to buy? (optional; only if Karl reports heat) | long runs, nights allowed |
+
+**Grading checklist (each question, out of 10):**
+- the right product class for this PC (fits the slot, board, power);
+- prices dated and within ~15 % of the reference's at freeze time;
+- stores named;
+- trade-offs (speed vs price);
+- honest about what is not known (stock, used-market risk).

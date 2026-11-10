@@ -1,0 +1,14 @@
+Qwen sampled-distribution test port0213-switch-1110 (spec sha256 8f0ef423bdaad772): ALL PASS
+folder /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/sampled; rule: rule.txt (sq.py rule); c 11.3449, lambda80 15.4577
+
+d2_ref_scorer: 0.821
+d2_noise_ref: 1.2712
+band: 11.3449
+
+X: sampled PASS - D2(X, R1) 1.328 <= the noise bound 11.345 (band >= it whatever R2 gives) | read-back {'VF': 'PASS'} -> OVERALL PASS
+read-back VF: PASS - 91375 admitted slots read back, 0 differ, no mismatch line
+
+arm | samples (valid) | tokens | top-1 rate / expected | D2 vs scorer | decode windows | tok/window | PCIe share % | problems
+R1 | 32 (32) | 16384 | 0.87762 / 0.87834 | 0.821 | 5437 | 3.01 | 20.94 | -
+R2 | 16 (16) | 8192 | 0.88025 / 0.87712 | 1.241 | 2719 | 3.01 | 21.26 | -
+X | 32 (32) | 16384 | 0.87512 / 0.87432 | 1.334 | 5526 | 2.96 | 21.08 | -

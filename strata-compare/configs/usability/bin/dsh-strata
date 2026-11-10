@@ -1,0 +1,17 @@
+#!/bin/bash
+# dsh-strata - DeepSeek Harness 0.2.0-rc.2 (Web UI) on Strata (127.0.0.1:8080), offline otherwise.
+#   dsh-strata              the Web UI on http://127.0.0.1:3080 (opens your browser; add --no-open to skip that)
+#   dsh-strata --port 3081  another port
+# Sessions, settings and the profile patch live in $DSH_HOME (default ~/.dsh).
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+# 2026-10-17: Strata on demand - starts C*18t on 8080 if nothing answers there (not while a test uses the GPUs),
+# waits until it is ready (3 minutes at most) and only then opens the app (strata-ensure.sh)
+"$HERE/strata-ensure.sh" "DeepSeek Harness" || exit 1
+source "$HERE/offline-env.sh"
+export PATH="$HOME/.local/opt/node-v24.22.0/bin:$PATH"
+export DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+export STRATA_API_KEY=local-no-key             # not a secret: Strata on 127.0.0.1 takes any key
+export DSH_TELEMETRY_MODE=OFF DSH_TELEMETRY_OTLP_URL=http://127.0.0.1:9/   # belt and braces: the plugins are off too
+P="$DSH_HOME/profiles/web/cordis.patch.yml"
+[ -e "$P" ] || { mkdir -p "$(dirname "$P")"; cp "$HERE/../dsh/web.cordis.patch.yml" "$P"; }
+exec "$HOME/.local/opt/dsh-0.2.0-rc.2/node_modules/.bin/dsh" --profile web --host 127.0.0.1 "$@"

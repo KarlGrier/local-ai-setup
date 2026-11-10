@@ -1,0 +1,16 @@
+Qwen sampled-distribution test adaptfetch-1109 (spec sha256 56a116f43e64e089): ALL PASS
+folder /home/USER/ai-speed-testing/strata-compare/results/r23/adaptfetch/gap/sampled; rule: rule.txt (sq.py rule); c 11.3449, lambda80 15.4577
+
+d2_ref_scorer: 4.175
+d2_noise_ref: 6.5926
+band: 11.3449
+
+X1: sampled PASS - D2(X1, R1) 7.313 <= the noise bound 11.345 (band >= it whatever R2 gives) | read-back {'VF': 'PASS'} -> OVERALL PASS
+X2: sampled PASS - D2(X2, R1) 1.826 <= the noise bound 11.345 (band >= it whatever R2 gives) | read-back {'VF': 'PASS'} -> OVERALL PASS
+read-back VF: PASS - 91345 admitted slots read back, 0 differ, no mismatch line
+
+arm | samples (valid) | tokens | top-1 rate / expected | D2 vs scorer | decode windows | tok/window | PCIe share % | problems
+R1 | 32 (32) | 16384 | 0.88202 / 0.87872 | 4.175 | 5448 | 3.01 | 21.97 | -
+R2 | 16 (16) | 8192 | 0.87488 / 0.87957 | 5.644 | 2703 | 3.03 | 22.02 | -
+X1 | 32 (32) | 16384 | 0.87512 / 0.87471 | 14.19 | 5511 | 2.97 | 21.11 | -
+X2 | 32 (32) | 16384 | 0.87317 / 0.87363 | 0.94 | 5490 | 2.98 | 21.08 | -

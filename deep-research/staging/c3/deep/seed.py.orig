@@ -1,0 +1,194 @@
+"""Continue an interrupted research from what it saved (workspace patch, 2026-10-17).
+
+When the PC was off (or LDR restarted) during a job, the research runner starts a new research for the same question
+with the earlier runs' folders as seeds. Everything they stored in evidence.jsonl comes back:
+  * every source keeps its citation number [N] (the strategy's collector is seeded with them), with its snippets, the
+    full text of every page read and every extraction - so the report and the citation check can use them, and a
+    page is not downloaded again (the store's page cache);
+  * the subagents' reports, the agents' compaction notes and the lead's answer (if it got that far);
+  * the lead agent is told what was done and found, and continues with what is still open.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from loguru import logger
+
+from .evidence import EvidenceStore, Fetch, Source
+
+SEED_TEXT_MAX = 60_000      # characters of earlier findings put in front of the lead (the store keeps everything)
+
+
+class Seed:
+    def __init__(self) -> None:
+        self.sources: dict[int, dict[str, Any]] = {}
+        self.subagents: list[dict[str, Any]] = []
+        self.notes: list[dict[str, Any]] = []      # compaction notes with text, lead answers
+        self.queries: list[str] = []
+        self.runs = 0
+
+    def src(self, idx: int, url: str, title: str = "") -> dict[str, Any]:
+        s = self.sources.setdefault(idx, {"idx": idx, "url": url, "title": title, "snippets": [], "page_text": "",
+                                          "fetches": [], "auto_read": False, "date": "", "via": None,
+                                          "primaries": []})
+        if title and not s["title"]:
+            s["title"] = title
+        return s
+
+
+def load(seed_dirs: list[str]) -> Seed | None:
+    seed = Seed()
+    for d in seed_dirs or []:
+        ev = Path(d) / "evidence.jsonl"
+        if not ev.exists():
+            continue
+        seed.runs += 1
+        with open(ev, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                t = r.get("type")
+                if t in ("search", "seed_search"):
+                    if r.get("query") and r["query"] not in seed.queries:
+                        seed.queries.append(r["query"])
+                    for row in r.get("results") or []:
+                        if row.get("idx") is None:
+                            continue
+                        s = seed.src(int(row["idx"]), row.get("url") or "", row.get("title") or "")
+                        if row.get("snippet") and row["snippet"] not in s["snippets"]:
+                            s["snippets"].append(row["snippet"])
+                elif t in ("fetch", "seed_fetch") and r.get("idx") is not None:
+                    s = seed.src(int(r["idx"]), r.get("url") or "", r.get("title") or "")
+                    if r.get("page_text") and len(r["page_text"]) > len(s["page_text"]):
+                        s["page_text"] = r["page_text"]
+                    if r.get("extraction") and r.get("extraction") != "NOT RELEVANT":
+                        s["fetches"].append({"focus": r.get("focus") or "", "extraction": r["extraction"],
+                                             "agent": r.get("agent") or "earlier run"})
+                elif t in ("read", "seed_read") and r.get("idx") is not None:
+                    # phase 4 item 6 (10-28): a page the background reader fetched
+                    s = seed.src(int(r["idx"]), r.get("url") or "", r.get("title") or "")
+                    if r.get("page_text") and len(r["page_text"]) > len(s["page_text"]):
+                        s["page_text"], s["auto_read"] = r["page_text"], not s["fetches"]
+                    s["date"] = s["date"] or (r.get("date") or "")
+                    if r.get("via") is not None:
+                        s["via"] = int(r["via"])
+                elif t == "primary" and r.get("via") is not None and r.get("idx") is not None:
+                    s = seed.src(int(r["via"]), "", "")
+                    if int(r["idx"]) not in s["primaries"]:
+                        s["primaries"].append(int(r["idx"]))
+                elif t in ("subagent", "seed_subagent"):
+                    if r.get("text"):
+                        seed.subagents.append({"topic": r.get("topic") or "", "text": r["text"],
+                                               "status": r.get("status") or "", "seconds": r.get("seconds") or 0,
+                                               "calls": r.get("calls") or 0})
+                elif t == "note" and r.get("kind") in ("compaction", "lead_answer", "seed_notes") and \
+                        (r.get("notes_text") or r.get("text")):
+                    seed.notes.append({"kind": r["kind"], "who": r.get("who") or r.get("agent") or "",
+                                       "text": r.get("notes_text") or r.get("text")})
+    if not seed.sources and not seed.subagents:
+        return None
+    return seed
+
+
+def link_entries(seed: Seed) -> list[dict[str, Any]]:
+    """Entries for the strategy's all_links_of_system: the collector keeps their indices (its seeding path)."""
+    out = []
+    for idx in sorted(seed.sources):
+        s = seed.sources[idx]
+        snip = (s["snippets"][0] if s["snippets"] else (s["fetches"][0]["extraction"] if s["fetches"] else ""))[:500]
+        out.append({"index": str(idx), "link": s["url"], "url": s["url"], "title": s["title"] or s["url"],
+                    "snippet": snip})
+    return out
+
+
+def fill_store(seed: Seed, store: EvidenceStore) -> None:
+    """Put the earlier evidence into this run's store (and its evidence.jsonl, so this run's folder is complete)."""
+    with store.lock:
+        for idx in sorted(seed.sources):
+            s = seed.sources[idx]
+            src = store.sources.get(idx)
+            if src is None:
+                src = Source(idx=idx, url=s["url"], title=s["title"])
+                store.sources[idx] = src
+                store.url_to_idx.setdefault(s["url"], idx)
+            for sn in s["snippets"]:
+                if sn not in src.snippets:
+                    src.snippets.append(sn)
+            if s["page_text"]:
+                src.page_text = s["page_text"]
+                store.page_cache[s["url"]] = {"status": "success", "content": s["page_text"], "title": s["title"],
+                                              "url": s["url"]}
+            for fe in s["fetches"]:
+                src.fetches.append(Fetch(idx, s["url"], s["title"], fe["focus"], fe["extraction"], fe["agent"], 0.0))
+            # phase 4 items 5 + 6 (10-28): the reader's pages and links; the claims are made again from the extractions
+            src.auto_read = bool(s.get("auto_read")) and not src.fetches
+            src.date = src.date or s.get("date") or ""
+            src.via = s.get("via") if s.get("via") is not None else src.via
+            src.primaries = list(dict.fromkeys(src.primaries + (s.get("primaries") or [])))
+            from .checks import fix_on
+            if fix_on("claims") and src.page_text:
+                from . import claims as _claims
+                for fe in s["fetches"]:
+                    src.claims += _claims.merge(src.claims, _claims.from_extraction(
+                        fe["extraction"], src.page_text, src.date, fe["focus"], fe["agent"]))
+            if s["snippets"]:
+                store._write({"type": "seed_search", "query": "(earlier run)",
+                              "results": [{"idx": idx, "url": s["url"], "title": s["title"], "snippet": sn[:500]}
+                                          for sn in s["snippets"]]})
+            if s.get("auto_read") and s["page_text"] and not s["fetches"]:
+                store._write({"type": "seed_read", "idx": idx, "url": s["url"], "title": s["title"],
+                              "date": s.get("date") or "", "via": s.get("via"), "page_text": s["page_text"]})
+            elif s["page_text"] or s["fetches"]:
+                for k, fe in enumerate(s["fetches"] or [{"focus": "", "extraction": ""}]):
+                    rec = {"type": "seed_fetch", "idx": idx, "url": s["url"], "title": s["title"],
+                           "focus": fe["focus"], "extraction": fe["extraction"]}
+                    if k == 0 and s["page_text"]:
+                        rec["page_text"] = s["page_text"]
+                    store._write(rec)
+        for sa in seed.subagents:
+            store.subagents.append({**sa, "agent": "earlier run"})
+            store._write({"type": "seed_subagent", **sa})
+        for n in seed.notes:
+            store.notes.append({"kind": "seed_notes", "who": n["who"], "text": n["text"]})
+            store._write({"type": "note", "kind": "seed_notes", "who": n["who"], "text": n["text"]})
+        for q in seed.queries:
+            store.searches.append({"query": q, "agent": "earlier run", "n": 0, "t": 0.0})
+    logger.info(f"deep: seeded from {seed.runs} earlier run(s): {len(seed.sources)} sources "
+                f"({sum(1 for s in seed.sources.values() if s['page_text'])} read), {len(seed.subagents)} subagent reports, "
+                f"{len(seed.notes)} notes")
+
+
+def lead_addendum(seed: Seed) -> str:
+    """What the lead is told: what was done and found before the interruption."""
+    parts = ["\n\nCONTINUATION: this research was interrupted (the computer was off or the research service restarted) "
+             "and continues now. Everything found so far is kept, with the same source numbers [N]; pages already "
+             "read open instantly if you fetch them again. Do NOT redo the work below: continue with what is still "
+             "open, check what is uncertain, then answer. Earlier findings:"]
+    budget = SEED_TEXT_MAX
+    lead = [n for n in seed.notes if n["kind"] == "lead_answer"] or \
+           [n for n in seed.notes if n["kind"] in ("compaction", "seed_notes") and str(n["who"]).startswith("lead")]
+    for n in lead[-1:]:
+        t = n["text"][: budget // 3]
+        parts.append(f"\n[Your notes / answer from before the interruption]\n{t}")
+        budget -= len(t)
+    if seed.subagents:
+        per = max(1500, budget // max(1, len(seed.subagents)) - 200)
+        for sa in seed.subagents:
+            t = sa["text"][:per]
+            parts.append(f"\n[Subtopic researched: {sa['topic'][:200]}]\n{t}")
+            budget -= len(t)
+            if budget <= 0:
+                parts.append("\n[... more subtopic reports are in the evidence store and go into the report]")
+                break
+    read = [s for s in seed.sources.values() if s["page_text"] or s["fetches"]]
+    if read:
+        parts.append("\nSources already read: " + "; ".join(f"[{s['idx']}] {s['title'][:70]}" for s in
+                                                         sorted(read, key=lambda s: s["idx"])[:150]))
+    if seed.queries:
+        parts.append("\nSearches already run: " + "; ".join(seed.queries[:120]))
+    return "\n".join(parts)

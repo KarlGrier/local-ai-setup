@@ -1,0 +1,332 @@
+--- a/local_deep_research/advanced_search_system/tools/fetch/__init__.py
++++ b/local_deep_research/advanced_search_system/tools/fetch/__init__.py
+@@ -519,12 +519,13 @@
+                 fmt_kwargs["overall_query"] = overall_query
+             prompt = template.format(**fmt_kwargs)
+             if _DEEP.enabled:
+-                from ....deep.prompts import EXTRACT_LIMIT_NEW, EXTRACT_LIMIT_OLD
++                from ....deep.checks import fix_on as _fix_on
++                from ....deep.prompts import EXTRACT_LIMIT_NEW, EXTRACT_LIMIT_OLD, EXTRACT_PAPER_RULES
+ 
+-                prompt = prompt.replace(
+-                    EXTRACT_LIMIT_OLD,
+-                    EXTRACT_LIMIT_NEW.format(max_chars=_DEEP.extract_max_chars),
+-                )
++                _limit = EXTRACT_LIMIT_NEW.format(max_chars=_DEEP.extract_max_chars)
++                if _fix_on("papers"):            # patch 0009: whole sentences, numbers with their setup, caveats
++                    _limit += EXTRACT_PAPER_RULES
++                prompt = prompt.replace(EXTRACT_LIMIT_OLD, _limit)
+ 
+             try:
+                 if _DEEP.enabled:
+@@ -585,6 +586,17 @@
+                 if _store is not None:
+                     _store.add_fetch(None, url, title, focus, content, "NOT RELEVANT")
+                 return f"NOT RELEVANT (no spans matched focus at {url})"
++            if _DEEP.enabled:
++                from ....deep.checks import fix_on as _fix_on
++
++                if _fix_on("papers"):
++                    # patch 0009 (deep/quotes.py): quotes cut inside a sentence are made whole from the page, and a
++                    # paper's own caveat / setup sentences the extraction left out are added - verbatim, no model call
++                    from ....deep import quotes as _quotes
++
++                    summary, _qs = _quotes.improve(summary, content, url, _DEEP.extract_max_chars)
++                    if _qs.get("added_chars") or _qs.get("notes_chars"):
++                        logger.info(f"[FETCH] quotes completed for {url}: {_qs}")
+ 
+             cite_idx = _register_in_collector(collector, url, title, summary)
+             if _store is not None:
+--- a/local_deep_research/deep/checks.py
++++ b/local_deep_research/deep/checks.py
+@@ -41,7 +41,7 @@
+ 
+ # phase 4 items 5 + 6 (Karl 10-27, bundled with the fixes): named on their own, never part of "all" - a run with
+ # LDR_DEEP_FIX=all keeps measuring the six fixes alone
+-ITEMS = ("read", "claims", "steps")      # steps: patch 0008 (2026-11-04, staged)
++ITEMS = ("read", "claims", "papers", "steps")      # papers, steps: patches 0009 / 0008 (2026-11-04, staged)
+ 
+ 
+ def fix_on(name: str) -> bool:
+--- a/local_deep_research/deep/files.py
++++ b/local_deep_research/deep/files.py
+@@ -90,7 +90,9 @@
+     from ..advanced_search_system.tools.fetch import _register_in_collector
+     from ..advanced_search_system.tools.fetch.prompts import SUMMARY_FOCUS_QUERY_PROMPT
+     from .llm import invoke
+-    from .prompts import EXTRACT_LIMIT_NEW, EXTRACT_LIMIT_OLD
++    from .checks import fix_on
++    from .prompts import EXTRACT_LIMIT_NEW, EXTRACT_LIMIT_OLD, EXTRACT_PAPER_RULES
++    from .quotes import improve as _improve_quotes
+ 
+     cfg = config()
+     rows = file_table(files)
+@@ -129,8 +131,12 @@
+         url = f"file://{r['path']}#part={k}"
+         prompt = SUMMARY_FOCUS_QUERY_PROMPT.format(focus=focus, title=title, url=url, content=piece,
+                                                    overall_query=overall_query)
+-        prompt = prompt.replace(EXTRACT_LIMIT_OLD, EXTRACT_LIMIT_NEW.format(max_chars=cfg.extract_max_chars))
++        limit = EXTRACT_LIMIT_NEW.format(max_chars=cfg.extract_max_chars)
++        papers = fix_on("papers")          # patch 0009 (2026-11-04): as fetch_content's extraction
++        prompt = prompt.replace(EXTRACT_LIMIT_OLD, limit + (EXTRACT_PAPER_RULES if papers else ""))
+         summary, _info = invoke(model, prompt, cfg.extract_effort, what=f"file extraction {r['name']}#{k}")
++        if papers and summary and not summary.strip().upper().startswith("NOT RELEVANT"):
++            summary, _qs = _improve_quotes(summary, piece, url, cfg.extract_max_chars)
+         store = getattr(collector, "deep_store", None)
+         more = f"\n\n({r['name']} has {len(ps)} parts; this was part {k}.)" if len(ps) > 1 else ""
+         if not summary or summary.strip().upper().startswith("NOT RELEVANT"):
+--- a/local_deep_research/deep/prompts.py
++++ b/local_deep_research/deep/prompts.py
+@@ -191,3 +191,15 @@
+ EXTRACT_LIMIT_OLD = "- Maximum 1500 characters. Quality over quantity — fewer precise quotes beat many borderline ones."
+ EXTRACT_LIMIT_NEW = ("- Maximum {max_chars} characters. Quality over quantity — fewer precise quotes beat many borderline "
+                      "ones, but keep every quote that bears on the focus or the overall question.")
++# patch 0009 (2026-11-04, staging/ldr-study/PAPERS.md; LDR_DEEP_FIX item "papers"): the qualifiers the reports lost.
++# Appended after EXTRACT_LIMIT_NEW (no braces: the extraction prompt is a str.format template).
++EXTRACT_PAPER_RULES = (
++    "\n- Quote whole sentences. Never start a quote in the middle of a sentence or drop a clause that limits it "
++    "(\"Although ...\", \"However, during ...\", \"only when ...\", \"except ...\")."
++    "\n- With every number keep what it applies to: the model, configuration, setting, hardware or baseline it was "
++    "measured with, quoted from the page (the sentence that says so, or the table row with its column names). Two "
++    "configurations side by side (BF16 vs quantized, model A vs model B) are two quotes, each with the words that name "
++    "its configuration."
++    "\n- Keep what the page says limits the method or result, even when the focus did not ask: that it changes the "
++    "outputs or the accuracy, the experiments' setup (hardware, cores or threads used, links, batch size), and stated "
++    "limitations. For a research paper, always quote its evaluation setup.")
+--- /dev/null
++++ b/local_deep_research/deep/quotes.py
+@@ -0,0 +1,204 @@
++"""Extraction quotes kept whole, and a paper's own caveats kept with them (deep-research patch 0009, 2026-11-04;
++staged, not installed).
++
++Why (staging/ldr-study/PAPERS.md): the extraction step (fetch_content's summary_focus_query, read_file) returns the
++quotes that answer the agent's focus. In 7a o01 it cut AcceptMoE's abstract sentence open and kept "across 12
++model-task pairs ... 0.27 percentage points lower" without its first clause "Although constraining target-expert
++eligibility changes the model distribution," - the report then listed AcceptMoE as a lossless "try next". Over 20
++bench runs, 6,444 of 60,204 verbatim quotes (10.7 %) start inside a sentence; in 704 of them the dropped words carry a
++qualifier ("However, during the decoding stage, ...", "Although ..."). And a focus-only extraction misses what the
++paper says elsewhere: DALI's "we set the number of CPU cores to 16 and threads to 32 for all frameworks" was in none of
++the three extractions p4s8 / p7c used ("a 64-core EPYC" reached both reports).
++
++Two deterministic steps on the model's extraction, no model call:
++  complete_quotes(extraction, page)  every quote line found verbatim on the page (whitespace collapsed) that starts or
++                                     ends inside a sentence is extended to the whole sentence (at most 400 characters
++                                     back / 200 forward, at most max_extra characters in all).
++  paper_notes(page, url, extraction) for a research paper (arXiv / DOI / proceedings host, a PDF, or a page with an
++                                     abstract and references): up to 6 verbatim sentences of the page that state a
++                                     caveat (changes the outputs / distribution, accuracy drop, lossy, limitation) or
++                                     the experiments' setup (all experiments are conducted on ..., we set the number
++                                     of cores ...) and are not in the extraction yet, under the line "(also on this
++                                     page:)".
++Both outputs stay verbatim page text, so item 5's claims check finds them "exact". LDR_DEEP_QUOTES=0 turns both off.
++"""
++
++from __future__ import annotations
++
++import os
++import re
++from urllib.parse import urlparse
++
++ENABLED = os.environ.get("LDR_DEEP_QUOTES", "1").strip() != "0"
++MAX_BACK, MAX_FWD = 400, 200
++
++# a sentence ends at . ! ? (plus closing quotes / brackets) followed by space and an upper-case letter, digit or opener
++_BOUNDARY = re.compile(r"[.!?][\"”’)\]]*\s+(?=[A-Z0-9(\"“\[])")
++_ABBREV = re.compile(r"(?:\b(?:e\.g|i\.e|et al|Fig|Figs|Sec|Secs|Eq|Eqs|Tab|vs|cf|No|approx|resp|Ref|Refs|Inc|Ltd|Dr|Mr|"
++                     r"Ms|St|Jr|Vol|pp|Ch|Thm|Def|Alg|Corp|Co)\.|\b[A-Z]\.)[\"”’)\]]*\s+$")
++_WS = re.compile(r"\s+")
++
++PAPER_HOSTS = ("arxiv.org", "openreview.net", "aclanthology.org", "dl.acm.org", "ieeexplore.ieee.org", "doi.org",
++               "proceedings.mlr.press", "papers.nips.cc", "proceedings.neurips.cc", "usenix.org", "semanticscholar.org",
++               "biorxiv.org", "medrxiv.org", "ncbi.nlm.nih.gov", "sciencedirect.com", "springer.com", "nature.com",
++               "mlsys.org", "researchgate.net")
++# a caveat the paper states about its own method (strong words only: "limitation" or "at the cost of" alone matched
++# abstracts and motivation paragraphs in the offline test)
++CAVEAT_RE = re.compile(
++    r"(?i)(chang(?:e|es|ed|ing) (?:the )?(?:model'?s? |target(?:-model)? )?(?:outputs?|output distribution|distribution|"
++    r"behaviou?r|predictions)\b|\bnot (?:bit[- ]?)?(?:exact|identical|lossless)\b|\blossy\b|"
++    r"\baccuracy (?:drop|loss|degradation|decrease|reduction|cost)|"
++    r"\b(?:drop|loss|degradation|decrease|reduction) (?:in|of) (?:model |task )?(?:accuracy|quality)\b|"
++    r"\bpercentage points? (?:lower|worse|below)\b|\b(?:lower|worse|reduced) (?:accuracy|quality)\b)")
++# how the experiments were run: the setup sentences that bound a reported number
++SETUP_RE = re.compile(
++    r"(?i)(\ball (?:the )?(?:experiments|evaluations|measurements) (?:are|were) (?:conducted|run|performed|"
++    r"carried out)|\bexperimental (?:setup|settings?|platform)\b|\bhardware platform\b|\btestbed\b|"
++    r"\bwe (?:set|limit|restrict|pin|fix|cap|bind)\b.{0,50}\b(?:cores?|threads?|gpus?|batch size|sockets?)\b|"
++    r"\bequipped with\b|\bfor all (?:frameworks|baselines|systems|methods)\b)")
++
++
++def _flat(s: str) -> str:
++    return _WS.sub(" ", s or "").strip()
++
++
++def _sentence_start(flat: str, i: int) -> int | None:
++    """Start of the sentence that contains position i (None when it lies more than MAX_BACK characters back)."""
++    lo = max(0, i - MAX_BACK)
++    window = flat[lo:i]
++    best = None
++    for m in _BOUNDARY.finditer(window):
++        if _ABBREV.search(window[:m.end()]):
++            continue
++        best = lo + m.end()
++    if best is None:
++        return 0 if lo == 0 else None
++    return best
++
++
++def _sentence_end(flat: str, j: int) -> int | None:
++    """End (exclusive, after the full stop and any closing quote) of the sentence that goes on at position j (None
++    when it ends more than MAX_FWD characters ahead)."""
++    window = flat[j:j + MAX_FWD]
++    for m in _BOUNDARY.finditer(window):
++        if _ABBREV.search(window[:m.end()]):
++            continue
++        return j + m.start() + len(m.group(0).rstrip())
++    if j + MAX_FWD >= len(flat):
++        return len(flat)
++    return None
++
++
++def _unwrap(line: str) -> tuple[str, str, str, str]:
++    """(lead, open quote, inner text, close quote) of one extraction line."""
++    m = re.match(r"^(\s*(?:[-*•>]\s+)?)(.*?)\s*$", line)
++    lead, body = m.group(1), m.group(2)
++    if len(body) > 2 and body[0] in "\"“" and body[-1] in "\"”":
++        return lead, body[0], body[1:-1], body[-1]
++    return lead, "", body, ""
++
++
++def complete_quotes(extraction: str, page: str, max_extra: int = 1500) -> tuple[str, dict]:
++    stats = {"lines": 0, "found": 0, "start_extended": 0, "end_extended": 0, "added_chars": 0}
++    if not ENABLED or not extraction or not page or extraction.lstrip().upper().startswith("NOT RELEVANT"):
++        return extraction, stats
++    flat = _flat(page)
++    out = []
++    for line in extraction.splitlines():
++        lead, oq, inner, cq = _unwrap(line)
++        q = _flat(inner)
++        if len(q) < 25:
++            out.append(line)
++            continue
++        stats["lines"] += 1
++        i = flat.find(q)
++        if i < 0:
++            out.append(line)
++            continue
++        stats["found"] += 1
++        j = i + len(q)
++        new_i, new_j = i, j
++        budget = max_extra - stats["added_chars"]
++        # starts inside a sentence: the page goes on from a lower-case word or a comma, the quote starts lower-case
++        mid = bool(re.search(r"[a-z0-9,;:%)]\s?$", flat[max(0, i - 2):i]) or _ABBREV.search(flat[max(0, i - 12):i]))
++        if i > 0 and mid and re.match(r"[a-z0-9(%$]", q):
++            s = _sentence_start(flat, i)
++            if s is not None and i - s <= budget:
++                new_i = s
++        # ends inside a sentence: no sentence-ending mark at the quote's end and the page's sentence goes on
++        if j < len(flat) and not re.search(r"[.!?][\"”’)\]]*$", q):
++            e = _sentence_end(flat, j)
++            if e is not None and e > j and (i - new_i) + (e - j) <= budget:
++                new_j = e
++        if new_i == i and new_j == j:
++            out.append(line)
++            continue
++        stats["start_extended"] += new_i < i
++        stats["end_extended"] += new_j > j
++        stats["added_chars"] += (i - new_i) + (new_j - j)
++        out.append(f"{lead}{oq}{flat[new_i:new_j].strip()}{cq}")
++    return "\n".join(out), stats
++
++
++def is_paper(url: str, page: str) -> bool:
++    host = (urlparse(url or "").hostname or "").lower()
++    if any(host == h or host.endswith("." + h) for h in PAPER_HOSTS):
++        return True
++    if (url or "").lower().split("?")[0].endswith(".pdf"):
++        return True
++    head = (page or "")[:6000].lower()
++    return "abstract" in head and ("references" in (page or "")[-60000:].lower() or (page or "").count("et al.") >= 3)
++
++
++def _sentences(flat: str):
++    start = 0
++    for m in _BOUNDARY.finditer(flat):
++        if _ABBREV.search(flat[max(0, m.end() - 12):m.end()]):
++            continue
++        yield flat[start:m.start() + 1].strip()
++        start = m.end()
++    if start < len(flat):
++        yield flat[start:].strip()
++
++
++def paper_notes(page: str, url: str, extraction: str, max_n: int = 6, max_chars: int = 1600) -> str:
++    """Verbatim caveat / setup sentences of a paper that the extraction does not have yet ("" when none or not a paper)."""
++    if not ENABLED or not page or not is_paper(url, page):
++        return ""
++    have = _flat(extraction).lower()
++    flat = _flat(page)
++    cav, setup = [], []
++    for s in _sentences(flat):
++        if not 40 <= len(s) <= 450:
++            continue
++        key = s.lower()[10:70]
++        if key and key in have:
++            continue
++        if CAVEAT_RE.search(s):
++            cav.append(s)
++        elif SETUP_RE.search(s):
++            setup.append(s)
++    picked, used, seen = [], 0, set()
++    for s in cav[:4] + setup[:4] + cav[4:] + setup[4:]:
++        k = s.lower()[:80]
++        if k in seen:
++            continue
++        if len(picked) >= max_n or used + len(s) > max_chars:
++            break
++        seen.add(k)
++        picked.append(s)
++        used += len(s)
++    if not picked:
++        return ""
++    return "\n(also on this page:)\n" + "\n".join(f"\"{s}\"" for s in picked)
++
++
++def improve(extraction: str, page: str, url: str, max_chars: int) -> tuple[str, dict]:
++    """complete_quotes, then paper_notes; the whole result stays within 1.4 x max_chars."""
++    if not ENABLED or not extraction or extraction.lstrip().upper().startswith("NOT RELEVANT"):
++        return extraction, {}
++    text, st = complete_quotes(extraction, page, max_extra=max(400, int(0.25 * max_chars)))
++    room = int(1.4 * max_chars) - len(text)
++    notes = paper_notes(page, url, text, max_chars=min(1600, max(0, room))) if room > 200 else ""
++    st["notes_chars"] = len(notes)
++    return text + notes, st
+--- a/local_deep_research/deep/report.py
++++ b/local_deep_research/deep/report.py
+@@ -127,6 +127,16 @@
+              "that is not in the evidence could not be read: do not cite it - support the point with a source from "
+              "the evidence, or leave the point out. Where the evidence holds a primary source (marked \"primary "
+              "source behind [N]\"), cite it for the fact instead of, or next to, the page that reported it."),
++    # patch 0009 (2026-11-04, staging/ldr-study/PAPERS.md): 7a / 7c's paper errors - a derived number called the
++    # paper's default, two configurations mixed, a gain explained by a cause the paper does not give, a lossy method
++    # recommended as lossless
++    ("papers", "- A figure, default or setting you attribute to a source must be the one its quote states, for the "
++               "configuration the quote names (model, precision, hardware, baseline). When you apply a source's rule or "
++               "figure to the user's setup, say that it is your own step (\"applying the paper's rule to this model "
++               "gives ...\"), never the source's default or result; the same for a cause or trend the source does not "
++               "state itself. Keep each source's conditions with its numbers (what it was measured on, and whether the "
++               "method changes the model's outputs or accuracy): a method that changes the outputs is not lossless, "
++               "however small the change."),
+ ]
+ FIX_OPENING_RULES = [
+     ("consist", "The Answer and Key findings must agree with the sections: do not recommend a step that a section "
+@@ -135,6 +145,10 @@
+                 "other engines', versions' and programs' settings labelled as such."),
+     ("baseline", "State gains against the user's measured numbers like with like; a setting the user already runs is "
+                  "not a gain."),
++    # patch 0009: the Answer and Key findings dropped the sections' qualifiers (7a o01, 7c o01)
++    ("papers", "A shorter sentence keeps the sections' qualifiers: a technique the sections call lossy or "
++               "output-changing stays so, a number keeps the configuration and hardware it belongs to, and a figure the "
++               "sections derive for this setup is not presented as a source's own."),
+ ]
+ 
+ 

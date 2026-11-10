@@ -1,0 +1,77 @@
+# Round 19 summary: the RAM fault, #1682 / #1683 answered, C\*17 on v0.1.42, and a sampler bias in upstream's STRATA_SPEC_PROB
+
+2026-10-10 15:30 to 2026-10-11 ~18:30 (with your reboots on 10-10 and your Windows boot on 10-11). The monitor is on the
+motherboard output; the display setup was not changed. Details: REPORT.md "Round 19", NOTES.md "# ROUND 19"; raw results
+in results/r19/. Part D (v0.1.43) follows.
+
+## What is on 8080
+
+**C\*17** = Strata v0.1.42 + C\*16.1's series (our exact sampling and cost gate kept) + `STRATA_PREFILL_CPU_SHARE=0.4` on
+prompt chunks below 1,792 tokens. It carries v0.1.42's fixes that reach the server (logit bias, #1624, #984).
+
+| vs C\*16.1 (A B B A, one session) | result |
+|---|---|
+| decode screen / full screen / LDR screen | −1.4 % / −0.8 % / −0.2 % |
+| first token, fresh 512 / 1,000-token prompts (B3) | −15 % / −21 % |
+| first token, the LDR's prompts under 4K | −4.7 % |
+| outputs | C\*16.1's, plus the share's change on short prompts (exact7: 3 long items identical, repeats 7/7) |
+
+Checks: every gate (needles 72/72, stop at 120K, follow-ups, stops, tool calls, #931, repeat, chat-cache round trips,
+browser 42/1 = the known line), our sampler's chi-square, the six near-tie cases, the acceptance suite on the same
+combination (11 / 0), a 2-hour soak (440 requests, 0 errors, MemAvailable ≥ 21.8 GB, swap 0), the rollback test.
+Rollback: stop 8080, `STRATA_CONFIG=configs/Cstar161.json ./switch-model.sh strata`.
+
+## The RAM fault (correction)
+
+The kernel faults of 10-07 and 10-10 were the RAM at 6200 MT/s (your memtest), not Strata, the kernel or the driver. Now
+6000 MT/s 1:1; stressapptest 1 h PASS. After the reboots every model file matched its hash (all 341 identical to 10-10),
+git fsck and the worktrees were clean, and the rebuilt engines repeat their recorded outputs (35/35). Since 10-11 the
+NVIDIA driver is 615.71.09.
+
+## Part A: the two replies (posted with your OK)
+
+* **#1682:** fio with the owner's command 10.1 / 9.0 GB/s (psync), 7.8 GB/s (libaio). Forced unbuffered vs the read rule:
+  **+24.6 % (threads unset), +25.8 % (16), +24.2 % (64)**; the thread count makes no difference.
+* **#1683:** 72 = 66 exactly (63.95 GiB, 0 of 2,258 lent slots in RAM, 32K read 11.2 s, 29 GB from the drive);
+  `--resident-experts` 70.53 GiB, all lent slots in RAM, 8.8 s, 1.2 GB.
+
+## Part B
+
+| step | result |
+|---|---|
+| B1 port | v0.1.42 + C\*16.1's 28 commits; every gate PASS; all switches on = C\*16.1's outputs 7/7 |
+| B2 tail skip, two cards | does not act (0 skips in 12 requests); only its start-up line says ON |
+| B3 CPU share 0.4 | kept: repeatable, −15 / −21 % first token, suite 11/0; limited to chunks < 1,792 (above, it costs up to 27 %) |
+| B4 helper source | not kept (+0.2 to +2.2 % first token) |
+| B5 our sampling vs upstream's | equal speed (144.5 each); kept ours after the bias below |
+| B5b cost-gate PR, two cards | +4.2 % decode, +4.3 % after 32K, −2.0 % after 120K: **not worth opening** |
+| B6 C\*17 vs C\*16.1 | about −1 % decode; promoted for v0.1.42's server fixes |
+| B7 Q4 config | on C\*17, tail skip 0, **`--resident-experts`**: 32K read −20 %, drive 1.2 instead of 29 GB, decode +3 % |
+
+## The sampler bias
+
+At a near-tie (the arith prompt, 4th token, temperature 0.6; the model's own probability for `=` 51.8 % after the filters),
+same build, same position:
+
+| arm | `=` |
+|---|---|
+| speculation off (ground truth), 6,000 samples | 52.3 % |
+| upstream's default exact-match drafting, 4,000 | 54.0 % |
+| our exact sampling, 6,000 | 54.5 % |
+| upstream's `STRATA_SPEC_PROB` (with or without our gate), 2,000 | **59.6–62.2 %** |
+| upstream's `STRATA_SPEC_PROB` at temperature 1.0, 2,000 | 52.6 % vs 51.1 % (no bias detected) |
+
+The ~2 pp both exact-match and our sampling show is the verify window's own arithmetic (the default path has it too).
+Upstream's sampling is ~8 pp beyond that. An issue is drafted only after the same check on stock v0.1.43.
+
+## My mistakes
+
+* I concluded that our cost gate is unused under upstream's sampling from a server that had not served a request yet
+  (the gate logs on first use); it cost a runbook pass and one B6.
+* The fallback build failed twice at its start (a missing execute bit, then a helper my edit had cut); 8080 was down
+  11:36–12:45.
+
+## Waiting for your OK (together, after Part D)
+
+The #1684 thank-you, the CMake issue (to update to v0.1.43), and Part D's drafts (the #1896 test comment, the sampler
+issue if stock v0.1.43 confirms it, the #1889 force-push).

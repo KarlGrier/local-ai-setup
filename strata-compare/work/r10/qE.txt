@@ -1,0 +1,45 @@
+work/r10/tagcheck.sh "Phase E start"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r10/build-cstar12.sh v36-c12
+BDIR=build work/r10/build.sh strata-v36c12m engine-c12m
+.venv/bin/python work/r10/buildrec.py Cstar12 configs/Cstar12.json "C*12 candidate: clean clone of v0.1.36 + patches/r10c (= v36-c12)"
+.venv/bin/python work/r10/buildrec.py C12m configs/C12m-tf-helper.json "C*12's measurement twin (v36-c12-meas)"
+work/r10/servertests.sh /home/USER/ai-speed-testing/strata-compare/strata-cstar12
+work/r10/startcheck.sh C12s configs/C12.json
+work/r10/startcheck.sh C12s1 configs/Cstar12-single.json
+work/r10/exact7.sh c12off configs/C12-off.json
+work/r10/tf.sh C12mtf-helper configs/C12m-tf-helper.json engine-c12m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r10/tf.sh C12mtf-single configs/C12m-tf-single.json engine-c12m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r10/tf_compare9.py C12mtf-helper=R11mtf3500-helper C12mtf-single=V36mtf-single | tee results/r10/tf-c12-vs-c11.txt
+.venv/bin/python work/r10/tf_vs_ref.py V36mfp16tf-helper R11mtf3500-helper C12mtf-helper | tee results/r10/tf-c12-vs-fp16.md
+.venv/bin/python work/r10/tf_vs_ref.py V36mfp16tf-single V36mtf-single C12mtf-single | tee -a results/r10/tf-c12-vs-fp16.md
+work/r10/with_server.sh NC12 configs/C12n.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label SC12 --temperature 1.0"
+work/r10/with_server.sh RT12-direct configs/C12m-rt.json -- ".venv/bin/python work/r10/roundtrip.py direct small r12-direct1"
+work/r10/with_server.sh RT12-direct configs/C12m-rt.json -- ".venv/bin/python work/r10/roundtrip.py direct small r12-direct2"
+work/r10/with_server.sh RT12-park configs/C12m-rt.json -- ".venv/bin/python work/r10/roundtrip.py park small r12-park"
+work/r10/with_server.sh RT12-editref configs/C12m-rt.json -- ".venv/bin/python work/r10/roundtrip.py editref small r12-editref"
+.venv/bin/python work/r10/rt_compare.py r12 > results/r10/roundtrip-c12.md; cat results/r10/roundtrip-c12.md
+work/r10/with_server.sh FAIL12 configs/C12.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r10/repeat3.sh rep-c12 configs/C12.json
+work/r10/tagcheck.sh "Phase E gates done"
+work/r10/basecheck.sh
+work/r10/with_server.sh HC12-a configs/C12.json -- ".venv/bin/python work/r10/holdout.py HC12-a http://127.0.0.1:8081 \$ELOG"
+work/r10/with_server.sh HC11-a configs/R10-C11.json -- ".venv/bin/python work/r10/holdout.py HC11-a http://127.0.0.1:8081 \$ELOG"
+work/r10/with_server.sh HC11-b configs/R10-C11.json -- ".venv/bin/python work/r10/holdout.py HC11-b http://127.0.0.1:8081 \$ELOG"
+work/r10/with_server.sh HC12-b configs/C12.json -- ".venv/bin/python work/r10/holdout.py HC12-b http://127.0.0.1:8081 \$ELOG"
+.venv/bin/python work/r10/hold_table.py HC11-a,HC11-b,HC12-a,HC12-b | tee results/r10/holdout-c12-vs-c11.md
+work/r10/ldrscreen.sh LHC12-a configs/C12.json holdout
+work/r10/ldrscreen.sh LHC11-a configs/R10-C11.json holdout
+work/r10/ldrscreen.sh LHC11-b configs/R10-C11.json holdout
+work/r10/ldrscreen.sh LHC12-b configs/C12.json holdout
+.venv/bin/python work/r10/ldr_table.py C11=LHC11-a,LHC11-b C12=LHC12-a,LHC12-b | tee results/r10/ldr-holdout-c12-vs-c11.md
+work/r10/screen.sh SC12-a configs/C12.json
+work/r10/screen.sh SC11-a configs/R10-C11.json
+work/r10/screen.sh SC11-b configs/R10-C11.json
+work/r10/screen.sh SC12-b configs/C12.json
+.venv/bin/python work/r10/ab_table.py C11=SC11-a,SC11-b C12=SC12-a,SC12-b | tee results/r10/ab-c12-vs-c11.md
+work/r10/tagcheck.sh "Phase E served done"
+work/r10/basecheck.sh
+work/r10/phase_end.sh pE1 keep
+work/r10/hold.sh phaseE3

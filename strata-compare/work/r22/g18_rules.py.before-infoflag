@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+# AMENDMENT 2026-11-07 (Karl, 11-07, on results/r23/port-0211/HUNT-1107.md) - it applies from now on, not to finished gates:
+#   "Measurement rule: yes, as a dated amendment applying from now on. Per-workload prompt numbers exclude the
+#   chat-cache save. Time the save as its own line in every screen, and judge it separately against its own noise,
+#   taking its two-speed pattern into account, so a real regression in saving still shows."
+# This file's own screen code is the pre-amendment client clock of its finished gate(s) and is kept as it ran. A new
+# gate takes the amended numbers and the chat-cache save line from work/r22/g17_rules.py ("11-07 park amendment":
+# screen_rows / screen_passes / baseline_speed / wl_noloss / save_rule), not from a copy of this file's code.
+"""g18_rules.py - gap 18 (11-03, Karl): the screen of the four bitwise switches already in our tree (STRATA_DF_PDL=1,
+STRATA_IQ_GATHER=1 - the first time on Zen 5 -, STRATA_GRAPH_PRIO=1, STRATA_FUSE_WAIT=2), each alone and all four
+together, on x28h (P028x's served form without vision). Written down BEFORE the gap. Measurements only: P028x stays
+the served build and nothing switches until item 7 is done; passing switches become candidates after item 7.
+
+The rule, per switch arm against the base arm B (x28h):
+  1 exact7 at pin 2500 against the base's exact7 run (REF=g18-base): 7/7 identical, slots MATCHED - required ("must be
+    identical", Karl). The base's own repeat (g18-base2 vs g18-base) must be 7/7 too, or no switch can pass.
+  2 the 9-workload screen, 3 passes in turned order, client clock (abrun's decode_tps / prompt_tps): per pass the
+    geometric mean over the 9 workloads; an arm's value = the mean of its passes; noise = the larger of the two arms'
+    pass-to-pass spreads (max / min - 1). No loss: decode and prompt each >= B - noise.
+  PASS = 1 and 2. GAIN (reported) = PASS and decode or prompt above B by more than max(noise, 1 %).
+  python3 g18_rules.py OUTDIR   -> OUTDIR/decision.txt
+"""
+import json
+import math
+import os
+import re
+import sys
+
+O = sys.argv[1]
+ARMS = ["pdl", "gather", "prio", "fwait", "all"]
+
+
+def gm(v):
+    return math.exp(sum(math.log(x) for x in v) / len(v))
+
+
+def passes(arm):
+    out = []
+    for k in (1, 2, 3):
+        rows = {}
+        for s in "nar":
+            p = f"{O}/speed/{arm}{k}{s}.jsonl"
+            if os.path.exists(p):
+                for l in open(p):
+                    if l.strip():
+                        r = json.loads(l); rows[r["id"]] = r
+        if len(rows) == 9 and all(r.get("decode_tps") and r.get("prompt_tps") for r in rows.values()):
+            out.append((gm([r["decode_tps"] for r in rows.values()]), gm([r["prompt_tps"] for r in rows.values()])))
+    return out
+
+
+def e7(label):
+    s = open(f"{O}/summary.txt", errors="replace").read()
+    m = re.findall(rf"exact7 {re.escape(label)}: (\d)/7 identical", s)
+    sl = re.findall(rf"exact7-slots {re.escape(label)}: .*-> (MATCHED|DIFFER)", s)
+    return (int(m[-1]) if m else None), (sl[-1] if sl else None)
+
+
+def main():
+    out = []
+    b = passes("B")
+    rep, rep_sl = e7("g18-base2")
+    out.append(f"base repeat exact7: {rep}/7 ({rep_sl})")
+    base_ok = rep == 7 and rep_sl == "MATCHED"
+    if len(b) < 3:
+        out.append(f"base B: {len(b)} complete passes - NOT DECIDED")
+    bd = sum(x for x, _ in b) / len(b) if b else None
+    bp = sum(y for _, y in b) / len(b) if b else None
+    sp = lambda v: max(v) / min(v) - 1
+    if b:
+        out.append(f"B: decode {bd:.2f} (spread {100 * sp([x for x, _ in b]):.1f} %), prompt {bp:,.0f} "
+                   f"(spread {100 * sp([y for _, y in b]):.1f} %)")
+    for a in ARMS:
+        n7, sl = e7(f"g18-{a}")
+        p = passes(a)
+        if not b or len(p) < 3 or len(b) < 3:
+            out.append(f"{a}: exact7 {n7}/7 ({sl}); screen {len(p)} complete passes - NOT DECIDED"); continue
+        d = sum(x for x, _ in p) / len(p); q = sum(y for _, y in p) / len(p)
+        nd = max(sp([x for x, _ in b]), sp([x for x, _ in p])); nq = max(sp([y for _, y in b]), sp([y for _, y in p]))
+        ident = n7 == 7 and sl == "MATCHED" and base_ok
+        noloss = d >= bd * (1 - nd) and q >= bp * (1 - nq)
+        gain = (d > bd * (1 + max(nd, 0.01))) or (q > bp * (1 + max(nq, 0.01)))
+        v = "PASS" if ident and noloss else "FAIL"
+        out.append(f"{a}: exact7 {n7}/7 ({sl}); decode {d:.2f} ({100 * (d / bd - 1):+.2f} %, noise {100 * nd:.1f} %), "
+                   f"prompt {q:,.0f} ({100 * (q / bp - 1):+.2f} %, noise {100 * nq:.1f} %) -> {v}"
+                   + (" + GAIN" if v == "PASS" and gain else ""))
+    open(f"{O}/decision.txt", "w").write("\n".join(out) + "\n")
+    print("\n".join(out))
+
+
+if __name__ == "__main__":
+    main()

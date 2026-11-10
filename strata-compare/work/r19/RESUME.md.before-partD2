@@ -1,0 +1,13 @@
+# Round 19 — state before Part D (2026-10-11 ~18:35)
+
+* **C\*17 is promoted and on 8080** (configs/Cstar17.json; engine-cstar17 sha 4b486ce2…, tree 1c05934d = branch r19-port:
+  v0.1.42 + C\*16.1's series, our exact sampling + cost gate, STRATA_PREFILL_CPU_SHARE=0.4 below MAX 1792). One-GPU
+  fallback Cstar17-single.json (tail skip 0). Rollback: `STRATA_CONFIG=configs/Cstar161.json ./switch-model.sh strata`.
+* The 48-hour monitor runs on C\*17 (logs/r19/uptime-c17/; started 17:45). The kernel-log watcher runs (tmp/r19/kwatch.pid).
+* Done: Parts A, B (B1–B7), Round 19's report (REPORT.md "Round 19", results/round19-summary.md), memory updates.
+  configs/r16-q4.json = C\*17's K-quant engine (engine-cstar17-kq) with --resident-experts, tail skip 0.
+* Waiting for the user's OK, together at the end: publish/r19/04-comment-1684.md, 03-issue-cmake-native-experts.md (to
+  update to v0.1.43), and Part D's drafts.
+* **Next: Part D** (work/r19/PARTD.md): v0.1.43 (7695859a) → the port (C\*17.1 if every gate passes and within 1 % or
+  faster), the overlap A/Bs, the #1896 test + comment, the #1889 rebase, the CMake draft, the sampler issue (stock v0.1.43
+  first). Every step ends with the promoted build (C\*17) on 8080; the kernel log is checked after each run.

@@ -1,0 +1,61 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-cstar4/strata",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/packs/iq3_s",
+  "--native",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+  "--ple-gguf",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "auto",
+  "--spec",
+  "4",
+  "--spec-min-p",
+  "0.5",
+  "--mtp",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt",
+  "--max-context",
+  "131072",
+  "--kv",
+  "int8",
+  "--kv-resident",
+  "32768",
+  "--pcie-frac",
+  "0",
+  "--ple-inflight",
+  "128",
+  "--vram-reserve-mib",
+  "800",
+  "--chat-cache",
+  "6",
+  "--chat-cache-mib",
+  "16384"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v0115",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/strata-v0115/packs/iq3_s/tokenizer",
+ "model_name": "strata-qwen3.8-flash-next-iq3s",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-Cstar4.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8081,
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "host": "127.0.0.1",
+ "_comment": "C*4 (round 4): Strata v0.1.15 (d551edf) + patches/r4/0001-0006 (Linux parallel n-gram reads; side-stash helpers; only the CPU expert rows over PCIe; multi-token BF16 MMVF for router/indexer; --chat-cache; web app with several chats), clean build engine-cstar4/strata (sha256 in engine-cstar4/SHA256), server + chat page from strata-cstar4/serve. Upstream now does the batched layer-1 PLE, the next-chunk n-gram read-ahead (r3 patches 0003/0004 dropped) and the Linux physical-core pool (no --pool-workers); --prefill auto (= 8192 here). Flags otherwise = C*3 (64 n-gram I/O threads via env, --ple-inflight 128, VRAM reserve 800 MiB, pcie-frac 0, spec 4 / min-p 0.5, int8 KV + streaming, 131072 ctx, MTP, --chat-cache 6 / 16384 MiB). CUDA_MODULE_LOADING=LAZY: v0.1.15 sets EAGER, which costs ~300 MiB VRAM here (below the 300 MiB floor). Sampling defaults = your 0.6/0.95/20/0.05. Speed projection off. See REPORT.md \"Round 4\". Rollback: configs/Cstar3.json.",
+ "env": {
+  "STRATA_PLE_IO_THREADS": "64",
+  "CUDA_MODULE_LOADING": "LAZY"
+ },
+ "server": "/home/USER/ai-speed-testing/strata-compare/strata-cstar4/serve/server.py"
+}

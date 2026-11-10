@@ -1,0 +1,36 @@
+work/r8/tagcheck.sh phaseC-start
+work/r8/build-cstar9.sh
+.venv/bin/python work/r8/buildrec.py C9-clean2 configs/Cstar9.json "clean clone build of the Phase C candidate v2 (C*8 + PR245 + MMQ expert offsets + 16 chat slots)"
+work/r8/build.sh strata-r8mc9 engine-r8mc9
+work/r8/run.sh pC2x-c9-math configs/Cstar9.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pC2x-c8-math configs/Cstar8.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pC2x-c9-code configs/Cstar9.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pC2x-c8-code configs/Cstar8.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pC2s-c9-math configs/Cstar9.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pC2s-c8-math configs/Cstar8.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pC2s-c9-code configs/Cstar9.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pC2s-c8-code configs/Cstar8.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pC2x-c9-p2000 configs/Cstar9.json p2000 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pC2x-c8-p2000 configs/Cstar8.json p2000 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pC2x-c9-32k configs/Cstar9.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pC2x-c8-32k configs/Cstar8.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pC2x-c9-112k configs/Cstar9.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pC2x-c8-112k configs/Cstar8.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/tf.sh R9m2tf3500-helper configs/R9m-tf3500-helper.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R9m-tf3500-helper.json'))['exe'])") math corpus long16k long24k long28k long40k long64k
+work/r8/tf.sh R9m2tf3500-single configs/R9m-tf3500-single.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R9m-tf3500-single.json'))['exe'])") math corpus long16k long24k long28k long40k long64k
+work/r8/with_server.sh RT92-ours-direct configs/R9m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py direct small r92-ours-direct1"
+work/r8/with_server.sh RT92-ours-direct configs/R9m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py direct small r92-ours-direct2"
+work/r8/with_server.sh RT92-ours-park configs/R9m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py park small r92-ours-park"
+work/r8/with_server.sh RT92-ours-editref configs/R9m-rt-ours.json -- ".venv/bin/python work/r8/roundtrip.py editref small r92-ours-editref"
+.venv/bin/python work/r8/rt_compare.py r92-ours > results/r8/roundtrip-c9v2.md; cat results/r8/roundtrip-c9v2.md
+work/r8/with_server.sh N92 configs/Cstar9.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label S92 --temperature 1.0"
+work/r8/with_server.sh FAIL92 configs/Cstar9.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r8/screen.sh C92-a configs/Cstar9.json
+work/r8/screen.sh C82-a configs/Cstar8.json
+work/r8/screen.sh C82-b configs/Cstar8.json
+work/r8/screen.sh C92-b configs/Cstar9.json
+work/r8/decscreen.sh C92d-a configs/Cstar9.json
+work/r8/decscreen.sh C82d-a configs/Cstar8.json
+work/r8/decscreen.sh C82d-b configs/Cstar8.json
+work/r8/decscreen.sh C92d-b configs/Cstar9.json
+work/r8/tagcheck.sh phaseC-ab-done

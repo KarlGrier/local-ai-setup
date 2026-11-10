@@ -1,0 +1,9 @@
+work/r11/tagcheck.sh "Phase F (Signal)"; work/r11/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build-kq CMAKE_EXTRA="-DSTRATA_MMQ_KQUANTS=ON" work/r11/build.sh strata-v39-f6k engine-v39f6k && .venv/bin/python work/r11/buildrec.py SG39 configs/SG39-32.json "F: v39-win + the Q6_K embedding dequantizer (9947a3c), -DSTRATA_MMQ_KQUANTS=ON"
+[ -x engine-v39f6k/strata ] && work/r11/tests/q6k_parity.sh /home/USER/ai-speed-testing/strata-compare/strata-v39-f6k/build-kq 0 2>&1 | tail -3
+[ -x engine-v39f6k/strata ] && work/r11/sgpack39.sh
+[ -x engine-v39f6k/strata ] && work/r11/sgbudget39.sh
+[ -x engine-v39f6k/strata ] && work/r11/sgtest39.sh 2>&1 | tee results/r11/signal-vs-iq3s.md
+work/r11/phase_end.sh pF keep
+echo "=== $(date -Is) MARK qF"

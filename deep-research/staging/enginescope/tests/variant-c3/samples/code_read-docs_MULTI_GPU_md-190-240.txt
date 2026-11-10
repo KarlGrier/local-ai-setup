@@ -1,0 +1,56 @@
+[90001] Title: Niko1221/Strata@v0.2.4: docs/MULTI_GPU.md lines 190-240 (source code)
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/docs/MULTI_GPU.md#L190-L240
+[OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them]
+
+190: `strata serve: draft layer prompt K/V batched on CUDA<d> ...` or `strata serve: STRATA_SPLIT_MTP_BATCH=1 declined, the
+191: drafter's own pass runs: <reason>`. The draft layer's K/V come out of Q8_1 x Q8_0 MMQ instead of its own mmvq, so the
+192: drafts, and how many are accepted, can move; the target's tokens are decided by the verify window.
+193: `tools/split_mtp_batch_parity.py` compares the greedy texts of the two arms. Measured on one machine (2x RTX 3080 20 GB
+194: at 220 W, Xeon E5-2696 v4, UD-Q4_K_XL, `--layer-split 23`, `--batch-mtp`, two slots, `--prefill auto:16384`), two full
+195: restarts per arm in the order off, on, off, on, the same binary in every arm: pooled medians of the prompt read were 1,996
+196: tok/s without and 2,129 with at 25K tokens (+6.7%), 2,448 and 2,553 at 51K (+4.3%), 2,846 and 2,940 at 104K (+3.3%); all 8
+197: on/off ratios of medians are above 1 (1.03 to 1.08), and the two off restarts differ by at most 2% at 25K and 0.3% at the
+198: other sizes. The host's "after each chunk" time per request fell from 0.9-1.3 s to 0.1-0.25 s (one restart per arm). Greedy
+199: output (`--adapt-every 0 --suffix-draft 0`, five prompts of 256 tokens and one 25.5K-token prompt) was identical in 6 of 6
+200: prompts in all five comparisons, the two runs inside one process (A/A) included, and the drafts accepted were 826 of 1,210
+201: in every run, so no difference in acceptance was visible. Decode is not shown to be unchanged: the medians with the variable
+202: set were about 3% lower (pooled solo 82.6 -> 80.2 tok/s, two streams 93.2 -> 90.8), and the same configuration restarted
+203: twice moved up to 4.7%, so two restarts per arm can neither confirm nor exclude it; the change touches only the prompt path.
+204: 
+205: **Each card loads only its own layers' dense weights** (0.1.39, PR #639) with explicit split points (`--layer-split
+206: 27`, not `auto`): every card used to keep a full copy (~3.4 GB for the Coder) though its stage reads only its own
+207: layers, and the VRAM it frees goes to that card's expert cache (2x MI50 16 GB, Coder: 8,819 -> 10,626 experts in
+208: VRAM, decode 39.2 -> 41.7 tok/s). Opt-in for now, on AMD and NVIDIA alike: `STRATA_STAGE_TRIM=1` (please report how
+209: it goes).
+210: A card holding more experts can change which experts run on the GPU, so the output can differ slightly from a run
+211: without it.
+212: 
+213: **The resident RAM mode works on a split** (`--resident-experts`, the low-RAM mode). The RAM copy of the experts
+214: leaves out the ones every card's cache holds, not only the first card's, and when the rest does not fit whole it keeps
+215: the hottest by the expert profile over all the layers. An adaptive swap copies the evicted expert back into RAM from
+216: the card that owns its layer. Before, `--resident-experts` with a split ran as `--mmap-experts`, and setup recommended
+217: one card in the low-RAM mode; with an engine that has it (`RESIDENT_SPLIT_ENGINE` in setup.py), setup keeps the cards
+218: together and the experts no card holds in RAM. The same copy, sized by a RAM budget (`--resident-budget-gib`, the
+219: Unsloth UD-Q4_K_XL and UD-IQ4_XS configs), is kept on a split as well ([UNSLOTH_Q4.md](UNSLOTH_Q4.md)). Swift 1.5 IQ3_XXS at
+220: 160K (q4_0 KV, `--prefill 4096`, `--spec 4` with the stock draft layer), RTX 4060 Ti (layers 0-19) + RTX 5080 (20-47),
+221: i9-14900KF, 32 GB of RAM, Windows 11, four greedy prompts at a time, decode tok/s:
+222: 
+223: | | first four prompts | after three more rounds |
+224: |---|---|---|
+225: | 5080 alone, `--resident-experts` | 25 | 29 |
+226: | split, `--mmap-experts` (what `--resident-experts` became on a split) | 32 | 64 |
+227: | split, `--resident-experts` (22 GiB of experts locked in RAM) | 71 | 69 |
+228: 
+229: The split with `--mmap-experts` catches up once the OS file cache holds the experts, on a PC with nothing else
+230: running; the resident copy is there from the first request and stays locked when other programs need the RAM. With
+231: `--pcie-frac 0 --adapt-every 0` the split's greedy output is the same with either mode.
+232: 
+233: **The prompt path's loan on a split and its streamed ring (`STRATA_SPLIT_RING`).** Under a split the prompt path borrows
+234: the tail slots of each card's expert cache for its buffers (they are given back after the prompt), and the resident RAM
+235: copy keeps those experts too, so a borrowed expert is not read back from the model file during a prompt. How many slots
+236: are borrowed depends on the prompt path's streamed ring: a split uses 96 ring slots when at least 75% of the (layer,
+237: expert) pairs sit in some card's cache, and `STRATA_SPLIT_RING=N` sets N slots (`0` goes back to the pinned-share rule).
+238: The ring used to be chosen after the RAM copy's regions were sized, so the regions were sized for a different ring than
+239: the prompt path then used: with `STRATA_SPLIT_RING=384` it borrowed 5,396 slots and the copy kept 4,662, and the
+240: other 734 were read from the model file in every chunk. The ring is now chosen first (`Prefill::set_ring_override`
+(docs/MULTI_GPU.md has 532 lines.)

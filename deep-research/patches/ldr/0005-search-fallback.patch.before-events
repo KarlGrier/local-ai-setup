@@ -1,0 +1,36 @@
+--- a/local_deep_research/web_search_engines/engines/search_engine_searxng.py
++++ b/local_deep_research/web_search_engines/engines/search_engine_searxng.py
+@@ -1,4 +1,5 @@
+ import enum
++import os
+ import json
+ from typing import Any, Dict, List, Optional
+ 
+@@ -662,6 +663,27 @@
+ 
+         results = self._get_search_results(query)
+ 
++        # --- deep-research workspace patch 0005 (2026-10-19): a fallback search when SearXNG fails or returns fewer
++        # than 5 results - Exa first, then Tavily - only with LDR_SEARCH_FALLBACK=1 (set by the Jan research runner,
++        # never by the measurements), each once its key file exists in ~/.config/deep-research
++        # (tools/search_fallback.py -> exa_fallback.py / tavily_fallback.py: monthly caps, never log the keys)
++        if len(results or []) < 5 and os.environ.get("LDR_SEARCH_FALLBACK") == "1":
++            try:
++                import sys as _sys
++                if "/home/USER/ai/deep-research/tools" not in _sys.path:
++                    _sys.path.insert(0, "/home/USER/ai/deep-research/tools")
++                import search_fallback as _sf
++                extra = _sf.search(query, max_results=10, client="ldr",
++                                   reason=f"searxng returned {len(results or [])}") or []
++                seen = {r.get("url") for r in (results or [])}
++                results = list(results or []) + [
++                    {"title": x["title"], "url": x["url"], "content": x["content"], "engine": x["engine"],
++                     "category": "general"} for x in extra if x["url"] not in seen]
++                if extra:
++                    logger.info(f"{extra[0]['engine']} fallback added {len(extra)} results for query: {query}")
++            except Exception:  # noqa: BLE001 - SearXNG's results stand
++                logger.exception("search fallback failed")
++
+         if not results:
+             logger.warning(f"No SearXNG results found for query: {query}")
+             return []

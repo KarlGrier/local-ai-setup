@@ -1,0 +1,74 @@
+decode-path check - decision (2026-11-05 11:17:31; rules: work/r23/decpath_rules.py = rules.txt with its 11-05 revision, written before the analysis)
+decode path: engine-r22p028x (x28h), 2-row verify windows, STRATA_LOGPOS top 64; 22597 positions (every 8th row from 1,024) in 8 texts: 32k-32768, ldrsyn20k-16110, pp4k-4096, rep9k-9010, tf-long112k-32768, tf-long28k-28672, tf-long40k-32768, tf-long64k-32768
+variant groups (byte-identical rows share a line): default = default / ref / s210; unfused = unfused / x28h-unfused / s210unf; cpushare = cpushare / x28h-cpushare / s210cpu; v2 = v2; gdn = gdn
+PRIMARY (Karl 11-05; the unit is the whole text): distance = per text, the mean over its scored positions of KL(dec || path) over 65 bins (dec's top 64 + the rest); the farthest path per text; k = the texts where the default is the farthest
+prompt paths: A = 5 (default = default / ref / s210; unfused = unfused / x28h-unfused / s210unf; cpushare = cpushare / x28h-cpushare / s210cpu; v2 = v2; gdn = gdn)
+  note: cpushare = fused int8 OFF + the staged walk + the CPU share (not one switch, not the served long-prompt arithmetic); unfused is the clean one-switch reference
+  text                   pos    default    unfused   cpushare         v2        gdn  farthest   default's rank
+  pp4k-4096              384    0.07638    0.07892    0.12853    0.07482    0.09654  cpushare   4 of 5  (short)
+  rep9k-9010             999    0.00011    0.00010    0.00002    0.00001    0.00001  default    1 of 5  (short)
+  ldrsyn20k-16110       1886    0.23398    0.20094    0.22215    0.18990    0.20311  default    1 of 5
+  32k-32768             3968    0.19457    0.16493    0.16328    0.19340    0.16228  default    1 of 5
+  tf-long64k-32768      3968    0.17219    0.14288    0.15279    0.15433    0.14740  default    1 of 5
+  tf-long28k-28672      3456    0.22799    0.22081    0.24918    0.24609    0.20818  cpushare   3 of 5
+  tf-long112k-32768     3968    0.11670    0.13606    0.13479    0.11156    0.13222  unfused    4 of 5
+  tf-long40k-32768      3968    0.18332    0.19517    0.19467    0.17576    0.19074  unfused    4 of 5
+  k = 4 of N = 8 texts; the rule for N = 8: OUTLIER k >= 7, NOT k <= 4, else INCONCLUSIVE; chance rates (each of the 5 paths equally likely farthest): P(k >= 7) = 0.000084, P(k <= 4) = 0.9896, P(between) = 0.0103
+  farthest per path: default 4, unfused 2, cpushare 2, v2 0, gdn 0; closest per path: default 0, unfused 1, cpushare 0, v2 5, gdn 2
+=> PRIMARY VERDICT: DEFAULT IS NOT AN OUTLIER (the default is the farthest prompt path from the decode path in 4 of 8 texts)
+text-level means of the distance (equal weight per text; t(N-1) = CR1 and whole-text bootstrap intervals), and the position-weighted mean (CR1 over texts) with the 2,048-block SE beside it, labelled:
+  default    default fused (P028x as served)    mean 0.15065 t[0.08308, 0.21823] boot[0.09572, 0.19884] | position-weighted 0.17279 CR1[0.13098, 0.21459] se 0.01768; 2,048-block SE 0.01080 (not used for the verdict)
+  unfused    unfused (STRATA_PF_FUSED=0, P021n) mean 0.14248 t[0.08153, 0.20342] boot[0.09225, 0.18532] | position-weighted 0.16410 CR1[0.12770, 0.20050] se 0.01539; 2,048-block SE 0.01039 (not used for the verdict)
+  cpushare   CPU share 0.4 (P021n)              mean 0.15568 t[0.09235, 0.21900] boot[0.10245, 0.20038] | position-weighted 0.17219 CR1[0.12934, 0.21504] se 0.01812; 2,048-block SE 0.01138 (not used for the verdict)
+  v2         v2 kernels (STRATA_PREFILL_V2=1, P mean 0.14323 t[0.07796, 0.20850] boot[0.09014, 0.19052] | position-weighted 0.16627 CR1[0.12024, 0.21231] se 0.01946; 2,048-block SE 0.01117 (not used for the verdict)
+  gdn        GDN on (stock, TC=1 + CONVL2=2)    mean 0.14256 t[0.08493, 0.20019] boot[0.09459, 0.18225] | position-weighted 0.16152 CR1[0.12816, 0.19488] se 0.01411; 2,048-block SE 0.01053 (not used for the verdict)
+  default - unfused    +0.00818 t[-0.00874, +0.02510] boot[-0.00468, +0.02115]
+  default - cpushare   -0.00502 t[-0.02719, +0.01714] boot[-0.02238, +0.01179]
+  default - v2         +0.00742 t[-0.00752, +0.02237] boot[-0.00307, +0.02006]
+  default - gdn        +0.00810 t[-0.00973, +0.02592] boot[-0.00574, +0.02167]
+SECONDARY (information only, declared before the analysis):
+  (a) short (pp4k, rep9k): the default is the farthest in 1 of 2; mean distance per path: default 0.03824, unfused 0.03951, cpushare 0.06427, v2 0.03741, gdn 0.04827
+  (a) long (the texts read to >= 16,110 tokens): the default is the farthest in 3 of 6; mean distance per path: default 0.18812, unfused 0.17680, cpushare 0.18614, v2 0.17851, gdn 0.17399
+  (b) per-position |dNLL| by position in the text (pooled mean / median, positions, texts; whole-text bootstrap interval of the mean); growth = per text, its last bin's mean minus its first bin's:
+    against ref, all 8 distinct texts (the gaps' rows.tsv):
+      unfused vs ref       0-2K 0.478/0.149 (1024, 8t) [0.358, 0.598]; 2-8K 0.555/0.229 (5632, 8t) [0.459, 0.637]; 8-16K 0.490/0.147 (6213, 7t) [0.421, 0.580]; 16K+ 0.433/0.092 (9728, 5t) [0.375, 0.489] | growing in 3 of 8 texts
+      cpushare vs ref      0-2K 0.486/0.167 (1024, 8t) [0.327, 0.651]; 2-8K 0.503/0.200 (5632, 8t) [0.419, 0.577]; 8-16K 0.522/0.147 (6213, 7t) [0.457, 0.604]; 16K+ 0.449/0.087 (9728, 5t) [0.388, 0.513] | growing in 3 of 8 texts
+      v2 vs ref            0-2K 0.503/0.146 (1024, 8t) [0.321, 0.730]; 2-8K 0.514/0.208 (5632, 8t) [0.374, 0.691]; 8-16K 0.491/0.134 (6213, 7t) [0.417, 0.601]; 16K+ 0.417/0.084 (9728, 5t) [0.363, 0.455] | growing in 4 of 8 texts
+      gdn vs ref           0-2K 0.569/0.160 (1024, 8t) [0.394, 0.745]; 2-8K 0.562/0.234 (5632, 8t) [0.451, 0.670]; 8-16K 0.544/0.152 (6213, 7t) [0.460, 0.638]; 16K+ 0.459/0.091 (9728, 5t) [0.419, 0.485] | growing in 3 of 8 texts
+    on the dec positions:
+      default vs dec       0-2K 0.588/0.159 (1024, 8t) [0.355, 0.921]; 2-8K 0.641/0.261 (5632, 8t) [0.455, 0.851]; 8-16K 0.575/0.162 (6213, 7t) [0.493, 0.678]; 16K+ 0.485/0.096 (9728, 5t) [0.416, 0.542] | growing in 3 of 8 texts
+      unfused vs dec       0-2K 0.513/0.150 (1024, 8t) [0.364, 0.710]; 2-8K 0.591/0.222 (5632, 8t) [0.463, 0.734]; 8-16K 0.536/0.140 (6213, 7t) [0.438, 0.691]; 16K+ 0.487/0.092 (9728, 5t) [0.438, 0.526] | growing in 4 of 8 texts
+      cpushare vs dec      0-2K 0.608/0.189 (1024, 8t) [0.355, 0.917]; 2-8K 0.607/0.237 (5632, 8t) [0.436, 0.806]; 8-16K 0.558/0.155 (6213, 7t) [0.463, 0.678]; 16K+ 0.484/0.097 (9728, 5t) [0.429, 0.541] | growing in 4 of 8 texts
+      v2 vs dec            0-2K 0.407/0.128 (1024, 8t) [0.319, 0.512]; 2-8K 0.525/0.211 (5632, 8t) [0.419, 0.649]; 8-16K 0.533/0.148 (6213, 7t) [0.453, 0.658]; 16K+ 0.482/0.095 (9728, 5t) [0.419, 0.539] | growing in 5 of 8 texts
+      gdn vs dec           0-2K 0.468/0.138 (1024, 8t) [0.346, 0.621]; 2-8K 0.499/0.186 (5632, 8t) [0.387, 0.625]; 8-16K 0.514/0.132 (6213, 7t) [0.411, 0.659]; 16K+ 0.485/0.092 (9728, 5t) [0.438, 0.528] | growing in 5 of 8 texts
+      unfused vs ref       0-2K 0.478/0.148 (1024, 8t) [0.357, 0.594]; 2-8K 0.555/0.229 (5632, 8t) [0.463, 0.641]; 8-16K 0.490/0.147 (6213, 7t) [0.419, 0.576]; 16K+ 0.433/0.092 (9728, 5t) [0.371, 0.489] | growing in 3 of 8 texts
+      cpushare vs ref      0-2K 0.486/0.167 (1024, 8t) [0.327, 0.653]; 2-8K 0.503/0.200 (5632, 8t) [0.423, 0.580]; 8-16K 0.522/0.147 (6213, 7t) [0.455, 0.600]; 16K+ 0.449/0.087 (9728, 5t) [0.388, 0.513] | growing in 3 of 8 texts
+      v2 vs ref            0-2K 0.503/0.146 (1024, 8t) [0.324, 0.718]; 2-8K 0.514/0.208 (5632, 8t) [0.378, 0.691]; 8-16K 0.491/0.134 (6213, 7t) [0.417, 0.594]; 16K+ 0.417/0.084 (9728, 5t) [0.363, 0.455] | growing in 4 of 8 texts
+      gdn vs ref           0-2K 0.569/0.160 (1024, 8t) [0.397, 0.742]; 2-8K 0.562/0.234 (5632, 8t) [0.456, 0.675]; 8-16K 0.544/0.152 (6213, 7t) [0.457, 0.638]; 16K+ 0.459/0.091 (9728, 5t) [0.419, 0.485] | growing in 3 of 8 texts
+(c) 1-row check (ldrsyn20k-16110, 14143 positions, 1-row windows on engine-r22p028xm vs the 2-row decode path on the served binary; 2,048-block intervals, one text): NLL d -0.0648 [-0.1204, -0.0233], mean |dNLL| 0.424, top-1 agreement 85.3 % -> the reference is NOT SHOWN SOUND on that text (2-row vs 1-row |dNLL| 0.422 (<= 0.5 x 0.443?), top-1 agreement 84.9 % (>= 86.1 %?) at 1768 rows)
+    0-2K   |dNLL| 1-row vs 2-row mean 0.368 median 0.135 (1024 positions), top-1 agreement 89.6 %
+    2-8K   |dNLL| 1-row vs 2-row mean 0.367 median 0.098 (6144 positions), top-1 agreement 87.4 %
+    8-16K  |dNLL| 1-row vs 2-row mean 0.482 median 0.168 (6975 positions), top-1 agreement 82.9 %
+  against 1-row (NLL d / top-1): default -0.045 / 85.0 %; unfused -0.101 / 85.6 %; cpushare -0.164 / 83.9 %; v2 -0.108 / 84.6 %; gdn -0.041 / 84.8 %
+  against 2-row, same rows:     default -0.109 / 84.7 %; unfused -0.165 / 86.0 %; cpushare -0.228 / 84.2 %; v2 -0.172 / 86.1 %; gdn -0.105 / 85.6 %
+  mean |dNLL| to 2-row, same rows: default 0.455; unfused 0.467; cpushare 0.507; v2 0.443; gdn 0.446
+stock check (ldrsyn20k-16110, 15085 positions): KL(dec || s210dec) 0.2119, NLL d -0.1065 [-0.1693, -0.0684], top-1 agree 85.7 % -> FLAG: stock's decode path differs - read the GDN line against it
+effect on real long-prompt work (INFO; position-weighted numbers per range, no intervals; the 9-workload screen's prompt lengths from gap b's B1n/B1a/B1r.jsonl):
+  W1-think          110 tokens: below 1,024 - not measured
+  W2-code           126 tokens: below 1,024 - not measured
+  W3-research    26,729 tokens (16-32K): the default's next pick differs from the decode path's in 10.0 % of cases, a T=1 draw in 8.9 %, NLL d +0.080 (perplexity +8.4 %); unfused: 10.6 %, 9.2 %, -0.038 (-3.8 %)
+  A-edit          2,677 tokens (1-4K): the default's next pick differs from the decode path's in 9.5 % of cases, a T=1 draw in 8.7 %, NLL d -0.076 (perplexity -7.3 %); v2: 8.9 %, 7.7 %, +0.045 (+4.6 %)
+  B-write         1,370 tokens (1-4K): the default's next pick differs from the decode path's in 9.5 % of cases, a T=1 draw in 8.7 %, NLL d -0.076 (perplexity -7.3 %); v2: 8.9 %, 7.7 %, +0.045 (+4.6 %)
+  R1-verify20k   24,240 tokens (16-32K): the default's next pick differs from the decode path's in 10.0 % of cases, a T=1 draw in 8.9 %, NLL d +0.080 (perplexity +8.4 %); unfused: 10.6 %, 9.2 %, -0.038 (-3.8 %)
+  R2-report54k   54,071 tokens (16-32K (beyond the measured 32K: the 16-32K numbers, an extrapolation)): the default's next pick differs from the decode path's in 10.0 % of cases, a T=1 draw in 8.9 %, NLL d +0.080 (perplexity +8.4 %); unfused: 10.6 %, 9.2 %, -0.038 (-3.8 %)
+  R3-extract5k    5,011 tokens (4-16K): the default's next pick differs from the decode path's in 11.2 % of cases, a T=1 draw in 10.2 %, NLL d +0.074 (perplexity +7.6 %); gdn: 9.5 %, 8.8 %, -0.124 (-11.7 %)
+  R4-agent33k    33,417 tokens (16-32K (beyond the measured 32K: the 16-32K numbers, an extrapolation)): the default's next pick differs from the decode path's in 10.0 % of cases, a T=1 draw in 8.9 %, NLL d +0.080 (perplexity +8.4 %); unfused: 10.6 %, 9.2 %, -0.038 (-3.8 %)
+  (per position: the next-token distribution after a prompt of that length, teacher-forced; generation quality itself is not measured here)
+prompt speed, cold, Basalt's fixtures on P028x as served (x28h, two cards; what turning the fused path off costs):
+  pp16k: default 3,818 tok/s (2 passes, spread 0.4 %); PF_FUSED=0 3,583 (-6.1 %, spread 0.7 %); CPU share 0 3,705 (-2.9 %, spread 0.3 %)
+  pp64k: default 4,371 tok/s (2 passes, spread 0.1 %); PF_FUSED=0 4,088 (-6.5 %, spread 0.6 %); CPU share 0 4,328 (-1.0 %, spread 0.2 %)
+  GDN on: prompt speed not priced (gap 17 did not measure it) and not measured here
+  note: the served config already has STRATA_PREFILL_CPU_SHARE=0.4 (max 1,792); the NLL yardstick forces 0
+pillow step: PASS: pillow 13.0.0 installed (only pillow changed), unit tests + matplotlib + vision (JPEG, PNG) passed; pinned in requirements.lock.txt (0 min)
+decode gap b, merged with the rerun passes: results/r23/decpath/decision-b-merged.txt - => item L (STRATA_REMOTE_LATE_LAUNCH=1): FAIL (L screen NOT DECIDED; LO screen NOT DECIDED; bp90 FAIL); => item O (STRATA_POOL_ONE_BATCH=1): FAIL (Os screen NOT DECIDED; LO screen NOT DECIDED; bp90 FAIL); one card (Os vs Bs): no gain beyond max(noise, 1 %); => item L+O (both): FAIL (LO screen NOT DECIDED; bp90 FAIL)
+Nothing is changed or switched by this gap: P028x stays served; Karl decides.

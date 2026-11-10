@@ -1,0 +1,628 @@
+#!/bin/bash
+# boot-resume.sh - after a reboot, resume the weekend automation at the next clean boundary (staged 11-05 21:xx, Claude;
+# staging/post7d; NOT enabled, NOT started - see BOOT-RESUME.md). Karl 11-05: "After a reboot, resume the chain and series
+# only at the next clean boundary. Never resume mid-gap or mid-question: restart the interrupted question from the start,
+# and rerun an interrupted gap from the beginning. Make sure 8080 comes back, and alert me that a reboot happened."
+#
+# Runs as the user unit boot-resume.service (WantedBy=default.target). Modes:
+#   (none)         the service: after a reboot, the resume below (once per boot), then the RECORDER loop: every
+#                  $BR_RECORD_S (30) s it writes run/boot-resume/units.txt = boot id + every active TRANSIENT user service
+#                  (Description, Environment, ExecStart, CollectMode) - the record the next boot resumes from (transient
+#                  units from systemd-run are gone after a reboot). Never written while the user manager is stopping.
+#   series-waiter  the transient unit boot-resume-series: waits for a research question that started after the reboot
+#                  (or: queue and chain both idle = nothing left), then starts gap-series with the remaining steps
+#   boot-check     boot-check.service (Type=oneshot, Before=deep-research-bench): sets tmp/bench2.hold FIRST (fail closed),
+#                  then the kernel check + the previous boot's kernel log + its clean shutdown; pass -> the hold as it was
+#                  before (a pre-boot gap hold keeps its old mtime), fail -> the hold says "boot check FAILED - Karl checks;
+#                  resume with: ..." + NOTES.md in both repos with what the journal shows (Karl 11-05 decisions 1 + 2)
+#   resume         after Karl's check, the ONE command: kcheck again (refuses while it fails), the boot hold cleared, then
+#                  this boot's resume from its record (also after any other refusal) - idempotent
+#   plan           read-only: what a reboot NOW would resume (from the live units; prints only, writes nothing)
+#   record-once    one recorder pass (tests)
+# The resume (Karl's order): (a) NOTES.md line in deep-research + strata-compare, one critical desktop notice once the
+# session bus has a notification server; (b) strata-compare kernel check (kwatch up first) + the previous boot's kernel
+# log after kwatch's last start (kwatch.sh's own pattern) - a failure resumes NOTHING; (c) only when no gap driver /
+# series / port_gap4 / fix-replay process is alive and nobody holds tmp/gpu-test.lock: an interrupted gap's leftovers
+# written before the boot are removed (tmp/port-gap.lockpid, tmp/port-test-server.pid, tmp/gap-keep-hold,
+# tmp/gap-waiting-jan; tmp/bench2.hold - "phase 4 gap:" holds only - after 8080 checks out), 8080 started
+# (strata-ensure.sh) and checked: engine sha f4c4f654fb24 (P028x), chat-cache policy on - else nothing resumed, the hold
+# kept; (d) each unit that was active at the reboot (the record) restarted with its recorded systemd-run line, at the
+# next clean boundary: the chain with CHAIN_STEPS from the bench unit's BENCH2_PLAN (switch.sh re-waits for its FROM);
+# the series via boot-resume-series with the remaining steps (gap-series.log after its last "series start"), the
+# interrupted one first, anchored at a question that started after the reboot; post7d-retry, weekend-watch as recorded;
+# (e) a unit that is active is never started again. A recorded one-shot series-restart-after-* waiter is not restarted:
+# its logic is applied (Karl 11-05) - the held .ready marks it names are restored right before the series starts, and
+# the steps are computed its way (finished -> dropped; refused under the old series, not yet retried -> once more with
+# SERIES_RETRIED; interrupted -> rerun first). Other unknown transient units are listed, not restarted.
+# The research queue (deep-research-bench, enabled) comes back by itself and reruns an interrupted question from the
+# start (bench2.py moves its files to failed-attempt-*). staging/post7d/STOP-boot-resume = alert only, resume nothing.
+# Log: logs/boot-resume.log. Children: 8>&- 9>&-; kills nothing; no pgrep -f / pkill.
+set -u
+WS=${BR_WS:-/home/USER/ai/deep-research}
+SC=${BR_SC:-/home/USER/ai-speed-testing/strata-compare}
+S=$WS/staging/post7d
+ST=${BR_STATE:-$WS/run/boot-resume}
+LOG=${BR_LOG:-$WS/logs/boot-resume.log}
+QLOG=$WS/logs/bench2-queue.log; SWLOG=$WS/logs/post7d-switch.log; RPLOG=$WS/logs/post7d-replays.log
+RDIR=$WS/results/bench2/fixes/replays; FSTATE=$S/item8/failed-replays.tsv
+VFILE=$WS/staging/item8/tests/verify-results.json; VBACK=$S/item8/verify-results.item8-1029.json
+GLOG=$SC/results/r23/gap-series.log; SERIES=$SC/work/r23/gap-series.sh; COPIES=$SC/results/r23/run-copies
+UNITF=${BR_UNIT_FILE:-$HOME/.config/systemd/user/deep-research-bench.service}
+HOLD=$WS/tmp/bench2.hold; LP=$SC/tmp/port-gap.lockpid; PORTPID=$SC/tmp/port-test-server.pid
+KEEP=$SC/tmp/gap-keep-hold; JANW=$SC/tmp/gap-waiting-jan; GPULOCK=$SC/tmp/gpu-test.lock
+KC=${BR_KCHECK:-$SC/bringup/lib/kcheck.sh}; KWPID=$SC/tmp/r19/kwatch.pid; KWLOG=$SC/logs/r19/kwatch.log; KWSH=$SC/bringup/lib/kwatch.sh
+ENSURE=${BR_ENSURE:-$SC/configs/usability/bin/strata-ensure.sh}
+POLICY=$WS/run/chat-cache-policy.json; WANT_SHA=${BR_WANT_SHA:-f4c4f654fb24}
+NOTES_DR=$WS/NOTES.md; NOTES_SC=$SC/NOTES.md
+STOPF=$S/STOP-boot-resume
+BCUNIT=${BR_BOOTCHECK_UNIT:-$HOME/.config/systemd/user/boot-check.service}   # installed = its verdict is required
+RESUME_CMD="bash ~/ai/deep-research/staging/post7d/boot-resume.sh resume"
+BOOTCHECK_MAX_UPTIME_S=${BR_BOOTCHECK_MAX_UPTIME_S:-1800}
+SELF=$(readlink -f "$0")
+RECORD_S=${BR_RECORD_S:-30}; POLL_S=${BR_POLL_S:-20}; KWATCH_WAIT_S=${BR_KWATCH_WAIT_S:-300}
+ENSURE_TRIES=${BR_ENSURE_TRIES:-3}; ENSURE_GAP_S=${BR_ENSURE_GAP_S:-300}; SNAP_SLACK_S=${BR_SNAP_SLACK_S:-1200}
+IDLE_MIN_S=${BR_IDLE_MIN_S:-600}; IDLE_CONFIRM_S=${BR_IDLE_CONFIRM_S:-180}
+CHAIN=post7d-chain.service; SER=gap-series.service; RETRY=post7d-retry.service; WATCH=weekend-watch.service
+WAITER=boot-resume-series.service
+TSRE='^20[0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] '
+export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus}
+
+PLAN_ONLY=0
+say() { if [ $PLAN_ONLY = 1 ]; then echo "plan: $*"; else echo "$(date '+%F %T') boot-resume: $*" >> "$LOG"; fi; }
+boot_id() { if [ -n "${BR_BOOT_ID:-}" ]; then echo "$BR_BOOT_ID"; else tr -d '-' < /proc/sys/kernel/random/boot_id; fi; }
+boot_epoch() { if [ -n "${BR_BOOT_EPOCH:-}" ]; then echo "$BR_BOOT_EPOCH"; else awk '/^btime/ {print $2}' /proc/stat; fi; }
+prev_boot_id() { journalctl --list-boots --no-pager -q 2> /dev/null | awk '$1 == "-1" {print $2}'; }
+prev_boot_end() { journalctl -b -1 -n 1 -o short-unix -q --no-pager 2> /dev/null | awk 'NR == 1 {printf "%d", $1}'; }
+ustate() { systemctl --user show -p ActiveState --value "$1" 2> /dev/null; }
+up() { case "$(ustate "$1")" in active|activating|reloading|deactivating|refreshing) return 0 ;; *) return 1 ;; esac; }
+older() { [ -e "$1" ] && [ "$(stat -c %Y "$1")" -lt "$BOOT" ]; }      # written before this boot
+note2() {   # one line in both NOTES.md files
+  [ $PLAN_ONLY = 1 ] && { echo "plan: NOTES: $*"; return 0; }
+  local l; l="* $(date '+%F %H:%M') REBOOT (staging/post7d/boot-resume.sh): $*"
+  echo "$l" >> "$NOTES_DR"; echo "$l" >> "$NOTES_SC"
+}
+engine_sha() {   # port_gap4.sh's engine_sha (11-05 audit #10): the strata / strata-host child of the 8080 listener
+  local pid lp
+  lp=$(ss -ltnpH 'sport = :8080' 2> /dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+  pid=$( { [ -n "$lp" ] && pgrep -P "$lp" -x "strata|strata-host"; } | head -1)
+  [ -n "$pid" ] || pid=$(pgrep -x "strata|strata-host" | while read -r p; do tr '\0' ' ' < /proc/$p/cmdline | grep -q -- "--port 8080\|:8080" && echo $p; done | head -1)
+  [ -z "$pid" ] && pid=$(pgrep -x "strata|strata-host" | head -1)
+  [ -n "$pid" ] && sha256sum "/proc/$pid/exe" | cut -c1-12 || true
+}
+policy_on() { /usr/bin/python3 -I -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("enabled") else 1)' "$POLICY" 2> /dev/null; }
+live_drivers() {   # processes (not this script) whose command line is a gap driver, the series, port_gap4 or fix-replay
+  local p c
+  for p in /proc/[0-9]*; do
+    p=${p#/proc/}; { [ "$p" = "$$" ] || [ "$p" = "$BASHPID" ]; } && continue
+    c=$(tr '\0' ' ' < "/proc/$p/cmdline" 2> /dev/null) || continue
+    case "$c" in *boot-resume.sh*) continue ;; esac
+    case "$c" in *port_gap4.sh*|*/run-copies/gap-*|*gap-series*|*/work/r23/gap-*|*/work/ds41/gate/*|*fix-replay.py*|*replays.sh*) echo "$p ${c:0:100}" ;; esac
+  done
+}
+gpulock_held() { [ -e "$GPULOCK" ] && ! flock -n -x "$GPULOCK" true 2> /dev/null; }
+bus_ready() { busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus NameHasOwner s org.freedesktop.Notifications 2> /dev/null | grep -q 'b true'; }
+uptime_s() { if [ -n "${BR_UPTIME_S:-}" ]; then echo "$BR_UPTIME_S"; else awk '{printf "%d", $1}' /proc/uptime; fi; }
+clean_shutdown() {   # the previous boot reached a reboot / power-off / halt target (journalctl -b -1)
+  journalctl -b -1 -n 500 -o cat -q --no-pager 2> /dev/null | grep -qE 'Reached target .*(reboot\.target|poweroff\.target|halt\.target|kexec\.target|System Reboot|System Power Off|System Halt)'
+}
+last_boot_summary() {   # $1 = file: what the journal shows about the previous boot; LB_TXT = a one-line summary
+  local pe tl kl n
+  pe=$(prev_boot_end)
+  tl=$(journalctl -b -1 -n 500 -o cat -q --no-pager 2> /dev/null | grep -E 'Reached target .*(reboot|poweroff|halt|kexec)\.target' | tail -1)
+  kl=$(journalctl -k -b -1 -o short-iso -q --no-pager 2> /dev/null | grep -E 'Kernel panic|Oops|BUG:|kernel BUG|Machine check|mce: \[|\[Hardware Error\]|NVRM: Xid|general protection fault|soft lockup|hard LOCKUP|hung_task' | grep -vE 'NMI watchdog: Enabled|In-kernel MCE decoding' )
+  n=$(grep -c . <<< "$kl")
+  { echo "previous boot $(prev_boot_id): last journal entry $([ -n "$pe" ] && date -d "@$pe" '+%F %T' || echo unknown)"
+    echo "shutdown target reached: ${tl:-NO (no reboot / power-off / halt target in its last 500 journal lines)}"
+    echo "kernel panic / oops / MCE / Xid lines (journalctl -k -b -1): $n"; [ "$n" -gt 0 ] && head -10 <<< "$kl"
+    echo "its last 15 journal lines:"; journalctl -b -1 -n 15 -o short-iso -q --no-pager 2> /dev/null; } > "$1" 2>&1
+  LB_TXT="last boot's last entry $([ -n "$pe" ] && date -d "@$pe" '+%F %T' || echo unknown); shutdown target: $([ -n "$tl" ] && echo reached || echo NOT reached); panic/oops/MCE/Xid lines: $n$([ "$n" -gt 0 ] && echo " (first: $(head -1 <<< "$kl" | cut -c1-140))")"
+}
+boot_hold() {   # boot_hold TEXT - the research queue's hold, written atomically
+  printf '%s\n' "$1" > "$HOLD.boot-new" && mv "$HOLD.boot-new" "$HOLD"
+}
+kcheck_run() {   # kwatch up (its pid file from this boot = its MainPID), then kcheck.sh; KOUT = its output
+  local t0 kp; t0=$(date +%s)
+  until up kwatch.service && [ -s "$KWPID" ] && ! older "$KWPID" && kp=$(cat "$KWPID") && [ "$kp" = "$(systemctl --user show -p MainPID --value kwatch.service 2> /dev/null)" ]; do
+    [ $(( $(date +%s) - t0 )) -ge "$KWATCH_WAIT_S" ] && break; sleep 5; done
+  KOUT=$(bash "$KC" boot-resume 2>&1 8>&- 9>&-)
+}
+prevboot_scan() {   # the previous boot's kernel log after kwatch's last start, kwatch's own pattern; KLINES = the hits
+  local pat ks kf; KLINES=""
+  pat=$(sed -n "s/^PAT='\(.*\)'$/\1/p" "$KWSH" 2> /dev/null)
+  ks=$(awk -v b="$BOOT" '/ kwatch start / {cmd = "date -d " substr($1, 1, 25) " +%s"; cmd | getline e; close(cmd); if (e < b) k = e} END {print k + 0}' "$KWLOG" 2> /dev/null)
+  kf=$(journalctl -k -b -1 -o short-unix -q --no-pager 2> /dev/null | awk 'NR == 1 {printf "%d", $1}')
+  [ -n "$pat" ] && [ -n "$kf" ] || { say "previous boot's kernel log not readable or no kwatch pattern - that part of the check skipped"; return 0; }
+  [ "${ks:-0}" -ge "$kf" ] || ks=$((kf + 180))   # kwatch did not start in that boot: skip its boot messages
+  KLINES=$(journalctl -k -b -1 -o short-unix -q --no-pager 2> /dev/null | awk -v s="$ks" '$1 + 0 >= s' | grep -iE "$pat" | head -3)
+  [ -z "$KLINES" ]
+}
+owns_held() {   # owns_held WAITER_SCRIPT DRIVER_BASENAME: the waiter names DRIVER's .ready.held (literally or via VAR=.../DRIVER)
+  local v
+  grep -qF "$2.ready.held" "$1" && return 0
+  for v in $(grep -oE "(^|[ ;])[A-Za-z_][A-Za-z_0-9]*=[^ ;]*/$2( |;|\$)" "$1" | sed -E 's/^[ ;]?([A-Za-z_][A-Za-z_0-9]*)=.*/\1/'); do
+    grep -qF "\$$v.ready.held" "$1" && return 0; done
+  return 1
+}
+[ -n "${BR_TEST_HOOK:-}" ] && source "$BR_TEST_HOOK"   # tests only (scratch/bootresume): stubs for engine_sha, live_drivers, ...
+
+# ---- the record ------------------------------------------------------------------------------------------------------
+record_once() {
+  local s tmp u fp
+  s=$(systemctl --user is-system-running 2> /dev/null); case $s in running|degraded|starting|maintenance) ;; *) return 0 ;; esac
+  mkdir -p "$ST"; tmp=$ST/units.txt.new
+  { echo "boot_id $(boot_id)"; echo "time $(date +%s) $(date '+%F %T')"
+    systemctl --user list-units --type=service --state=active,activating --no-legend --plain 2> /dev/null | awk '{print $1}' | while read -r u; do
+      fp=$(systemctl --user show -p FragmentPath --value "$u" 2> /dev/null); case $fp in */systemd/transient/*) ;; *) continue ;; esac
+      echo "unit $u"; systemctl --user show -p Description -p Environment -p ExecStart -p CollectMode -p ActiveState "$u" 2> /dev/null | sed 's/^/  /'
+    done; } > "$tmp" 2> /dev/null || { rm -f "$tmp"; return 0; }
+  s=$(systemctl --user is-system-running 2> /dev/null); case $s in running|degraded|starting|maintenance) ;; *) rm -f "$tmp"; return 0 ;; esac
+  grep -q '^  ActiveState=deactivating' "$tmp" && { rm -f "$tmp"; return 0; }   # a unit stopping: not a state to resume
+  mv "$tmp" "$ST/units.txt"
+}
+snap_units() { awk '/^unit / {print $2}' "$1"; }
+snap_has() { grep -qx "unit $2" "$1"; }
+snap_prop() { awk -v u="unit $2" -v p="  $3=" '$0 == u {f = 1; next} /^unit / {f = 0} f && index($0, p) == 1 {print substr($0, length(p) + 1); exit}' "$1"; }
+snap_argv() { snap_prop "$1" "$2" ExecStart | sed -n 's/.*argv\[\]=\(.*\) ; ignore_errors=.*/\1/p'; }
+snap_env() {   # KEY=VAL lines of the recorded Environment (systemd quotes values with spaces)
+  snap_prop "$1" "$2" Environment | /usr/bin/python3 -I -c 'import shlex, sys; [print(x) for x in shlex.split(sys.stdin.read())]' 2> /dev/null
+}
+
+# ---- starting a unit (never twice) ---------------------------------------------------------------------------------
+start_unit() {   # start_unit UNIT DESCRIPTION COLLECTMODE ENVFILE ARGV... - 0 started, 2 active already, 1 failed
+  local u=$1 d=$2 c=$3 ef=$4 kv; shift 4
+  if up "$u"; then say "$u is active already - not started again"; return 2; fi
+  [ $PLAN_ONLY = 1 ] && { echo "plan: would start $u ($(tr '\n' ' ' < "$ef"| sed 's/ $//')): $*"; return 0; }
+  [ "$(ustate "$u")" = failed ] && systemctl --user reset-failed "$u" 2> /dev/null
+  local a=(--user --unit="$u" --description="$d"); [ "$c" = inactive-or-failed ] && a+=(--collect)
+  while IFS= read -r kv; do [ -n "$kv" ] && a+=(--setenv="$kv"); done < "$ef"
+  say "start: systemd-run ${a[*]} $*"
+  systemd-run "${a[@]}" "$@" > /dev/null 2>> "$LOG" < /dev/null 8>&- 9>&- || { say "systemd-run for $u failed"; return 1; }
+  sleep "${BR_START_SETTLE_S:-3}"
+  up "$u" || { say "$u is not active after its start ($(ustate "$u"))"; return 1; }
+  say "$u started (MainPID $(systemctl --user show -p MainPID --value "$u" 2> /dev/null))"; return 0
+}
+
+# ---- what the logs say ---------------------------------------------------------------------------------------------
+plan_step() { case $1 in queue-plan-7d.json) echo 1 ;; queue-plan-p4s9.json) echo 2 ;; queue-plan-item8.json) echo 3 ;;
+  queue-plan-c3c.json) echo 4 ;; queue-plan-p5-holdout.json) echo 5 ;; *) echo 0 ;; esac; }
+step_to() { case $1 in 1) echo queue-plan-p4s9.json ;; 2) echo queue-plan-item8.json ;; 3) echo queue-plan-c3c.json ;; 4) echo queue-plan-p5-holdout.json ;; esac; }
+cur_plan() { sed -n 's/^Environment=BENCH2_PLAN=//p' "$UNITF" 2> /dev/null | tail -1; }
+switch_state() {   # switch_state FROM TO -> "none" | "waiting" | "between <script>" | "between-done" | "ended <line>" | "switched"
+  local pfx="switch $1 -> $2: " n
+  n=$(grep -nF "$pfx" "$SWLOG" 2> /dev/null | grep -F "${pfx}start (pid" | tail -1 | cut -d: -f1)
+  [ -n "$n" ] || { echo none; return; }
+  tail -n +"$n" "$SWLOG" | grep -F "$pfx" | awk -v p="$pfx" '{ r = substr($0, index($0, p) + length(p)) }
+    index(r, "NOT SWITCHED") == 1 || index(r, "STOP-switch present") == 1 { st = "ended " r; next }
+    r == "done" { st = "switched"; next }
+    index(r, "between: bash ") == 1 { st = "between " substr(r, 15); next }
+    r == "between script done" { st = "between-done"; next }
+    st == "" { st = "waiting" }
+    END { print (st == "" ? "waiting" : st) }'
+}
+question_state() {   # the last question started before the boot, and whether it ended
+  local line id
+  line=$(awk -v b="$BOOT_TS" -v re="$TSRE" '$0 ~ re && substr($0, 1, 19) < b && /: running/ {l = $0} END {print l}' "$QLOG" 2> /dev/null)
+  [ -n "$line" ] || { echo "no question started before the boot"; return; }
+  id=$(sed -n 's/^.\{20\}.* \/ \([^ /]*\): running.*/\1/p' <<< "$line")
+  if awk -v t="${line:0:19}" -v b="$BOOT_TS" -v id="$id" -v re="$TSRE" 'f && ($0 ~ re) && substr($0, 1, 19) >= b {exit} index($0, t) == 1 {f = 1; next}
+      f && $0 ~ ("^[0-9][0-9]:[0-9][0-9] " id ": rc ") {hit = 1} END {exit !hit}' "$QLOG"; then
+    echo "none running (the last one, ${line:20:80}, ended)"
+  else echo "INTERRUPTED: ${line:20:100} (since ${line:0:16}) - the queue reruns it from the start"; fi
+}
+series_state() {   # one line per step: step<TAB>name<TAB>pending|interrupted|exit1|done|terminal<TAB>retried; or terminal<TAB>why; or none
+  local n steps
+  n=$(grep -n "${TSRE}series start: " "$GLOG" 2> /dev/null | tail -1 | cut -d: -f1)
+  [ -n "$n" ] || { echo none; return; }
+  steps=$(sed -n "${n}p" "$GLOG" | cut -c21- | sed 's/^series start: //; s/; first after gap19-chain$//')
+  tail -n +$((n + 1)) "$GLOG" | awk -v steps="$steps" -v re="$TSRE" '
+    BEGIN { n = split(steps, S, " "); for (i = 1; i <= n; i++) { P[i] = S[i]; sub(/^\+/, "", P[i]); st[i] = "pending" } }
+    $0 !~ re { next }
+    { r = substr($0, 21)
+      if (r == "series done") term = "series done"
+      if (index(r, "gap 19 still running") == 1) term = r
+      for (i = 1; i <= n; i++) { s = P[i]; t = "; starting " s
+        if (length(r) >= length(t) && substr(r, length(r) - length(t) + 1) == t) { st[i] = "interrupted"; continue }
+        if (index(r, s " exit ") == 1) { c = substr(r, length(s) + 7)
+          if (c ~ /^[0-9]+$/) { if (c == 0) st[i] = "done"; else if (c == 1) st[i] = "exit1"; else { st[i] = "terminal"; term = r } }
+          continue }
+        if (index(r, s " refused again on its one retry") == 1) { st[i] = "done"; continue }
+        if (index(r, s " refused before opening its gap") == 1) {
+          if (index(r, "one retry at the next question boundary")) { st[i] = "pending"; rt[i] = 1 } else if (index(r, "- skipped")) { st[i] = "pending"; rt[i] = 1; od[i] = 1 }
+          continue }
+        if (index(r, s " exited 1 with its gap still OPEN") == 1 || index(r, s ": kernel-check failure") == 1 || index(r, s " did not complete (exit") == 1 || index(r, "driver " s " not ready") == 1) { st[i] = "terminal"; term = r }
+      } }
+    END { if (term != "") { print "terminal\t" term; exit }
+          for (i = 1; i <= n; i++) print "step\t" S[i] "\t" st[i] "\t" (rt[i] ? 1 : 0) "\t" (od[i] ? 1 : 0) }'
+}
+
+# ---- the resume ------------------------------------------------------------------------------------------------------
+REFUSED=""; DONE_TXT=""; INTR=""
+refuse() { REFUSED="$REFUSED; $*"; say "NOT RESUMED: $*"; }
+did() { DONE_TXT="$DONE_TXT; $*"; say "$*"; }
+finish() {   # $1 = resumed|refused: the outcome line, the notice, the done marker
+  local out
+  if [ -n "$REFUSED" ]; then out="NOT resumed:${REFUSED#;}${DONE_TXT:+ | done:${DONE_TXT#;}}"; else out="resumed:${DONE_TXT#;}"; fi
+  note2 "outcome - $out"
+  if [ $PLAN_ONLY = 0 ]; then
+    printf '%s\n' "PC rebooted at $BOOT_TS. ${out}.$([ -n "$REFUSED" ] && echo " After your check: $RESUME_CMD"). Interrupted: ${INTR#; }" > "$BD/notice"
+    echo "$1 $(date '+%F %T')" > "$BD/done"
+  fi
+  say "finished ($1): $out"
+}
+
+resume() {   # $1 = the record of what ran before the reboot
+  local SNAP=$1 u cp st sw why k
+  BOOT_TS=$(date -d "@$BOOT" '+%F %T')
+  # -- (a) what was interrupted ---------------------------------------------------------------------------------------
+  local qs ss gap="" hold_txt=""
+  qs=$(question_state); INTR="question: $qs"
+  local hsrc=$HOLD; [ "$(head -c 10 "$HOLD" 2> /dev/null)" = "boot check" ] && hsrc=$BD/prev-hold   # the boot hold: what was there before
+  [ -e "$hsrc" ] && hold_txt=$(head -c 160 "$hsrc" 2> /dev/null)
+  if [ -s "$LP" ]; then gap="a gap was OPEN (port-gap.lockpid $(cat "$LP"), 8080 down; hold: $hold_txt)"
+  elif [ -n "$hold_txt" ]; then gap="a gap was waiting in port_gap4 begin (hold: $hold_txt)"; fi
+  [ -n "$gap" ] && INTR="$INTR; $gap"
+  ss=$(series_state)
+  k=$(awk -F'\t' '$1 == "step" && ($3 == "interrupted" || $3 == "exit1") {print $2}' <<< "$ss" | head -1)
+  [ -n "$k" ] && INTR="$INTR; gap step $k (reruns from the beginning)"
+  cp=$(cur_plan); INTR="$INTR; bench unit on ${cp:-?}"
+  for u in $(snap_units "$SNAP"); do INTR="$INTR; was active: ${u%.service}"; done
+  local pe; pe=$(prev_boot_end)
+  if journalctl -b -1 -n 300 -o cat -q --no-pager 2> /dev/null | grep -qE 'Reached target .*(Reboot|Power-Off|Power Off|Halt)|Journal stopped'; then
+    INTR="$INTR; the previous boot shut down cleanly${pe:+ (last journal entry $(date -d "@$pe" '+%F %T'))}"
+  else INTR="$INTR; no clean shutdown in the previous boot's journal (power loss, crash or reset?)${pe:+ (last entry $(date -d "@$pe" '+%F %T'))}"; fi
+  note2 "the PC rebooted (boot $BOOT_TS). Interrupted: ${INTR#; }. Resuming at the next clean boundary after the kernel check (Karl 11-05)."
+  say "interrupted: ${INTR#; }"
+  [ "${NO_RECORD:-0}" = 1 ] && refuse "no fresh record of the units that ran before the reboot (the recorder was not running at the end) - chain / series / retry / watcher NOT restarted; Claude restarts them by hand"
+  [ -e "$STOPF" ] && { refuse "staging/post7d/STOP-boot-resume present (Karl's off switch) - nothing resumed"; finish refused; return; }
+  # -- (b) the kernel check + the previous boot's shutdown (boot-check.service's verdict, Karl 11-05) ---------------------
+  local v
+  if [ "${ACK:-0}" = 1 ]; then   # boot-resume.sh resume after Karl's check: kcheck again; his OK covers the rest
+    kcheck_run || { refuse "kernel check still fails (${KOUT:0:200}) - nothing resumed; the queue stays held"; finish refused; return; }
+    did "kernel check ok (resume by hand after Karl's check)"
+  else
+    if [ -e "$BCUNIT" ] && [ ! -s "$BD/verdict" ]; then   # ordered after it; wait if it still runs (e.g. started by hand)
+      t0=$(date +%s); while [ ! -s "$BD/verdict" ] && up boot-check.service && [ $(( $(date +%s) - t0 )) -lt 900 ]; do sleep 5; done; fi
+    v=$(cat "$BD/verdict" 2> /dev/null)
+    case "$v" in
+      pass*) did "boot check passed (boot-check.service: ${v#pass })" ;;
+      fail*) refuse "boot check FAILED (${v#fail }) - nothing resumed; the research queue is held (tmp/bench2.hold); journal: $(cat "$BD/last-boot.oneline" 2> /dev/null); after Karl's check: $RESUME_CMD"; finish refused; return ;;
+      *) if [ -e "$BCUNIT" ]; then
+           refuse "boot-check.service is installed but left no verdict (crashed or timed out - its hold stays) - nothing resumed; after Karl's check: $RESUME_CMD"; finish refused; return; fi
+         # boot-check.service not installed: the same checks here (the queue may have started already)
+         kout=""; why=""
+         kcheck_run || why="kernel check failed (${KOUT:0:200})"
+         [ -z "$why" ] && ! prevboot_scan && why="the previous boot's kernel log has error lines after kwatch's start: $(cut -c1-160 <<< "$KLINES" | tr '\n' '|')"
+         [ -z "$why" ] && [ $PLAN_ONLY = 0 ] && ! clean_shutdown && why="no clean shutdown in the previous boot's journal"
+         if [ -n "$why" ]; then
+           [ $PLAN_ONLY = 1 ] || { last_boot_summary "$BD/last-boot.txt"; [ -e "$HOLD" ] && [ ! -e "$BD/prev-hold" ] && cp -p "$HOLD" "$BD/prev-hold"
+             boot_hold "boot check FAILED ($why) - the research queue is held until Karl checks. Resume with: $RESUME_CMD (details: $BD/last-boot.txt)"; }
+           refuse "$why - nothing resumed; the research queue is held; ${LB_TXT:-}; after Karl's check: $RESUME_CMD"; finish refused; return; fi
+         did "kernel check ok (${KOUT:-ok}; previous boot's kernel log clean after kwatch's start; clean shutdown)" ;;
+    esac
+  fi
+  # -- (c) an interrupted gap's leftovers, then 8080 ------------------------------------------------------------------
+  local alive; alive=$(live_drivers)
+  if [ -n "$alive" ] || gpulock_held || up "$SER" || up "$WAITER"; then
+    refuse "a gap driver / the series / a replay is alive or tmp/gpu-test.lock is held (${alive:0:160}) - no cleanup, nothing resumed"; finish refused; return; fi
+  local f stale_hold=0
+  if [ -s "$LP" ]; then
+    local lpv; lpv=$(cat "$LP")
+    if older "$LP" || ! kill -0 "$lpv" 2> /dev/null; then [ $PLAN_ONLY = 1 ] || rm -f "$LP"; did "removed the stale tmp/port-gap.lockpid (pid $lpv, written before the boot)"
+    else refuse "tmp/port-gap.lockpid names a live process written after the boot - nothing resumed"; finish refused; return; fi
+  fi
+  for f in "$PORTPID" "$KEEP" "$JANW"; do older "$f" && { [ $PLAN_ONLY = 1 ] || rm -f "$f"; did "removed the stale ${f#$SC/}"; }; done
+  if [ -e "$HOLD" ]; then
+    case "$(head -c 13 "$HOLD")" in
+      "phase 4 gap: ") older "$HOLD" && stale_hold=1 ;;
+    esac
+    [ $stale_hold = 1 ] || { refuse "tmp/bench2.hold is not a gap's hold from before the boot ($hold_txt) - left alone, nothing resumed"; finish refused; return; }
+  fi
+  local tries=0 sha=""
+  while :; do
+    tries=$((tries + 1))
+    if [ $PLAN_ONLY = 1 ]; then echo "plan: would run strata-ensure.sh \"boot resume\" and check the engine sha / policy"; break; fi
+    if env -u HTTP_PROXY -u HTTPS_PROXY "$ENSURE" "boot resume" >> "$LOG" 2>&1 8>&- 9>&- < /dev/null; then break; fi
+    [ $tries -ge "$ENSURE_TRIES" ] && { refuse "8080 did not come up (strata-ensure.sh, $tries tries) - hold kept, nothing resumed"; finish refused; return; }
+    say "strata-ensure.sh failed (try $tries) - again in $ENSURE_GAP_S s"; sleep "$ENSURE_GAP_S"
+  done
+  if [ $PLAN_ONLY = 0 ]; then
+    sha=$(engine_sha)
+    [ "$sha" = "$WANT_SHA" ] || { refuse "8080's engine sha '$sha' is not P028x ($WANT_SHA) - hold kept, nothing resumed"; finish refused; return; }
+    policy_on || { refuse "the chat-cache parking policy is not on (run/chat-cache-policy.json) - hold kept, nothing resumed"; finish refused; return; }
+    did "8080 up: engine $sha (P028x), policy on"
+  fi
+  if [ $stale_hold = 1 ]; then [ $PLAN_ONLY = 1 ] || rm -f "$HOLD"; did "removed the stale tmp/bench2.hold - the queue goes on (an interrupted question reruns from the start)"; fi
+  # -- (d) the chain ----------------------------------------------------------------------------------------------------
+  local chain_ok=0 chain_fin=0 env_f="$BD/env.tmp" cs steps="" s ost
+  if snap_has "$SNAP" "$CHAIN"; then
+    cs=$(plan_step "$cp")
+    if [ "$(snap_argv "$SNAP" "$CHAIN")" != "/bin/bash $S/chain.sh" ]; then refuse "chain: its recorded ExecStart is not /bin/bash staging/post7d/chain.sh - not restarted"
+    elif [ "$cs" = 0 ]; then refuse "chain: the bench unit runs BENCH2_PLAN=${cp:-?}, not one of the chain's plans - not restarted"
+    elif [ "$cs" = 5 ]; then chain_fin=1; did "chain: the bench unit is on queue-plan-p5-holdout.json - the chain's last switch was done; not restarted"
+    else
+      ost=$(snap_env "$SNAP" "$CHAIN" | sed -n 's/^CHAIN_STEPS=//p'); for s in ${ost:-1 2 3 4}; do [ "$s" -ge "$cs" ] && steps="$steps $s"; done; steps=${steps# }
+      sw=$(switch_state "$cp" "$(step_to "$cs")")
+      if [ -z "$steps" ]; then chain_fin=1; did "chain: no step left (CHAIN_STEPS ${ost:-1 2 3 4}, bench unit on $cp) - not restarted"
+      else
+        case "$sw" in
+          ended*) chain_fin=1; refuse "chain: its step $cs had ended before the reboot (${sw#ended }) - not restarted; Karl decides" ;;
+          switched) refuse "chain: the switch log says step $cs switched, but the bench unit is still on $cp - not restarted" ;;
+          "between "*install-ldr-fixes.sh*) refuse "chain: the reboot hit install-ldr-fixes.sh (step 1's between script; it has its own UNDO.sh) - not restarted; Karl decides" ;;
+          "between "*replays.sh*) replays_recover; [ -z "$RR_WHY" ] && chain_ok=1 || refuse "chain: $RR_WHY" ;;
+          between-done) if [ "$cs" = 3 ]; then replays_recover; [ -z "$RR_WHY" ] && chain_ok=1 || refuse "chain: $RR_WHY"   # replays.sh again: finished labels are skipped
+            else refuse "chain: step $cs's between script had finished but the switch had not - switch.sh would run install-ldr-fixes.sh again; not restarted; Karl decides"; fi ;;
+          *) chain_ok=1 ;;
+        esac
+      fi
+      if [ $chain_ok = 1 ]; then
+        { snap_env "$SNAP" "$CHAIN" | grep -v '^CHAIN_STEPS='; echo "CHAIN_STEPS=$steps"; } > "$env_f"
+        if start_unit "$CHAIN" "$(snap_prop "$SNAP" "$CHAIN" Description)" "$(snap_prop "$SNAP" "$CHAIN" CollectMode)" "$env_f" /bin/bash "$S/chain.sh"; then
+          did "chain restarted at step $cs (CHAIN_STEPS=\"$steps\"; switch.sh re-waits for $cp to finish; was: $sw)"
+        else [ $? = 2 ] && did "chain: active already" || { chain_ok=0; refuse "chain: the start failed"; }; fi
+      fi
+    fi
+  fi
+  # -- (d) the series (via boot-resume-series: it starts only after a question that started after the reboot) ----------
+  local sk="" pf retr="" rem=() first=1 nd=0 inter="-" line nm stt rt od wu wp h held="" wdesc="" wl=""
+  for wu in $(snap_units "$SNAP" | grep '^series-restart-after-.*\.service$'); do   # Karl 11-05: apply its logic, do not restart it
+    wp=$(snap_argv "$SNAP" "$wu" | sed -n 's#^/bin/bash \(/[^ ]*\.sh\)$#\1#p')
+    if [ ! -r "$wp" ]; then refuse "${wu%.service}: its script is not readable - its held .ready marks NOT restored; Claude checks"; continue; fi
+    for h in $(find "$SC/work" -maxdepth 3 -name '*.ready.held' 2> /dev/null | sort); do owns_held "$wp" "$(basename "${h%.ready.held}")" && held="$held $h"; done
+    h=$(grep -o -- '--description="[^"]*"' "$wp" | tail -1 | sed 's/^--description="//; s/"$//'); [ -n "$h" ] && wdesc=$h
+    wl="$wl ${wu%.service}"
+  done
+  if snap_has "$SNAP" "$SER"; then sk=$SER; elif snap_has "$SNAP" "$WAITER"; then sk=$WAITER; elif [ -n "$wl" ]; then sk=waiter; fi
+  if [ -n "$sk" ]; then
+    if [ "$sk" = "$SER" ]; then
+      case "$(snap_argv "$SNAP" "$SER")" in "/bin/bash "*gap-series*.sh) ;; *) sk=bad ;; esac
+      retr=$(snap_env "$SNAP" "$SER" | sed -n 's/^SERIES_RETRIED=//p')
+      snap_env "$SNAP" "$SER" | grep -v -E '^(GAP19_T0|SERIES_RETRIED|SERIES_RETRY_AT)=' > "$BD/series-extra-env"
+      pdesc=$(snap_prop "$SNAP" "$SER" Description); pcoll=$(snap_prop "$SNAP" "$SER" CollectMode)
+    elif [ "$sk" = waiter ]; then   # the waiter had stopped the series and not started it again yet
+      retr=""; : > "$BD/series-extra-env"; pdesc=$wdesc; pcoll=inactive-or-failed
+    else   # a reboot while an earlier boot's waiter waited: its plan file has the series' line
+      pf=$(snap_env "$SNAP" "$WAITER" | sed -n 's/^BR_PLAN=//p')
+      if [ -s "$pf" ]; then retr=$(sed -n 's/^retried //p' "$pf"); pdesc=$(sed -n 's/^desc //p' "$pf"); pcoll=$(sed -n 's/^collect //p' "$pf")
+        sed -n 's/^env //p' "$pf" > "$BD/series-extra-env"; else sk=bad; fi
+    fi
+    if [ "$sk" = bad ]; then refuse "series: its recorded line is not /bin/bash .../gap-series*.sh (or the waiter's plan file is gone) - not restarted"
+    elif [ "$ss" = none ]; then refuse "series: no 'series start' line in results/r23/gap-series.log - not restarted"
+    elif [ "${ss%%$'\t'*}" = terminal ]; then
+      case "$ss" in *"series done"*) did "series: it had finished (series done) - not restarted" ;;
+        *) refuse "series: it had stopped itself before the reboot (${ss#terminal$'\t'}) - not restarted; Karl decides" ;; esac
+    else
+      [ -n "$wdesc" ] && pdesc=$wdesc   # the description the waiter would have given the restarted series
+      while IFS=$'\t' read -r _ nm stt rt od; do
+        if [ "$stt" = done ]; then [ $nd = 0 ] || { sk=bad; break; }; continue; fi
+        [ "$od" = 1 ] || nd=1   # an old-series skip may be followed by finished steps (that series went on)
+        [ "$rt" = 1 ] && retr="$retr ${nm#+}"
+        if [ $first = 1 ]; then [ "$stt" = interrupted ] || [ "$stt" = exit1 ] && inter=${nm#+}; rem+=("${nm#+}"); first=0
+        else [ "$stt" = pending ] || { sk=bad; break; }; rem+=("$nm"); fi
+      done < <(grep '^step' <<< "$ss")
+      retr=$(tr ' ' '\n' <<< "$retr" | grep . | sort -u | tr '\n' ' ' | sed 's/ $//')
+      if [ "$sk" = bad ]; then refuse "series: gap-series.log is not in step order (a done step after an open one) - not restarted; Claude checks"
+      elif [ ${#rem[@]} = 0 ]; then did "series: every step had ended - not restarted"
+      else
+        { echo "steps ${rem[*]}"; echo "retried $retr"; echo "desc $pdesc"; echo "collect $pcoll"; echo "interrupted $inter"
+          echo "boot $BOOT"; sed 's/^/env /' "$BD/series-extra-env"; for h in $held; do echo "held $h"; done; } > "$BD/series-plan"
+        [ $PLAN_ONLY = 1 ] && sed 's/^/plan: series-plan: /' "$BD/series-plan"
+        echo "BR_PLAN=$BD/series-plan" > "$env_f"
+        if start_unit "$WAITER" "boot resume: the gap series at the first question boundary after the reboot" inactive-or-failed "$env_f" /bin/bash "$SELF" series-waiter; then
+          [ -n "$wl" ] && did "series: the one-shot waiter(s)${wl} applied, not restarted - their held .ready marks (${held:- none}) are restored right before the series starts"
+          did "series: boot-resume-series waits for a question started after the reboot, then gap-series with: ${rem[*]}$([ "$inter" != - ] && echo " (the interrupted $inter reruns from the beginning, fresh snapshot)")${retr:+; already retried once: $retr}"
+        else [ $? = 2 ] && did "series: boot-resume-series active already" || refuse "series: starting boot-resume-series failed"; fi
+      fi
+    fi
+  fi
+  # -- (d) the retry and the watcher --------------------------------------------------------------------------------------
+  if snap_has "$SNAP" "$RETRY"; then
+    if [ "$(snap_argv "$SNAP" "$RETRY")" != "/bin/bash $S/retry-failed-replay.sh" ]; then refuse "retry: unexpected recorded ExecStart - not restarted"
+    elif snap_has "$SNAP" "$CHAIN" && [ $chain_ok = 0 ] && [ $chain_fin = 0 ] && ! up "$CHAIN"; then
+      refuse "retry: not restarted while the chain is not resumed (it would take the stopped chain for the chain's end); Karl decides"
+    else
+      snap_env "$SNAP" "$RETRY" > "$env_f"
+      start_unit "$RETRY" "$(snap_prop "$SNAP" "$RETRY" Description)" "$(snap_prop "$SNAP" "$RETRY" CollectMode)" "$env_f" /bin/bash "$S/retry-failed-replay.sh"
+      case $? in 0) did "retry restarted (it waits for the chain's end again; an interrupted retry is its own 'needs a decision')" ;; 2) did "retry active already" ;; *) refuse "retry: the start failed" ;; esac
+    fi
+  fi
+  if snap_has "$SNAP" "$WATCH"; then
+    if [ "$(snap_argv "$SNAP" "$WATCH")" != "/bin/bash $S/weekend-watch.sh" ]; then refuse "watcher: unexpected recorded ExecStart - not restarted"
+    else
+      snap_env "$SNAP" "$WATCH" > "$env_f"
+      start_unit "$WATCH" "$(snap_prop "$SNAP" "$WATCH" Description)" "$(snap_prop "$SNAP" "$WATCH" CollectMode)" "$env_f" /bin/bash "$S/weekend-watch.sh"
+      case $? in 0) did "weekend-watch restarted" ;; 2) did "weekend-watch active already" ;; *) refuse "watcher: the start failed" ;; esac
+    fi
+  fi
+  for u in $(snap_units "$SNAP"); do
+    case $u in "$CHAIN"|"$SER"|"$RETRY"|"$WATCH"|"$WAITER"|boot-resume*|series-restart-after-*) ;; *)
+      refuse "${u%.service} ($(snap_argv "$SNAP" "$u" | cut -c1-120)) was active - not restarted (unknown to boot-resume); Claude checks" ;; esac
+  done
+  rm -f "$env_f"
+  finish "$([ -n "$REFUSED" ] && echo refused || echo resumed)"
+}
+
+replays_recover() {   # step 3 interrupted in (or after) replays.sh: RR_WHY = why it cannot resume ("" = it can)
+  local lbl d bad="" q m ts lp; RR_WHY=""
+  ts=$(date +%m%d-%H%M%S)
+  for lbl in $(awk -F'\t' 'NR > 1 {last[$2] = $3} END {for (l in last) if (last[l] == "failed" || last[l] == "void-twice") print l}' "$FSTATE" 2> /dev/null); do
+    [ -s "$RDIR/$lbl/report.md" ] || bad="$bad $lbl"; done
+  # 11-05: a replays.sh with seed_fails keeps D8's count itself and leaves those labels to the end-of-chain retry
+  if [ -n "$bad" ] && grep -q '^seed_fails()' "$S/replays.sh"; then did "replays.sh keeps D8's count for the replay(s) that failed before the reboot (${bad# }) and does not rerun them"; bad=""; fi
+  [ -n "$bad" ] && { RR_WHY="replays.sh would run the replay(s) that failed before the reboot again (${bad# }) and count failures from 0 again (Karl's D8 rule) - not restarted; Karl decides (see BOOT-RESUME.md)"; return; }
+  # an interrupted replay: its label folder without report.md -> aside (replays.sh refuses an unfinished folder)
+  for lbl in $(awk '$1 == "replay" && $2 ~ /^r-/ {print $2}' "$S/replays.sh"); do
+    d=$RDIR/$lbl
+    if [ -d "$d" ] && [ -n "$(ls -A "$d" 2> /dev/null)" ] && [ ! -s "$d/report.md" ]; then
+      if [ $PLAN_ONLY = 0 ]; then mkdir -p "$S/item8/interrupted" && mv "$d" "$S/item8/interrupted/$lbl-$ts" || { RR_WHY="could not move the interrupted replay folder $lbl aside"; return; }; fi
+      did "replay $lbl was interrupted: its folder moved to staging/post7d/item8/interrupted/$lbl-$ts (replays.sh reruns it from the start)"
+    fi
+  done
+  for q in o01 o03; do m=$S/item8/merged/$q-p8
+    if [ -d "$m" ] && [ ! -s "$m/merge-summary.json" ]; then
+      [ $PLAN_ONLY = 1 ] || { mkdir -p "$S/item8/interrupted" && mv "$m" "$S/item8/interrupted/merged-$q-p8-$ts"; } || { RR_WHY="could not move the interrupted merge $q aside"; return; }
+      did "the merge of $q was interrupted: moved to staging/post7d/item8/interrupted/merged-$q-p8-$ts"; fi
+  done
+  # replays.sh swaps staging/item8/tests/verify-results.json around test_merge.py --verify: a reboot inside that minute
+  # leaves the new file in place, and the rerun would back IT up as the 10-29 file - put the 10-29 file back first
+  lp=$(grep -n 'replays: start (pid' "$RPLOG" 2> /dev/null | tail -1 | cut -d: -f1)
+  if [ -n "$lp" ] && ! tail -n +"$lp" "$RPLOG" | grep -q 'replays: merges verified' && [ -s "$VBACK" ] && ! cmp -s "$VBACK" "$VFILE"; then
+    if [ $PLAN_ONLY = 0 ]; then mkdir -p "$S/item8/interrupted"; [ -e "$VFILE" ] && cp -p "$VFILE" "$S/item8/interrupted/verify-results-$ts.json"; cp -p "$VBACK" "$VFILE"; fi
+    did "the merge check was interrupted: staging/item8/tests/verify-results.json restored from the 10-29 copy"
+  fi
+  return 0
+}
+
+# ---- the series waiter -------------------------------------------------------------------------------------------------
+series_waiter() {
+  local pf=${BR_PLAN:?} boot steps retr desc coll inter t0 w=0 idle=0 idle_t=0 run="" rel T copy n
+  boot=$(sed -n 's/^boot //p' "$pf"); steps=$(sed -n 's/^steps //p' "$pf"); retr=$(sed -n 's/^retried //p' "$pf")
+  desc=$(sed -n 's/^desc //p' "$pf"); coll=$(sed -n 's/^collect //p' "$pf"); inter=$(sed -n 's/^interrupted //p' "$pf")
+  local bts; bts=$(date -d "@$boot" '+%F %T'); t0=$(date +%s)
+  say "series-waiter (pid $$): waiting for a question that starts after the boot ($bts) - then gap-series with: $steps"
+  while :; do
+    [ -e "$STOPF" ] && { say "series-waiter: STOP-boot-resume present - the series is NOT restarted"; exit 3; }
+    up "$SER" && { say "series-waiter: gap-series is active already (started by someone else) - nothing to do"; exit 0; }
+    run=$(awk -v b="$bts" -v re="$TSRE" '$0 ~ re && substr($0, 1, 19) >= b && /: running/ {print; exit}' "$QLOG" 2> /dev/null)
+    [ -n "$run" ] && break
+    # nothing left (gap-series.sh's nothing_left): the queue AND the chain idle, twice $IDLE_CONFIRM_S apart, and not
+    # in the first $IDLE_MIN_S after the waiter started (the queue unit may not have started yet)
+    if ! up deep-research-bench.service && ! up "$CHAIN" && [ $(( $(date +%s) - t0 )) -ge "$IDLE_MIN_S" ]; then
+      [ $idle = 0 ] && { idle=1; idle_t=$(date +%s); }
+      [ $(( $(date +%s) - idle_t )) -ge "$IDLE_CONFIRM_S" ] && { say "series-waiter: queue and chain idle since $(date -d "@$idle_t" '+%T') - nothing left to wait for"; break; }
+    else idle=0; fi
+    w=$((w + 1))
+    if [ $(( w * POLL_S % 14400 )) -lt "$POLL_S" ] && [ $w -gt 1 ]; then
+      say "series-waiter: still no question since the boot ($(( w * POLL_S / 3600 )) h)"
+      notify-send -a "Boot resume" "Gap series not restarted yet" "No research question has started since the reboot ($(( w * POLL_S / 3600 )) h); the series waits (logs/boot-resume.log)" 2> /dev/null || true
+    fi
+    sleep "$POLL_S"
+  done
+  w=0; while [ -n "$(live_drivers)" ] || gpulock_held; do   # never beside a driver someone started by hand
+    [ $w = 0 ] && say "series-waiter: a gap driver runs or tmp/gpu-test.lock is held ($(live_drivers | head -1)) - waiting for it"; w=1
+    [ -e "$STOPF" ] && exit 3; up "$SER" && exit 0; sleep "$POLL_S"; done
+  # the series' started_after_gap(T) must be true at once: T = the last "hold released" at or before that question
+  rel=$(awk -v t="${run:0:19}" -v re="$TSRE" '$0 ~ re && /hold released/ && (t == "" || substr($0, 1, 19) <= t) {l = substr($0, 1, 19)} END {print l}' "$QLOG")
+  [ -n "$rel" ] || { say "series-waiter: no 'hold released' line in the queue log - the series is NOT restarted"; notify-send -a "Boot resume" -u critical "Gap series not restarted" "no anchor in the queue log - Claude checks" 2> /dev/null; exit 1; }
+  T=$rel
+  # gap-series.sh with the remaining steps: a copy of the LIVE script with only its STEPS line changed
+  n=$(grep -c '^STEPS=(' "$SERIES")
+  [ "$n" = 1 ] || { say "series-waiter: gap-series.sh has $n STEPS lines - NOT restarted"; exit 1; }
+  mkdir -p "$COPIES"; copy=$COPIES/gap-series-boot-$(date +%m%d-%H%M%S).sh
+  awk -v s="STEPS=($steps)" '/^STEPS=\(/ {print s; next} {print}' "$SERIES" > "$copy"
+  [ "$(diff "$SERIES" "$copy" | grep -c '^[<>]')" -le 2 ] && bash -n "$copy" || { say "series-waiter: the series copy $copy is not gap-series.sh + one STEPS line - NOT restarted"; exit 1; }
+  { grep -v '^$' <<< "$(sed -n 's/^env //p' "$pf")"; echo "GAP19_T0=$T"; [ -n "$retr" ] && echo "SERIES_RETRIED=$retr"; } > "$pf.env"
+  up "$SER" && { say "series-waiter: gap-series became active meanwhile - nothing to do"; exit 0; }
+  local h r
+  for h in $(sed -n 's/^held //p' "$pf"); do r=${h%.held}
+    if [ -e "$h" ] && [ ! -e "$r" ]; then mv "$h" "$r" && say "series-waiter: restored ${r#$SC/} (held by a one-shot waiter before the reboot)"
+    elif [ -e "$h" ]; then say "series-waiter: ${r#$SC/} exists already - ${h#$SC/} left as it is"; fi; done
+  if start_unit "$SER" "$desc" "$coll" "$pf.env" /bin/bash "$copy"; then
+    say "series-waiter: gap-series restarted from $copy, steps: $steps; anchored at $T (question: ${run:-none, nothing left})"
+    printf '%s\n' "* $(date '+%F %H:%M') REBOOT (staging/post7d/boot-resume.sh): gap series restarted after the reboot ($copy): $steps$([ "$inter" != - ] && echo " - the interrupted $inter reruns from the beginning")${retr:+; retried once already: $retr}; anchored at $T, after the question ${run:20:80}." >> "$NOTES_SC"
+    exit 0
+  fi
+  say "series-waiter: starting gap-series failed - Claude checks"
+  notify-send -a "Boot resume" -u critical "Gap series not restarted" "systemd-run failed after the reboot (logs/boot-resume.log)" 2> /dev/null || true
+  exit 1
+}
+
+# ---- boot-check.service ---------------------------------------------------------------------------------------------------
+boot_check() {   # Karl 11-05: a failed kernel check or an unclean previous shutdown holds the queue until he has checked
+  local why="" kind="" ts
+  mkdir -p "$BD"; BOOT_TS=$(date -d "@$BOOT" '+%F %T'); ts=$(date '+%F %T')
+  [ -s "$BD/verdict" ] && { say "boot-check: this boot has its verdict already ($(cat "$BD/verdict"))"; return 0; }
+  [ "$(uptime_s)" -le "$BOOTCHECK_MAX_UPTIME_S" ] || { say "boot-check: up for $(uptime_s) s - not at boot, nothing done"; return 0; }
+  # fail closed: the hold first (a crash or the unit's timeout leaves it); a pre-boot gap hold is kept aside with its mtime
+  [ -e "$HOLD" ] && [ ! -e "$BD/prev-hold" ] && cp -p "$HOLD" "$BD/prev-hold"
+  boot_hold "boot check RUNNING since $ts (boot-resume.sh boot-check) - the research queue waits for this boot's verdict; if this stays, the check crashed or timed out: Karl checks, then: $RESUME_CMD"
+  say "boot-check (pid $$): hold set; kernel check, previous boot's kernel log, previous boot's shutdown"
+  if ! kcheck_run; then kind="kernel check"; why="kernel check failed: ${KOUT:0:200}"
+  elif ! prevboot_scan; then kind="kernel log"; why="the previous boot's kernel log has error lines after kwatch's start: $(cut -c1-200 <<< "$KLINES" | tr '\n' '|')"
+  elif ! clean_shutdown; then kind="unclean shutdown"; why="no clean shutdown in the previous boot's journal (no reboot / power-off / halt target reached: power loss, crash or reset?)"; fi
+  if [ -z "$why" ]; then
+    if [ -e "$BD/prev-hold" ]; then cp -p "$BD/prev-hold" "$HOLD" && rm -f "$BD/prev-hold"; else rm -f "$HOLD"; fi
+    echo "pass $(date '+%F %T'): kcheck ok, previous boot's kernel log clean after kwatch's start, clean shutdown" > "$BD/verdict"
+    say "boot-check: PASS - the hold is as it was before the boot"; return 0
+  fi
+  last_boot_summary "$BD/last-boot.txt"; echo "$LB_TXT" > "$BD/last-boot.oneline"
+  boot_hold "boot check FAILED ($kind) - the research queue is held until Karl checks. Resume with: $RESUME_CMD (why: ${why:0:200}; details: $BD/last-boot.txt)"
+  echo "fail $kind: $why" > "$BD/verdict"
+  local l; l="* $(date '+%F %H:%M') REBOOT - BOOT CHECK FAILED ($kind; staging/post7d/boot-resume.sh, Karl 11-05): $why. NOTHING resumed (no chain / series / retry / watcher restart) and the research queue is HELD (tmp/bench2.hold). What the journal shows: $LB_TXT. After your check, ONE command resumes: $RESUME_CMD"
+  { echo "$l"; sed 's/^/    /' "$BD/last-boot.txt"; } >> "$NOTES_DR"; { echo "$l"; sed 's/^/    /' "$BD/last-boot.txt"; } >> "$NOTES_SC"
+  say "boot-check: FAIL ($why) - queue held"
+  return 0
+}
+
+# ---- main ----------------------------------------------------------------------------------------------------------------
+BOOT=$(boot_epoch); BID=$(boot_id); BD=$ST/boot-$BID
+case ${1:-} in
+  record-once) record_once; exit 0 ;;
+  boot-check) boot_check; exit 0 ;;
+  series-waiter) series_waiter ;;
+  plan)   # read-only: as if the PC rebooted now, from the live transient units
+    PLAN_ONLY=1; BOOT=$(date +%s); BD=$(mktemp -d "$S/scratch/bootresume/plan.XXXXXX" 2> /dev/null) || BD=$S/scratch/bootresume
+    SNAPF=$BD/live-units.txt
+    { echo "boot_id live"; systemctl --user list-units --type=service --state=active,activating --no-legend --plain | awk '{print $1}' | while read -r u; do
+      case $(systemctl --user show -p FragmentPath --value "$u") in */systemd/transient/*) echo "unit $u"; systemctl --user show -p Description -p Environment -p ExecStart -p CollectMode -p ActiveState "$u" | sed 's/^/  /' ;; esac; done; } > "$SNAPF"
+    # in plan mode nothing alive counts (they ARE alive now) and the lock / hold are taken as stale
+    live_drivers() { :; }; gpulock_held() { return 1; }; up() { case $1 in kwatch.service) return 0 ;; *) return 1 ;; esac; }
+    older() { [ -e "$1" ]; }; KC=/dev/null; KWATCH_WAIT_S=0; BCUNIT=/nonexistent
+    resume "$SNAPF"; rm -rf "$BD"; exit 0 ;;
+  resume)   # Karl's ONE command after his check (prints what it does)
+    say() { echo "$(date '+%F %T') boot-resume: $*" | tee -a "$LOG"; }
+    mkdir -p "$ST" "$BD"; exec 5> "$ST/resume.lock"; flock -w 30 5 || { say "another resume holds run/boot-resume/resume.lock"; exit 1; }
+    if [ ! -s "$BD/prev-units.txt" ]; then   # boot-resume.service never got to copy the record: take it if it is still the old one
+      if [ -s "$ST/units.txt" ] && [ "$(awk '$1 == "boot_id" {print $2}' "$ST/units.txt")" != "$BID" ]; then cp -p "$ST/units.txt" "$BD/prev-units.txt"
+      else say "resume by hand: no record of what ran before this boot - nothing restarted (Claude restarts by hand)"; : > "$BD/prev-units.txt"; NO_RECORD=1; fi
+    fi
+    say "resume by hand (pid $$) from $BD/prev-units.txt"
+    kcheck_run || { say "kernel check still FAILS (${KOUT:0:300}) - nothing done; the queue stays held"; exit 1; }
+    if [ -e "$HOLD" ] && [ "$(head -c 10 "$HOLD")" = "boot check" ]; then
+      if [ -e "$BD/prev-hold" ]; then cp -p "$BD/prev-hold" "$HOLD" && rm -f "$BD/prev-hold"; say "the boot hold cleared (the gap hold from before the reboot is back - the resume below judges it)"
+      else rm -f "$HOLD"; say "the boot hold cleared"; fi
+    fi
+    echo "acked $(date '+%F %T') (resume by hand)" >> "$BD/verdict.log"
+    ACK=1; touch "$BD/started"; resume "$BD/prev-units.txt"; exit 0 ;;
+  "") ;;
+  *) sed -n 2,30p "$0"; exit 2 ;;
+esac
+
+mkdir -p "$ST"; exec 5> "$ST/resume.lock"; flock -n 5 || { say "another boot-resume holds run/boot-resume/resume.lock - exit"; exit 0; }
+trap 'exit 0' TERM INT
+say "start (pid $$; boot $BID at $(date -d "@$BOOT" '+%F %T'))"
+SNAP=""; PBID=$(prev_boot_id)
+if [ -e "$BD/done" ] || [ -e "$BD/started" ]; then
+  say "this boot was handled already ($(cat "$BD/done" 2> /dev/null || echo 'its resume did not finish - not redone automatically; boot-resume.sh resume redoes it')) - recording only"
+elif [ -s "$ST/units.txt" ]; then
+  RBID=$(awk '$1 == "boot_id" {print $2}' "$ST/units.txt"); RT=$(awk '$1 == "time" {print $2}' "$ST/units.txt")
+  if [ "$RBID" = "$BID" ]; then say "the record is from this boot - no reboot since it was written; recording only"
+  elif [ -n "$PBID" ] && [ "$RBID" != "$PBID" ] && [ -e "$ST/boot-$PBID/started" ] && [ ! -e "$ST/boot-$PBID/done" ]; then
+    SNAP=$ST/boot-$PBID/prev-units.txt; say "the previous boot's own resume did not finish - resuming from the record it had ($SNAP)"
+  elif [ -n "$PBID" ] && [ "$RBID" != "$PBID" ]; then
+    say "the record is from boot $RBID, not the previous boot $PBID - stale"; SNAP=STALE
+  else
+    PE=$(prev_boot_end)
+    if [ -n "$PE" ] && [ "${RT:-0}" -lt $((PE - SNAP_SLACK_S)) ]; then say "the record ($(date -d "@$RT" '+%F %T')) is older than the previous boot's end ($(date -d "@$PE" '+%F %T')) - $SNAP_SLACK_S s - stale"; SNAP=STALE
+    else SNAP=$ST/units.txt; fi
+  fi
+else say "no record yet (first start) - recording only"; fi
+if [ -n "$SNAP" ]; then
+  mkdir -p "$BD"; touch "$BD/started"
+  if [ "$SNAP" = STALE ]; then   # kernel check, cleanup and 8080 as usual; no unit restarted (what ran is unknown)
+    : > "$BD/prev-units.txt"; NO_RECORD=1; resume "$BD/prev-units.txt"
+  else
+    cp -p "$SNAP" "$BD/prev-units.txt"; resume "$BD/prev-units.txt"
+  fi
+fi
+exec 5>&-   # the recorder keeps no lock: boot-resume.sh resume must be able to run beside it
+# the recorder (and the one notice, once a notification server is on the session bus; given up after 24 h)
+while :; do
+  record_once
+  if [ -s "$BD/notice" ] && [ ! -e "$BD/notice.sent" ]; then
+    if bus_ready; then
+      notify-send -a "Boot resume" -u critical "The PC rebooted" "$(head -c 900 "$BD/notice")" 2> /dev/null && { touch "$BD/notice.sent"; say "notice sent"; }
+    elif [ $(( $(date +%s) - $(stat -c %Y "$BD/notice") )) -gt 86400 ]; then touch "$BD/notice.sent"; say "no notification server for 24 h - notice given up (NOTES.md has it)"; fi
+  fi
+  [ "${BR_ONCE:-0}" = 1 ] && exit 0
+  sleep "$RECORD_S" & wait $!
+done

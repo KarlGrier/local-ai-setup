@@ -1,0 +1,119 @@
+# SearXNG for Local Deep Research (its own instance; the chat page's SearXNG on 8888 is separate and untouched).
+# 127.0.0.1:8889 only, JSON API on, no limiter (single local client).
+use_default_settings: true
+general:
+  instance_name: "local search (ldr)"
+  enable_metrics: false
+server:
+  bind_address: "127.0.0.1"
+  port: 8896
+  secret_key: "<generate: openssl rand -hex 32>"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+valkey:
+  url: false
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 10.0
+  pool_connections: 50
+  pool_maxsize: 10
+engines:
+  - name: google
+    disabled: false
+    inactive: false
+  - name: bing
+    disabled: false
+    inactive: false
+  - name: duckduckgo
+    disabled: false
+    inactive: false
+  - name: duckduckgo web
+    disabled: false
+    inactive: false
+  - name: brave
+    disabled: false
+    inactive: false
+  - name: google cse
+    disabled: false
+    inactive: false
+  - name: startpage
+    disabled: false
+    inactive: false
+  - name: mojeek
+    disabled: false
+    inactive: false
+  - name: qwant
+    disabled: false
+    inactive: false
+  - name: yahoo
+    disabled: false
+    inactive: false
+  - name: yandex
+    disabled: false
+    inactive: false
+  - name: presearch
+    disabled: false
+    inactive: false
+  - name: mwmbl
+    disabled: false
+    inactive: false
+  - name: yep
+    disabled: false
+    inactive: false
+  - name: seznam
+    disabled: false
+    inactive: false
+  - name: wiby
+    disabled: false
+    inactive: false
+  - name: searchmysite
+    disabled: false
+    inactive: false
+  - name: crowdview
+    disabled: false
+    inactive: false
+  - name: wikipedia
+    disabled: false
+    inactive: false
+  - name: wikidata
+    disabled: false
+    inactive: false
+  - name: arxiv
+    disabled: false
+    inactive: false
+  - name: semantic scholar
+    disabled: false
+    inactive: false
+  - name: pubmed
+    disabled: false
+    inactive: false
+  - name: europepmc
+    disabled: false
+    inactive: false
+  - name: crossref
+    disabled: false
+    inactive: false
+  - name: openalex
+    disabled: false
+    inactive: false
+  - name: google scholar
+    disabled: false
+    inactive: false
+  - name: core.ac.uk
+    disabled: false
+    inactive: false
+  - name: openairepublications
+    disabled: false
+    inactive: false
+  - name: base
+    disabled: false
+    inactive: false

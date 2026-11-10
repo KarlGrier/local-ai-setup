@@ -1,0 +1,43 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-v024-ds41/strata-dsv41",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw",
+  "--max-context",
+  "32768",
+  "--eos",
+  "1",
+  "--dspark",
+  "auto",
+  "--dspark-conf",
+  "0.65",
+  "--tp",
+  "2",
+  "--ssd-cache",
+  "60"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v024",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw/tokenizer",
+ "model_name": "deepseek-v4.1-flash",
+ "arch": "deepseek41",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/ds41/engine-DS41-v024.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8086,
+ "host": "127.0.0.1",
+ "engine_ready_s": 3600,
+ "sampling": {
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "env": {
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX5080,GPU-UUID-RTX4060TI",
+  "STRATA_DS4_PROMPT_SKIP": "0",
+  "DS4_STORE_FLOOR_GB": "16"
+ },
+ "_comment": "10-23 arm (the user): RAM store 60 GB (explicit; floor 16 GB for its growth), DSpark auto. Otherwise the stock test's config: DS4.1 speed test (the user, 10-23 step 4): Strata v0.2.4 STOCK strata-dsv41 (engine-v024-ds41, no port of our series), IST-DAS 2.00 bpw (IQ2_XXS) packed with setup's recipe + the shipped profile-2.00. Args = setup.py's start script for our cards (dsv41_fit plan: --tp 2) except --max-context 32768 (the 20K prompt; upstream checked 8192). Lossless only: STRATA_DS4_PROMPT_SKIP=0 (the default 1 skips prompt rows; 99.5 % same top-1 upstream, not verified by us), STRATA_DS4_DISK_SKIP_W unset (0: on it drops experts and CHANGES THE ANSWERS), no route bias in this engine. DS4_STORE_FLOOR_GB=20 (stock 8): the RAM store gives memory back before MemAvailable reaches the 20 GB relief level (speed only). SSD reads = the store's direct reads (the user's exception for this model only)."
+}

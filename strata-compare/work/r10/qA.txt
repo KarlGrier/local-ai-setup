@@ -1,0 +1,44 @@
+work/r10/tagcheck.sh "Phase A start"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v35a2 engine-v35a2
+BDIR=build work/r10/build.sh strata-v35a2h engine-v35a2h
+BDIR=build work/r10/build.sh strata-v35a3 engine-v35a3
+BDIR=build work/r10/build.sh strata-v35r engine-v35r
+.venv/bin/python work/r10/buildrec.py A2 configs/A2-0.json "A.2 (v35-a2: v0.1.35 base + STRATA_ADAPT_HELPER)"
+.venv/bin/python work/r10/buildrec.py A2h configs/A2h-0.json "A.1/A.2 counting build (v35-a2h = v35-a2 + the R10A MEASUREMENT line)"
+.venv/bin/python work/r10/buildrec.py A3 configs/A3off.json "A.3 (v35-a3 = v35-a2 + STRATA_HELPER_ADAPT)"
+.venv/bin/python work/r10/buildrec.py R4t configs/R4t-A.json "A.4 routing-trace build (v35-route = v35-c11 + routing trace v2 MEASUREMENT)"
+work/r10/exact7.sh a2off configs/A2-0.json
+work/r10/exact7.sh a3off configs/A3off.json
+work/r10/with_server.sh A1c configs/A2h-0.json -- "work/r10/a1count.sh A1c 60"
+.venv/bin/python work/r10/a1_counts.py A1c logs/engine-A2h-0.log | tee results/r10/a1-counts.md
+work/r10/tagcheck.sh "A.1 counts done"
+work/r10/basecheck.sh
+work/r10/tagcheck.sh "A.2 fresh ABBA"
+work/r10/basecheck.sh
+work/r10/ldrscreen.sh A20-a configs/A2-0.json
+work/r10/ldrscreen.sh A21-a configs/A2-1.json
+work/r10/ldrscreen.sh A22-a configs/A2-2.json
+work/r10/ldrscreen.sh A22-b configs/A2-2.json
+work/r10/ldrscreen.sh A21-b configs/A2-1.json
+work/r10/ldrscreen.sh A20-b configs/A2-0.json
+.venv/bin/python work/r10/ldr_table.py A2-0=A20-a,A20-b A2-1=A21-a,A21-b | tee results/r10/ab-A2-ldr.md
+.venv/bin/python work/r10/ldr_table.py A2-0=A20-a,A20-b A2-2=A22-a,A22-b | tee -a results/r10/ab-A2-ldr.md
+work/r10/decscreen.sh A20d-a configs/A2-0.json
+work/r10/decscreen.sh A21d-a configs/A2-1.json
+work/r10/decscreen.sh A22d-a configs/A2-2.json
+work/r10/decscreen.sh A22d-b configs/A2-2.json
+work/r10/decscreen.sh A21d-b configs/A2-1.json
+work/r10/decscreen.sh A20d-b configs/A2-0.json
+.venv/bin/python work/r10/ab_table.py A2-0=A20d-a,A20d-b A2-1=A21d-a,A21d-b | tee results/r10/ab-A2-decode.md
+.venv/bin/python work/r10/ab_table.py A2-0=A20d-a,A20d-b A2-2=A22d-a,A22d-b | tee -a results/r10/ab-A2-decode.md
+work/r10/tagcheck.sh "A.2 fresh done"
+work/r10/basecheck.sh
+work/r10/with_server.sh R4t-A configs/R4t-A.json -- "work/r10/a4trace.sh A"
+work/r10/with_server.sh R4t-B configs/R4t-B.json -- "work/r10/a4trace.sh B"
+ls -la tmp/r10/route/
+work/r10/tagcheck.sh "A.4 traces done"
+work/r10/basecheck.sh
+work/r10/phase_end.sh pA1 keep
+work/r10/hold.sh phaseA2

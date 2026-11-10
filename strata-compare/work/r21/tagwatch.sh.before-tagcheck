@@ -1,0 +1,12 @@
+#!/bin/bash
+# tagwatch.sh - 2026-10-17, your standing request: check hourly for a Strata release tag newer than v0.1.45 (read-only
+# ls-remote); exits when one appears and prints it, so the session can read its notes and decide whether it is the big
+# release (then a short summary for you and wait for your go; v0.1.45 itself is skipped by your decision).
+LOG=/home/USER/ai-speed-testing/strata-compare/logs/r21/tagwatch.log
+KNOWN=${KNOWN:-v0.1.45}
+while :; do
+  T=$(timeout 60 git -C /home/USER/ai-speed-testing/strata-compare/strata ls-remote --tags --refs origin 2>/dev/null | awk '{print $2}' | sed 's#refs/tags/##' | grep -v -e '-' | sort -V | tail -1)   # final tags only (10-19: v0.2.0-beta is not the port trigger)
+  echo "$(date -Is) newest tag: ${T:-? (ls-remote failed)}" >> $LOG
+  if [ -n "$T" ] && [ "$(printf '%s\n%s\n' "$KNOWN" "$T" | sort -V | tail -1)" != "$KNOWN" ]; then echo "NEW TAG $T at $(date -Is)"; exit 0; fi
+  sleep 3600
+done

@@ -1,0 +1,32 @@
+reference: results/r21/yq/q8ref.tsv
+run                                      segment         pos    top1       KL   KL p99     PPL PPL ref
+gptq.tsv                                 code            999  96.20%  0.02953      nan   2.074   2.044
+gptq.tsv                                 docs            999  85.39%  0.10176      nan   9.890  10.055
+gptq.tsv                                 english         999  90.69%  0.03226      nan   4.246   4.239
+gptq.tsv                                 multilingual    999  96.20%  0.02143      nan   2.705   2.712
+gptq.tsv                                 agent           999  89.99%  0.14750      nan   3.949   4.404
+gptq.tsv                                 all            4995  91.69%  0.06650   1.0473   3.924   4.013
+fp4local.tsv                             code            999  96.00%  0.03279      nan   2.025   2.044
+fp4local.tsv                             docs            999  84.78%  0.10187      nan  10.136  10.055
+fp4local.tsv                             english         999  91.09%  0.03504      nan   4.318   4.239
+fp4local.tsv                             multilingual    999  95.20%  0.02326      nan   2.683   2.712
+fp4local.tsv                             agent           999  88.79%  0.18898      nan   4.350   4.404
+fp4local.tsv                             all            4995  91.17%  0.07639   1.3198   4.008   4.013
+fp4local-own.tsv                         code            999  96.10%  0.03478      nan   2.025   2.044
+fp4local-own.tsv                         docs            999  85.29%  0.10306      nan   9.983  10.055
+fp4local-own.tsv                         english         999  91.69%  0.03484      nan   4.309   4.239
+fp4local-own.tsv                         multilingual    999  94.19%  0.02292      nan   2.693   2.712
+fp4local-own.tsv                         agent           999  88.69%  0.18413      nan   4.226   4.404
+fp4local-own.tsv                         all            4995  91.19%  0.07594   1.2807   3.974   4.013
+udq4.tsv                                 code            999  95.70%  0.02743      nan   2.041   2.044
+udq4.tsv                                 docs            999  87.19%  0.06943      nan  10.121  10.055
+udq4.tsv                                 english         999  92.99%  0.02326      nan   4.284   4.239
+udq4.tsv                                 multilingual    999  95.90%  0.01504      nan   2.697   2.712
+udq4.tsv                                 agent           999  90.09%  0.16054      nan   4.804   4.404
+udq4.tsv                                 all            4995  92.37%  0.05914   0.9935   4.091   4.013
+iq3s.tsv                                 code            999  94.99%  0.07239      nan   2.036   2.044
+iq3s.tsv                                 docs            999  77.48%  0.19608      nan  10.174  10.055
+iq3s.tsv                                 english         999  86.19%  0.08247      nan   4.172   4.239
+iq3s.tsv                                 multilingual    999  92.29%  0.05233      nan   2.686   2.712
+iq3s.tsv                                 agent           999  86.19%  0.31729      nan   4.890   4.404
+iq3s.tsv                                 all            4995  87.43%  0.14411   2.0034   4.083   4.013

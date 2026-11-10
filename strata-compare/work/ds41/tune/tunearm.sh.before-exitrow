@@ -1,0 +1,137 @@
+#!/bin/bash
+# tunearm.sh LABEL CONFIG - 10-24 DeepSeek-V4.1 tuning round (the user: "Measure every arm the same way: W1-W3 decode at
+# T 1.0 with thinking on, at least 3 passes, 4K and 20K prompt reading, SSD GB read per token and per prompt, lowest available
+# memory, drive temperature. Change one thing at a time"). Copy of work/ds41/speedarm.sh (inside a gap work/ds41/tune/tune.sh
+# opens): speed3.py (PASSES passes, default 3), summ.py -> RUNDIR/arm.json, results/ds41/tuning/. Env: PASSES, DS_SERVER (the
+# server.py to run; default strata-v024's), ARM_NOTE (one line on what this arm changes), CLIENT (a command run instead of
+# speed3.py, with URL and OUT in its environment), NPROMPT (P4K / P20K prompts, default 3), COOL_MIN (seconds of cool-down at least, default 60; then until the drive
+# is at most 50 C, 15 min at most), PROFILE (the --expert-profile file the config names: copied to OUT/profile-after.bin at
+# the end, since the engine writes its routing counts back into it after every request), SERVER_ENV (K=V pairs for the
+# server's own environment, e.g. STRATA_DS4_AUTO_PIN, which the server reads itself - server.py:4935).
+# --- speedarm.sh's header: speedarm.sh LABEL CONFIG - 10-23 (the user: more DeepSeek arms tonight): one arm of the DeepSeek-V4.1 speed test INSIDE a gap
+# that work/ds41/arms.sh opens and closes (copy of speedtest.sh without port_gap4 begin/end). Soft stop (the user): the arm
+# ends if MemAvailable falls below 15 GB (SOFTSTOP; SOFT_GB sets it: 14 for the daily store-size runs); the hard stop stays at 12 GB (the engine killed). The engine log is
+# copied after the engine has stopped, so DSpark's acceptance line (printed at exit) is in engine-run.log.
+# --- the first test's header (speedtest.sh): the first speed test of DeepSeek-V4.1-Flash, in a gap (no research run).
+# Strata v0.2.4 STOCK strata-dsv41 (engine-v024-ds41), IST-DAS 2.00 bpw (IQ2_XXS), both cards (--tp 2, setup's plan),
+# lossless only (configs/DS41-v024-stock.json: prompt skip 0, disk skip off, no route bias in this engine). Its own
+# server (strata-v024/serve/server.py) on 127.0.0.1:8085. work/ds41/speed.py: decode on W1-W3, prompt reading at 4K and
+# 20K, disk reads per request. Placement (VRAM / RAM / SSD) from the engine's start lines + nvidia-smi + RSS; peak RAM from
+# a 2-second monitor. Guard: MemAvailable < 12 GB, the 5080 under 300 MiB free, or a failed kernel check -> the engine is
+# killed by PID and the test ends. 8080: work/r22/port_gap4.sh begin ... end (P021m back, checked, logged). No quality suite.
+set -u
+SC=/home/USER/ai-speed-testing/strata-compare
+LABEL=${1:?label}; CFG=${2:?config}
+LOGF=$SC/logs/ds41/engine-DS41-v024.log
+OUT=$SC/results/ds41/tuning/$LABEL-$(date +%m%d-%H%M); mkdir -p $OUT; echo $OUT > $SC/tmp/ds41-arm-out
+PASSES=${PASSES:-3}; DS_SERVER=${DS_SERVER:-$SC/strata-v024/serve/server.py}; cp $CFG $OUT/config.json
+PORT=8085; URL=http://127.0.0.1:$PORT
+S=$OUT/summary.txt
+say() { echo "=== $(date '+%F %T') $*" | tee -a $S; }
+mem() { awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo; }
+eng_pids() { pgrep -x strata-dsv41; }          # the process name (no command-line pattern)
+vram() { nvidia-smi --query-gpu=index,memory.used,memory.free --format=csv,noheader | tr '\n' ';'; }
+# 10-25 (the user): swap watch - MemAvailable alone misses page-cache pressure (the mmapoff screen's page allocation failure)
+swap_mb() { awk '/^SwapTotal/{t=$2} /^SwapFree/{f=$2} END{printf "%d", (t - f) / 1024}' /proc/meminfo; }
+swp() { awk '/^pswpin /{i=$2} /^pswpout /{o=$2} END{print i, o}' /proc/vmstat; }
+eng_swap_mb() { local r=0 p; for p in $(eng_pids); do r=$((r + $(awk '/VmSwap/{print $2}' /proc/$p/status 2>/dev/null || echo 0))); done; echo $((r / 1024)); }
+rss_mb() { local r=0 p; for p in $(eng_pids); do r=$((r + $(awk '/VmRSS/{print $2}' /proc/$p/status 2>/dev/null || echo 0))); done; echo $((r / 1024)); }
+
+say "${ARM_NOTE:+$ARM_NOTE - }DS4.1 arm $LABEL ($CFG, server $DS_SERVER, $PASSES passes): $(python3 -c "import json,sys; c=json.load(open(sys.argv[1])); print(' '.join(c['args'][2:]), c['env'])" $CFG) -> $OUT"
+# 10-23 (the user): let the model drive cool between arms, so a hot drive does not make a later arm look slower - at
+# least 3 min, then until nvme0's composite temperature is at most 50 C (15 min at most). work/ds41/nvmetemp.sh logs it.
+NH=$(for h in /sys/class/hwmon/hwmon*; do [ "$(cat $h/name 2>/dev/null)" = nvme ] && [ "$(readlink -f $h/device | sed 's#.*/##')" = nvme0 ] && echo $h; done | head -1)
+ct() { echo $(( $(cat $NH/temp1_input 2>/dev/null || echo 0) / 1000 )); }
+c0=$(ct); tc=$(date +%s)
+COOL_MIN=${COOL_MIN:-60}
+while :; do el=$(( $(date +%s) - tc )); { [ $el -ge $COOL_MIN ] && [ $(ct) -le 50 ]; } && break; [ $el -ge 900 ] && break; sleep 5; done
+say "cool-down before the arm: $(( $(date +%s) - tc )) s, drive $c0 -> $(ct) C"
+bash $SC/bringup/lib/kcheck.sh ds41-before || { say "kernel check failed before the arm - not started"; exit 1; }
+# 10-23 23:36: the s70 / DSpark arms of the first chain were answered by the s60 arm's server, still alive on this port
+# (a background job ignores SIGINT, so `kill -INT` never stopped it): refuse to start beside another server or engine
+ss -ltn | grep -q "127.0.0.1:$PORT " && { say "port $PORT is in use - arm not started"; exit 1; }
+[ -n "$(eng_pids)" ] && { say "a strata-dsv41 is already running - arm not started"; exit 1; }
+python3 $SC/work/ds41/tune/dropcache.py | tee -a $S   # every arm starts with the model files cold (Engram / swap reads are buffered)
+SW0=$(swap_mb); echo $SW0 > $OUT/swap-start-mb   # 10-25 (the user): swap at the start of each run, a possible noise source
+say "before: MemAvailable $(mem) GB; swap in use $SW0 MB; vram $(vram)"
+OFF=$(stat -c %s $LOGF 2>/dev/null || echo 0)
+T0=$(date +%s)
+setsid nohup env -u HTTP_PROXY -u HTTPS_PROXY ${SERVER_ENV:-} $SC/.venv/bin/python $DS_SERVER --engine strata \
+  --config $CFG --host 127.0.0.1 --port $PORT > $OUT/server.out 2>&1 < /dev/null &
+SPID=$!; echo $SPID > $SC/tmp/port-test-server.pid
+
+guard() {
+  local n=0 m v f0 sw sp=$SW0 i0 o0 i1 o1 busy=0
+  read i0 o0 < <(swp)
+  echo "time swap_used_mb swapin_pages swapout_pages busy_samples engine_swap_mb" > $OUT/swap.tsv
+  echo "time memavail_gb engine_rss_mb gpu0(used,free_MiB,sm_MHz,mem_MHz,util_%,power_W) gpu1(same) epoch" > $OUT/monitor.tsv
+  while kill -0 $SPID 2>/dev/null; do
+    m=$(mem)
+    v=$(nvidia-smi --query-gpu=memory.used,memory.free,clocks.sm,clocks.mem,utilization.gpu,power.draw --format=csv,noheader,nounits | tr -d ' ' | tr '\n' ' ')
+    echo "$(date +%T) $m $(rss_mb) $v $(date +%s)" >> $OUT/monitor.tsv   # 10-24 (the user): GPU clocks during decode, query only
+    f0=$(echo $v | cut -d' ' -f1 | cut -d, -f2)
+    if awk "BEGIN{exit !($m < 12)}"; then echo "GUARD: MemAvailable $m GB < 12" > $OUT/GUARD; break; fi
+    # 10-25 (the user): "If swap use grows by more than 256 MB during a run, or swap-ins/outs keep happening (vmstat si/so),
+    # stop that run, mark it 'failed: memory' and move on". 10-25 10:25 change: after swap was cleared by hand, the kernel
+    # moved idle apps' pages back out while each engine loaded (~180-300 MB in 2-3 min, almost no swap-ins) and the literal
+    # rule failed four runs in a row. Now: the ENGINE's own swapped memory (VmSwap) grows by more than 256 MB; or swap-ins
+    # (pages needed back: thrashing) in 5 samples in a row (~11 s) while swap use is not falling (a hand clear reads pages
+    # back in); or the whole system's swap grows by more than 1 GB. Swap-outs alone (idle pages leaving) are logged only.
+    sw=$(swap_mb); read i1 o1 < <(swp); es=$(eng_swap_mb)
+    if [ $((i1 - i0)) -gt 0 ] && [ $sw -ge $sp ]; then busy=$((busy + 1)); else busy=0; fi
+    echo "$(date +%T) $sw $((i1 - i0)) $((o1 - o0)) $busy $es" >> $OUT/swap.tsv
+    i0=$i1; o0=$o1; sp=$sw
+    if [ ! -e $OUT/SOFTSTOP ] && awk "BEGIN{exit !($m < ${SOFT_GB:-15})}"; then echo "SOFTSTOP: MemAvailable $m GB < ${SOFT_GB:-15} (the user's limit for these arms; 14 for the daily store-size runs, the user 10-24)" > $OUT/SOFTSTOP; kill -TERM $SPID 2>/dev/null; fi   # (restored 10-25 11:30: the 10:25 swap-guard edit had dropped it)
+    if [ $es -gt 256 ]; then echo "GUARD: failed: memory - the engine's swapped memory reached $es MB (limit 256)" > $OUT/GUARD; break; fi
+    if [ $busy -ge 5 ]; then echo "GUARD: failed: memory - swap-ins (vmstat si) in $busy samples in a row" > $OUT/GUARD; break; fi
+    if [ $((sw - SW0)) -gt 1024 ]; then echo "GUARD: failed: memory - swap use grew $((sw - SW0)) MB during the run (from $SW0 MB; limit 1024)" > $OUT/GUARD; break; fi
+    if [ -n "$f0" ] && [ "$f0" -lt 300 ]; then echo "GUARD: RTX 5080 free $f0 MiB < 300" > $OUT/GUARD; break; fi
+    n=$((n + 1))
+    if [ $((n % 30)) = 0 ] && ! bash $SC/bringup/lib/kcheck.sh ds41-run > /dev/null 2>&1; then echo "GUARD: kernel check failed" > $OUT/GUARD; break; fi
+    sleep 2
+  done
+  if [ -e $OUT/GUARD ]; then
+    for p in $(eng_pids); do kill -9 $p; done
+    kill -TERM $SPID 2>/dev/null
+  fi
+}
+guard & GPID=$!
+
+ready=""
+for i in $(seq 1800); do
+  [ -e $OUT/GUARD ] || [ -e $OUT/SOFTSTOP ] && break
+  kill -0 $SPID 2>/dev/null || break
+  [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' $URL/health)" = 200 ] && ss -ltnp | grep "127.0.0.1:$PORT " | grep -q "pid=$SPID," \
+    && [ -n "$(eng_pids)" ] && { ready=1; break; }   # our server holds the port and its engine runs
+  sleep 2
+done
+tail -c +$((OFF + 1)) $LOGF > $OUT/engine-start.log 2>/dev/null
+if [ -n "$ready" ]; then
+  say "ready after $(( $(date +%s) - T0 )) s: MemAvailable $(mem) GB, engine RSS $(rss_mb) MB; vram $(vram)"
+  grep -i -E "expert|store|vram|ram |dspark|--tp|tp=|layers|ssd|engram|mmap|reserve|threads|context" $OUT/engine-start.log | head -60 > $OUT/placement.txt
+  if [ -n "${CLIENT:-}" ]; then URL=$URL OUT=$OUT timeout 10800 bash -c "$CLIENT" > $OUT/client.out 2>&1
+  else timeout 10800 $SC/.venv/bin/python $SC/work/ds41/tune/speed3.py $URL $OUT $PASSES ${NPROMPT:-3} > $OUT/client.out 2>&1; fi
+  say "requests done (rc $?): $(grep -c 'tok/s' $OUT/client.out) responses"
+else
+  say "NOT READY: $(cat $OUT/GUARD 2>/dev/null || echo 'the server stopped or did not answer in 3600 s'); last lines:"
+  tail -n 15 $OUT/server.out | tee -a $S
+fi
+kill -TERM $SPID 2>/dev/null     # (not -INT: a background job ignores SIGINT)
+for i in $(seq 45); do [ -z "$(eng_pids)" ] && ! kill -0 $SPID 2>/dev/null && break; sleep 2; done
+kill -9 $SPID 2>/dev/null
+for p in $(eng_pids); do kill -TERM $p; done
+sleep 3; for p in $(eng_pids); do kill -9 $p; done
+for i in $(seq 30); do ss -ltn | grep -q "127.0.0.1:$PORT " || break; sleep 1; done
+ss -ltn | grep -q "127.0.0.1:$PORT " && say "WARNING: port $PORT still in use after the arm"
+kill $GPID 2>/dev/null
+tail -c +$((OFF + 1)) $LOGF > $OUT/engine-run.log 2>/dev/null
+[ -n "${PROFILE:-}" ] && cp "$PROFILE" $OUT/profile-after.bin 2>/dev/null
+grep -E "RAM store|DSpark|dspark:|CUDA[01] layers|routed experts on the CPU|tensor parallel" $OUT/engine-run.log | cut -c1-250 >> $S
+[ -e $OUT/GUARD ] && say "$(cat $OUT/GUARD)"
+[ -e $OUT/SOFTSTOP ] && say "$(cat $OUT/SOFTSTOP)"
+awk 'NR > 1 { if (min == "" || $2 < min) min = $2; if ($3 > rss) rss = $3; split($4, a, ","); split($5, b, ","); if (a[1] > g0) g0 = a[1]; if (b[1] > g1) g1 = b[1] }
+     END { printf "monitor: lowest MemAvailable %s GB, peak engine RSS %d MB, peak VRAM used 5080 %d MiB / 4060 Ti %d MiB\n", min, rss, g0, g1 }' $OUT/monitor.tsv | tee -a $S
+bash $SC/bringup/lib/kcheck.sh ds41-after && say "kcheck clean" || say "KCHECK FAILED after the test"
+[ -s $OUT/ds41.jsonl ] && $SC/.venv/bin/python $SC/work/ds41/tune/summ.py $OUT >> $S 2>&1
+$SC/.venv/bin/python $SC/work/ds41/nvme_flag.py $OUT 2>&1 | tee -a $S
+say "done"

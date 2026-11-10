@@ -1,0 +1,138 @@
+2026-10-30 09:53:59 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 2992756 (engine 2992768)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-10-30 09:54:32 port_gap4: gap open: test lock held (pid 2993185), 8080 stopped
+=== 2026-10-30 09:54:32 cold: a fresh engine per measurement, 3 passes in turned order
+server ready (guard pid 2993356, server pid 2993380) load_time_s 15.360773739 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-M-decode-1_20261030T095433.log
+cold-M-decode-1 pass 1 conv: 1200 tokens (length), 160.8 tok/s decode
+cold-M-decode-1 pass 1 struct: 7230 tokens (stop), 232.8 tok/s decode
+cold-M-decode-1 pass 1 prose: 1200 tokens (length), 133.3 tok/s decode
+server ready (guard pid 2994441, server pid 2994456) load_time_s 14.341139576 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-M-pp16k-1_20261030T095612.log
+cold-M-pp16k-1 pass 1 pp16k: 16676 tokens, 3894.4 tok/s engine
+server ready (guard pid 2994947, server pid 2994962) load_time_s 14.336269651 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-M-pp64k-1_20261030T095705.log
+cold-M-pp64k-1 pass 1 pp64k: 66617 tokens, 4410.1 tok/s engine
+server ready (guard pid 2995459, server pid 2995474) load_time_s 14.335730238 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-H-decode-1_20261030T095810.log
+cold-H-decode-1 pass 1 conv: 1188 tokens (stop), 150.5 tok/s decode
+cold-H-decode-1 pass 1 struct: 7230 tokens (stop), 216.5 tok/s decode
+cold-H-decode-1 pass 1 prose: 1200 tokens (length), 133.8 tok/s decode
+server ready (guard pid 2996510, server pid 2996525) load_time_s 14.334900359 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-H-pp16k-1_20261030T095950.log
+cold-H-pp16k-1 pass 1 pp16k: 16676 tokens, 3672.2 tok/s engine
+server ready (guard pid 2997022, server pid 2997037) load_time_s 14.336083365 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-H-pp64k-1_20261030T100044.log
+cold-H-pp64k-1 pass 1 pp64k: 66617 tokens, 4209.1 tok/s engine
+server ready (guard pid 2997531, server pid 2997546) load_time_s 14.336078960 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-H-decode-2_20261030T100148.log
+cold-H-decode-2 pass 2 conv: 1044 tokens (stop), 137.1 tok/s decode
+cold-H-decode-2 pass 2 struct: 7230 tokens (stop), 212.3 tok/s decode
+cold-H-decode-2 pass 2 prose: 1184 tokens (stop), 133.1 tok/s decode
+server ready (guard pid 2998571, server pid 2998586) load_time_s 14.331331600 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-H-pp16k-2_20261030T100329.log
+cold-H-pp16k-2 pass 2 pp16k: 16676 tokens, 3706.2 tok/s engine
+server ready (guard pid 2999077, server pid 2999092) load_time_s 14.332101778 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-H-pp64k-2_20261030T100423.log
+cold-H-pp64k-2 pass 2 pp64k: 66617 tokens, 4206.9 tok/s engine
+server ready (guard pid 2999594, server pid 2999610) load_time_s 14.342158517 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-M-decode-2_20261030T100527.log
+cold-M-decode-2 pass 2 conv: 1131 tokens (stop), 149.4 tok/s decode
+cold-M-decode-2 pass 2 struct: 7230 tokens (stop), 229.5 tok/s decode
+cold-M-decode-2 pass 2 prose: 1200 tokens (length), 136.8 tok/s decode
+server ready (guard pid 3000635, server pid 3000650) load_time_s 14.329680535 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-M-pp16k-2_20261030T100705.log
+cold-M-pp16k-2 pass 2 pp16k: 16676 tokens, 3900.8 tok/s engine
+server ready (guard pid 3001136, server pid 3001151) load_time_s 14.340335668 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-M-pp64k-2_20261030T100759.log
+cold-M-pp64k-2 pass 2 pp64k: 66617 tokens, 4425.7 tok/s engine
+server ready (guard pid 3001646, server pid 3001661) load_time_s 14.338545330 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-M-decode-3_20261030T100903.log
+cold-M-decode-3 pass 3 conv: 996 tokens (stop), 146.7 tok/s decode
+cold-M-decode-3 pass 3 struct: 7230 tokens (stop), 227.5 tok/s decode
+cold-M-decode-3 pass 3 prose: 1080 tokens (stop), 133.1 tok/s decode
+server ready (guard pid 3002697, server pid 3002712) load_time_s 14.343914134 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-M-pp16k-3_20261030T101039.log
+cold-M-pp16k-3 pass 3 pp16k: 16676 tokens, 3899.9 tok/s engine
+server ready (guard pid 3003175, server pid 3003190) load_time_s 14.333403748 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-M-pp64k-3_20261030T101133.log
+cold-M-pp64k-3 pass 3 pp64k: 66617 tokens, 4427.3 tok/s engine
+server ready (guard pid 3003710, server pid 3003725) load_time_s 14.336027750 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-H-decode-3_20261030T101237.log
+cold-H-decode-3 pass 3 conv: 1111 tokens (stop), 144.7 tok/s decode
+cold-H-decode-3 pass 3 struct: 7230 tokens (stop), 210.2 tok/s decode
+cold-H-decode-3 pass 3 prose: 1200 tokens (length), 133.2 tok/s decode
+server ready (guard pid 3004764, server pid 3004779) load_time_s 14.333369161 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-H-pp16k-3_20261030T101418.log
+cold-H-pp16k-3 pass 3 pp16k: 16676 tokens, 3669.5 tok/s engine
+server ready (guard pid 3005268, server pid 3005283) load_time_s 14.342446540 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-cold-H-pp64k-3_20261030T101512.log
+cold-H-pp64k-3 pass 3 pp64k: 66617 tokens, 4194.6 tok/s engine
+=== 2026-10-30 10:16:16 warm: one engine per build, 4 passes (pass 1 = the first in the process)
+server ready (guard pid 3005832, server pid 3005847) load_time_s 14.338576827 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-warm-H_20261030T101617.log
+warm-H pass 1 conv: 1020 tokens (stop), 139.8 tok/s decode
+warm-H pass 1 struct: 7230 tokens (stop), 213.2 tok/s decode
+warm-H pass 1 prose: 1200 tokens (length), 133.0 tok/s decode
+warm-H pass 1 pp16k: 16676 tokens, 3922.6 tok/s engine
+warm-H pass 1 pp64k: 66617 tokens, 4248.4 tok/s engine
+warm-H pass 2 conv: 1121 tokens (stop), 146.6 tok/s decode
+warm-H pass 2 struct: 7230 tokens (stop), 211.8 tok/s decode
+warm-H pass 2 prose: 1200 tokens (length), 134.3 tok/s decode
+warm-H pass 2 pp16k: 16676 tokens, 3949.7 tok/s engine
+warm-H pass 2 pp64k: 66617 tokens, 4274.4 tok/s engine
+warm-H pass 3 conv: 1177 tokens (stop), 144.4 tok/s decode
+warm-H pass 3 struct: 7230 tokens (stop), 211.9 tok/s decode
+warm-H pass 3 prose: 1200 tokens (length), 130.6 tok/s decode
+warm-H pass 3 pp16k: 16676 tokens, 4012.6 tok/s engine
+warm-H pass 3 pp64k: 66617 tokens, 4249.9 tok/s engine
+warm-H pass 4 conv: 1092 tokens (stop), 141.9 tok/s decode
+warm-H pass 4 struct: 7230 tokens (stop), 212.1 tok/s decode
+warm-H pass 4 prose: 1055 tokens (stop), 129.8 tok/s decode
+warm-H pass 4 pp16k: 16676 tokens, 4011.3 tok/s engine
+warm-H pass 4 pp64k: 66617 tokens, 4251.9 tok/s engine
+server ready (guard pid 3010114, server pid 3010129) load_time_s 14.335224231 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bp90-warm-M_20261030T102153.log
+warm-M pass 1 conv: 1069 tokens (stop), 146.6 tok/s decode
+warm-M pass 1 struct: 7230 tokens (stop), 226.6 tok/s decode
+warm-M pass 1 prose: 1200 tokens (length), 135.1 tok/s decode
+warm-M pass 1 pp16k: 16676 tokens, 4117.0 tok/s engine
+warm-M pass 1 pp64k: 66617 tokens, 4481.4 tok/s engine
+warm-M pass 2 conv: 1009 tokens (stop), 146.5 tok/s decode
+warm-M pass 2 struct: 7230 tokens (stop), 226.4 tok/s decode
+warm-M pass 2 prose: 1021 tokens (stop), 133.7 tok/s decode
+warm-M pass 2 pp16k: 16676 tokens, 4169.6 tok/s engine
+warm-M pass 2 pp64k: 66617 tokens, 4487.4 tok/s engine
+warm-M pass 3 conv: 893 tokens (stop), 148.7 tok/s decode
+warm-M pass 3 struct: 7230 tokens (stop), 225.8 tok/s decode
+warm-M pass 3 prose: 1198 tokens (stop), 129.7 tok/s decode
+warm-M pass 3 pp16k: 16676 tokens, 4178.2 tok/s engine
+warm-M pass 3 pp64k: 66617 tokens, 4488.2 tok/s engine
+warm-M pass 4 conv: 1168 tokens (stop), 146.4 tok/s decode
+warm-M pass 4 struct: 7230 tokens (stop), 226.0 tok/s decode
+warm-M pass 4 prose: 1200 tokens (length), 138.1 tok/s decode
+warm-M pass 4 pp16k: 16676 tokens, 4176.1 tok/s engine
+warm-M pass 4 pp64k: 66617 tokens, 4486.4 tok/s engine
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-10-30 10:27:27 port_gap4: served build back (7b38796237f5), policy on, queue released
+=== 2026-10-30 10:27:27 kcheck clean
+# Basalt PR #90 check: Basalt's community-1 prompts on our builds
+
+Prompts: Basalt b2fe96bf30 data/bench/*.ids (identical ids with our tokenizer + template). Decode: conv 1200 tokens T 0.6, struct 8192 T 0, prose 1200 T 0.6, top_p 0.95, top_k 20, min_p 0, no penalties, thinking off; prefill 16,676 / 66,617 tokens with 4 random ids after "Document:\n". Our KV is int8 (P021m's --kv int8, as Basalt's preset). Rates are the engine's (prompt_n / prompt_ms; generated / decode ms), as Basalt's.
+
+PR #90 row (RTX 5080 on PCIe 4.0 x16, 9950X3D, 64 GB, Basalt b2fe96bf30): prefill 16K 4,876.9 / 64K 4,961.0 tok/s, decode blend 186.8 tok/s. Ours: RTX 5080 on PCIe 5.0 x16 + RTX 4060 Ti (P021m holds experts on both cards; Basalt runs Blackwell only), 96 GB DDR5-6000.
+
+Cells: mean (min-max, spread over the passes) and the difference from the PR row.
+
+## cold (a fresh engine per measurement, Basalt's method; 3 passes)
+
+| build | conv | struct | prose | blend | 16K prompt | 64K prompt | 16K wall | 64K wall |
+|---|---|---|---|---|---|---|---|---|
+| P021m (served) | 152.3 (146.7-160.8, 9.3 %) | 229.9 (227.5-232.8, 2.3 %) | 134.4 (133.1-136.8, 2.8 %) | 200.6 (199.3-202.6, 1.7 %) +7.4 % | 3,898.4 (3,894.4-3,900.8, 0.2 %) -20.1 % | 4,421.0 (4,410.1-4,427.3, 0.4 %) -10.9 % | 3,861.5 (3,856.3-3,864.6, 0.2 %) | 4,404.4 (4,393.5-4,410.8, 0.4 %) |
+| | tokens: conv [1200, 1131, 996], struct [7230, 7230, 7230], prose [1200, 1200, 1080]; finish: conv length/stop, struct stop, prose length/stop ||||||||
+| v0.2.8 port (r28h) | 144.1 (137.1-150.5, 9.3 %) | 213.0 (210.2-216.5, 3.0 %) | 133.4 (133.1-133.8, 0.5 %) | 188.4 (186.8-191.4, 2.5 %) +0.9 % | 3,682.6 (3,669.5-3,706.2, 1.0 %) -24.5 % | 4,203.5 (4,194.6-4,209.1, 0.3 %) -15.3 % | 3,650.7 (3,638.1-3,673.8, 1.0 %) | 4,188.6 (4,179.7-4,194.1, 0.3 %) |
+| | tokens: conv [1188, 1044, 1111], struct [7230, 7230, 7230], prose [1200, 1184, 1200]; finish: conv stop, struct stop, prose length/stop ||||||||
+
+## warm (one engine; passes 2-4 - pass 1 below)
+
+| build | conv | struct | prose | blend | 16K prompt | 64K prompt | 16K wall | 64K wall |
+|---|---|---|---|---|---|---|---|---|
+| P021m (served) | 147.2 (146.4-148.7, 1.6 %) | 226.1 (225.8-226.4, 0.3 %) | 133.8 (129.7-138.1, 6.3 %) | 197.9 (197.2-199.3, 1.1 %) +6.0 % | 4,174.6 (4,169.6-4,178.2, 0.2 %) -14.4 % | 4,487.3 (4,486.4-4,488.2, 0.0 %) -9.5 % | 4,151.6 (4,146.7-4,155.0, 0.2 %) | 4,476.0 (4,475.0-4,476.9, 0.0 %) |
+| P021m (served), pass 1 | 146.6 | 226.6 | 135.1 | 197.6 +5.8 % | 4,117.0 -15.6 % | 4,481.4 -9.7 % | 4,089.1 | 4,469.7 |
+| | tokens: conv [1009, 893, 1168], struct [7230, 7230, 7230], prose [1021, 1198, 1200]; finish: conv stop, struct stop, prose length/stop ||||||||
+| v0.2.8 port (r28h) | 144.3 (141.9-146.6, 3.3 %) | 211.9 (211.8-212.1, 0.1 %) | 131.6 (129.8-134.3, 3.4 %) | 187.6 (186.7-188.3, 0.8 %) +0.4 % | 3,991.2 (3,949.7-4,012.6, 1.6 %) -18.2 % | 4,258.7 (4,249.9-4,274.4, 0.6 %) -14.2 % | 3,970.1 (3,929.1-3,990.6, 1.6 %) | 4,248.4 (4,239.4-4,264.2, 0.6 %) |
+| v0.2.8 port (r28h), pass 1 | 139.8 | 213.2 | 133.0 | 188.2 +0.7 % | 3,922.6 -19.6 % | 4,248.4 -14.4 % | 3,898.2 | 4,238.3 |
+| | tokens: conv [1121, 1177, 1092], struct [7230, 7230, 7230], prose [1200, 1200, 1055]; finish: conv stop, struct stop, prose length/stop ||||||||
+
+## checks
+
+- every prompt had the expected token count, no prefill reused more than the 6-token lead-in, every random-id draw round-tripped
+
+## against the go-further rule
+
+- P021m (served), cold: 16K prompt -20.1 %, 64K prompt -10.9 %, decode blend +7.4 % - PROMPT MORE THAN 15 % BEHIND
+- v0.2.8 port (r28h), cold: 16K prompt -24.5 %, 64K prompt -15.3 %, decode blend +0.9 % - PROMPT MORE THAN 15 % BEHIND
+- the row gives only the blend (struct is about three quarters of its tokens), so conv / prose are judged against our own struct rate and the blend, not against Basalt's per-fixture numbers
+=== 2026-10-30 10:27:27 Basalt PR #90 check done after 32 min (report: results/r22/basalt-pr90/report.md)

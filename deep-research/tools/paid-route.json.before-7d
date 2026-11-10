@@ -1,0 +1,22 @@
+{
+  "_doc": "Item 7 routing table (staged 10-29; search_route.py reads it). Off by default: with enabled=false every search gets profile 'fallback' (today's patch 0005: Exa then Tavily when SearXNG + free sources bring < 5 results). A run picks a profile with \"route\" in run/paid-run.json, or PAID_ROUTE_PROFILE. free = asked on every search of the tag; paid = asked on every search of the tag, in order, until one returns results; fallback = asked in order only when fewer than fallback_below results came so far. Paid sources always go through paid_budget's caps. Cache: paid results only, TTL per tag (ttl_hours), empty results at most empty_ttl_hours.",
+  "enabled": false,
+  "profile": "types",
+  "cache": {"enabled": false, "dir": "~/.cache/deep-research/paid-search", "max_mb": 64, "empty_ttl_hours": 24},
+  "ttl_hours": {"news": 6, "product": 24, "code": 168, "general": 168, "academic": 720},
+  "profiles": {
+    "fallback": {
+      "*":        {"free": [],     "paid": [],         "fallback": ["exa", "tavily"], "fallback_below": 5}
+    },
+    "types": {
+      "academic": {"free": ["s2"], "paid": [],         "fallback": ["exa", "tavily"], "fallback_below": 5},
+      "product":  {"free": [],     "paid": ["exa"],    "fallback": ["tavily"],        "fallback_below": 5},
+      "news":     {"free": [],     "paid": ["tavily"], "fallback": ["exa"],           "fallback_below": 5},
+      "code":     {"free": [],     "paid": [],         "fallback": ["exa", "tavily"], "fallback_below": 5},
+      "general":  {"free": [],     "paid": [],         "fallback": ["exa", "tavily"], "fallback_below": 5}
+    },
+    "7a": {"*": {"free": ["s2"], "paid": [],         "fallback": [], "fallback_below": 0}},
+    "7b": {"*": {"free": [],     "paid": ["tavily"], "fallback": [], "fallback_below": 0}},
+    "7c": {"*": {"free": [],     "paid": ["exa"],    "fallback": [], "fallback_below": 0}}
+  }
+}

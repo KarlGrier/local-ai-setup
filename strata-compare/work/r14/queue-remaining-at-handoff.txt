@@ -1,0 +1,11 @@
+bringup/lib/phase_end.sh r14-s8a
+echo "MARK s8-gates"
+work/r14/s8_screens.sh configs/Cstar14.json > logs/r14/s8-screens.log 2>&1
+echo "MARK s8-screens"
+STRATA_CONFIG=configs/Cstar14.json bringup/lib/soak13.sh 120 > logs/r14/s8-soak.log 2>&1
+bringup/lib/soakdec.sh SDEC14 configs/Cstar14.json > logs/r14/s8-soakdec.log 2>&1
+.venv/bin/python bringup/lib/ab_table.py fresh=r14-s8-D-c14-a,r14-s8-D-c14-b soaked=SDEC14 > results/r14/s8-soaked-vs-fresh.md 2>&1
+echo "MARK s8-soak"
+work/r14/hold.sh promote
+work/r14/promote-c14.sh > logs/r14/promote-c14.log 2>&1
+echo "MARK promoted14"

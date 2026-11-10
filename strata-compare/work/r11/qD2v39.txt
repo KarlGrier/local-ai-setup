@@ -1,0 +1,14 @@
+work/r11/tagcheck.sh "Phase D.2 (262K)"
+STRATA_PORT=8080 ./run-strata.sh stop
+.venv/bin/python work/r11/needle262.py build 2>&1 | tail -3
+work/r11/startcheck.sh V39W-262ks configs/V39W-262k.json; grep -h 'expert cache [0-9]* slots\|KV streaming\|borrows\|prompt chunk\|VRAM free with' logs/engine-V39W-262k.log | tail -6
+work/r11/ttftscreen.sh T262-a configs/V39W-262k.json
+work/r11/ttftscreen.sh T131-a configs/V39W.json
+work/r11/ttftscreen.sh T131-b configs/V39W.json
+work/r11/ttftscreen.sh T262-b configs/V39W-262k.json
+.venv/bin/python work/r11/ttft_table.py ctx131k=T131-a,T131-b ctx262k=T262-a,T262-b | tee results/r11/ttft-262k.md
+work/r11/with_server.sh D2-big configs/V39W-262k.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r11/chunks693.py http://127.0.0.1:8081 ctx262 200000,250000 2 \$ELOG"
+work/r11/with_server.sh N-262 configs/V39W-262k.json -- ".venv/bin/python work/r11/needle262.py ask --base http://127.0.0.1:8081 --label N262 --temperature 1.0"
+work/r11/with_server.sh D2-chats configs/V39W-262k.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r11/bigchat262.py http://127.0.0.1:8081 c262 190000 \$ELOG"
+work/r11/phase_end.sh pD2 keep
+echo "=== $(date -Is) MARK qD2v39"

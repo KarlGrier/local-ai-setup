@@ -1,0 +1,9 @@
+[Unit]
+Description=Opus 4.5 hard-set suite run: daily 09:00, 11-02..11-24, starts only after Karl confirms his API credits reset (tmp/suite/opus45-credits-ok)
+
+[Timer]
+OnCalendar=2026-11-02..24 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

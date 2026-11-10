@@ -1,0 +1,23 @@
+=== 2026-11-06 22:54:52 v0.2.11 PORT GATE (work/r23/gap-port0211.sh): the pinned-off port against P028x - measurements only, P028x stays served, nothing switches (Karl 11-05)
+=== 2026-11-06 22:54:52   gate build_x PASS engine-r23p0211 29a9f7886aca = v0.2.11 + 28 commits (branch r23-port0211 d797db9f64b465b0fb273038a7269c7841a6f378), tree df1ae8b7d3c9fcd28defee4653064f
+=== 2026-11-06 22:54:52   gate build_stock PASS engine-v0211stock 2350dedc7ba3 = stock v0.2.11 (c3b3f5035506f3e966f1b4b7b188aeaabae92f1d, detached worktree strata-v0211stock), none 
+=== 2026-11-06 22:54:52   gate build_tests PASS /home/USER/ai-speed-testing/strata-compare/strata-r23p0211/build-tests: the 9 test binaries
+=== 2026-11-06 22:54:52   gate build8 PASS the port, its tests and stock: verify windows hold up to 8 rows
+P0211x.json: all 18 pins and both keys -> PASS
+P0211x-h.json: all 18 pins and both keys -> PASS
+=== 2026-11-06 22:54:52 0 the CPU-only tests (nice 19; the C++ ones with CUDA_VISIBLE_DEVICES empty, so none can reach a GPU)
+=== 2026-11-06 22:54:52   patch_guard_test rc 0: patch_guard_test: 0 failures
+=== 2026-11-06 22:54:52   cost_gate_test rc 0: cost_gate tests: OK
+=== 2026-11-06 22:54:52   draft_cum_test rc 0: draft_cum tests: OK
+=== 2026-11-06 22:54:52   gate tests PASS patch_guard, cost_gate, draft_cum rc 0
+=== 2026-11-06 22:54:56   spec_prob_test rc 0: spec_prob_test: 72 cases, 0 failed
+=== 2026-11-06 22:54:56   gated_proposal_test rc 0: {"summary":"gated_proposal_test","checks":266,"passed":true,"GPU_executed":false,"actual_main_window_copy_tested":false}
+=== 2026-11-06 22:54:56   gate sampler_cpu PASS spec_prob_test, gated_proposal_test rc 0
+Ran 1462 tests in 700.892s
+
+FAILED (failures=1, skipped=49)
+1462 tests, 1 failed or erred (known: test_hip_ordinal) -> PASS
+four-backtick fence with a three-backtick example and </think>: reasoning until the outer fence closed, at widths 1 / 2 / 7 / all -> PASS
+2026-11-06 23:06:38 port_gap4: a DeepSeek session holds the GPUs - the gap waits for Back to Qwen
+2026-11-06 23:09:38 port_gap4: the DeepSeek session is over - going on
+2026-11-06 23:09:38 port_gap4: quiet window (2026-11-06 23:00 2026-12-01 00:00): no gap may open until it ends (or end before it starts) - the research queue is NOT held meanwhile

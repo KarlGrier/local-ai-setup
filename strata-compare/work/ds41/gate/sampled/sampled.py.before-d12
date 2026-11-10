@@ -1,0 +1,835 @@
+#!/usr/bin/env python3
+"""sampled.py - DeepSeek C's sampled-distribution test (Karl 11-03: drafting may go daily only after a sampled-distribution
+test - under our normal sampling, T 1.0 / top-p 0.95 / top-k 20 / min-p 0.05, drafting must not change the output
+distribution beyond rounding; 11-07: run it on whichever C-N ends up recommended). Written at the desk 11-07, not run on
+real data. Plan, findings and power argument: results/ds41/C-SAMPLED-TEST-PLAN.md. No GPU, no engine, no network here:
+this module only reads result files (and, for `ids`, the pack's tokenizer files).
+
+Why not a seeded identity test: the engine's speculative sampling is exact in distribution but does not reproduce the
+non-drafted realization - a drafted row draws its accept test and its residual from Philox streams keyed seed ^ kSpecAcceptKey
+/ seed ^ kSpecResidKey (vendor/sampler.cu:177-178, 484, 494) where the plain draw uses (seed, counter) (sampler.cu:442), and
+the counter is engine-lifetime (ds4_main.cpp:327). So C0 and C-N with one seed part at the first drafted row where the two
+draws differ (probability 1 - sum p^2 there), rounding or not. The test compares distributions instead.
+
+The statistic. Every sampled answer (served, STRATA_DEBUG=1 prints its ids) is scored teacher-forced by one reference
+engine run (the scorer, the same config for every arm). For each generated token x_t the reference gives its row's
+top-64 log-probabilities; the sampler's chain (sampler.cu: top_k 20 -> top_p 0.95 over the 20 -> min_p 0.05 ->
+temperature 1.0) rebuilt from them gives p~_t. Features f(x) = (x is p~'s top-1, x is p~'s rank 2, log p(x) over the
+whole vocabulary); d_t = f(x_t) - E_{x ~ p~_t} f(x). If an arm draws from p~, sum d_t is a martingale: mean 0, no
+autocorrelation, its variance the sum of d_t d_t'. Per arm and prompt: the mean m and its variance V (empirical,
+centred). The arm's vector: equal-weight mean over the prompts. The distance between arms A and B:
+    D2(A, B) = (m_A - m_B)' (V_A + V_B)^-1 (m_A - m_B)        (3 numbers -> chi-square with 3 df if A ~ B)
+The scorer cancels: it only removes the between-context variance (each token is judged against its own context).
+
+  sampled.py rule                  print the rule (the gap writes it to OUTDIR/rule.txt before any engine run)
+  sampled.py selftest [DIR]        synthetic data only (DIR default scratch/selftest): files in the engine's formats ->
+                                   judge, plus a calibration study; exit 0 when every case gives the expected verdict
+  sampled.py ids ARMDIR            ARMDIR/sampled.jsonl + ARMDIR/server.out ("[strata] raw ids: [...]") + prompts rendered
+                                   with the server's own template code -> ARMDIR/score-ids.json (the engine's --score
+                                   format) and score-ids.meta.json
+  sampled.py judge OUTDIR [--stage1]
+                                   OUTDIR/R1 (C0), OUTDIR/X (C-N), OUTDIR/R2 (C0v, optional): each sampled.jsonl,
+                                   score-ids.json, score-ids.meta.json, score/score.tsv + .seg.json -> OUTDIR/verdict.json,
+                                   verdict.md. Exit 0 PASS, 1 FAIL, 2 NOT DECIDED; with --stage1 (R1 + X only) exit 3 =
+                                   "D2 above the noise bound: run R2 (C0v) and judge again"
+"""
+import json
+import math
+import os
+import random
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SC = "/home/USER/ai-speed-testing/strata-compare"
+SCRATCH = f"{HERE}/scratch"
+
+# ---- the rule's constants (fixed before any run; changing one = a new rule, Karl's call)
+SAMPLING = {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.05}
+K_FEAT = 3                      # features: top-1, rank 2, log p
+ALPHA = 0.01                    # the sampling-noise bound: chi2(3) 99th percentile
+POWER = 0.80
+DELTA_STAR = 0.02               # the smallest top-1 shift the test must see with POWER (else NOT DECIDED)
+N_MIN = 4000                    # valid scored generated tokens per arm, at least
+SAMPLES_MIN = 3                 # valid samples per prompt and arm, at least
+PROMPTS = ("math", "code", "conv", "prose")
+RHO_MIN = 0.30                  # X: drafted rows / generated tokens, at least (else drafting was not exercised)
+SANITY_D2 = 100.0               # R1 vs the scorer: above this the scorer does not track the served C0 (alignment?)
+MAX_INVALID = 0.10              # at most this share of an arm's samples may be invalid
+
+RULE = f"""sampled.py rule, fixed {"2026-11-07"} at the desk, before any engine run (Karl 11-03: under T 1.0 / top-p 0.95 / top-k 20 /
+min-p 0.05 drafting must not change the output distribution beyond rounding)
+arms (one fresh served engine each, same request plan, own seeds): R1 = C0 (C's placement, --dspark off), X = C-N (the
+recommended arm, --dspark on --dspark-block N), R2 = C0v (C0 with --vram-experts 0.98: Karl's 11-04 Aa placement variant);
+the scorer = one teacher-forced reference config, the same for every arm.
+statistic: D2(A, B) = Mahalanobis distance of the arms' calibration vectors (top-1 rate, rank-2 rate, log p - each minus
+what the scorer's p~ predicts per token; equal weight per prompt; empirical variance); chi-square, {K_FEAT} df if A ~ B.
+noise bound c = chi2({K_FEAT}) {100 * (1 - ALPHA):.0f}th percentile = {{c:.4f}}.
+band = max(c, D2(R2, R1))   [the 11-04 noise-band style: the reference pair's distance, never below pure sampling noise]
+PASS iff D2(X, R1) <= band, the data are valid and the test has the power below.
+FAIL iff D2(X, R1) > band and the data are valid (R2 present and valid).
+NOT DECIDED iff any of: an arm needed has < {N_MIN} valid scored generated tokens, or < {SAMPLES_MIN} valid samples of one of
+{", ".join(PROMPTS)}, or > {MAX_INVALID:.0%} of its samples invalid (ids count != completion_tokens, rendered prompt length !=
+prompt_tokens, score rows / targets not the sample's, error or cancel finish); X drafted < {RHO_MIN:.0%} of its tokens or R1 / R2
+drafted at all; D2(R1, scorer) > {SANITY_D2:.0f} (the scorer does not track C0); D2(X, R1) > c with R2 missing or invalid;
+for a PASS: the least favourable top-1 shift seen with {POWER:.0%} probability, sqrt(lambda80 * (V_X + V_R1)[top-1]), above
+{DELTA_STAR} (lambda80: the noncentrality that chi2({K_FEAT}) needs to pass c with probability {POWER:.0%} = {{lam:.3f}}).
+stage 1 (R1, X): PASS if D2(X, R1) <= c and the rest holds (R2 is not needed: band >= c); else R2 runs, then the final
+judgement. Proposed 11-07; the noise bound c, DELTA_STAR, N_MIN and R2's form need Karl's OK (C-SAMPLED-TEST-PLAN.md)."""
+
+
+# ---- chi-square without scipy
+def _gammainc_p(a, x):
+    """regularized lower incomplete gamma P(a, x)"""
+    if x <= 0:
+        return 0.0
+    if x < a + 1.0:   # series
+        s = t = 1.0 / a
+        n = a
+        for _ in range(10000):
+            n += 1.0
+            t *= x / n
+            s += t
+            if abs(t) < abs(s) * 1e-15:
+                break
+        return s * math.exp(-x + a * math.log(x) - math.lgamma(a))
+    # continued fraction (Lentz) for Q, then P = 1 - Q
+    tiny = 1e-300
+    b = x + 1.0 - a
+    c = 1.0 / tiny
+    d = 1.0 / b
+    h = d
+    for i in range(1, 10000):
+        an = -i * (i - a)
+        b += 2.0
+        d = an * d + b
+        d = tiny if abs(d) < tiny else d
+        c = b + an / c
+        c = tiny if abs(c) < tiny else c
+        d = 1.0 / d
+        de = d * c
+        h *= de
+        if abs(de - 1.0) < 1e-15:
+            break
+    return 1.0 - math.exp(-x + a * math.log(x) - math.lgamma(a)) * h
+
+
+def chi2_sf(x, k):
+    return 1.0 - _gammainc_p(k / 2.0, x / 2.0)
+
+
+def chi2_ppf(q, k):
+    lo, hi = 0.0, 1000.0
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        if 1.0 - chi2_sf(mid, k) < q:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def ncx2_sf(x, k, lam):
+    """P(noncentral chi2(k, lam) > x): the Poisson(lam / 2) mixture of central chi-squares"""
+    if lam <= 0:
+        return chi2_sf(x, k)
+    h = lam / 2.0
+    j0 = int(h)
+    tot = 0.0
+
+    def w(j):
+        return math.exp(-h + j * math.log(h) - math.lgamma(j + 1))
+
+    j = j0
+    while True:                      # upward from the Poisson mode
+        wj = w(j)
+        tot += wj * chi2_sf(x, k + 2 * j)
+        if j > j0 + 10 and wj < 1e-17:
+            break
+        j += 1
+    j = j0 - 1
+    while j >= 0:                    # and downward
+        wj = w(j)
+        tot += wj * chi2_sf(x, k + 2 * j)
+        if j < j0 - 10 and wj < 1e-17:
+            break
+        j -= 1
+    return tot
+
+
+def lam_for_power(c, k, power):
+    lo, hi = 0.0, 500.0
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        if ncx2_sf(c, k, mid) < power:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+C_BOUND = chi2_ppf(1.0 - ALPHA, K_FEAT)
+LAM80 = lam_for_power(C_BOUND, K_FEAT, POWER)
+
+
+def rule_text():
+    return RULE.format(c=C_BOUND, lam=LAM80)
+
+
+# ---- the sampler's chain over a scored row (vendor/sampler.cu's order and tie rule)
+def kept(top, top_k=20, top_p=0.95, min_p=0.05, temperature=1.0, min_keep=1):
+    """top: [(id, logprob)] of a row (the scorer's 64). -> (ids, p, logprobs) of p~'s kept list, descending."""
+    sel = sorted(top, key=lambda e: (-e[1], e[0]))
+    k = top_k if 0 < top_k < 64 else 64
+    sel = sel[:min(k, len(sel))]
+    k = len(sel)
+    lp = [e[1] for e in sel]
+    mx = lp[0]
+    n_keep = k
+    if top_p < 1.0:
+        ex = [math.exp(x - mx) for x in lp]
+        s = sum(ex)
+        cum, cut = 0.0, k
+        for i in range(k):
+            cum += ex[i] / s
+            if cum >= top_p:
+                cut = i + 1
+                break
+        if cut < min_keep:
+            cut = min(min_keep, k)
+        n_keep = cut
+    if min_p > 0.0:
+        th = lp[0] + math.log(min_p)
+        for i in range(n_keep):
+            if lp[i] < th:
+                n_keep = i
+                break
+    sc = [lp[i] / temperature for i in range(n_keep)]
+    smx = max(sc)
+    w = [math.exp(x - smx) for x in sc]
+    z = sum(w)
+    return [e[0] for e in sel[:n_keep]], [x / z for x in w], lp[:n_keep]
+
+
+def token_terms(top, x, lp_x, sampling=SAMPLING):
+    """-> (d, s, info): d = f(x) - E f, s = the predicted covariance (3x3, rows), info: rank of x in p~ (None = outside)"""
+    ids, p, lps = kept(top, sampling["top_k"], sampling["top_p"], sampling["min_p"], sampling["temperature"])
+    r = ids.index(x) if x in ids else None
+    f = (1.0 if r == 0 else 0.0, 1.0 if r == 1 else 0.0, lp_x)
+    mu = [p[0], p[1] if len(p) > 1 else 0.0, sum(pi * li for pi, li in zip(p, lps))]
+    d = [f[0] - mu[0], f[1] - mu[1], f[2] - mu[2]]
+    s = [[0.0] * 3 for _ in range(3)]
+    for i, (pi, li) in enumerate(zip(p, lps)):
+        fi = (1.0 if i == 0 else 0.0, 1.0 if i == 1 else 0.0, li)
+        for a in range(3):
+            for b in range(3):
+                s[a][b] += pi * (fi[a] - mu[a]) * (fi[b] - mu[b])
+    return d, s, {"rank": r, "p_top": p[0], "n_keep": len(p)}
+
+
+# ---- small linear algebra (3x3)
+def inv3(m):
+    a = [row[:] + [1.0 if i == j else 0.0 for j in range(3)] for i, row in enumerate(m)]
+    tr = sum(abs(m[i][i]) for i in range(3)) or 1.0
+    for i in range(3):
+        a[i][i] += 1e-12 * tr
+    for c in range(3):
+        piv = max(range(c, 3), key=lambda r: abs(a[r][c]))
+        if abs(a[piv][c]) < 1e-300:
+            raise ValueError("singular variance")
+        a[c], a[piv] = a[piv], a[c]
+        f = a[c][c]
+        a[c] = [v / f for v in a[c]]
+        for r in range(3):
+            if r != c:
+                g = a[r][c]
+                a[r] = [vr - g * vc for vr, vc in zip(a[r], a[c])]
+    return [row[3:] for row in a]
+
+
+def quad(v, m):
+    return sum(v[i] * m[i][j] * v[j] for i in range(3) for j in range(3))
+
+
+# ---- per-arm accumulation
+class Acc:
+    def __init__(self):
+        self.n = 0
+        self.sd = [0.0] * 3
+        self.sdd = [[0.0] * 3 for _ in range(3)]
+        self.ss = [[0.0] * 3 for _ in range(3)]
+        self.top1 = self.top1_exp = self.outside = 0.0
+
+    def add(self, d, s, info, p_top):
+        self.n += 1
+        for a in range(3):
+            self.sd[a] += d[a]
+            for b in range(3):
+                self.sdd[a][b] += d[a] * d[b]
+                self.ss[a][b] += s[a][b]
+        self.top1 += 1.0 if info["rank"] == 0 else 0.0
+        self.top1_exp += p_top
+        self.outside += 1.0 if info["rank"] is None else 0.0
+
+    def mean_var(self):
+        n = self.n
+        m = [x / n for x in self.sd]
+        v = [[(self.sdd[a][b] / n - m[a] * m[b]) / n for b in range(3)] for a in range(3)]
+        return m, v
+
+
+def combine(accs, prompts):
+    """equal weight per prompt: m = mean of the prompts' m, V = sum w^2 V_q"""
+    w = 1.0 / len(prompts)
+    m = [0.0] * 3
+    v = [[0.0] * 3 for _ in range(3)]
+    for q in prompts:
+        mq, vq = accs[q].mean_var()
+        for a in range(3):
+            m[a] += w * mq[a]
+            for b in range(3):
+                v[a][b] += w * w * vq[a][b]
+    return m, v
+
+
+def d2(ma, va, mb=None, vb=None):
+    if mb is None:
+        return quad(ma, inv3(va))
+    diff = [x - y for x, y in zip(ma, mb)]
+    return quad(diff, inv3([[va[a][b] + vb[a][b] for b in range(3)] for a in range(3)]))
+
+
+# ---- reading an arm
+def read_jsonl(p):
+    out = []
+    if os.path.exists(p):
+        for line in open(p):
+            line = line.strip()
+            if line:
+                out.append(json.loads(line))
+    return out
+
+
+def parse_row(line):
+    f = line.rstrip("\n").split("\t")
+    top = []
+    for e in f[8:]:
+        i, _, v = e.partition(":")
+        top.append((int(i), float(v)))
+    return int(f[0]), int(f[1]), float(f[2]), top
+
+
+def load_arm(d, sampling=SAMPLING):
+    """-> dict: accs per prompt, counts, validity notes. Reads d/sampled.jsonl, d/score-ids.json, d/score-ids.meta.json,
+    d/score/score.tsv and .seg.json"""
+    out = {"dir": d, "why": [], "samples": 0, "valid": 0, "invalid": [], "tokens": 0, "offered": 0, "kept": 0,
+           "gen_reported": 0, "per_prompt": {}}
+    recs = read_jsonl(f"{d}/sampled.jsonl")
+    meta_p, ids_p = f"{d}/score-ids.meta.json", f"{d}/score-ids.json"
+    tsv, segj = f"{d}/score/score.tsv", f"{d}/score/score.tsv.seg.json"
+    for p in (meta_p, ids_p, tsv, segj):
+        if not os.path.exists(p):
+            out["why"].append(f"missing {os.path.relpath(p, d)}")
+    if out["why"] or not recs:
+        if not recs:
+            out["why"].append("no sampled.jsonl records")
+        return out
+    meta = {s["name"]: s for s in json.load(open(meta_p))["segments"]}
+    idsf = {s["name"]: s["ids"] for s in json.load(open(ids_p))["segments"]}
+    segs = json.load(open(segj))["segments"]
+    lines = open(tsv).read().splitlines()
+    out["samples"] = len(recs)
+    for r in recs:
+        dr = r.get("drafts") or {}
+        out["offered"] += int(dr.get("offered") or 0)
+        out["kept"] += int(dr.get("kept") or 0)
+        out["gen_reported"] += int(r.get("completion_tokens") or 0)
+    accs = {q: Acc() for q in PROMPTS}
+    rec_by = {r["name"]: r for r in recs}
+    seen = set()
+    for sg in segs:
+        name = sg["name"]
+        seen.add(name)
+        mt, r, ids = meta.get(name), rec_by.get(name), idsf.get(name)
+        bad = None
+        if mt is None or r is None or ids is None:
+            bad = "no meta / record / ids"
+        elif not mt.get("ok", False):
+            bad = mt.get("why") or "marked invalid by ids"
+        elif r.get("finish") not in ("length", "stop"):
+            bad = f"finish {r.get('finish')}"
+        elif mt["prompt"] not in accs:
+            bad = f"prompt {mt['prompt']} not in the plan"
+        rows = lines[sg["first_line"]:sg["end_line"]]
+        pn, gn = (mt or {}).get("prompt_n", 0), (mt or {}).get("gen_n", 0)
+        if bad is None and (len(rows) != len(ids) - 1 or len(ids) != pn + gn):
+            bad = f"rows {len(rows)} / ids {len(ids)} / prompt {pn} + gen {gn} do not fit"
+        terms = []
+        if bad is None:
+            for line in rows:
+                pos, tgt, lt, top = parse_row(line)
+                if pos + 1 >= len(ids) or ids[pos + 1] != tgt:
+                    bad = f"row at {pos}: target {tgt} is not the sample's id"
+                    break
+                if pos < pn - 1:
+                    continue          # a prompt row
+                d, s, info = token_terms(top, tgt, lt, sampling)
+                terms.append((d, s, info))
+            if bad is None and len(terms) != gn:
+                bad = f"{len(terms)} generated rows, the sample has {gn}"
+        if bad is not None:
+            out["invalid"].append(f"{name}: {bad}")
+            continue
+        a = accs[mt["prompt"]]
+        for d, s, info in terms:
+            a.add(d, s, info, info["p_top"])
+        out["valid"] += 1
+        out["tokens"] += len(terms)
+        pp = out["per_prompt"].setdefault(mt["prompt"], {"samples": 0, "tokens": 0})
+        pp["samples"] += 1
+        pp["tokens"] += len(terms)
+    for r in recs:
+        if r["name"] not in seen:
+            out["invalid"].append(f"{r['name']}: not in the score file")
+    out["accs"] = accs
+    return out
+
+
+def arm_problems(a, role):
+    w = list(a["why"])
+    if w:
+        return w
+    if a["tokens"] < N_MIN:
+        w.append(f"{a['tokens']} valid scored tokens < {N_MIN}")
+    for q in PROMPTS:
+        ns = a["per_prompt"].get(q, {}).get("samples", 0)
+        if ns < SAMPLES_MIN:
+            w.append(f"{ns} valid samples of {q} < {SAMPLES_MIN}")
+    if a["samples"] and len(a["invalid"]) > MAX_INVALID * a["samples"]:
+        w.append(f"{len(a['invalid'])} of {a['samples']} samples invalid")
+    if role == "X":
+        rho = a["offered"] / max(1, a["gen_reported"])
+        if rho < RHO_MIN:
+            w.append(f"drafted rows {a['offered']} / {a['gen_reported']} tokens = {rho:.2f} < {RHO_MIN}")
+    elif a["offered"] > 0:
+        w.append(f"{role} drafted ({a['offered']} drafts offered): not a non-drafting reference")
+    return w
+
+
+def summary(a):
+    if "accs" not in a:
+        return {"why": a["why"]}
+    m, v = combine(a["accs"], PROMPTS) if all(a["accs"][q].n > 1 for q in PROMPTS) else (None, None)
+    n = sum(a["accs"][q].n for q in PROMPTS)
+    t1 = sum(a["accs"][q].top1 for q in PROMPTS)
+    t1e = sum(a["accs"][q].top1_exp for q in PROMPTS)
+    out = {"samples": a["samples"], "valid": a["valid"], "invalid": a["invalid"][:20], "tokens": a["tokens"],
+           "per_prompt": a["per_prompt"], "drafts_offered": a["offered"], "drafts_kept": a["kept"],
+           "drafted_share": round(a["offered"] / max(1, a["gen_reported"]), 4),
+           "acceptance": round(a["kept"] / a["offered"], 4) if a["offered"] else None,
+           "top1_rate": round(t1 / max(1, n), 5), "top1_expected": round(t1e / max(1, n), 5),
+           "outside_kept": int(sum(a["accs"][q].outside for q in PROMPTS))}
+    if m is not None:
+        out["m"] = [round(x, 6) for x in m]
+        out["se"] = [round(math.sqrt(max(0.0, v[i][i])), 6) for i in range(3)]
+        try:
+            out["d2_vs_scorer"] = round(d2(m, v), 3)
+        except ValueError:
+            out["d2_vs_scorer"] = None
+    return out
+
+
+def judge(o, stage1=False):
+    arms = {}
+    for role in ("R1", "X", "R2"):
+        p = f"{o}/{role}"
+        arms[role] = load_arm(p) if os.path.isdir(p) else None
+    res = {"rule": rule_text(), "c": round(C_BOUND, 4), "lambda80": round(LAM80, 4), "arms": {}, "why": []}
+    for role, a in arms.items():
+        if a is not None:
+            res["arms"][role] = summary(a)
+            res["arms"][role]["problems"] = arm_problems(a, role)
+    nd = []
+    for role in ("R1", "X"):
+        if arms[role] is None:
+            nd.append(f"{role} missing")
+        elif res["arms"][role]["problems"]:
+            nd.append(f"{role}: " + "; ".join(res["arms"][role]["problems"]))
+    if nd:
+        res.update(verdict="NOT DECIDED", why=nd)
+        return res, 2
+    m1, v1 = combine(arms["R1"]["accs"], PROMPTS)
+    mx, vx = combine(arms["X"]["accs"], PROMPTS)
+    s1 = d2(m1, v1)
+    if s1 > SANITY_D2:
+        res.update(verdict="NOT DECIDED", why=[f"D2(R1, scorer) {s1:.1f} > {SANITY_D2}: the scorer does not track the served C0"])
+        return res, 2
+    dx = d2(mx, vx, m1, v1)
+    mde = math.sqrt(LAM80 * (vx[0][0] + v1[0][0]))
+    res.update(d2_x_r1=round(dx, 4), mde_top1=round(mde, 5), d2_r1_scorer=round(s1, 3))
+    if dx <= C_BOUND:
+        if mde > DELTA_STAR:
+            res.update(verdict="NOT DECIDED", band=round(C_BOUND, 4),
+                       why=[f"too few samples: the least favourable top-1 shift seen with {POWER:.0%} probability is "
+                            f"{mde:.4f} > {DELTA_STAR}"])
+            return res, 2
+        res.update(verdict="PASS", band=round(C_BOUND, 4),
+                   why=[f"D2(X, R1) {dx:.3f} <= the noise bound {C_BOUND:.3f} (band >= it whatever R2 gives)"])
+        return res, 0
+    a2 = arms["R2"]
+    if stage1 and a2 is None:
+        res.update(verdict="R2 NEEDED", why=[f"D2(X, R1) {dx:.3f} > the noise bound {C_BOUND:.3f}: run R2 (C0v)"])
+        return res, 3
+    if a2 is None or res["arms"]["R2"]["problems"]:
+        why = "R2 missing" if a2 is None else "R2: " + "; ".join(res["arms"]["R2"]["problems"])
+        res.update(verdict="NOT DECIDED", why=[f"D2(X, R1) {dx:.3f} > the noise bound {C_BOUND:.3f} and {why}"])
+        return res, 2
+    m2, v2 = combine(a2["accs"], PROMPTS)
+    dr = d2(m2, v2, m1, v1)
+    band = max(C_BOUND, dr)
+    res.update(d2_r2_r1=round(dr, 4), band=round(band, 4))
+    if dx <= band:
+        if mde > DELTA_STAR:
+            res.update(verdict="NOT DECIDED", why=[f"inside the band ({dx:.3f} <= {band:.3f}) but too few samples: "
+                                                     f"the least favourable top-1 shift seen with {POWER:.0%} is {mde:.4f} > {DELTA_STAR}"])
+            return res, 2
+        res.update(verdict="PASS", why=[f"D2(X, R1) {dx:.3f} <= band {band:.3f} = max(noise bound {C_BOUND:.3f}, D2(R2, R1) {dr:.3f})"])
+        return res, 0
+    res.update(verdict="FAIL", why=[f"D2(X, R1) {dx:.3f} > band {band:.3f} = max(noise bound {C_BOUND:.3f}, D2(R2, R1) {dr:.3f})"])
+    return res, 1
+
+
+def write_verdict(o, res):
+    json.dump(res, open(f"{o}/verdict.json", "w"), indent=1)
+    L = [f"# C's sampled-distribution test: **{res['verdict']}**", "", f"Rule: rule.txt (sampled.py). Folder: `{o}`.", ""]
+    L += [f"- {w}" for w in res.get("why", [])]
+    for k in ("d2_x_r1", "d2_r2_r1", "band", "d2_r1_scorer", "mde_top1"):
+        if k in res:
+            L.append(f"- {k}: {res[k]}")
+    L += ["", "| arm | samples (valid) | tokens | top-1 rate / expected | drafted share | acceptance | D2 vs scorer | problems |",
+          "|---|---|---|---|---|---|---|---|"]
+    for role, s in res["arms"].items():
+        if "tokens" not in s:
+            L.append(f"| {role} | - | - | - | - | - | - | {'; '.join(s.get('why') or s.get('problems') or [])} |")
+            continue
+        L.append(f"| {role} | {s['samples']} ({s['valid']}) | {s['tokens']} | {s['top1_rate']} / {s['top1_expected']} | "
+                 f"{s['drafted_share']} | {s['acceptance']} | {s.get('d2_vs_scorer')} | {'; '.join(s['problems']) or '-'} |")
+    open(f"{o}/verdict.md", "w").write("\n".join(L) + "\n")
+
+
+# ---- ids: the score file for an arm (served ids + the prompts as the server rendered them)
+RAW = "[strata] raw ids: "
+
+
+def raw_ids(path):
+    out = []
+    for line in open(path, errors="replace"):
+        if line.startswith(RAW):
+            out.append([int(x) for x in json.loads(line[len(RAW):].strip())])
+    return out
+
+
+def render_candidates(messages):
+    """the prompt ids as server.py builds them for thinking off (tie_check.render's two forms, any messages)"""
+    sys.path.insert(0, f"{SC}/work/ds41/gate")
+    import tie_check as TC          # tokenizer(), the paths (read-only use: no engine, no gap)
+    from pathlib import Path
+    from serve import dsml
+    from serve.frontend import ChatTemplate
+    tok = TC.tokenizer()
+    tpl = ChatTemplate(dsml.pick_template(Path(TC.TP) / "chat_template.jinja")[0])
+    kw = {"enable_thinking": False}
+    full = tpl.render(messages, tools=None, **kw)
+    hist = tpl.render(messages, tools=None, add_generation_prompt=False)
+    mine = tpl.render(messages, tools=None, add_generation_prompt=False, **kw)
+    cands = [full] + ([hist + full[len(mine):]] if full.startswith(mine) else [])
+    return [tok.encode(c, parse_special=True) for c in cands]
+
+
+def build_ids(d, render=render_candidates):
+    recs = read_jsonl(f"{d}/sampled.jsonl")
+    raws = raw_ids(f"{d}/server.out")
+    plan = json.load(open(f"{d}/sampled-plan.json"))
+    segs, meta, cache = [], [], {}
+    for i, r in enumerate(recs):
+        why = None
+        gen = raws[i] if i < len(raws) else None
+        if len(raws) != len(recs):
+            why = f"{len(raws)} raw-id lines for {len(recs)} requests"
+        elif gen is None or len(gen) != r.get("completion_tokens"):
+            why = f"{None if gen is None else len(gen)} raw ids, completion_tokens {r.get('completion_tokens')}"
+        q = r["prompt"]
+        if q not in cache:
+            cache[q] = render(plan["prompts"][q]["messages"])
+        pt = r.get("prompt_tokens")
+        fits = [c for c in cache[q] if len(c) == pt]
+        if why is None and (not fits or any(c != fits[0] for c in fits)):
+            why = f"no single rendering of {q} with the server's {pt} prompt tokens ({[len(c) for c in cache[q]]})"
+        ids = (fits[0] if fits else cache[q][0]) + (gen or [])
+        segs.append({"name": r["name"], "ids": ids})
+        meta.append({"name": r["name"], "prompt": q, "prompt_n": len(fits[0]) if fits else len(cache[q][0]),
+                     "gen_n": len(gen or []), "ok": why is None, "why": why})
+    json.dump({"version": "ds41-csampled", "segments": segs}, open(f"{d}/score-ids.json", "w"))
+    json.dump({"segments": meta}, open(f"{d}/score-ids.meta.json", "w"), indent=1)
+    return sum(1 for m in meta if m["ok"]), len(meta)
+
+
+# ---- synthetic data (selftest)
+def synth_row(rng):
+    """a random top-64 row: log-softmax over 64 candidates plus a tail outside them. Shaped like the stored KL rows
+    under our chain (gate-1103-1354/kl/base: p~(top) > 0.99 at 72 %, 2.1 tokens kept on average): mostly nearly
+    certain, else a few candidates (gaps between neighbours ~ Exp, mean tau), now and then a flat head"""
+    u = rng.random()
+    if u < 0.62:
+        gaps = [rng.uniform(4.0, 12.0)] + [rng.expovariate(1.0) * 0.3 for _ in range(62)]
+    else:
+        tau = 0.15 if u > 0.95 else math.exp(rng.uniform(math.log(0.4), math.log(2.5)))
+        gaps = [rng.expovariate(1.0) * tau for _ in range(63)]
+    z = [0.0]
+    for g in gaps:
+        z.append(z[-1] - g)
+    tail = rng.uniform(0.001, 0.05)
+    lse = math.log(sum(math.exp(x) for x in z) * (1.0 + tail))
+    ids = rng.sample(range(1000, 129000), 64)
+    return [(ids[i], z[i] - lse) for i in range(64)]
+
+
+def jitter(top, rng, sd):
+    return [(i, v + rng.gauss(0.0, sd)) for i, v in top]
+
+
+def draw(top, rng, bug=0.0, rho=0.0, sampling=SAMPLING):
+    """x from the sampler's p~ over `top`; with `bug` > 0, at a share rho of positions (the drafted rows, draft = p~'s
+    top-1) the classic speculative-sampling bug scaled by `bug`: after a rejection the replacement is drawn from p~
+    instead of the residual, so P(top-1) = p + bug * p (1 - p)"""
+    ids, p, _ = kept(top, sampling["top_k"], sampling["top_p"], sampling["min_p"], sampling["temperature"])
+    if bug > 0.0 and rng.random() < rho and len(p) > 1:
+        pt = p[0] + bug * p[0] * (1.0 - p[0])
+        if rng.random() < pt:
+            return ids[0]
+        rest = p[1:]
+        u, cum = rng.random() * sum(rest), 0.0
+        for i, w in enumerate(rest):
+            cum += w
+            if u < cum:
+                return ids[i + 1]
+        return ids[-1]
+    u, cum = rng.random(), 0.0
+    for i, w in enumerate(p):
+        cum += w
+        if u < cum:
+            return ids[i]
+    return ids[-1]
+
+
+def fmt_row(pos, tgt, top):
+    top = sorted(top, key=lambda e: (-e[1], e[0]))
+    lt = dict(top).get(tgt, top[-1][1])
+    s = f"{pos}\t{tgt}\t{lt:.6f}\t{top[0][0]}\t{top[0][1]:.6f}\t{1 if top[0][0] == tgt else 0}\t-20.000000\t{lt:.6f}"
+    return s + "".join(f"\t{i}:{v:.6f}" for i, v in top)
+
+
+def synth_arm(d, rng, samples_per_prompt, gen_n, served_sd, bug=0.0, rho=0.0, drafted=False, misalign=False,
+              prompt_n=5, served_temp=1.0):
+    """an arm folder in the real layout: the served engine draws from jittered rows (its rounding; served_temp != 1: a
+    systematic shift, for the band case), the scorer writes the unjittered ones"""
+    smp = dict(SAMPLING, temperature=served_temp)
+    os.makedirs(f"{d}/score", exist_ok=True)
+    recs, segs, meta, lines, segj = [], [], [], [], []
+    k = 0
+    for rep in range(samples_per_prompt):
+        for q in PROMPTS:
+            name = f"{os.path.basename(d)}-{q}-{rep:02d}"
+            rows, gen = [], []
+            pids = [rng.randrange(1000, 129000) for _ in range(prompt_n)]
+            for _ in range(gen_n):
+                top = synth_row(rng)
+                x = draw(jitter(top, rng, served_sd), rng, bug, rho, smp)
+                gen.append(x)
+                rows.append(top)
+            ids = pids + gen
+            first = len(lines)
+            for a in range(len(ids) - 1):
+                if a < prompt_n - 1:
+                    top = synth_row(rng)
+                    lines.append(fmt_row(a, ids[a + 1], [(ids[a + 1], -0.1)] + [e for e in top if e[0] != ids[a + 1]][:63]))
+                else:
+                    t = rows[a - (prompt_n - 1)]
+                    tg = ids[a + 1]
+                    if misalign and a + 2 < len(ids):
+                        t = rows[min(len(rows) - 1, a - (prompt_n - 1) + 1)]
+                    lines.append(fmt_row(a, tg, t))
+            segj.append({"name": name, "first_line": first, "end_line": len(lines), "n": len(lines) - first})
+            off = int(gen_n * 0.75) if drafted else 0
+            recs.append({"name": name, "prompt": q, "seed": 1000 + k, "prompt_tokens": prompt_n, "completion_tokens": gen_n,
+                         "finish": "length", "drafts": {"offered": off, "kept": int(off * 0.82)}})
+            segs.append({"name": name, "ids": ids})
+            meta.append({"name": name, "prompt": q, "prompt_n": prompt_n, "gen_n": gen_n, "ok": True, "why": None})
+            k += 1
+    with open(f"{d}/sampled.jsonl", "w") as f:
+        for r in recs:
+            f.write(json.dumps(r) + "\n")
+    json.dump({"segments": segs}, open(f"{d}/score-ids.json", "w"))
+    json.dump({"segments": meta}, open(f"{d}/score-ids.meta.json", "w"))
+    open(f"{d}/score/score.tsv", "w").write("\n".join(lines) + "\n")
+    json.dump({"segments": segj}, open(f"{d}/score/score.tsv.seg.json", "w"))
+
+
+def calibration(rng, reps, n, bug=0.0, rho=0.7, sd=0.02):
+    """token-level study, no files: how often D2(X, R1) > c (false-fail rate under H0, or detection under the bug)"""
+    hits = 0
+    for _ in range(reps):
+        acc = {}
+        for role, b in (("R1", 0.0), ("X", bug)):
+            a = {q: Acc() for q in PROMPTS}
+            for i in range(n):
+                q = PROMPTS[i % len(PROMPTS)]
+                top = synth_row(rng)
+                x = draw(jitter(top, rng, sd), rng, b, rho)
+                lp_x = dict(top)[x]
+                dd, s, info = token_terms(top, x, lp_x)
+                a[q].add(dd, s, info, info["p_top"])
+            acc[role] = combine(a, PROMPTS)
+        if d2(acc["X"][0], acc["X"][1], acc["R1"][0], acc["R1"][1]) > C_BOUND:
+            hits += 1
+    return hits / reps
+
+
+def drop_arms(o):
+    """the synthetic arms are ~20 MB each: removed once judged (verdict.json / .md and rule.txt stay)"""
+    import shutil
+    if os.environ.get("SAMPLED_KEEP") == "1":
+        return
+    for role in ("R1", "X", "R2"):
+        shutil.rmtree(f"{o}/{role}", ignore_errors=True)
+
+
+def selftest(base):
+    import shutil
+    rng = random.Random(20261107)
+    ok = True
+
+    def chk(what, cond):
+        nonlocal ok
+        print(f"{'ok  ' if cond else 'FAIL'} {what}")
+        ok = ok and cond
+
+    chk(f"chi2(3) 99th percentile {C_BOUND:.4f} (11.3449)", abs(C_BOUND - 11.3449) < 1e-3)
+    chk(f"chi2(4) 99th percentile {chi2_ppf(0.99, 4):.4f} (13.2767)", abs(chi2_ppf(0.99, 4) - 13.2767) < 1e-3)
+    chk(f"noncentral chi2(3, {LAM80:.3f}) passes c with probability {ncx2_sf(C_BOUND, 3, LAM80):.3f} (0.80)",
+        abs(ncx2_sf(C_BOUND, 3, LAM80) - 0.80) < 1e-3)
+    # the chain itself, against a hand case: logprobs 0, -0.5, -1, -4 (min_p 0.05 cuts -4: e^-4 < 0.05)
+    ids, p, _ = kept([(5, 0.0), (6, -0.5), (7, -1.0), (8, -4.0)] + [(100 + i, -30.0 - i) for i in range(60)])
+    chk(f"chain: min_p cuts the 4th token, top_p keeps 3 ({ids})", ids == [5, 6, 7])
+    ids, p, _ = kept([(9, -0.01), (3, -0.01)] + [(100 + i, -6.0 - i) for i in range(62)])
+    chk(f"chain: ties go to the lower id ({ids[:2]})", ids[:2] == [3, 9])
+    ids, p, _ = kept([(1, 0.0)] + [(100 + i, -0.05 * (i + 1)) for i in range(63)])
+    chk(f"chain: top_k 20 then top_p 0.95 over the 20 ({len(ids)} kept)", len(ids) == 19)
+
+    # the planned size (4 prompts x 4 samples x 512 tokens = 8,192 a arm); "shifted" = the classic speculative-sampling
+    # bug (replacement from p~ instead of the residual) on 70 % of the rows; "band" = X with that bug at half strength
+    # but R2 (a reference) much farther from R1 (drawn at temperature 1.6): inside the references' band -> PASS
+    cases = [
+        # name, X's bug, samples/prompt, tokens, R2 (None: absent, else its served temperature), misalign, verdict
+        ("identical", 0.0, 4, 512, 1.0, False, "PASS"),
+        ("shifted", 1.0, 4, 512, 1.0, False, "FAIL"),
+        ("half-shift", 0.5, 4, 512, 1.0, False, "FAIL"),
+        ("band", 0.5, 4, 512, 1.6, False, "PASS"),
+        ("too-few", 0.0, 3, 80, 1.0, False, "NOT DECIDED"),
+        ("underpowered", 0.0, 3, 350, 1.0, False, "NOT DECIDED"),     # 4,200 tokens: above N_MIN, MDE above 0.02
+        ("shifted-no-R2", 1.0, 4, 512, None, False, "NOT DECIDED"),
+        ("identical-no-R2", 0.0, 4, 512, None, False, "PASS"),
+        ("misaligned-scorer", 0.0, 4, 512, 1.0, True, "NOT DECIDED"),
+    ]
+    for name, bug, spp, gn, r2, mis, want in cases:
+        o = f"{base}/{name}"
+        shutil.rmtree(o, ignore_errors=True)
+        synth_arm(f"{o}/R1", rng, spp, gn, 0.02, misalign=mis)
+        synth_arm(f"{o}/X", rng, spp, gn, 0.02, bug=bug, rho=0.7, drafted=True, misalign=mis)
+        if r2 is not None:
+            synth_arm(f"{o}/R2", rng, spp, gn, 0.05, misalign=mis, served_temp=r2)
+        open(f"{o}/rule.txt", "w").write(rule_text() + "\n")
+        res, rc = judge(o)
+        write_verdict(o, res)
+        chk(f"case {name}: {res['verdict']} (want {want}; D2 {res.get('d2_x_r1')}, band {res.get('band')}, "
+            f"MDE {res.get('mde_top1')}; {'; '.join(res.get('why', []))[:150]})", res["verdict"] == want)
+        if name == "shifted-no-R2":
+            res1, rc1 = judge(o, stage1=True)
+            chk(f"case {name}, stage 1: {res1['verdict']} exit {rc1} (want R2 NEEDED, exit 3)", rc1 == 3)
+        drop_arms(o)
+    # a reference arm that drafted is refused
+    o = f"{base}/r1-drafted"
+    shutil.rmtree(o, ignore_errors=True)
+    synth_arm(f"{o}/R1", rng, 4, 512, 0.02, drafted=True)
+    synth_arm(f"{o}/X", rng, 4, 512, 0.02, drafted=True)
+    res, rc = judge(o)
+    write_verdict(o, res)
+    chk(f"case r1-drafted: {res['verdict']} (want NOT DECIDED: {'; '.join(res.get('why', []))[:120]})",
+        res["verdict"] == "NOT DECIDED")
+    drop_arms(o)
+    # an X that did not draft is refused
+    o = f"{base}/x-not-drafted"
+    shutil.rmtree(o, ignore_errors=True)
+    synth_arm(f"{o}/R1", rng, 4, 512, 0.02)
+    synth_arm(f"{o}/X", rng, 4, 512, 0.02)
+    res, rc = judge(o)
+    write_verdict(o, res)
+    chk(f"case x-not-drafted: {res['verdict']} (want NOT DECIDED)", res["verdict"] == "NOT DECIDED")
+    drop_arms(o)
+    # the raw-id parser and ids' consistency checks on a synthetic server.out
+    o = f"{base}/ids"
+    shutil.rmtree(o, ignore_errors=True)
+    os.makedirs(o)
+    open(f"{o}/server.out", "w").write("x\n[strata] raw ids: [1, 2, 3]\ny\n[strata] raw ids: [4, 5]\n")
+    with open(f"{o}/sampled.jsonl", "w") as f:
+        f.write(json.dumps({"name": "a", "prompt": "math", "prompt_tokens": 2, "completion_tokens": 3, "finish": "length"}) + "\n")
+        f.write(json.dumps({"name": "b", "prompt": "math", "prompt_tokens": 2, "completion_tokens": 3, "finish": "length"}) + "\n")
+    json.dump({"prompts": {"math": {"messages": []}}}, open(f"{o}/sampled-plan.json", "w"))
+    good, tot = build_ids(o, render=lambda m: [[7, 8], [7, 8, 9]])
+    mt = json.load(open(f"{o}/score-ids.meta.json"))["segments"]
+    chk(f"ids: raw-id parser + counts ({good} of {tot} ok; b: {mt[1]['why']})", good == 1 and tot == 2 and not mt[1]["ok"])
+    # calibration (token level, no files): the false-fail rate under H0 (2,000 tokens an arm, 200 tests: alpha 0.01, so
+    # 0-5 expected), and detection of the classic bug at full strength (4,000 tokens) and at half strength (the planned
+    # 8,192)
+    ff = calibration(rng, 200, 2000)
+    chk(f"calibration: false-fail rate under H0 {ff:.3f} over 200 synthetic tests (alpha {ALPHA}; accept <= 0.04)", ff <= 0.04)
+    dt = calibration(rng, 30, 4000, bug=1.0)
+    chk(f"calibration: the classic bug detected in {dt:.2f} of 30 tests at 4,000 tokens (accept >= 0.90)", dt >= 0.90)
+    dh = calibration(rng, 20, 8192, bug=0.5)
+    chk(f"calibration: the classic bug at half strength detected in {dh:.2f} of 20 tests at 8,192 tokens (accept >= 0.85)",
+        dh >= 0.85)
+    print("SELFTEST " + ("OK" if ok else "FAILED"))
+    return 0 if ok else 1
+
+
+def main():
+    a = sys.argv[1:]
+    if not a or a[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    if a[0] == "rule":
+        print(rule_text())
+        return 0
+    if a[0] == "selftest":
+        base = a[1] if len(a) > 1 else f"{SCRATCH}/selftest"
+        if not os.path.realpath(base).startswith(os.path.realpath(SCRATCH)):
+            print(f"selftest writes only under {SCRATCH}")
+            return 2
+        os.makedirs(base, exist_ok=True)
+        return selftest(base)
+    if a[0] == "ids":
+        good, tot = build_ids(a[1])
+        print(f"{good} of {tot} samples valid -> {a[1]}/score-ids.json")
+        return 0 if good == tot else 1
+    if a[0] == "judge":
+        o = a[1]
+        res, rc = judge(o, stage1="--stage1" in a)
+        write_verdict(o, res)
+        print(f"{res['verdict']}: {'; '.join(res.get('why', []))}")
+        return rc
+    print(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

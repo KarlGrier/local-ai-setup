@@ -1,0 +1,20 @@
+work/r10/tagcheck.sh "A.2 fresh ABBA"
+work/r10/basecheck.sh
+work/r10/ldrscreen.sh A20-a configs/A2-0.json
+work/r10/ldrscreen.sh A21-a configs/A2-1.json
+work/r10/ldrscreen.sh A22-a configs/A2-2.json
+work/r10/ldrscreen.sh A22-b configs/A2-2.json
+work/r10/ldrscreen.sh A21-b configs/A2-1.json
+work/r10/ldrscreen.sh A20-b configs/A2-0.json
+.venv/bin/python work/r10/ldr_table.py A2-0=A20-a,A20-b A2-1=A21-a,A21-b | tee results/r10/ab-A2-ldr.md
+.venv/bin/python work/r10/ldr_table.py A2-0=A20-a,A20-b A2-2=A22-a,A22-b | tee -a results/r10/ab-A2-ldr.md
+work/r10/decscreen.sh A20d-a configs/A2-0.json
+work/r10/decscreen.sh A21d-a configs/A2-1.json
+work/r10/decscreen.sh A22d-a configs/A2-2.json
+work/r10/decscreen.sh A22d-b configs/A2-2.json
+work/r10/decscreen.sh A21d-b configs/A2-1.json
+work/r10/decscreen.sh A20d-b configs/A2-0.json
+.venv/bin/python work/r10/ab_table.py A2-0=A20d-a,A20d-b A2-1=A21d-a,A21d-b | tee results/r10/ab-A2-decode.md
+.venv/bin/python work/r10/ab_table.py A2-0=A20d-a,A20d-b A2-2=A22d-a,A22d-b | tee -a results/r10/ab-A2-decode.md
+work/r10/tagcheck.sh "A.2 fresh done"
+work/r10/basecheck.sh

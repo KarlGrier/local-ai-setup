@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""guard.py — round 9 (copy of round 7, copy of round 6) memory guard around ONE experimental run (engine CLI, server, test client + server...).
+
+    guard.py LABEL -- CMD ARGS...          (or: guard.py LABEL --watch-pattern REGEX  to guard a process started elsewhere)
+
+Runs CMD in its own process group and samples every 0.2 s:
+  * MemAvailable (/proc/meminfo) — floor 20 GiB (GUARD_MEM_GIB)
+  * free VRAM on the RTX 5080 (nvidia-smi stream, by UUID) — floor 300 MiB (GUARD_VRAM_MIB)
+  * the process tree's RSS, swap used
+If a floor is crossed for 3 consecutive samples (0.6 s) the whole process group gets SIGTERM (then SIGKILL after 10 s)
+and the run is marked GUARD-STOP.  Load-time peaks are included (sampling starts before the child is started).
+Writes logs/r13/guard/LABEL.csv (every sample) and appends one summary line to logs/r13/guard/summary.txt:
+  label, exit code, duration, min MemAvailable (GiB) + when, min 5080 free (MiB) + when, max tree RSS, max swap used.
+"""
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+WS = Path("/home/USER/ai-speed-testing/strata-compare")
+GPU = os.environ.get("STRATA_MON_GPU", "GPU-UUID-RTX5080")
+MEM_FLOOR = float(os.environ.get("GUARD_MEM_GIB", "20")) * 1024 ** 3
+VRAM_FLOOR = float(os.environ.get("GUARD_VRAM_MIB", "300"))
+OUT = WS / "logs/r13/guard"
+OUT.mkdir(parents=True, exist_ok=True)
+
+
+def meminfo():
+    d = {}
+    for line in open("/proc/meminfo"):
+        k, v = line.split(":", 1)
+        d[k] = int(v.split()[0]) * 1024
+    return d
+
+
+def tree_rss(root):
+    """RSS of `root` and all descendants (bytes)."""
+    kids = {}
+    for p in os.listdir("/proc"):
+        if not p.isdigit():
+            continue
+        try:
+            with open(f"/proc/{p}/stat") as f:
+                ppid = int(f.read().rsplit(")", 1)[1].split()[1])
+            kids.setdefault(ppid, []).append(int(p))
+        except OSError:
+            pass
+    total, stack = 0, [root]
+    while stack:
+        q = stack.pop()
+        try:
+            for line in open(f"/proc/{q}/status"):
+                if line.startswith("VmRSS"):
+                    total += int(line.split()[1]) * 1024
+                    break
+        except OSError:
+            pass
+        stack.extend(kids.get(q, []))
+    return total
+
+
+GPU2 = os.environ.get("GUARD_GPU2", "GPU-UUID-RTX4060TI")   # the 4060 Ti (desktop): logged
+
+
+class Vram:
+    def __init__(self, uuid=GPU):
+        self.free = None
+        self.p = subprocess.Popen(["nvidia-smi", "-i", uuid, "--query-gpu=memory.free", "--format=csv,noheader,nounits",
+                                   "-lms", "200"], stdout=subprocess.PIPE, text=True)
+        threading.Thread(target=self.read, daemon=True).start()
+
+    def read(self):
+        for line in self.p.stdout:
+            try:
+                self.free = float(line.strip())
+            except ValueError:
+                pass
+
+    def stop(self):
+        self.p.terminate()
+
+
+def main():
+    label = sys.argv[1]
+    argv = sys.argv[2:]
+    watch = None
+    if argv and argv[0] == "--watch-pattern":
+        watch = argv[1]
+    else:
+        if argv and argv[0] == "--":
+            argv = argv[1:]
+    vr = Vram()
+    vr2 = Vram(GPU2)
+    mn_v2 = 1e18
+    time.sleep(0.5)
+    csv = open(OUT / f"{label}.csv", "w")
+    csv.write("t,memavail_gib,vram_free_mib,tree_rss_gib,swap_used_gib\n")
+    t0 = time.time()
+    if watch is None:
+        child = subprocess.Popen(argv, start_new_session=True)
+        pid = child.pid
+    else:
+        out = [int(x) for x in subprocess.run(["pgrep", "-f", watch], capture_output=True, text=True).stdout.split()
+               if int(x) != os.getpid()]
+        pid = out[0] if out else None
+        child = None
+    mn_mem, mn_mem_t, mn_v, mn_v_t, mx_rss, mx_swap = 1e18, 0, 1e18, 0, 0, 0
+    bad, stopped = 0, None
+    rc = None
+    while True:
+        if child is not None:
+            rc = child.poll()
+            if rc is not None:
+                break
+        elif pid is None or not os.path.exists(f"/proc/{pid}"):
+            break
+        m = meminfo()
+        avail = m["MemAvailable"]
+        swap = m["SwapTotal"] - m["SwapFree"]
+        rss = tree_rss(pid) if pid else 0
+        v = vr.free if vr.free is not None else 1e9
+        t = time.time() - t0
+        csv.write(f"{t:.1f},{avail/1024**3:.2f},{v:.0f},{rss/1024**3:.2f},{swap/1024**3:.2f}\n")
+        if avail < mn_mem:
+            mn_mem, mn_mem_t = avail, t
+        if v < mn_v:
+            mn_v, mn_v_t = v, t
+        mx_rss, mx_swap = max(mx_rss, rss), max(mx_swap, swap)
+        if vr2.free is not None:
+            mn_v2 = min(mn_v2, vr2.free)
+        if avail < MEM_FLOOR or v < VRAM_FLOOR:
+            bad += 1
+            if bad >= 3 and stopped is None and pid is not None:
+                stopped = f"GUARD-STOP at {t:.1f}s (MemAvailable {avail/1024**3:.1f} GiB, 5080 free {v:.0f} MiB)"
+                print(f"guard.py {label}: {stopped}", file=sys.stderr, flush=True)
+                if child is not None:
+                    os.killpg(pid, signal.SIGTERM)
+                    try:
+                        child.wait(10)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(pid, signal.SIGKILL)
+                else:   # a watched server: stop it (the server stops its engine)
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except OSError:
+                        pass
+        else:
+            bad = 0
+        time.sleep(0.2)
+    vr.stop()
+    vr2.stop()
+    csv.close()
+    dur = time.time() - t0
+    line = (f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {label} exit={rc} {dur:.0f}s min_MemAvailable={mn_mem/1024**3:.1f}GiB"
+            f"@{mn_mem_t:.0f}s min_5080_free={mn_v:.0f}MiB@{mn_v_t:.0f}s max_tree_RSS={mx_rss/1024**3:.1f}GiB "
+            f"max_swap_used={mx_swap/1024**3:.2f}GiB min_4060Ti_free={mn_v2:.0f}MiB {stopped or 'ok'}")
+    with open(OUT / "summary.txt", "a") as f:
+        f.write(line + "\n")
+    print(line, flush=True)
+    sys.exit(rc if rc is not None else 0)
+
+
+if __name__ == "__main__":
+    main()

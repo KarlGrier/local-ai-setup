@@ -1,0 +1,19 @@
+decode items, gap b - decision (2026-11-05 07:03:59; rules: work/r23/decode_rules.py, written before the gaps)
+  L vs B: 2 / 3 complete clean passes of 3
+  O vs B decode: -0.33 % (155.6 vs 156.1 tok/s; noise 3.8 %) -> no loss
+  O vs B prompt: +0.23 % (2,098.4 vs 2,093.7 tok/s; noise 0.9 %) -> no loss
+  O vs B per workload: none of the 9 slower beyond its noise
+  LO vs B: 2 / 3 complete clean passes of 3
+  Os vs Bs: 3 / 2 complete clean passes of 3
+  bp90 conv: B 2 / LO 1 passes of 3 - not decided
+  bp90 struct: B 2 / LO 1 passes of 3 - not decided
+  bp90 prose: B 2 / LO 1 passes of 3 - not decided
+  bp90 pp16k: B 2 / LO 2 passes of 3 - not decided
+  bp90 pp64k: B 2 / LO 2 passes of 3 - not decided
+  gate lines_LO3: FAIL start lines (want late,one): late absent, one absent; MISSING late, one (the switch's path did not run: UNEXERCISED)
+  gate lines_L3: FAIL start lines (want late): late absent, one absent; MISSING late (the switch's path did not run: UNEXERCISED)
+  settled PCIe share per arm pass (INFO): B1 PCIe share: the CPU pool takes 48 us per missed expert (42.9; B2 PCIe share: the CPU pool takes 46 us per missed expert (44.3; B3 PCIe share: the CPU pool takes 45 us per missed expert (45.9; Bs1 PCIe share: the CPU pool takes 37 us per missed expert (55.0; Bs2 PCIe share: the CPU pool takes 37 us per missed expert (54.7; Bs3 no PCIe share line [23b 11-05 06:50]; L1 PCIe share: the CPU pool takes 38 us per missed expert (54.0; L2 PCIe share: the CPU pool takes 39 us per missed expert (52.7; L3 no PCIe share line [23b 11-05 06:50]; LO1 PCIe share: the CPU pool takes 42 us per missed expert (48.9; LO2 PCIe share: the CPU pool takes 37 us per missed expert (54.9; LO3 no PCIe share line [23b 11-05 06:50]; O1 PCIe share: the CPU pool takes 45 us per missed expert (45.5; O2 PCIe share: the CPU pool takes 48 us per missed expert (43.0; O3 PCIe share: the CPU pool takes 46 us per missed expert (44.6; Os1 PCIe share: the CPU pool takes 37 us per missed expert (55.3; Os2 PCIe share: the CPU pool takes 37 us per missed expert (55.7; Os3 PCIe share: the CPU pool takes 38 us per missed expert (53.4
+=> item L (STRATA_REMOTE_LATE_LAUNCH=1): NOT DECIDED (L screen NOT DECIDED; LO screen NOT DECIDED; bp90 NOT DECIDED)
+=> item O (STRATA_POOL_ONE_BATCH=1): NOT DECIDED (Os screen NOT DECIDED; LO screen NOT DECIDED; bp90 NOT DECIDED); one card (Os vs Bs): no gain beyond max(noise, 1 %)
+=> item L+O (both): NOT DECIDED (LO screen NOT DECIDED; bp90 NOT DECIDED)
+Nothing is switched or served: a PASS / GAIN item is a candidate for after item 7 (Karl decides; GATE-PLAN section 5: mechanism + no loss may be enough for one item, Karl's call).

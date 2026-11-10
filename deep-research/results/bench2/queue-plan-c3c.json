@@ -1,0 +1,26 @@
+[
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o01",
+   "o02",
+   "o03"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "pc3c",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims",
+   "fix:steps"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "model_profile": "flash-next-c3c"
+ }
+]

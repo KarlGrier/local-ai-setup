@@ -1,0 +1,18 @@
+work/r9/tagcheck.sh "phase A track 5: hyper-connection read v5 / v3 / v3-up-to-4"
+TF_ENV=STRATA_GR_V3=1 work/r9/tf.sh R10v3tf3500-helper configs/R10b-tf3500-helper.json engine-r10m/strata math corpus long16k long24k long28k long40k long64k
+.venv/bin/python work/r9/tf_compare9.py R10btf3500-helper=R10v3tf3500-helper | tee results/r9/tf-v3-vs-v5-p32.txt
+work/r9/decscreen.sh G5v5-a configs/R10.json
+work/r9/decscreen.sh G5v3-a configs/R10-v3.json
+work/r9/decscreen.sh G5mx-a configs/A5-upto.json
+work/r9/decscreen.sh G5mx-b configs/A5-upto.json
+work/r9/decscreen.sh G5v3-b configs/R10-v3.json
+work/r9/decscreen.sh G5v5-b configs/R10.json
+work/r9/decscreen.sh G5v3-c configs/R10-v3.json
+work/r9/decscreen.sh G5mx-c configs/A5-upto.json
+work/r9/decscreen.sh G5v5-c configs/R10.json
+work/r9/decscreen.sh G5v5-d configs/R10.json
+work/r9/decscreen.sh G5mx-d configs/A5-upto.json
+work/r9/decscreen.sh G5v3-d configs/R10-v3.json
+.venv/bin/python work/r9/ab_table.py v5=G5v5-a,G5v5-b,G5v5-c,G5v5-d v3=G5v3-a,G5v3-b,G5v3-c,G5v3-d
+.venv/bin/python work/r9/ab_table.py v5=G5v5-a,G5v5-b,G5v5-c,G5v5-d mix4=G5mx-a,G5mx-b,G5mx-c,G5mx-d
+work/r9/tagcheck.sh "track 5 done"

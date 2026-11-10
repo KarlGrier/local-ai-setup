@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""skipcheck.py skip | final MODS_JSON - 10-24 DeepSeek-V4.1 tuning round, teacher-forced pass/fail checks.
+  skip   (the user, item 5: "test STRATA_DS4_PROMPT_SKIP=1 (the full-dependency mode only; never mode 2 or a shortened
+         DS4_YOCO_KEEP) with the same rounding-reference method as the Flash-Next kernels"). The skip only runs with every
+         trunk layer on one GPU, so all four runs are on the 5080 alone (--tp 1): base = skip off, chunk 1024 (as the
+         engine's own test_prompt_skip.py), --expert-profile none (placement by index, no profile drift); our rounding
+         references = R1 the same with a different chunk (DS4_CHUNK 2048) and R2 the same with ~230 fewer VRAM experts
+         (--reserve-mib 2600: those experts computed by the CPU lane, this engine's "CPU share"); candidate = skip on (mode 1).
+  final  the confirmed best config (MODS_JSON, as tune.py builds it) against the reference config (two GPUs), with the
+         same two kinds of rounding reference on the reference config (--prefill-chunk 4096; --reserve-mib 2600).
+Segments: 8 x (12,000 prompt tokens read as one prompt + 256 positions scored, teacher-forced), cut from the long texts
+in prompts/speed.json (its 64k and 120k prompts, two offsets each), DeepSeek tokenizer.
+Rule (yardstick-kernel-rule, per scored position here): candidate KL mean <= 1.10 x the larger reference's mean; KL p90
+<= the worse reference's p90; positions with KL > 1 <= the worse reference's count + 1; top-1 agreements >= the lower
+reference's - 1. Exit 0 = pass, 1 = fail, 2 = could not run, 3 = kernel error.
+"""
+import json
+import math
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, "/home/USER/ai-speed-testing/strata-compare/work/ds41/tune")
+import tune  # noqa: E402
+
+SC = tune.SC
+V24 = f"{SC}/strata-v024"
+OUT = f"{tune.R}/teacher"
+PREFIX, SCORED, NSEG = 12000, 256, 8
+
+
+def ids_file():
+    p = f"{OUT}/long8.ids.json"
+    if os.path.exists(p):
+        return p
+    sys.path.insert(0, f"{V24}/tools")
+    import strata_tokenizer as ST  # noqa: E402
+    tp = f"{SC}/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw/tokenizer"
+    vocab = json.load(open(f"{tp}/vocab.json", encoding="utf-8"))
+    toks = [None] * len(vocab)
+    for t, i in vocab.items():
+        toks[i] = t
+    tok = ST.Tokenizer(toks, open(f"{tp}/merges.txt", encoding="utf-8").read().split("\n"), json.load(open(f"{tp}/token_type.json")))
+    sp = json.load(open(f"{SC}/prompts/speed.json"))
+    texts = [p_["messages"][0]["content"] for p_ in sp if p_["size"] in ("64k", "120k")]
+    segs = []
+    for ti, text in enumerate(texts):
+        ids = tok.encode(text)
+        n = PREFIX + SCORED
+        for k, off in enumerate((0, max(0, len(ids) - n))):
+            if len(segs) < NSEG and len(ids) >= n:
+                segs.append({"name": f"t{ti}o{k}", "ids": ids[off:off + n]})
+    os.makedirs(OUT, exist_ok=True)
+    json.dump({"version": "ds41-long8", "seg_tokens": PREFIX + SCORED, "segments": segs}, open(p, "w"))
+    return p
+
+
+def score(name, mods, ids, env):
+    d = f"{OUT}/{name}"
+    if os.path.exists(f"{d}/score.tsv") and os.path.exists(f"{d}/run.txt"):
+        return d
+    cfg = tune.mkcfg(f"score-{name}", mods)
+    rc = subprocess.run(["bash", f"{tune.T}/scorearm.sh", d, cfg, ids] + [f"{k}={v}" for k, v in env.items()]).returncode
+    if rc == 3:
+        print(f"KERNEL ERROR in the scoring run {name}"); sys.exit(3)
+    if rc != 0 or not os.path.exists(f"{d}/score.tsv"):
+        print(f"{name}: the scoring run failed (rc {rc}): {open(d + '/GUARD').read().strip() if os.path.exists(d + '/GUARD') else ''}")
+        sys.exit(2)
+    return d
+
+
+def compare(ref_dir, run_dir):
+    sys.path.insert(0, f"{V24}/tools")
+    import quant_quality as qq  # noqa: E402
+    a, b = qq.read_run(f"{ref_dir}/score.tsv"), qq.read_run(f"{run_dir}/score.tsv")
+    kls, agree, n = [], 0, 0
+    for name, rr in a.items():
+        ra = b.get(name, {})
+        for q in sorted(set(rr) & set(ra)):
+            tr, _, topr, kr = rr[q]
+            ta, _, topa, ka = ra[q]
+            if tr != ta:
+                raise SystemExit(f"{name} pos {q}: target differs (not the same text)")
+            n += 1; agree += topr == topa
+            da = dict(ka); floor = min(x for _, x in ka)
+            pr = [math.exp(x) for _, x in kr]; pa = [math.exp(da.get(i, floor)) for i, _ in kr]
+            sr, sa = sum(pr), sum(pa)
+            kls.append(sum((x / sr) * math.log((x / sr) / (y / sa)) for x, y in zip(pr, pa) if x > 0))
+    kls.sort()
+    return {"positions": n, "kl_mean": sum(kls) / max(n, 1), "kl_p90": kls[int(0.9 * (n - 1))] if n else float("nan"),
+            "kl_gt1": sum(1 for x in kls if x > 1), "top1_agree": agree}
+
+
+def decode(mods=None, label="cli-decode", n=256):
+    """the command-line decode of the W1 prompt (n tokens, DS4_TOKLOG=1): the only place the engine prints Engram reads
+    per token and the CPU lane's share of a token (ds4_main.cpp:1427-1452); mods = a config as tune.py builds it (default:
+    the reference, two GPUs). 20:40 fix: the first run (10-24 15:20) fed W1's raw text, the engine's greedy decode ended
+    at once (1 token); now the prompt goes through the GGUF's chat template (thinking on, as the server renders it) and
+    DS4_NO_EOS=1 decodes all n tokens"""
+    sys.path.insert(0, f"{V24}/tools")
+    sys.path.insert(0, V24)
+    import strata_tokenizer as ST  # noqa: E402
+    from serve.frontend import ChatTemplate  # noqa: E402
+    sys.path.insert(0, "/home/USER/ai-speed-testing/basalt-ab/scripts")
+    import abrun  # noqa: E402
+    tp = f"{SC}/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw/tokenizer"
+    vocab = json.load(open(f"{tp}/vocab.json", encoding="utf-8"))
+    toks = [None] * len(vocab)
+    for t, i in vocab.items():
+        toks[i] = t
+    tok = ST.Tokenizer(toks, open(f"{tp}/merges.txt", encoding="utf-8").read().split("\n"), json.load(open(f"{tp}/token_type.json")))
+    w1 = next(w for w in json.load(open(abrun.WL))["normal"] if w["id"].startswith("W1"))
+    text = ChatTemplate(f"{V24}/serve/fixtures/deepseek41/chat_template.jinja").render(w1["messages"])
+    ids = tok.encode(text, parse_special=True)
+    os.makedirs(OUT, exist_ok=True)
+    open(f"{OUT}/w1t.ids", "w").write(",".join(map(str, ids)))
+    d = f"{OUT}/{label}"
+    m = dict(mods or {})
+    prof = m.pop("profile", tune.SHIPPED)
+    cfg = tune.mkcfg(label, dict(m, **{"--expert-profile": tune.PROF}))
+    subprocess.run(["cp", prof, tune.PROF])
+    rc = subprocess.run(["bash", f"{tune.T}/scorearm.sh", d, cfg, f"decode:{OUT}/w1t.ids:{n}", "DS4_TOKLOG=1",
+                         "DS4_NO_EOS=1"]).returncode
+    if rc == 3:
+        print("KERNEL ERROR"); sys.exit(3)
+    txt = open(f"{d}/engine.out", errors="replace").read() if os.path.exists(f"{d}/engine.out") else ""
+    import re
+    lines = [l for l in txt.splitlines() if re.search(r"engram|tok/s|ms/tok|per token", l, re.I)]
+    print(f"rc {rc}; {len(ids)} prompt tokens; " + (open(f"{d}/run.txt").read().strip() if os.path.exists(f"{d}/run.txt") else ""))
+    print("\n".join(lines[-12:]) or txt[-1500:])
+    return 0 if rc == 0 else 2
+
+
+def main():
+    mode = sys.argv[1]
+    if mode == "decode":
+        return decode(json.loads(sys.argv[2]) if len(sys.argv) > 2 else None, *(sys.argv[3:4] or ["cli-decode"]),
+                      n=int(sys.argv[4]) if len(sys.argv) > 4 else 256)
+    ids = ids_file()
+    if mode == "skip":
+        base = {"one5080": True, "--expert-profile": "none", "DS4_LAYER_CACHE_MB": 4096}   # layer cache capped (MemAvailable)
+        env0 = {"DS4_SCORE_PREFIX": str(PREFIX), "DS4_CHUNK": "1024", "STRATA_DS4_PROMPT_SKIP": "0"}
+        runs = {"base": (base, env0), "R1-chunk2048": (base, dict(env0, DS4_CHUNK="2048")),
+                "R2-cpu-share": (dict(base, **{"--reserve-mib": 2600}), env0),
+                "cand-skip1": (base, dict(env0, STRATA_DS4_PROMPT_SKIP="1"))}
+        prefix = "skip"
+    else:
+        fm = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+        if not fm:
+            print("final: the confirmed config is the reference - nothing to check"); return 0
+        env0 = {"DS4_SCORE_PREFIX": str(PREFIX)}
+        prof = {"--expert-profile": fm.get("profile", tune.SHIPPED)}
+        runs = {"base": ({}, env0), "R1-chunk4096": ({"--prefill-chunk": 4096}, env0),
+                "R2-cpu-share": ({"--reserve-mib": 2600}, env0), "cand-final": (dict(fm, **prof), env0)}
+        prefix = "final"
+    dirs = {k: score(f"{prefix}-{k}", m, ids, e) for k, (m, e) in runs.items()}
+    names = list(dirs)
+    res = {k: compare(dirs["base"], dirs[k]) for k in names[1:]}
+    for k, r in res.items():
+        print(f"{prefix} {k} vs base: {r['positions']} positions, KL mean {r['kl_mean']:.5f}, p90 {r['kl_p90']:.5f}, "
+              f"KL>1 {r['kl_gt1']}, top-1 agree {r['top1_agree']}")
+    r1, r2, c = res[names[1]], res[names[2]], res[names[3]]
+    checks = {"KL mean <= 1.10 x the larger reference": c["kl_mean"] <= 1.10 * max(r1["kl_mean"], r2["kl_mean"]),
+              "KL p90 <= the worse reference's": c["kl_p90"] <= max(r1["kl_p90"], r2["kl_p90"]),
+              "KL>1 count <= the worse reference's + 1": c["kl_gt1"] <= max(r1["kl_gt1"], r2["kl_gt1"]) + 1,
+              "top-1 agreements >= the lower reference's - 1": c["top1_agree"] >= min(r1["top1_agree"], r2["top1_agree"]) - 1}
+    for k, v in checks.items():
+        print(f"  {'ok  ' if v else 'FAIL'} {k}")
+    ok = all(checks.values())
+    times = {k: open(f"{d}/run.txt").read().strip() for k, d in dirs.items()}
+    print(f"{prefix}: {'PASS (rounding-level)' if ok else 'FAIL'}; run times: {json.dumps(times)}")
+    json.dump({"res": res, "checks": checks, "pass": ok, "times": times}, open(f"{OUT}/{prefix}-result.json", "w"), indent=1)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

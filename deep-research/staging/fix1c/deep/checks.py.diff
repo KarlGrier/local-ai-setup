@@ -1,0 +1,144 @@
+--- /home/USER/ai/deep-research/staging/fix1c/deep/checks.py.orig	2026-10-29 14:27:24.889384856 -0500
++++ /home/USER/ai/deep-research/staging/fix1c/deep/checks.py	2026-10-30 08:47:48.750366245 -0500
+@@ -1368,6 +1368,56 @@
+     return {**e1, "dirs": keep, "shared": shared, "disputed": disputed, "answers": [e1["dirs"], e2["dirs"]]}
+ 
+ 
++# 10-30 (Fix 1c; the Fix 1b replays lost 33 of 56 right marks): in b-f1b-jan1024 one of the two engine_dirs answers took
++# Strata's core runtime (src/core, src/prefill, ...) as the DeepSeek engine's, so those folders were disputed - 18 Qwen-only
++# names (--pcie-frac, STRATA_HOST_CORE, --adapt-every, ...) went "unsure" and 7 (STRATA_IO_PREFETCH, ...) "this version".
++# For a project of deep/engines/ at the user's pinned version (enginescope's per-version map, checked against the build
++# files; Karl 10-29: src/core + src/platform are the Qwen engine's at v0.2.4) the map gives the engine's folders and the
++# other engines' instead; a project or version the map does not cover keeps the two model answers.
++def _map_dirs(repo: Any, task: str, pins: dict | None, e: dict) -> dict:
++    """e (the settled model answers) with the engine map's folders, when the map covers this clone's project at the
++    user's pinned version and the task names one of its engines; else e unchanged."""
++    try:
++        from . import enginescope as es
++        tab = es.table()
++    except Exception:  # noqa: BLE001 - no map installed
++        return e
++    rn = str(getattr(repo, "name", "") or "").lower()
++    key = next((k for k, p in tab.items()
++                if rn in [x.lower() for x in [k, *p.get("repo_names", []), *p.get("repos", [])]]), None)
++    if key is None:
++        return e
++    ver = es.project_version(key, {str(k).lower(): v for k, v in (pins or {}).items()}) or getattr(repo, "ref", None)
++    ve = es.version_entry(key, ver)
++    task_eng = es.task_scopes(task or "").get(key)
++    if ve is None or not task_eng:
++        return e
++    p = tab[key]
++    moved = {f for fs in ve[1].values() if isinstance(fs, list) for f in fs}
++    owner: dict[str, str] = {}
++    for eng, ent in p["engines"].items():
++        for f in ent.get("folders", []):
++            if f not in moved:
++                owner[f] = eng
++    for f in p.get("shared", []):
++        if f not in moved:
++            owner[f] = "shared"
++    for eng, fs in ve[1].items():
++        if isinstance(fs, list) and (eng in p["engines"] or eng == "shared"):
++            for f in fs:
++                owner[f] = eng
++    strip = lambda f: f.rstrip("/")                              # noqa: E731 - _in_dirs takes folders without the slash
++    # the engine's code only: its lab / reference scripts and data files (tools/dsv41/ref.py takes --model) are not what
++    # the engine binary parses, so they stay "elsewhere" and the launcher trace still runs
++    mine = [strip(f) for f, o in owner.items() if o == task_eng and not f.startswith(("tools/", "data/"))]
++    other = {strip(f): p["engines"][o].get("label", o) for f, o in owner.items() if o not in (task_eng, "shared")}
++    # the model's launcher / server folders stay shared unless the map gives them to an engine (b-f1-fixes: src/program,
++    # the Qwen engine, came back as "shared", so its flags read as launcher-only)
++    shared = [d for d in e.get("shared", []) if es.path_engine(key, d + "/x", ver) in (None, "shared")]
++    return {**e, "dirs": mine, "shared": shared, "disputed": [], "other_engines": other,
++            "map": f"{p.get('name', key)} {ver} (the project's engine map: {ve[0]} entry)", "model_dirs": e.get("dirs")}
++
++
+ def _code_parts(repo: Any, q: str, e: dict, src: "_Src | None",
+                 sentences: list[str] | None = None) -> tuple[list[str], bool]:
+     """The code evidence of one name, searched as q, in one clone: its hits in the engine's own folders, in the shared
+@@ -1418,6 +1468,17 @@
+     if disputed_hits:
+         parts.append(f"Folders that may also be the engine's ({', '.join(dd)}): {len(disputed_hits)} hit(s): "
+                      + "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}" for h in disputed_hits[:3]))
++    oe = e.get("other_engines") or {}
++    if oe:
++        # 10-30 (Fix 1c): hits in another engine's folders at the user's version, said as such (the engine map)
++        by_eng: dict[str, list] = {}
++        for h in outside:
++            d = max((f for f in oe if _in_dirs(h["file"], [f])), key=len, default=None)
++            if d is not None:
++                by_eng.setdefault(oe[d], []).append(h)
++        for lab, hs in by_eng.items():
++            parts.append(f"In the {lab}'s folders at the user's version ({e.get('map')}) - not this engine's code: "
++                         f"{len(hs)} hit(s): " + "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}" for h in hs[:3]))
+     dirs: dict[str, int] = {}
+     for h in outside:
+         top = "/".join(h["file"].split("/")[:2])
+@@ -1523,7 +1584,8 @@
+     eng = {}
+     for repo in code or []:
+         try:
+-            eng[repo.name] = _settle_dirs(engine_dirs(llm, task, repo), engine_dirs(llm, task, repo))
++            eng[repo.name] = _map_dirs(repo, task, pins, _settle_dirs(engine_dirs(llm, task, repo),
++                                                                    engine_dirs(llm, task, repo)))
+         except Exception as e:  # noqa: BLE001
+             eng[repo.name] = {"dirs": [], "error": str(e)[:200]}
+     ev = version_evidence(names, body, store, code, eng)
+@@ -1539,6 +1601,21 @@
+         if not got:
+             raw.append((out or "")[:2000])
+         results += [d for d in got if isinstance(d, dict) and d.get("name")]
++    # 10-30 (Fix 1c; b-f1b-jan1024 lost layer_split): a name the answer left out is asked once more on its own
++    answered = {_bare(str(r["name"])) for r in results}
++    missing = [it for n, it in zip(ev.get("sent") or [], items) if _bare(n) not in answered]
++    if missing and len(missing) <= 40:
++        got = _jsonl(llm(VERSION_PROMPT.format(task=task, versions=versions, items="\n\n".join(missing))))
++        results += [d for d in got if isinstance(d, dict) and d.get("name") and _bare(str(d["name"])) not in answered]
++    # 10-30 (Fix 1c; b-f1b-fixes lost 7 right marks this way): a name of the same project (another engine or version of
++    # it) is "attributed" only when the report says whose it is in every sentence that names it - STRATA_ROUTE_TAIL_SKIP=0
++    # in "the top three lossless changes for this rig" was called attributed because another sentence tied it to 0.1.51.
++    # Other programs' names keep the model's word: their owner is often named in a table column or the next sentence
++    # (the five Fix 1b replays: 31 of 38 such turns would have been new marks, most of them other programs' flags)
++    for r in results:
++        if r.get("kind") in ("other-engine", "other-version") and _use(r) == "attributed" \
++                and not _attributed_in_text(str(r["name"]), body, pins):
++            r["use"], r["use_was"] = "described", "attributed"
+     for r in results:
+         if r.get("kind") in ("other-engine", "launcher-only") and _bare(str(r["name"])) in unsettled:
+             r["kind"], r["was"] = "unsure", r.get("kind")      # found in a disputed folder: not flagged
+@@ -1568,6 +1645,34 @@
+     return "recommended" if r.get("recommended") is True else "attributed"   # the 10-27 output format
+ 
+ 
++# 10-30 (Fix 1c): what names a setting's owner in a sentence - another program, an upstream / fork reference, or a
++# release that is not the user's (a three-part version number)
++OWNER_RE = re.compile(r"llama\.cpp|\bik_llama|\bvLLM\b|\bSGLang\b|\bk?transformers\b|\bExLlama|\bTensorRT|\bOllama\b|"
++                      r"\bLM Studio\b|\bMLC\b|\bUnsloth\b|\bMaya\b|\bBasalt\b|\bKoboldCpp\b|\bllamafile\b|\bAphrodite\b|"
++                      r"\bTabbyAPI\b|\bDeepSpeed\b|\bFlashInfer\b|\bPyTorch\b|\bupstream\b|\bfork\b|\bPR\s*#\d+|"
++                      r"\bpull request\b|\bissue\s*#\d+", re.I)
++VERSION_NUM_RE = re.compile(r"\bv?(\d+\.\d+\.\d+)\b")
++
++
++def _attributed_in_text(name: str, body: str, pins: dict | None = None) -> bool:
++    """True when every sentence of the report that names `name` also names whose it is (OWNER_RE, or a version number
++    other than the user's); a name the report never mentions keeps the model's word."""
++    mine = {str(v).lstrip("vV") for v in (pins or {}).values()}
++    sents = []
++    for line in strip_marks(body).split("\n"):
++        if name in line and not line.lstrip().startswith("#"):
++            sents += [s for s in re.split(r"(?<=[.!?])\s+|\s+\|\s+", line) if name in s]
++    if not sents:
++        return True
++    for s in sents:
++        if OWNER_RE.search(s):
++            continue
++        if any(v not in mine for v in VERSION_NUM_RE.findall(s)):
++            continue
++        return False
++    return True
++
++
+ def version_flagged(res: dict, uses: tuple = ("recommended", "described")) -> list[dict]:
+     """10-28 (A8): names presented as this program's - recommended, or described as its own - not only recommended."""
+     return [r for r in (res or {}).get("results") or [] if _use(r) in uses and r.get("kind") in BAD_KINDS]

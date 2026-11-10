@@ -1,0 +1,4 @@
+=== 2026-11-04 15:14:10 NLL MANY-POSITIONS GAP (work/r23/gap-nll.sh): PLAN.md section 5 - measurements only, P028x stays served, nothing switches (Karl 11-04)
+=== 2026-11-04 15:14:10 an earlier attempt's outputs moved to /home/USER/ai-speed-testing/strata-compare/results/r23/nll-many/prev-1104-151410
+=== 2026-11-04 15:14:10   gate engines PASS  engine-r22p021n=68befe4e03bf engine-r22p028x=f4c4f654fb24 engine-r22p028=511f0bbbe646 (the past cases' binaries; nothing is built)
+2026-11-04 15:14:10 port_gap4: hold set; waiting for the running research run to finish

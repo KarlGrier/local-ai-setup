@@ -1,0 +1,16 @@
+work/r8/build.sh strata-r8p engine-r8p
+work/r8/build.sh strata-r8a engine-r8a
+work/r8/run.sh pB-p245new-math configs/R8p-helper.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pB-p245old-math configs/R8p-old.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pB-p245new-code configs/R8p-helper.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pB-p245old-code configs/R8p-old.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/decscreen.sh A6p-R8p-helper-a configs/R8p-helper.json
+work/r8/decscreen.sh A6p-R8p-old-a configs/R8p-old.json
+work/r8/decscreen.sh A6p-R8p-helper-b configs/R8p-helper.json
+work/r8/decscreen.sh A6p-R8p-old-b configs/R8p-old.json
+work/r8/decscreen.sh A6a-R8a-helper-a configs/R8a-helper.json
+work/r8/decscreen.sh A6a-R8a-old-a configs/R8a-old.json
+work/r8/decscreen.sh A6a-R8a-helper-b configs/R8a-helper.json
+work/r8/decscreen.sh A6a-R8a-old-b configs/R8a-old.json
+work/r8/with_server.sh A6a-sw-R8a-helper configs/R8a-helper.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py switch --label A6a-sw-R8a-helper --engine-log \$ELOG"
+work/r8/with_server.sh A6a-sw-R8a-old configs/R8a-old.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py switch --label A6a-sw-R8a-old --engine-log \$ELOG"

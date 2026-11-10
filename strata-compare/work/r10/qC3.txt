@@ -1,0 +1,7 @@
+work/r10/tagcheck.sh "C prompt profiles (your addition)"
+for s in pp4k pp8k pp32k pp120k; do work/r10/run.sh Cpp-v36-$s configs/V36.json $s 16; ENVX=STRATA_PREFILL_TIMING=1 work/r10/run.sh Cpp-v36-$s-prof configs/V36.json $s 16; done
+for s in pp4k pp8k pp32k pp120k; do work/r10/run.sh Cpp-fk2-$s configs/FK131.json $s 16; work/r10/run.sh Cpp-fk2-$s-prof configs/FK131.json $s 16 --prefill-profile; done
+for s in pp4k pp8k pp32k pp120k; do work/r10/run.sh Cpp-fk1-$s configs/FK131-1gpu.json $s 16; work/r10/run.sh Cpp-fk1-$s-prof configs/FK131-1gpu.json $s 16 --prefill-profile; done
+for s in pp4k pp8k pp32k pp120k; do work/r10/run.sh Cpp-v36-$s-b configs/V36.json $s 16; work/r10/run.sh Cpp-fk2-$s-b configs/FK131.json $s 16; work/r10/run.sh Cpp-fk1-$s-b configs/FK131-1gpu.json $s 16; done
+.venv/bin/python work/r10/prompt_profile.py | tee results/r10/fork-prompt-profile.md
+work/r10/tagcheck.sh "C prompt profiles done"

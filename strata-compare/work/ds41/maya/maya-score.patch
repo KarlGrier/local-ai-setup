@@ -1,0 +1,247 @@
+# maya-score.patch - Strata v0.2.6's teacher-forced scoring mode (--score) ported into Project Maya v1.1.28's
+# src/ds4/ds4_main.cpp, for the local head-to-head build only (10-25, prepared; NOT built, NOT compiled, NOT run).
+#
+# Apply from the root of a `git archive v1.1.28` tree:   patch -p1 < maya-score.patch
+# Checked: `patch -p1 --dry-run` against src/ds4/ds4_main.cpp extracted with `git archive v1.1.28` (byte-identical to
+# `git show v1.1.28:src/ds4/ds4_main.cpp`): applies cleanly, 7 hunks, no fuzz or offset.  (patch skips these leading '#' lines.)
+#
+# What it adds (copied from strata-v024 tag v0.2.6, src/dsv41/ds4_main.cpp lines 962-1096 and main() 1198/1263-1264/
+# 1286/1306):
+#   - struct ScoreSeg, read_score_ids(), score(): verbatim, inside main.cpp's anonymous namespace (before its end).
+#     Same CLI (--score IDS_JSON, --score-out OUT.tsv, default IDS_JSON + ".tsv"; --window N), same ids-file reader
+#     (the "name" / "ids" scan + parse_ids), same DS4_SCORE_PREFIX semantics (N > 0 and more than one segment: the
+#     segments joined into one stream "concat"; the first N tokens fed as one prompt with 1 logit row; positions after
+#     it scored in windows), same score.tsv row format (pos, target, logp, argmax, logp(argmax), argmax==target, logp(eos),
+#     logp(target | no eos), 64 x id:logp), same OUT.tsv.seg.json, same stderr summary line
+#     "score NAME: N positions, ppl X, top-1 Y (S s)".
+#   - main(): `--score` / `--score-out` parsed; `&& score_ids.empty()` added to the usage check; dispatch
+#     `if (!score_ids.empty()) return score(...)` right after the --serve dispatch (before --ppl / the CLI decode), with
+#     window and std::atoi(eos) exactly as Strata passes them; usage() text gains the --score line; `#include <numeric>`
+#     (std::iota; Strata's file includes it, Maya's did not).
+#   Nothing else changes: the new code runs only when --score is given.
+#
+# API differences adapted / checked by reading (v1.1.28 vs v0.2.6):
+#   - Error prefix: Strata's "strata-dsv41: ..." -> "maya-ds4: ..." (4 lines; error paths only, nothing parses them).
+#   - --window default: Strata declares window = 0 and sets 16 before its scoring dispatch; Maya declares window = 16
+#     and parses --window identically (std::max(1, atoi)) -> the same 16 when --window is not given; scorearm passes 128.
+#   - Model API used by score(): reset(), feed(const int*, int n, int logits_rows, std::string& err),
+#     logits(std::vector<float>&), vocab() - same declarations in both ds4_model.hpp.  Model::feed (chunk_min / pick_path
+#     / forward_chunks for logits_rows > 16 / feed_windows), Impl::feed_windows, Impl::logits, the profile file read, the
+#     all-flow chunk_min = 2 rule and parse_ids are textually identical in both trees (diffed).
+#   - Maya's main() also runs strata::platform::env_aliases() (MAYA_X -> STRATA_X) and sets CUBLAS_WORKSPACE_CONFIG=
+#     :4096:8 when unset, before any mode; both now also apply to --score.  Strata's engine does not set
+#     CUBLAS_WORKSPACE_CONFIG (grep of the v0.2.6 tree: no hit).  See maya-run-notes.md (M1).
+#   - Maya's CLI decode path calls m.begin_request() (DISK_SKIP_AUTO's per-request hook); score() does not, as in Strata
+#     (that switch is lossy and stays unset in every arm).
+#   - Like Strata's, score() returns without m.save_profile(); run it with --expert-profile none or a scratch copy.
+#   - DS4_SCORE_PREFIX's prompt is where Maya's prompt skip applies (logits_rows 1 <= 16; forward_chunks disables the
+#     skip only for logits_rows > 16): M1 (MAYA_DS4_PROMPT_SKIP=0) and M2 (skip mode 1, Maya's default) differ there,
+#     which is the point of scoring M2.
+#
+# Not verified without compiling (or running):
+#   - That it compiles and links (nvcc host compiler, -Wall -Wextra; STRATA_WERROR is OFF by default in v1.1.28).
+#     Nothing in the added code is new to the compiler - it built in Strata's tree, which shares this file's history.
+#   - That --window 128 takes the chunked path on this pack (needs chunk_min <= 128: the "every device on the flow"
+#     rule sets 2; otherwise feed_windows would hand back only 16 rows and score() stops with "no logits").  Same code
+#     and the same condition as Strata's engine.
+#   - Byte-identical score.tsv vs Strata for identical arithmetic is NOT expected: the remaining Maya-only defaults are
+#     listed in maya-run-notes.md section b.
+--- a/src/ds4/ds4_main.cpp
++++ b/src/ds4/ds4_main.cpp
+@@ -35,6 +35,7 @@
+ #include <iostream>
+ #include <memory>
+ #include <mutex>
++#include <numeric>
+ #include <string>
+ #include <thread>
+ #include <vector>
+@@ -93,7 +94,8 @@
+                  "           [--tp N] [--threads on|off] [--prefill-chunk N] [--dspark on|off|none] [--dspark-conf F]\n"
+                  "           [--vision on|off] [--mmap-experts on|off|auto]\n"
+                  "           (--ids I,J,... [--images FILE] [--n N] [--dump-logits FILE] | --ppl FILE | --serve\n"
+-                 "           | --encode-image FILE.rgb --size WxH --dump-image OUT)\n");
++                 "           | --encode-image FILE.rgb --size WxH --dump-image OUT\n"
++                 "           | --score IDS.json [--score-out OUT.tsv] [--window N])\n");
+ }
+ 
+ // stdin lines on a thread, so a request can see STOP while it decodes.  read(2), not std::cin - glibc's exit()
+@@ -1103,6 +1105,143 @@
+     return 0;
+ }
+ 
++// ---- ported from Strata v0.2.6 (src/dsv41/ds4_main.cpp, score() and read_score_ids()) for a local A/B build -----
++// ---- Strata addition: teacher-forced scoring (the quality gate) -------------------------------------------------
++// --score IDS.json --score-out RUN.tsv: every segment of a tools/quant_quality.py ids file (name + ids) is read through
++// the model from a fresh state; per position the log-probability of the text's next token and the 64 most likely
++// tokens go out in the STRATA_LOGPOS row format that `quant_quality.py compare` reads (natural logs, full-vocabulary
++// log-softmax in double).  RUN.tsv.seg.json lists each segment's first line and size.
++struct ScoreSeg {
++    std::string name;
++    std::vector<int> ids;
++};
++
++bool read_score_ids(const std::string& path, std::vector<ScoreSeg>& segs, std::string& err) {
++    std::FILE* f = std::fopen(path.c_str(), "rb");
++    if (f == nullptr) {
++        err = path + ": cannot open";
++        return false;
++    }
++    std::string s;
++    char buf[1 << 16];
++    size_t k;
++    while ((k = std::fread(buf, 1, sizeof buf, f)) > 0) s.append(buf, k);
++    std::fclose(f);
++    size_t p = 0;
++    for (;;) {
++        const size_t n0 = s.find("\"name\"", p);
++        if (n0 == std::string::npos) break;
++        const size_t q0 = s.find('"', s.find(':', n0) + 1);
++        const size_t q1 = s.find('"', q0 + 1);
++        const size_t i0 = s.find("\"ids\"", q1);
++        if (q0 == std::string::npos || q1 == std::string::npos || i0 == std::string::npos) break;
++        const size_t b0 = s.find('[', i0), b1 = s.find(']', b0);
++        if (b0 == std::string::npos || b1 == std::string::npos) break;
++        ScoreSeg g;
++        g.name = s.substr(q0 + 1, q1 - q0 - 1);
++        g.ids = parse_ids(s.substr(b0 + 1, b1 - b0 - 1));
++        segs.push_back(std::move(g));
++        p = b1;
++    }
++    if (segs.empty()) {
++        err = path + ": no segments (expected quant_quality.py's ids file)";
++        return false;
++    }
++    return true;
++}
++
++int score(strata::ds4::Model& m, const std::string& ids_path, const std::string& out_path, int window, int eos) {
++    std::vector<ScoreSeg> segs;
++    std::string err;
++    if (!read_score_ids(ids_path, segs, err)) {
++        std::fprintf(stderr, "maya-ds4: %s\n", err.c_str());
++        return 1;
++    }
++    // DS4_SCORE_PREFIX=N (a test of the long-prompt layer skip): the segments are joined into one stream, its first N
++    // tokens are read as one prompt (logits of the last row only: the path a long prompt takes, where the skip applies)
++    // and only the positions after them are scored, in windows
++    const long long prefix_n = std::getenv("DS4_SCORE_PREFIX") ? std::atoll(std::getenv("DS4_SCORE_PREFIX")) : 0;
++    if (prefix_n > 0 && segs.size() > 1) {
++        ScoreSeg all;
++        all.name = "concat";
++        for (const ScoreSeg& sg : segs) all.ids.insert(all.ids.end(), sg.ids.begin(), sg.ids.end());
++        segs.assign(1, all);
++    }
++    std::FILE* out = std::fopen(out_path.c_str(), "wb");
++    std::FILE* sj = std::fopen((out_path + ".seg.json").c_str(), "wb");
++    if (out == nullptr || sj == nullptr) {
++        std::fprintf(stderr, "maya-ds4: cannot write %s\n", out_path.c_str());
++        return 1;
++    }
++    std::fprintf(sj, "{\"segments\": [");
++    const int V = m.vocab();
++    long long line = 0;
++    std::vector<float> lg;
++    std::vector<int> order;
++    const double t0 = now_ms();
++    for (size_t si = 0; si < segs.size(); ++si) {
++        const std::vector<int>& ids = segs[si].ids;
++        m.reset();
++        const long long first = line;
++        double sum_nll = 0.0;
++        long long top1 = 0, cnt = 0;
++        size_t a0 = 0;
++        if (prefix_n > 0 && (size_t) prefix_n + 1 < ids.size()) {
++            a0 = (size_t) prefix_n;
++            if (!m.feed(ids.data(), (int) a0, 1, err)) {
++                std::fprintf(stderr, "maya-ds4: %s\n", err.c_str());
++                return 1;
++            }
++        }
++        for (size_t a = a0; a + 1 < ids.size();) {
++            const int T = (int) std::min<size_t>((size_t) window, ids.size() - 1 - a);   // (positions a .. a+T-1 are scored)
++            if (!m.feed(ids.data() + a, T, T, err) || !m.logits(lg) || lg.size() < (size_t) T * (size_t) V) {
++                std::fprintf(stderr, "maya-ds4: %s\n", err.empty() ? "no logits" : err.c_str());
++                return 1;
++            }
++            for (int t = 0; t < T; ++t) {
++                const float* r = lg.data() + (size_t) t * (size_t) V;
++                float mx = r[0];
++                for (int v = 1; v < V; ++v) mx = std::max(mx, r[v]);
++                double z = 0.0;
++                for (int v = 0; v < V; ++v) z += std::exp((double) (r[v] - mx));
++                const double lz = std::log(z) + (double) mx;
++                order.resize((size_t) V);
++                std::iota(order.begin(), order.end(), 0);
++                std::partial_sort(order.begin(), order.begin() + 64, order.end(), [&](int x, int y) {
++                    return r[x] > r[y] || (r[x] == r[y] && x < y);
++                });
++                const int tgt = ids[a + (size_t) t + 1];
++                const double lt = (double) r[tgt] - lz;
++                const double la = (double) r[order[0]] - lz;
++                const double le = eos >= 0 && eos < V ? (double) r[eos] - lz : -1e30;
++                // logp(target) with the end token left out of the distribution, as the engine's row has it
++                const double lt_ne = tgt == eos ? lt : std::log(std::max(1e-300, std::exp(lt) / std::max(1e-300, 1.0 - std::exp(le))));
++                std::fprintf(out, "%zu\t%d\t%.6f\t%d\t%.6f\t%d\t%.6f\t%.6f", a + (size_t) t, tgt, lt, order[0], la,
++                             order[0] == tgt ? 1 : 0, le, lt_ne);
++                for (int j = 0; j < 64; ++j) std::fprintf(out, "\t%d:%.6f", order[(size_t) j], (double) r[order[(size_t) j]] - lz);
++                std::fprintf(out, "\n");
++                ++line;
++                ++cnt;
++                top1 += order[0] == tgt;
++                sum_nll -= lt;
++            }
++            a += (size_t) T;
++        }
++        std::fprintf(sj, "%s{\"name\": \"%s\", \"first_line\": %lld, \"end_line\": %lld, \"n\": %lld, \"ppl\": %.6f, \"top1\": %.6f}", si ? ", " : "",
++                     segs[si].name.c_str(), first, first + cnt, cnt, std::exp(sum_nll / (double) std::max(1LL, cnt)),
++                     (double) top1 / (double) std::max(1LL, cnt));
++        std::fprintf(stderr, "score %s: %lld positions, ppl %.4f, top-1 %.4f (%.0f s)\n", segs[si].name.c_str(), cnt,
++                     std::exp(sum_nll / (double) std::max(1LL, cnt)), (double) top1 / (double) std::max(1LL, cnt),
++                     (now_ms() - t0) / 1000.0);
++        std::fflush(out);
++    }
++    std::fprintf(sj, "]}\n");
++    std::fclose(sj);
++    std::fclose(out);
++    return 0;
++}
++
+ }  // namespace
+ 
+ int main(int argc, char** argv) {
+@@ -1136,6 +1275,7 @@
+     unsigned long long cli_seed = 1;
+     bool serve_mode = false;
+     std::string images, enc_rgb, enc_out;
++    std::string score_ids, score_out;   // (--score: Strata's teacher-forced scoring)
+     int enc_w = 0, enc_h = 0;
+     for (int i = 1; i < argc; ++i) {
+         const std::string a = argv[i];
+@@ -1184,6 +1324,8 @@
+         else if (a == "--window") window = std::max(1, std::atoi(val("--window").c_str()));   // (> 16: the chunked prompt path)
+         else if (a == "--dump-logits") dump = val("--dump-logits");
+         else if (a == "--ppl") ppl = val("--ppl");
++        else if (a == "--score") score_ids = val("--score");
++        else if (a == "--score-out") score_out = val("--score-out");
+         else if (a == "--serve") serve_mode = true;
+         else if (a == "--layer-split") (void) val("--layer-split");   // the server's (this engine balances its own split)
+         else if (a == "--help" || a == "-h") {
+@@ -1195,7 +1337,7 @@
+             return 2;
+         }
+     }
+-    if (o.pack.empty() || (!serve_mode && ids_s.empty() && enc_rgb.empty() && ppl.empty())) {
++    if (o.pack.empty() || (!serve_mode && ids_s.empty() && enc_rgb.empty() && ppl.empty() && score_ids.empty())) {
+         usage();
+         return 2;
+     }
+@@ -1210,6 +1352,8 @@
+     }
+     if (!o.vision_only) std::fprintf(stderr, "%s", m.describe().c_str());
+     if (serve_mode) return serve(m, eos, spec, o.dspark_conf, o.pack);
++    // (--window: 16 unless given, as Strata's scoring runs)
++    if (!score_ids.empty()) return score(m, score_ids, score_out.empty() ? score_ids + ".tsv" : score_out, window, std::atoi(eos.c_str()));
+     if (!ppl.empty()) {   // --ppl FILE: a line a sequence of ids (BOS + text), each in one forward, tokens 2.. scored
+         std::ifstream in(ppl);
+         std::string line;

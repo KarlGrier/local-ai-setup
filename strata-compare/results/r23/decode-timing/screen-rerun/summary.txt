@@ -1,0 +1,76 @@
+=== 2026-11-05 11:17:32 DECODE B SCREEN RERUN (work/r23/gap-screen-rerun.sh): gap b's arm-passes killed by the 11-05 06:50 DeepSeek start, rerun on engine-r23decode, then part b decided on the merged data - measurements only, P028x stays served, nothing switches
+=== 2026-11-05 11:17:32 part a: items L, O; engine-r23decode 48337a6023d8; to rerun: LO3 Bs3 L3 
+2026-11-05 11:17:32 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 1319430 (engine 1319444)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-05 14:03:46 port_gap4: gap open: test lock held (pid 1535608), 8080 stopped
+=== 2026-11-05 14:03:46 8080 down: engines left: none, MemAvailable 85 GB
+=== 2026-11-05 14:03:46 2 the rerun in the original pass's positions: LO3 Bs3 L3 (deadline 25 min)
+=== 2026-11-05 14:03:46 screen LO3 (r23-LO.json, 2 GPU(s))
+server ready (guard pid 1535961, server pid 1535977) load_time_s 15.367571448 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sr-LO3_20261105T140347.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1535998: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+LO3n W1-think r0: prompt 110 ttft 0.314 s, 3072 tokens, 172.9 tok/s, length
+LO3n W2-code r0: prompt 122 ttft 0.318 s, 3072 tokens, 170.47 tok/s, length
+LO3n W3-research r0: prompt 26729 ttft 6.04 s, 2048 tokens, 166.59 tok/s, length
+LO3a A-edit r0: prompt 2677 ttft 1.015 s, 358 tokens, 125.49 tok/s, tool_calls
+LO3a B-write r0: prompt 1371 ttft 0.842 s, 2204 tokens, 162.13 tok/s, tool_calls
+LO3r R1-verify20k r0: prompt 24239 ttft 5.532 s, 3552 tokens, 156.56 tok/s, stop
+LO3r R2-report54k r0: prompt 54070 ttft 12.012 s, 2830 tokens, 155.18 tok/s, stop
+LO3r R3-extract5k r0: prompt 5013 ttft 1.445 s, 968 tokens, 174.14 tok/s, stop
+LO3r R4-agent33k r0: prompt 33417 ttft 7.836 s, 413 tokens, 135.64 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want late,one): late present, one present -> PASS
+=== 2026-11-05 14:07:20   gate pcie_LO3 INFO PCIe share: the CPU pool takes 41 us per missed expert (49.8 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 14:07:20 screen Bs3 (r23-Bs.json, 1 GPU(s))
+server ready (guard pid 1539983, server pid 1539998) load_time_s 13.324715993 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sr-Bs3_20261105T140721.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 15 MiB, 7875 MiB 
+engine pid 1540021: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s), --kv-resident 32768
+ENV CHECK OK
+Bs3n W1-think r0: prompt 111 ttft 0.303 s, 3072 tokens, 154.27 tok/s, length
+Bs3n W2-code r0: prompt 126 ttft 0.328 s, 3072 tokens, 132.76 tok/s, length
+Bs3n W3-research r0: prompt 26727 ttft 6.041 s, 2048 tokens, 144.93 tok/s, length
+Bs3a A-edit r0: prompt 2677 ttft 1.07 s, 496 tokens, 119.7 tok/s, tool_calls
+Bs3a B-write r0: prompt 1368 ttft 0.836 s, 2805 tokens, 139.49 tok/s, tool_calls
+Bs3r R1-verify20k r0: prompt 24241 ttft 5.539 s, 3615 tokens, 133.42 tok/s, stop
+Bs3r R2-report54k r0: prompt 54069 ttft 12.022 s, 3806 tokens, 131.67 tok/s, stop
+Bs3r R3-extract5k r0: prompt 5009 ttft 1.46 s, 1065 tokens, 150.82 tok/s, stop
+Bs3r R4-agent33k r0: prompt 33416 ttft 7.84 s, 286 tokens, 114.09 tok/s, tool_calls
+vram at end: 0, 15490 MiB, 444 MiB 1, 15 MiB, 7875 MiB 
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-05 14:11:26   gate pcie_Bs3 INFO PCIe share: the CPU pool takes 37 us per missed expert (56.0 GB/s of expert bytes), the link 57.3 GB
+=== 2026-11-05 14:11:26 screen L3 (r23-L.json, 2 GPU(s))
+server ready (guard pid 1544268, server pid 1544283) load_time_s 15.356228448 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sr-L3_20261105T141127.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 1544301: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+L3n W1-think r0: prompt 111 ttft 0.299 s, 3072 tokens, 172.37 tok/s, length
+L3n W2-code r0: prompt 123 ttft 0.321 s, 3072 tokens, 150.92 tok/s, length
+L3n W3-research r0: prompt 26730 ttft 6.033 s, 2048 tokens, 160.35 tok/s, length
+L3a A-edit r0: prompt 2678 ttft 1.011 s, 191 tokens, 123.93 tok/s, tool_calls
+L3a B-write r0: prompt 1371 ttft 0.848 s, 1983 tokens, 144.9 tok/s, tool_calls
+L3r R1-verify20k r0: prompt 24239 ttft 5.51 s, 3638 tokens, 157.22 tok/s, stop
+L3r R2-report54k r0: prompt 54069 ttft 12.018 s, 2949 tokens, 147.72 tok/s, stop
+L3r R3-extract5k r0: prompt 5011 ttft 1.443 s, 947 tokens, 174.64 tok/s, stop
+L3r R4-agent33k r0: prompt 33416 ttft 7.833 s, 279 tokens, 141.37 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want late): late present, one absent -> PASS
+=== 2026-11-05 14:15:05   gate pcie_L3 INFO PCIe share: the CPU pool takes 38 us per missed expert (53.5 GB/s of expert bytes), the link 57.8 GB
+=== 2026-11-05 14:15:05 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-05 14:15:10 port_gap4: memory back: MemAvailable 85 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-05 14:15:24 port_gap4: WARNING: 1 MB swapped out while P028x started
+2026-11-05 14:15:24 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-05 14:15:24 screen rerun gap: 11 min with 8080 down
+  decode part b - FINAL decision (2026-11-05 14:15:24; work/r23/screen_rerun_rules.py final; the rules: decode_rules.py decide-b, unchanged, on the merged records in merged/)
+  sources (gap b's and the decode-path gap's files are only read):
+    part b (/home/USER/ai-speed-testing/strata-compare/results/r23/decode-timing/gap-b): every arm-pass it counts; not counted there: LO3 Bs3 L3
+    screen rerun (/home/USER/ai-speed-testing/strata-compare/results/r23/decode-timing/screen-rerun): LO3 env PASS, lines PASS, counted; Bs3 env PASS, lines PASS, counted; L3 env PASS, lines PASS, counted
+    bp90 rerun of the decode-path gap (/home/USER/ai-speed-testing/strata-compare/results/r23/decpath/bp90-rerun): 7 arm-passes (bpB-decode-1 bpB-pp16k-1 bpB-pp64k-1 bpLO-decode-1 bpLO-decode-2 bpLO-pp16k-1 bpLO-pp64k-1)
+    still missing after the merge: screen none; bp90 none
+  => item L (STRATA_REMOTE_LATE_LAUNCH=1): FAIL (LO screen FAIL; bp90 FAIL)
+  => item O (STRATA_POOL_ONE_BATCH=1): FAIL (LO screen FAIL; bp90 FAIL); one card (Os vs Bs): no gain beyond max(noise, 1 %)
+  => item L+O (both): FAIL (LO screen FAIL; bp90 FAIL)
+=== 2026-11-05 14:15:24 screen rerun gap done

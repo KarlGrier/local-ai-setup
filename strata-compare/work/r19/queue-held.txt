@@ -1,0 +1,4 @@
+work/r19/b2_tail.sh > logs/r19/b2.log 2>&1
+work/r19/b3_share.sh > logs/r19/b3.log 2>&1
+work/r19/b4_hs.sh > logs/r19/b4.log 2>&1
+work/r19/b5_spec.sh > logs/r19/b5.log 2>&1

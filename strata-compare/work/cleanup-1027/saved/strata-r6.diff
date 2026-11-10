@@ -1,0 +1,249 @@
+diff --git a/include/strata/core/verify.hpp b/include/strata/core/verify.hpp
+index 1ac86be3..27750a83 100644
+--- a/include/strata/core/verify.hpp
++++ b/include/strata/core/verify.hpp
+@@ -32,6 +32,7 @@
+ 
+ #include <cstdint>
+ #include <string>
++#include <thread>
+ #include <vector>
+ 
+ namespace strata::core {
+@@ -169,6 +170,14 @@ private:
+     VerifyHits hits_;
+     const NativeHead* head_ = nullptr;
+     int max_t_ = 0;
++    // round 6: the window's n-gram (PLE) rows are read while the GPU runs the embedding and layer 0; layer 1 waits
++    // for this flag (STRATA_PLE_OVERLAP=0: read before the launch, as before)
++    bool ple_overlap_ = true;
++    bool ple_prefetch_ = true;    // round 6: the next window's first-token rows at commit (STRATA_PLE_OVERLAP=2: only this)
++    uint32_t* h_pleflag_ = nullptr; uint32_t* m_pleflag_ = nullptr;
++    std::thread ple_thr_;
++    std::string ple_err_;
++    int32_t last_out_[16] = {};   // round 6: the window's outputs (the next window's first token is one of them)
+     int last_t_ = 0;
+     int64_t last_pos0_ = 0;
+     int32_t last_tokens_[8] = {};
+diff --git a/include/strata/kernels/ngram.hpp b/include/strata/kernels/ngram.hpp
+index d15491de..2e538a6a 100644
+--- a/include/strata/kernels/ngram.hpp
++++ b/include/strata/kernels/ngram.hpp
+@@ -132,6 +132,14 @@ public:
+     /// as ONE reader request - page dedupe and sort across the whole batch, the reader's full queue depth.  Not
+     /// while a single-token `issue` is pending.  The mapped mode gathers row by row.
+     bool gather_batch(const uint32_t* rows, size_t n_tokens, float* out, std::string& err);
++    /// round 6: `gather_batch` in two halves, so a verify window's rows are read while the GPU runs its first layers:
++    /// `issue` starts the reads (the rows are copied), `collect` waits for them and fills `out` exactly as
++    /// `gather_batch` would.  One batch in flight per table; `collect` may run on another thread than `issue`.
++    bool gather_batch_issue(const uint32_t* rows, size_t n_tokens, std::string& err);
++    bool gather_batch_collect(float* out, std::string& err);
++    /// round 6: start reading rows that a later batch will need (they land in the row cache); the ticket is
++    /// collected by the next gather_batch_collect.  No-op when the table is not read from the SSD.
++    void prefetch(const uint32_t* rows, size_t n_rows);
+ 
+     /// Fault injection (Direct mode): every row read completes no earlier than `us` after issue.
+     void set_injected_delay_us(double us);
+diff --git a/src/core/verify.cpp b/src/core/verify.cpp
+index dcc60258..23fa6dd8 100644
+--- a/src/core/verify.cpp
++++ b/src/core/verify.cpp
+@@ -120,6 +120,7 @@ Verifier::~Verifier() {
+     const Verifier* self = this;
+     g_diag_verifier.compare_exchange_strong(self, nullptr);
+     if (cs_) cudaStreamSynchronize(cs_);
++    if (ple_thr_.joinable()) ple_thr_.join();
+     for (auto& e : exec_)
+         if (e) cudaGraphExecDestroy(e);
+     if (commit_exec_) cudaGraphExecDestroy(commit_exec_);
+@@ -127,7 +128,7 @@ Verifier::~Verifier() {
+     if (copy_) { cudaStreamSynchronize(copy_); cudaStreamDestroy(copy_); }
+     if (arena_) cudaFree(arena_);
+     void* hosts[] = {h_tok_, h_step_, h_pos_, h_commit_, h_ple_, h_out_, h_x_, h_ids_, h_w_, h_seq_, h_flag_, h_ymiss_,
+-                     h_flagA_, h_plan_, h_flagB_, h_attn_};
++                     h_flagA_, h_plan_, h_flagB_, h_attn_, h_pleflag_};
+     for (void* h : hosts)
+         if (h) cudaFreeHost(h);
+ }
+@@ -201,8 +202,10 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
+               mapped(64, (void**) &h_flag_, (void**) &m_flag_) &&
+               mapped(64, (void**) &h_flagA_, (void**) &m_flagA_) &&
+               mapped(64, (void**) &h_flagB_, (void**) &m_flagB_) &&
++              mapped(64, (void**) &h_pleflag_, (void**) &m_pleflag_) &&
+               mapped(T * K * N * 4, (void**) &h_ymiss_, (void**) &m_ymiss_);
+     if (!ok) { err = "verify: mapped staging allocation failed"; return false; }
++    if (const char* v = std::getenv("STRATA_PLE_OVERLAP")) { ple_overlap_ = std::atoi(v) == 1; ple_prefetch_ = std::atoi(v) != 0; }
+     if (std::getenv("STRATA_R6_ATTN_DUMP") != nullptr &&   // MEASUREMENT (r6): D2H copies inside the window graph
+         cudaHostAlloc((void**) &h_attn_, (size_t) g.n_layers * T * N * 4, cudaHostAllocDefault) != cudaSuccess) {
+         err = "verify: the attention-input dump buffer";
+@@ -354,7 +357,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+     // per-ROW positions of the K rows [t][NKV] and the indexer query rows [t][IQ] (for batched RoPE)
+     const int32_t* pos_k = pos_ + MT * NH;
+     const int32_t* pos_i = pos_ + MT * (NH + NKV);
+-    if (ple_on) copy_from_mapped(ple_, m_ple_, (int64_t) T * N, cs);
++    if (ple_on && !ple_overlap_) copy_from_mapped(ple_, m_ple_, (int64_t) T * N, cs);
+ 
+     // ---- the embeddings, broadcast to the hc streams - or, in a later stage of a layer split, the previous stage's
+     // residual, pending write and inject (see set_stage)
+@@ -411,6 +414,10 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+         // the previous layer's FFN write, folded into this layer's first read (a control vector after it has
+         // already applied it)
+         bool pending = l > 0 && !cvec().covers(l - 1);
++        if (l == 1 && ple_on && ple_overlap_ && grp == 0) {   // round 6: the host has the window's rows by now
++            wait_flag_ge(m_pleflag_, 1, cs);
++            copy_from_mapped(ple_, m_ple_, (int64_t) T * N, cs);
++        }
+         if (l == 1 && ple_on) {
+             float* normalized = (float*) ((uint8_t*) ss.ple.scratch + ple_block_scratch_bytes());
+             for (int t = tb; t < te; ++t) {
+@@ -955,6 +962,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
+     if (T < 1 || T > max_t_) { err = "verify: window size out of range"; return false; }
+     const ModelGeometry& g = *g_;
+     SessionState& ss = *ss_;
++    if (ple_thr_.joinable()) ple_thr_.join();   // round 6: an earlier window that returned early left its reader
+     if (pos0 + T > ss.qsa_states[0].max_cells) { err = "verify: the window runs past the context"; return false; }
+     if (!capture(T, err) || !capture_commit(err)) return false;
+     VDBG("captured; staging\n");
+@@ -977,7 +985,23 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
+             prev[0] = prev[1];
+             prev[1] = tokens[t];
+         }
+-        if (!ss.ple.table->gather_batch(rows, (size_t) T, h_ple_, err)) return false;
++        if (!ple_overlap_) {
++            if (!ss.ple.table->gather_batch(rows, (size_t) T, h_ple_, err)) return false;
++        } else {
++            // round 6: the reads are issued now and collected on a thread while the GPU runs the embedding and layer
++            // 0; the thread raises the flag layer 1 waits for (also on an error, so the window cannot hang)
++            *(volatile uint32_t*) h_pleflag_ = 0;
++            std::atomic_thread_fence(std::memory_order_seq_cst);
++            if (!ss.ple.table->gather_batch_issue(rows, (size_t) T, err)) return false;
++            ple_err_.clear();
++            ple_thr_ = std::thread([this] {
++                std::string e;
++                if (!ss_->ple.table->gather_batch_collect(h_ple_, e)) ple_err_ = e.empty() ? "PLE rows" : e;
++                std::atomic_thread_fence(std::memory_order_seq_cst);
++                _mm_sfence();
++                *(volatile uint32_t*) h_pleflag_ = 1;
++            });
++        }
+     }
+     *(volatile uint32_t*) h_seq_ = 0;
+     *(volatile uint32_t*) h_flag_ = 0;
+@@ -1057,7 +1081,9 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
+     progress_at("verify window: waiting for the GPU to finish the window (flags A/B/M raised)", (int64_t) T);
+     trace_push("tail", T);
+     const cudaError_t se = cudaStreamSynchronize(cs_);
++    if (ple_thr_.joinable()) ple_thr_.join();
+     if (se != cudaSuccess) { err = std::string("verify: ") + cudaGetErrorString(se); return false; }
++    if (!ple_err_.empty()) { err = "verify PLE: " + ple_err_; ple_err_.clear(); return false; }
+     progress_at("verify window: waiting for the expert copies", (int64_t) T);
+     cudaStreamSynchronize(copy_);   // no host function of this window may raise flag B in the next one
+     if (prof_on_ && G == 1) {       // the window's GPU stage stamps
+@@ -1101,6 +1127,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
+         }
+     }
+     for (int t = 0; t < T; ++t) out[t] = ((volatile int32_t*) h_out_)[t];
++    for (int t = 0; t < T && t < 16; ++t) last_out_[t] = out[t];
+     if (static const bool dbg = std::getenv("STRATA_DBG_NAN") != nullptr; dbg) {   // debug: the first non-finite head
+         static bool reported = false;
+         if (!reported) {
+@@ -1192,11 +1219,20 @@ bool Verifier::commit(int n_keep, std::string& err) {
+     if (le != cudaSuccess) { err = std::string("verify: commit launch: ") + cudaGetErrorString(le); return false; }
+     const cudaError_t se = cudaStreamSynchronize(cs_);
+     if (se != cudaSuccess) { err = std::string("verify: commit: ") + cudaGetErrorString(se); return false; }
+-    if (ple_stage())   // stages that share one session must advance it once
++    if (ple_stage()) {   // stages that share one session must advance it once
+         for (int t = 0; t < n_keep; ++t) {
+             ss_->ple_prev[0] = ss_->ple_prev[1];
+             ss_->ple_prev[1] = last_tokens_[t];
+         }
++        // round 6: the next window starts with this window's output n_keep - 1 (a decode window's head sample; a
++        // window that only reads tokens has no head sampling and is skipped): its rows are read while the drafter runs
++        if (ple_prefetch_ && head_sampling_ && ss_->ple.ready() && n_keep <= 16) {
++            uint32_t rows[strata::kernels::PLE_N_HEADS];
++            int32_t prev[2] = {ss_->ple_prev[0], ss_->ple_prev[1]};
++            strata::kernels::ngram_rows(&last_out_[n_keep - 1], prev, 1, ss_->ple.consts, rows);
++            ss_->ple.table->prefetch(rows, strata::kernels::PLE_N_HEADS);
++        }
++    }
+     ms_commit += ms_since(t0);
+     return next_ == nullptr || next_->commit(n_keep, err);
+ }
+diff --git a/src/kernels/ngram.cpp b/src/kernels/ngram.cpp
+index b1bd98b2..acfcd23b 100644
+--- a/src/kernels/ngram.cpp
++++ b/src/kernels/ngram.cpp
+@@ -121,6 +121,15 @@ struct PleTable::Impl {
+     bool pending = false;
+     uint32_t rows[PLE_N_HEADS] = {};
+     uint8_t raw[PLE_N_HEADS * PLE_ROW_BYTES] = {};
++    // round 6: one batch in flight (gather_batch_issue / _collect)
++    bool batch_pending = false;
++    size_t batch_n = 0;
++    std::vector<uint8_t> batch_raw;
++    std::vector<uint32_t> batch_rows;
++    strata::ngram::PleReader::Ticket batch_ticket;
++    bool pf_pending = false;
++    std::vector<uint8_t> pf_raw;
++    strata::ngram::PleReader::Ticket pf_ticket;
+ };
+ 
+ PleTable::PleTable() : impl_(new Impl) {}
+@@ -280,6 +289,10 @@ bool PleTable::gather_batch(const uint32_t* rows, size_t n_tokens, float* out, s
+     if (impl_->mode == PleIo::Direct) {
+         std::vector<uint8_t> raw(n * PLE_ROW_BYTES);
+         const auto ticket = impl_->reader.issue(rows, n, raw.data());
++        if (impl_->pf_pending) {   // round 6: a prefetch issued at the last commit (its rows served the issue above)
++            impl_->pf_pending = false;
++            if (!impl_->reader.collect(impl_->pf_ticket, err)) return false;
++        }
+         if (!impl_->reader.collect(ticket, err)) return false;
+         for (size_t i = 0; i < n; ++i) iq4nl_dequant_row(raw.data() + i * PLE_ROW_BYTES, out + i * PLE_HEAD_DIM);
+         impl_->bytes_read += (uint64_t) n * PLE_ROW_BYTES;
+@@ -289,6 +302,46 @@ bool PleTable::gather_batch(const uint32_t* rows, size_t n_tokens, float* out, s
+     return true;
+ }
+ 
++bool PleTable::gather_batch_issue(const uint32_t* rows, size_t n_tokens, std::string& err) {
++    if (impl_->pending || impl_->batch_pending) { err = "PleTable::gather_batch_issue while rows are in flight"; return false; }
++    // (a prefetch may still be in flight: its rows are read again here if they have not landed; collected below)
++    const size_t n = n_tokens * (size_t) PLE_N_HEADS;
++    impl_->batch_n = n;
++    impl_->batch_pending = true;
++    if (impl_->mode == PleIo::Direct) {
++        impl_->batch_raw.resize(n * PLE_ROW_BYTES);
++        impl_->batch_ticket = impl_->reader.issue(rows, n, impl_->batch_raw.data());
++    } else {
++        impl_->batch_rows.assign(rows, rows + n);
++    }
++    return true;
++}
++
++void PleTable::prefetch(const uint32_t* rows, size_t n_rows) {
++    if (impl_->mode != PleIo::Direct || impl_->pf_pending || impl_->batch_pending || n_rows == 0) return;
++    impl_->pf_raw.resize(n_rows * PLE_ROW_BYTES);
++    impl_->pf_ticket = impl_->reader.issue(rows, n_rows, impl_->pf_raw.data());
++    impl_->pf_pending = true;
++}
++
++bool PleTable::gather_batch_collect(float* out, std::string& err) {
++    if (!impl_->batch_pending) { err = "PleTable::gather_batch_collect without issue"; return false; }
++    impl_->batch_pending = false;
++    if (impl_->pf_pending) {   // the prefetch's ticket (its rows are in the cache or in this batch's own reads)
++        impl_->pf_pending = false;
++        if (!impl_->reader.collect(impl_->pf_ticket, err)) return false;
++    }
++    const size_t n = impl_->batch_n;
++    if (impl_->mode == PleIo::Direct) {
++        if (!impl_->reader.collect(impl_->batch_ticket, err)) return false;
++        for (size_t i = 0; i < n; ++i) iq4nl_dequant_row(impl_->batch_raw.data() + i * PLE_ROW_BYTES, out + i * PLE_HEAD_DIM);
++        impl_->bytes_read += (uint64_t) n * PLE_ROW_BYTES;
++        return true;
++    }
++    for (size_t i = 0; i < n; ++i) read_row(impl_->batch_rows[i], out + i * PLE_HEAD_DIM);
++    return true;
++}
++
+ void PleTable::set_injected_delay_us(double us) { impl_->reader.set_injected_delay_us(us); }
+ 
+ std::string PleTable::io_report() const {

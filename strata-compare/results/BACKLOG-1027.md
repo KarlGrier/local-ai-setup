@@ -1,0 +1,318 @@
+# Remaining work - LDR and the rest (10-27)
+
+Collected from our own files: LDR PLAN.md and CHECKPOINT-phase3.md (+ their older versions), LDR NOTES.md (all), the
+bench2 grading summaries, strata-compare HANDOFF / NOTES / round summaries, the DeepSeek checkpoint, and memory. Karl sets
+the order. Effort = code hours / GPU hours, estimated from how long the same kind of step took before (stage costs
+below). Not in the morning report and worth knowing: Phase 4 build items 5-8 and the whole of Phase 5 are still open on
+paper - nothing in the files drops them; MORNING-1027 listed only the code tool, the six fixes and two later items.
+
+**LDR stage costs (from NOTES):** stage 1 (replays of saved runs) ~1-2 GPU h per report-stage item; stage 2 (full runs)
+~3.2-3.4 h per open question, the 10-24 DeepSeek question ~5-5.5 h; stage 3 (o01-o03 + hard five) ~11.4 h; a blind
+grading round ~30-45 min of Claude time per pair, no GPU.
+
+## A. LDR - Phase 4, Karl's 10-24 backlog (the code tool + the six fixes)
+
+| # | Item | Why | Code h / GPU h | Depends on | Done |
+|---|---|---|---|---|---|
+| A1 | **[CODE TOOL]** read-only GitHub code tool (LDR_DEEP_CODE=1) - **DONE 10-27: rerun 08:00-12:51, graded blind (key 4.0 vs -2.0 /7, overall 3.75 vs 3.5 /10; results/bench2/codetool/SUMMARY-1027.md); adoption = Karl's call** | the 10-24 run missed the two-GPU lm_begin / yoco gating and used other engines' flags | ~1 / ~4 left (rerun ends ~13:30) + 1-2 h grading; +11.4 GPU h if it goes through stage 3 for Jan's default | rerun, then Karl's call | built, 50 checks, smoke found K1, answer key, coderefs-check, grader brief |
+| A2 | **[FIX 1]** engine/version check: every flag in an action plan from a source about that engine + version, else "other engine, unverified" | 10-24 report: 20 of 43 flags not in Strata at all, 19 from other Strata engines | 3-4 / ~1 (stage 1) | A1 graded; A3's inline marks; Karl's OK to reuse his 10-24 report as the test case (today's OK covers the code-tool test only) | coderefs-check.py's repo lookup can be reused |
+| A3 | **[FIX 2]** checker findings marked inline on the lines they concern ("Check these", unsupported citations), like the setup check | readers miss the list at the end | 2-3 / 0-0.5 (offline from saved advisory / verification files) | blind-open.py must strip the new marks | setup-check inline marks exist; known pitfall: quote matching on bold / capitals / citation marks |
+| A4 | **[FIX 3]** arithmetic done in code (restricted calculator or recompute pass; never arbitrary code) | ~250x off on Engram row counts | 4-6 / 1-2 | - | nothing |
+| A5 | **[FIX 4]** no citations outside the evidence (every [N] must exist; Answer first) | a [0] reached the headline | ~1 / 0 (offline on all saved reports) | - | ldr-client already counts unlisted numbers |
+| A6 | **[FIX 5]** gains stated against the user's measured baselines (like with like) | it compared a prompt speed with a decode speed | ~2 / 0.5-1 | user-setup.md has Qwen numbers only, no DeepSeek baselines - Karl's file to update | - |
+| A7 | **[FIX 6]** enforce the time budget | 5 h 06 m on 4 h (research ~19 min over, report + checks ~47 min) | 2-3 / 0 (measured on stage 2 runs) | Karl: does the budget cover research only or the whole run? | old item "subagent wrap-up overrun in the fair share" never done |
+| A8 | **Six-fix follow-ups (Karl 10-27) - NOT before the combined rerun AND stage 3 p4s6 are graded; no change before then** - (1) Fix 1: list the wrong-engine settings it missed in the 10-24 report (reference: the code-reference check, codetool/blind/ds41q-refs/B.json), grouped by kind - prose mentions, config keys ("gpu":[0], "layer_split"), env vars without code formatting, other; extend detection for the biggest groups and replay. (2) Fix 5: when the question states its own setup (versions, settings), recommendations are checked against that; the profile only for what the question does not say. (3) Consistency pass: why it missed the DSpark contradiction (K4) - wording, sections too far apart, or claim extraction - and fix it if it is a pattern, not a one-off. **Each change replayed on the saved reports before the next full run** | replays 10-27: Fix 1 caught ~16 of ~30 on the 10-24 report; Fix 5 noisy on an old-state question; consistency missed K4 | ~3-5 / ~1-2 (replays only) | A2-A7 graded (rerun ends ~21:00 10-27, stage 3 ~09:00 10-28); the 10-24 report only for Fix 1 (Karl's OK covers Fix 1); Fix 5 and consistency replays on our own reports (run-full, run-full-fixes, p4s6) | queued |
+
+Six fixes together: ~14-19 code h; stage 1 ~4 GPU h, then one combined stage 2 (~5.5 h) and stage 3 (~11.4 h) ≈ 21 GPU
+h. Bundling needs Karl's OK (precedent: item 2 rode in item 4's runs); one stage 2 per fix would add ~25 GPU h.
+
+## B. LDR - Phase 4 build order, still open on paper (CHECKPOINT-phase3 build order, 10-20)
+
+| # | Item | Code h / GPU h | Notes |
+|---|---|---|---|
+| B1 | Item 5: evidence store of claims (quote, URL, date); rewrite o01-o03 from it | 4-6 / ~1-2 + ~10 + 11.4 | evidence.jsonl and the kept verifier code are a start |
+| B2 | Item 6: read sources whole, follow links to primary sources | 3-5 / 15-20 | ~85 % of cited sources were unread snippets; changes fetching, so it starts at stage 2 |
+| B3 | Item 7: extra search sources - Tavily, Exa Lite, S2 on every search (~25 h, credit-limited; Exa resets 11-01), Exa highlights (~11 h), Exa shopping (3-5 product questions written + frozen first, ~15 h) | 3-5 / ~50 | fallback code, S2 engine already exist |
+| B4 | Item 8: 2-3 short runs merged vs one long run | ~3 / 15-20 | deep/seed.py already continues from saved evidence |
+
+B1-B4 together: ~15-20 code h, ~90-110 GPU h (2-3 weeks of queue time). Karl's call whether they stay.
+**10-27 20:50 KARL'S DECISION: all four, aiming for the best result** - dated plan ~/ai/deep-research/results/bench2/PLAN-ITEMS5-8-1027.md: (1) items 5 + 6 bundle led by item 6's rule (every cited source fetched and read) with A8 folded in - one combined rerun (the 10-24 question vs run-full-fixes) + one stage 3 (vs p4s6), ~10-31; (2) D1 Strata v0.2.7 port (repeat-run gate first) + a fresh stage 3 baseline, ~11-01..11-05; (3) item 7 in parts 7a-7e under Karl's new search rule (30 paid searches per test run, 100 per run of Karl's research; ~850 Tavily / ~2,250 Exa a month shared with Jan chat; 25 % kept for Jan chat, all paid search stops at ~10 % left; next month if needed), ~11-05..11-13; (4) item 8 merge test first (~3 GPU h, no new research runs), short runs only if good; then C3c (my placement, before Phase 5) and Phase 5; Opus 4.5 in 11-01..11-24 after Karl's credit OK; Sonnet experiment last. Each result to Karl; go on unless bad or mixed.
+**10-27 re-estimate (after the six fixes; ~/ai/deep-research/results/bench2/ESTIMATE-ITEMS5-8-1027.md):** per item code / GPU / cycles - 5: 6-8 / ~23 / 3; 6: 4-6 / ~20 / 2-3; 7: 5-8 / ~50 / 5 (credit-limited, split in 7a-7e); 8: 3-5 / ~21 / 3. Items 5 + 6 bundled (replays ~6-8 h, one combined o03 rerun ~2.9 h, one stage 3 ~12 h): 9-12 code h, ~21-24 GPU h, 3 cycles, ~3-4 days (vs ~43 GPU h apart). +~12 h for a fresh "without" side if the build moves first.
+
+## C. LDR - Phase 5 and later
+
+| # | Item | Code h / GPU h | Notes |
+|---|---|---|---|
+| C1 | Phase 5 holdout: hard-holdout h11-h20 (sanity) + o04-o06 on baseline and the final setup, graded blind | ~1 / ~17 | **Karl 10-27: on Flash-Next once the code tool + six fixes are settled; when Qwen4 Flash comes out, a shorter re-check on it instead of a full holdout.** o04-o06 references date from 10-18 (o05 says "no Qwen4 release") - may need a dated addendum |
+| C2 | A code tool inside Jan (likely an MCP server around deep/codetool.py, like web-mcp.py) | 3-4 / <1 | after A1 is adopted; no spec yet |
+| C3 | Why long-context paths disagree (yardstick follow-up; KL 0.16-0.36, one row 9.76; IMMA rides along) | 3-4 / 4-6 | needs a higher-precision reference: the Q8_0 (176 GB) was deleted 10-17 and the disk has 126 GB free (keep-free floor 100) |
+| C3b | **Per-model profile files (Karl 10-27, from the Flash-Next tuning audit, ~/ai/deep-research/results/AUDIT-FLASHNEXT-TUNING-1027.md)**: one file per model loaded by run-ldr.sh - context and output sizes, compaction derived from the context, what the lead and writers see (subagent return, snippets, page / extraction sizes, section evidence and findings, outline / opening caps), the tokenizer, effort per call type with a name map (and a same-effort retry for APIs), worker count and step limits, code-tool read sizes; flash-next.env = today's values (no behaviour change), sonnet-5-5.env for C4 | ~4-6 / ~1 (a replay showing flash-next.env is identical) | **NOT during the six-fix work**; before C4 and before Qwen4 arrives (a Qwen4 profile then) | planned |
+| C3c | **Bigger fixed sizes for Flash-Next (Karl 10-27; with C3b)** - (1) at the current 131K context: the lead's view of each subagent report 16K -> ~32K chars, findings per section 12K -> ~24K tokens, evidence per section 48K -> ~72K tokens, search snippets 300 -> ~600 chars; graded blind against the current sizes, plus run time and steps completed (bigger reads are slower; the lead compacts more often). The two report-stage sizes are replayable from saved evidence; the subagent view and the snippets change the research phase, so they need runs. (2) ONLY if (1) helps: 256K context for Qwen on Strata - decode speed, VRAM experts, memory against the 12 GB floor, a long-prompt time check, long-context quality (needle checks; tied to C3's open long-context divergence question); if it passes, the profile derives the sizes from the context. **Either way the sizes become derived from the profile's context setting**, so a future model with a bigger context scales by itself. Fit at 131K checked on paper: a section prompt of ~102K tokens stays under the report writer's 121.8K limit (~28K left for output) | ~2-3 / ~2 (report replays) + ~10 (research runs) + ~4 (256K checks) | after the six fixes, with or after C3b; before C4 | planned |
+| C4 | **LAST LDR item (Karl 10-27, rescaled): Sonnet 5.5, our LDR build vs stock LDR on ONE question (o03, EU AI Act - no code, so stock is not handicapped)**; (a) our build with the six fixes + code tool and a Sonnet profile (C3b), (b) stock 1.10.7 in its own install; SearXNG only, same budget, prompt caching on, per-run caps, **total hard stop $60**; blind A/B, fresh grader, citation check; Flash-Next o03 reports as reference. results/SONNET55-LDR-PLAN-1027.md | ~1 day / 0 GPU | after the six fixes, Phase 5, items 5-8 (if done) and C3b; only after Karl's API credits reset; **the Opus 4.5 run comes first in November; if the month's $100 does not cover both, this moves to the next month** | planned |
+| C5 | **ldr-web memory growth, a likely leak (Karl 11-01)**: RSS 0.3 -> 4.7 GB in ~21 h on one LDR (10-31 12:52 -> 11-01 10:10, item 7 runs). With the 20 GB relief trigger, 8080 was restarted (chat cache emptied) 14 times by 10:10 on 11-01 vs 1-7 a day before. Bench queue workaround since 11-01: a fresh LDR before every question. Karl's own research from Jan hits it too (the runner keeps one LDR across jobs). Find the cause (memory profile over a replay: lxml, the search hook, LDR caches), then fix it, or restart LDR between Jan jobs meanwhile. | ~2-4 / <1 | after item 7's parts |
+| C6 | **LDR misreads papers (Karl 11-02)**: the problem is in LDR, not the search source - every case came through ordinary search results. 7a o01: the KTransformers SOSP '25 paper's deferral defaults misquoted ("4 of 6 deferred, the DeepSeek-V3 default"; the paper: 6 of 8 in its Int4 config, 3 deferred = 26 % single-layer / 33 % end-to-end), and Expert Deferral / the AcceptMoE verifier mask recommended without the papers' own "changes the model's outputs" caveat (deferral: accuracy -0.5 % at most; AcceptMoE -0.27 pp); 7c o01: a misread paper behind the main recommendation (splitting gate/up/down "triples" the 4060 Ti's slots - the bytes are the same). Look at how the deep strategy reads PDFs (the arXiv / direct-PDF full-text fetch, chunking, what the extract call keeps - numbers, tables, accuracy caveats) and at the claims / citation checks (why a misquoted number or a dropped caveat passed). Sources: results/bench2/blind-p7a/grades-o01.json, blind-p7c/grades-o01.json and SUMMARY.md files. | ? / ? | needs a design; replay the two papers' fetch + extract first (no GPU-heavy runs) |
+| C7 | **LDR context overflow (Karl 11-07; after Phase 5, desk analysis first)**: Phase 5's baseline o04 and o06 hit the 131072-token window and pristine LDR counted them complete. o04 kept a cut-off agent answer; o06 answered from a ~5 KB snippet fallback (results/bench2/p5-run-flags.json; flagged beside the grades, counted per arm in p5.py's REPORT.md). Desk first: (1) how often it happened across all stored runs, per profile (baseline / deep) and phase, and what each overflow did to the answer. staging/phase5/overflow.py detects it from research-logs.json; the p5 test fixtures already show it on older baseline runs. (2) Options with costs: keep the agent under a token budget below 131K; compact the history (summarize old tool results); cap fetched pages harder; or a 256K Qwen config, with its RAM, KV and speed cost measured. | ~2 desk / later | nothing changes during Phase 5 (pristine baseline). **11-09 desk analysis done:** ~/ai/deep-research/results/bench2/C7-OVERFLOW-1109.md - 7 of 219 runs, all stock-LDR open questions (7 of 9), deep 0 of 156. **Karl 11-09: leave LDR as it is; LOWER PRIORITY (the final setup had 0 of 33); kept as a note for stock / quick mode only.** |
+
+Small / conditional: quick-answer length live check (waits for a quick request; free); a separate quick LDR (only if
+quick answers are often blocked; 3-4 code h); tool-call check of the research tools at the next 8080 switch (minutes);
+the 20 GB relief trigger "revisit at the phase 4 switch" (Karl's call); LDR upgrade past 1.10.7 (Karl's OK); the critic's
+"targeted re-research + revision" (never built, never dropped); stale 09-30 README items (262K context proposal, 4-worker
+comparison, lxml upstream report).
+
+**Totals:** the "week" Karl remembers = A1-A7 + C1 + C2 ≈ 22-25 code h and ~43 GPU h + ~5 h grading, 5-7 days with queue
+gaps. B1-B4 add 2-3 weeks if kept.
+
+## D. Not LDR
+
+**D0. Release watch - found stopped, half fixed today.** The tag watch stopped itself 10-25 04:47 when v0.2.5 touched
+the Qwen path; Karl said that morning no pause was needed, but the baseline was never raised (my slip in the DeepSeek
+round). Done now: `tagcheck.sh --accept v0.2.5` (baseline v0.2.5). v0.2.6 then paused on 2 changes on our path - a
+comment in generate.cpp (`--spec-split` no longer called exact), and in server.py a one-token reply shows no tok/s and
+an empty `messages` gets a 400. Recommendation: accept v0.2.6 and restart the watch (needs Karl's OK; until then the
+watch would stop again at its first check, so a Thursday release would not be noticed automatically).
+
+| # | Item | Code h / GPU h | Depends on | Done / notes |
+|---|---|---|---|---|
+| D1 | **Qwen patch-series port - Karl 10-27: to ~~v0.2.6~~ **v0.2.7** (Karl 10-27 ~11:00; plan results/PORT-V027-PLAN.md: 0.2.7's new defaults pinned off - STRATA_DEFAULTS=026 + ROUTE_PRIOR / PROMPT_ATTN_IMMA / PREFILL_LAYER_MAJOR / PLE_AUTO_RAM = 0 - then KL gate + speed A/B per switch) after the LDR week, repeat-run gate first (--adapt-async); tell Karl if Strata adds Qwen4 support before then** (P021m = v0.2.1 + 30 commits: server chat cache / side stash / web search / think-fence / continuation fix; engine SPEC_EXACT, #652, ROUTER_Q8K, GR_FORK, guards, #619 nextn, cost gate, DRAFT_CUM, PREFILL_V2) to **v0.2.6** (memory says v0.2.3; v0.2.6 carries v0.2.5's Qwen engine + small server fixes - Karl picks) | 8-12 / 8-9 | release summary + Karl's go; gaps; "never 0.2.x during phase 4" vs the LDR stages (a switch mid-phase-4 changes the model under the comparisons) | 0.2.2 port built + checked in gaps 5 and 7, never switched (r22-port022-next, 29 commits; the continuation fix not on it). Gate first: find why 0.2.2/0.2.3 runs did not repeat (exact7 4/7, 5/7) - rerun at the matched slot pin; new candidate: v0.2.5's automatic `--adapt-async` default, "not bit-exact from run to run" by its own header |
+| D2 | **STRATA_SPEC_COST A/B** (upstream's cost-aware draft window, v0.2.3) vs our arm C (--spec 7 + DRAFT_CUM + our cost gate, +3.2 % on W1-W3) | 1-2 / 1-1.5 | D1 (not in v0.2.1) | if equal or better, two of our patches can go; needs the near-tie probe with a spec-off arm |
+| D3 | **IMMA retest** (int8 tensor-core prompt attention, TTFT -2.7 %; a default on sm_80+ since v0.2.7 - pinned off in the port, Karl 10-27) | ? / ? | a higher-precision reference (as C3) | lowest KL of all variants but failed top-1 (gap 9: 104 / 120, floor 108); under the 10-26 spread rule it still fails (16 changed vs bound 12.1, if that rule carries over to the Qwen yardstick) |
+| D4 | v0.2.5 IQ_GATHER exact test on Zen 5 | 0.5 / 0.5 | D1 | Karl's 10-25 backlog line |
+| D5 | **Next DeepSeek round:** (Karl 10-27: on v0.2.7 - rebase #343 + the slot-RAM cap, --vision off, keep --experts 6, A/B the new prompt-path defaults against DS4_DEFAULTS=026) BORROW port (main item, P20K +20-50 % est.) | 12-16 / ~2.5 | upstream may port it first (Saturday release check) | then Maya's prompt-compute ideas: 4060 Ti read share +10-15 %, ATTN_MMA +5-8 % (~1 day), lean tiles / FP16 / router rows +3-6 % (1-1.5 days), store huge pages +1-4 % (1 h), exact-size store slots +3-7 % (1-1.5 days) |
+| D6 | DeepSeek repeat-pair test (frozen, window 128, --ssd-cache 0) | 0.5 / 0.25 | - | written as a runnable next step in CHECKPOINT-1026 |
+| D7 | DeepSeek long-context comparison (Karl: not rerun this round) | 0 / ~0.7 | - | passes the 10-27 swap rule on replay |
+| D8 | Swappiness 60 -> lower (Maya's retry; long prompts' swap-outs) | 0 / 0.2 | Karl (sudo) | |
+| D9 | Unposted drafts (pr-drafts/47 follow-up re-read fix 12/12; cost-gate PR; three stale comments); threads to check for replies (#2028 - fixed upstream in v0.2.7 by #3416, which refs it; #1889, #1896, #2794) | - | Karl's per-item OK | never posted without it |
+| D10 | Suite: **Opus 4.5 hard-set run scheduled 11-02 but GATED (Karl 10-27): it starts only after Karl confirms his monthly API credits have reset (tmp/suite/opus45-credits-ok; the timer re-checks daily 09:00 through 11-24) - ask Karl before 11-02**; Opus 4.5 only until 11-24 and no Claude spending before November -> any Opus 4.5 run (e.g. the hard set) fits 11-01..11-24; r03 ratings / 27B cut streams from 10-13 (status not rechecked) | - / - | Karl | |
+| D11 | Gyro-L: **supported since v0.2.7** (#3806, CPU + CUDA + MMQ prompt path; upstream has not run the 50 GiB file; the Gyro-L watch fired 10-27 10:20 and stopped); ~108 GB download vs the disk | - | disk, Karl's order | plan in HANDOFF |
+
+## E. When Qwen4 Flash lands (Karl 10-27: news expected Thursday, the Flash model itself probably later; the Strata port for it comes first then)
+
+Nothing about a Qwen4 release is recorded (as of 10-12 not released; Flash-Next is its preview; a 27B announced 09-22).
+Precedent: DeepSeek V4.1 - files downloaded ahead (~2 h), release seen 21:30, stock build + pack + lossless speed arms done
+by 00:25, then a 3-day tuning round. Steps, in order:
+1. Release watch re-armed (D0: accept v0.2.6) so the supporting release pauses the queue and alerts.
+2. **Disk:** 126 GB free = ~26 GB above the 100 GB floor. A Qwen4 download almost certainly needs deletions first - Karl's
+   OK per file (candidates in the DeepSeek plan notes; GLM-5.3-Flash is never deleted).
+3. Header check, then a pinned, sha256-checked download unit (like ds41-download).
+4. Release summary -> Karl's go -> stock build in its own folder with a lossless config (tail skip 0 on one GPU,
+   adapt-async and CPU prompt share off, effort medium, the sampling block) -> speed screen + suite quick run at medium.
+5. Only then our series, whose model-specific parts need refitting (cost-gate table, B.3 table, helper slots, PREFILL_V2
+   - written for IQ3_XXS / IQ4_NL experts, GR_FORK geometry), and a new higher-precision yardstick reference.
+6. **Suite, research part (Karl 11-01), in the Qwen4 model's suite run:**
+   - **r05 replaced** by an RTX 5090 price question with script checks: the lowest in-stock NEW price at three named US
+     retailers and the typical USED price from sold listings, each with the date seen and the URL. The key checks, against
+     the frozen web snapshot: each quoted price appears on the page it cites; every price is dated within 14 days of the
+     snapshot's "today"; new and used are kept apart; the $1,999 launch price given as current is wrong. Karl's 1-5
+     rating covers the rest. (The old r05 stays on file for the earlier labels; its ratings are out of the comparison mean.)
+   - **r02 re-rate:** ALL r02 answers, old and new, on ONE shuffled page, labels hidden, against the approved rubric
+     suite/items/research/r02-rubric.md (5 only for Flash-Next at a size that fits; Qwen3.8-27B at most 4). Import as a
+     separate round; the first ratings stay on file beside the new ones. Until then r02 ratings are provisional.
+Prep that can be done before Thursday, code only: D0; the bringup runbook / fitplan / inspect scripts date from
+v0.1.39-0.1.41 and need refreshing for v0.2.x (~2-4 h); a deletion list for Karl. Interaction: switching 8080 mid-phase-4
+changes the model under the LDR stage comparisons (stage 2-3 baselines would need rerunning on the new model).
+
+Sources for every line: the two survey reports' file:line references (kept in this session's notes); key lines -
+LDR CHECKPOINT-phase3.md:134-144 (build order), 250-262 (estimates), PLAN.md:64-86 (phase 5); strata-compare
+NOTES.md:8064-8096 (0.2.2 port), 8193-8195 / 8342-8343 (IMMA), 8231 (arm C), 8502-8504 (v0.2.5); CHECKPOINT-1026.md.
+7. **Parked Qwen4-day idea (Karl 11-07): make STRATA_ADAPT_FETCH work beside the helper cache.** Upstream v0.2.12's
+   24c6c2f68 admits the PCIe share's fetched misses to the GPU cache, but switches itself off with helper GPUs
+   ("STRATA_ADAPT_FETCH is off (helper GPUs)"; `fetch_can` needs no remote cache), and P028x always runs the 4060 Ti helper.
+   Dropped for now (desk check: results/r23/ADAPTFETCH-DESK-1107.md). Revisit once Qwen4's cache hit rate is measured:
+   more misses means more for it to gain. Our patch would drop the helper guard and leave helper-held experts out of the
+   pick list (untested upstream). If it is ever tested, judge it with our placement-variant KL band (as Karl's 11-04
+   noise band, results/ds41/gate-1104-0725/kl-noise/); no new rule.
+
+## F. Catch-up list - other engines' ideas (review after item 7; read-only, under our unknown-code rules)
+
+**F1. Infernix** (github.com/Wallawalla47/Infernix, Apache-2.0; Karl 11-02). No work now. When reviewed: clone into its
+own folder, read only (nothing built or run until a review under the unknown-code rules passes), no network for anything
+of theirs. **For each idea, check first whether Strata or our patch series already does it.** Their numbers come from
+one RTX 5090 on Windows with most experts in VRAM (README vs Strata v0.2.8 on the IQ3_S GGUF; earlier figures vs
+v0.1.45), so **re-measure everything on this PC** (5080 + 4060 Ti helper, ~80 % of experts in RAM) before any port.
+Their README's claims vs stock v0.2.8: decode +3-12 % with 16-bit activations; agent replay 82.6 % vs 72.9 % of prompt
+tokens from cache, mean first token 3.1 vs 6.9 s; uncached prefill ~7 % slower.
+Skip: their lossy KV formats and their default fast paths.
+
+Priority (Karl 11-02: the prefix cache and the exact 16-bit arithmetic raised):
+1. **Prefix cache with RAM + file tiers that survives engine restarts** - cf. LDR's memory-relief restarts (each costs a
+   cold re-read today) and their agent-replay numbers (82.6 % vs 72.9 % cached, first token 3.1 vs 6.9 s). Compare with
+   our chat cache (--chat-cache 16 / 12 GiB) and Strata's conversation cache (pinned off, 0.2.3), and the
+   follow-up-re-read rule. Measure on our agent and research replays.
+2. **Exact BF16-activation integer arithmetic** (the same bits on every tier and every window width; their decode +3-12 %
+   "with 16-bit activations"). A Qwen4-era design question, not a quick port: it touches the exactness rules (exact7,
+   byte-identical logits, the batch-invariance questions) and our yardstick references.
+3. Per-size expert frame pools: 13,008 vs ~10,200 experts in the same VRAM on mixed-type IQ3_S (frames sized per quant
+   type instead of one slot size). Check against Strata's slot sizing on the 5080 (4,585 slots) and the helper (3,300).
+4. Cache policy: a candidate floor of 1, and cross-layer swaps within a frame pool. Compare with STRATA_ADAPT_* /
+   DISJOINT_ADAPT and our adapt settings.
+5. Long-context decode: claimed up to 25 % faster than Strata IQ3_S at 250K ("plain decode's divisor by context").
+   Our contexts stop at 131K; check what the change is and whether it is exact.
+6. Tiled dense layout: ~3 % with MTP + n-gram, bit-identical (their claim; check with exact7 + byte-identical logits).
+7. Also look at: the DFlash2 drafter (its VRAM cost on the 5080 against expert slots), and the SSD expert tier as
+   insurance if Qwen4 Flash exceeds RAM (cf. DeepSeek's SSD file tier, allowed for that model only).
+
+**F2. From Strata v0.2.10 (Karl 11-02, notes for later, no action now):** DeepSeek - with pictures on, the vision tower
+now sits in RAM between pictures (~320 MiB more VRAM for experts): check in the next DeepSeek round (D5). The ISTA
+DeepSeek-V4.1 Coder set (pruned, IQ2_XXS, shares our Engram) is now supported. The all-cards split engine: only if Karl
+ever runs two big Blackwell cards.
+
+## G. Parked (Karl 11-05)
+
+**G1. A valid many-positions NLL gate (~200 distinct long texts).** The many-positions NLL bound (adopted 11-04) was
+revoked 11-05: on our 8 distinct texts its whole-text SE is 0.051-0.065, 5-6.5 x its own 0.01 cap
+(results/r23/nll-many/recompute/REPORT.md). A text-level SE <= 0.01 needs ~200 distinct 32K texts: ~6.5 M prompt tokens,
+~1.6 h of engine time and ~17 GB of dumps per arm; the real constraint is finding ~200 distinct long texts (no overlaps,
+checked by token ids). Not started - Karl's call.
+
+**G2. The GDN prompt-path issue - CLOSED 11-05 (Karl).** Stock v0.2.10's STRATA_GDN_TC / STRATA_GDN_CONVL2 looked
+"beyond rounding" on the 36-position check (gaps 17 / 19), but the decode-path check (results/r23/decpath/decision.txt)
+put every prompt path, the decode reference included, in one scatter; the draft is retired
+(results/r22/gap19/ISSUE-DRAFT.RETIRED.md, never posted). Reopen only if the v0.2.11 port's gates show something new.
+
+## H. Parked for the next config change (Karl 11-06)
+- **U = the HC upmix switch (Basalt port, branch r23-basalt-prompt)** - parked with its results; considered at the next
+  config change (after item 7, under Karl's 5 switch conditions), nothing switches now.
+  - Exactness: EXACT (Basalt gap a, results/r23/basalt-prompt/gap-a/decision-a.txt: exact7 7/7, long40 0 of 40 differ).
+  - Speed: CANDIDATE (Basalt gap b, results/r23/basalt-prompt/gap-b/decision-b*.txt): B1 pp16k 3,918.8 vs 3,778.9 tok/s
+    (+3.7 %, noise 3.2 %), pp64k 4,555.8 vs 4,370.5 (+4.2 %, noise 0.6 %), both above max(noise, 1 %).
+  - Same gap: K and KP no gain; the stack S failed its screen / decode / VRAM check.
+  - Note: gap b's base B is P0210x-h on the Basalt branch (v0.2.10 + our port), not P028x. Against P028x, U rides on the
+    port's base, which failed the per-workload no-loss rule on 11-07 (R3-extract5k prompt -1.4 %, the hunt in
+    results/r23/port-0211/PORT.md).
+- **A, T, C = the other Basalt prompt-path parts (Karl 11-07: "if they're a real gain, add them to the next config change
+  with U, as candidates to adopt after Phase 5")** - correctness passed, **speed not yet measured**. They join U here
+  only if a speed gap shows a real gain.
+  - Correctness (fix rerun, gap 11-07 10:54-11:50, results/r23/basalt-prompt/gap-fix/decision-fix.txt, engine-r23basalt-fix
+    0cb2a597cb14):
+    - A (STRATA_PF_AHEAD=1) is EXACT (tail24 at 16384 24/24 twice, exact7 7/7).
+    - T (STRATA_PF_TAIL_SPLIT=1) is ROUNDING-LEVEL (T16 vs B16, T40_16 vs B40_16).
+    - C (prompt chunk cap 22528 + STRATA_PF_FIRST_CHUNK=1, on the stack A,T,U,K,KP) is ROUNDING-LEVEL. C40 passes against
+      the 16384 references; the comparison against gap 8's 1024-chunk references fails, but that is INFO only (Karl 11-05).
+  - Speed: never priced. Gap b priced only U, K, KP and S, because A and T were NOT DECIDED and C failed in gap a
+    (results/r23/basalt-prompt/FIX-1105.md). Plan-time estimates (GATE-PLAN.md section 7, not measurements):
+    - 16K: T +7..+13 %, C (instead of T) +13..+19 %, A +1..+2.5 %.
+    - 64K: T +2..+3.5 %, C +5..+9 %.
+  - Needed: a speed gap after Phase 5 (gap b's B1 / B2 / B3 on the fix build: B, A, T, U, C-stack, plus P028x as the
+    serving reference). **Karl 11-07: yes, after Phase 5's queue, P028x as the reference.**
+  - U on P028x: yes. STRATA_HC_UPMIX=1 is an upstream opt-in switch (cffe31d43) that P028x's engine already has
+    (strata-r22p028x src/prefill/prefill.cpp:467-477, off under 026 since P028x does not set it). The gap runs it as
+    P028x + STRATA_HC_UPMIX=1 and checks its exactness on P028x first (exact7 + long40 vs P028x); gap a's EXACT was on
+    the v0.2.10 branch. Adopting U alone would then be a one-variable config change on the served build, under Karl's 5
+    switch conditions.
+  - A, T, C exist only on branch r23-basalt-prompt (v0.2.10 + our port + 6 commits); P028x is a v0.2.8 port. Adopting
+    them depends on: serving moving to the v0.2.11 port base (its baseline check waits for the 25-min confirmation gap
+    under the 11-07 amended rule, then the port plan's before-switch requirements); carrying the 6 Basalt commits onto
+    r23-port0211 (FIX-1105.md section 4), rebuilding and redoing their correctness gates on that build; and a priced gain
+    over P028x.
+- **Speed gap result (11-09 07:42-09:38, post-Phase-5 chain; results/r23/post-p5-chain.log; rules
+  work/r23/basalt_speed_rules.py frozen 220bec8b6781; fix build 0cb2a597cb14, P028x f4c4f654fb24). Nothing switched.**
+  - **U on P028x (P028x + STRATA_HC_UPMIX=1): CANDIDATE, EXACT on P028x** (exact7 7/7 MATCHED vs this gap's P; long40
+    0 of 40 differ vs gap 16's x28h). B1 pp16k 3,975.7 vs 3,849.4 tok/s (+3.3 %, noise 0.1 %), pp64k 4,566.7 vs 4,370.4
+    (+4.5 %, noise 0.5 %). Reported: B2 decode vs P PASS (conv +6.1, struct +3.1, prose -0.8 %, all within noise),
+    B3 screen vs P PASS (prompt geomean +2.41 %, decode -1.89 %, none of the 9 workloads slower beyond its noise).
+    This is the one-variable change on the served build.
+  - **U on the fix build: CANDIDATE, EXACT**: pp16k +3.8 %, pp64k +4.2 % vs B; vs P028x +2.8 / +4.4 %.
+  - **T (STRATA_PF_TAIL_SPLIT=1): CANDIDATE, ROUNDING-LEVEL**: pp16k 4,084.3 vs B 3,811.9 (+7.1 %), pp64k +2.3 %;
+    vs P028x +6.1 / +2.6 %. Trade (B4): T drops the 16,384 mid-prompt checkpoint, so a prompt that shares 16,500
+    tokens with a parked one is read again in full (request 2: 16,527 tokens in 3,950 ms vs B's 143 in 381 ms); a
+    continued conversation still reuses (request 3: 59 tokens, 308 ms). Expected by the plan.
+  - **A (STRATA_PF_AHEAD=1): NO GAIN** (+1.2 % / +0.4 % vs B, within noise; +0.2 / +0.6 % vs P028x). Drop it.
+  - **C (A,T,U,K,KP + FIRST_CHUNK, chunk 22528): NOT DECIDED.** B1 pp16k +17.0 %, pp64k +8.6 % vs B, but B2 decode FAIL
+    (conv -3.2 %, struct -2.7 % (noise 0.5 %), prose -4.1 %); B3 screen +4.82 % prompt, not below. And B4 was **not as the
+    plan expected**: C never parked a conversation in the chat cache (no "chat cache: parked" line; every checkpoint was
+    saved "into a dropped checkpoint's vectors", K = STRATA_CKPT_POOL), so a continued conversation was read again in full
+    (request 3: 16,726 tokens in 3,651 ms vs T's 59 in 308 ms and B's 350 in 524 ms). Cause (desk, 11-09): our own
+    chat-cache commit 308a52cc5 turns --chat-cache off whenever the pool is on (generate.cpp:16248-16249 on
+    r23-basalt-prompt, `!ckpt_pool.on()`: "the pool reuses a parked checkpoint's storage"). So K and the chat cache
+    exclude each other, and C's B3 screen ran without the chat cache. K had no gain in gap b either: a retry of C should
+    drop K (C = A,T,U,KP + FIRST_CHUNK, A can go too) rather than make the two coexist.
+  - INFO: B (fix build, no switch) vs P028x: pp16k -1.0 %, pp64k +0.3 %; B3 FAIL (prompt geomean -0.32 %, decode -2.85 %;
+    R1-verify20k prompt -0.2 %, noise 0.1 %), the same kind of small port-base loss as 11-07.
+  - Recommendation for the next config change: U alone on P028x (exact, one variable, every reported check passes).
+    T needs the port-base move (its branch) and Karl's call on the edited-prompt re-read. C waits for the K/park finding
+    and its decode loss. All under Karl's 5 switch conditions.
+- **Karl's decisions on the speed gap (11-09):**
+  - **U: ADOPT TODAY** on P028x. After D2 and the end of the chain, STRATA_HC_UPMIX=1 goes into configs/P028x.json
+    together with the mismatch guard install, so it's one restart; a dated backup for rollback
+    (configs/P028x.json.before-upmix-1109); then exact7 and the short speed check, results to Karl.
+    Driver: work/r23/gap-u-adopt.sh (+ work/r23/u_adopt.py), started after the chain by work/r23/u-adopt-after-chain.sh.
+  - **T: when it's decided, judge it on a real LDR workload too, not just the screens.** Many LDR calls share a long
+    prefix without continuing it, and prefix-cache reuse was a big part of LDR's speed: measure the **net effect per
+    research run** (T's faster cold reads against the edited-prompt re-reads it causes, B4 above), not per request.
+  - **A: dropped.**
+  - **C: retry later without K** (see the cause above). Backlog, no date.
+
+## I. STRATA_ADAPT_FETCH beside the helper cache (Karl 11-09: start now, desk first, low priority behind the v0.2.13 port)
+- Upstream 24c6c2f68 (v0.2.12, from PR 2964): the PCIe share's fetched misses are admitted to the GPU cache (=1; =2 also
+  keeps the tier's own swaps out of a layer where an admission ran). Off "with a log line saying why" where it cannot
+  run - on P028x's setup (two GPUs, helper cache) it is off.
+- Steps (Karl): (1) why v0.2.12 disables it with helper GPUs - what would break, or which tier a fetched expert should
+  go to; (2) a patch so both run together + the likely gain on P028x (~0.4 PCIe share, 4,560 + 3,300 slot caches);
+  (3) if worthwhile, build it on P028x (the commit merges cleanly onto r22-port028x) and keep the same patch for the
+  v0.2.13 port; (4) plan one gap: P028x vs P028x + ADAPT_FETCH=1 and =2 with the helper on, judged by our
+  placement-variant KL band and the usual speed rules. **Tell Karl the estimate before queuing the gap.**
+- 11-09: desk study started (one read-only helper; scratch work/r23/scratch-adaptfetch/).
+- 11-09 desk study DONE (results/r23/ADAPTFETCH-DESK-1109.md): the helper guard is not a correctness guard on P028x; the
+  real gap is the share's pick list (helper-held misses picked, never fetched -> slower if the guard alone goes). Patch:
+  E1-E5 exact + P1 helper-aware pick (required) + P2; admissions to the 5080 cache only. 24c6c2f68 merges cleanly onto
+  r22-port028x (3-way). Estimate: central about +3 % decode (low -0.5..+1 %, high +9-10 %). Our KL band, exact7 and the
+  decpath harness cannot see it (prompt path / no adaptation / no PCIe share): a served sampled-distribution test can.
+  Estimate + the quality-check question sent to Karl 11-09; no gap queued.
+- **Karl 11-09 decisions on I:** quality by (a) a served-mode sampled-distribution test (a reusable Qwen version of D2's
+  driver: P028x vs itself for the noise bound, then =1 and =2) + one start with STRATA_ADAPT_FETCH_VERIFY=1 (slot
+  read-back; report any mismatch). Build the branch after the port builds. **Queue its gap only after the v0.2.13 shape
+  gap.** Keep the Qwen sampled driver reusable (the port switch requirements, Qwen4). The possible upstream async-tier
+  bug: a short issue draft for Karl to post himself (results/r23/ISSUE-DRAFT-adaptfetch-async-1109.md); post nothing.
+
+## J. The version check (Phase 5 step 7; Karl 11-09)
+- **OFF in Jan's deep jobs since 11-09** (research-runner.py JOB_DEEP_FIX without "version"; backup
+  .before-noversion1109; test_runner_daily.py ALL OK on the installed runner, runner restarted pid 94313).
+- Fix at the desk, replaying on the stored reports (patterns in results/bench2/fixes/fix1c-holdout/SUMMARY.md: relabelled
+  attributions, the check without engine code, negated mentions, doc file names, exists-only across engines).
+- **Re-enable only when the replay shows no false marks on the new questions (o04, o05) and o01.** Staged patch only; no
+  edit of the installed LDR package while a run is live.
+- **Karl 11-09: the Qwen sampled test APPROVED as designed** (results/r23/SAMPLED-QWEN-DESIGN-1109.md,
+  work/r23/sampled-qwen/). For ADAPT_FETCH's gap: K=8 (32 requests) for P028x, =1 and =2, plus 16 for the second
+  P028x run (always run: the noise bound); the read-back start on =2 only; PASS = each candidate passes the sampled
+  test AND the read-back shows 0 mismatches; build vs switch by exact7 + long40 with the switch unset. Fill in the
+  fetch build's path, sha and log lines once the patch exists; queue the gap after the v0.2.13 shape gap.
+- Presence penalty: P028x.json stays as it is (Karl 11-09); note in HANDOFF.md's sampling paragraph.
+- **Karl 11-09 ~14:15:** ADAPT_FETCH's gap is queued after the shape gap. **Priority rule:** if the Qwen4 watch finds
+  open Flash weights before it runs (work/qwen4-kit/hfwatch/state.json: a repo of kind Flash, neither private nor gated,
+  with weight files), hold the gap and do the day-one work first.
+- **Karl 11-09 ~16:10: ADAPT_FETCH's gap rules FIXED** (to be set in afetch_rules.py's frozen rules before the gap):
+  1. **Prompt side:** per-workload no-loss (no workload slower beyond its noise) plus a screen prompt geomean not below
+     -1 %; the strict "not below" form is reported as information.
+  2. **Decode gain:** ONE primary target, the screen's decode geomean above +max(noise, 1 %); the three decode fixtures
+     are no-loss checks only (none below -noise).
+  3. **Order:** the read-back start on =2 right after exact7 + long40, before the speed runs.
+  - Noise = the full range, as the rule files define it.
+- 11-09 16:0x: the starter stays UNARMED until Karl's OK on the kernel event (an Xid 31 in the shape gap; see NOTES.md).
+- 11-09 16:4x: second review of the ADAPT_FETCH driver: the six earlier items are fixed. One new must-fix, M1: the
+  cleanup could kill the stopped 8080 engine, which has the same binary as arm P. Minors m1-m9. All were sent to the
+  driver's author.
+  - **Kernel-error policy (Claude, following Karl's 11-09 rule for the shape rerun):** any new Xid or kernel error
+    stops at once, P028x comes back, an alert goes out, and kwatch is NOT cleared.
+  - **Only a shape result starting "DONE" counts as "ran"** for the starter.
+  - The starter stays unarmed until the fixes are verified and the shape rerun has ended clean.
+- **11-09 19:03: ADAPT_FETCH gap DONE** (results/r23/adaptfetch/gap/decision.txt). F1 (=1): PROPOSAL, screen decode
+  +10.2 %. F2 (=2): FAIL by the rule, though screen decode was +12.7 %: R4-agent33k's prompt time was -0.1 % against a
+  0.1 % noise. Both passed the sampled test and the read-back.
+- **Karl 11-09 ~19:15: =2 becomes the daily, as a recorded OWNER EXCEPTION** to the prompt no-loss rule, for this
+  decision only; the rule is unchanged (results/r23/adaptfetch/OWNER-EXCEPTION-1109.md). One restart outside a gap:
+  - a dated backup;
+  - the fetch build + STRATA_ADAPT_FETCH=2;
+  - exact7 and the short speed check;
+  - a ready =1 fallback;
+  - a one-command rollback;
+  - the patch carried onto the v0.2.13 port.
+  Driver: work/r23/afetch-adopt/gap-afetch-adopt.sh. Switch / rollback: work/r23/afetch-adopt/served-afetch.sh
+  p028x | afetch1 | afetch2.
+  - **Side changes this needs:**
+    - work/r22/port_gap4.sh `end` now wants the engine configs/P028x.json names, and that engine must be a known
+      served build (f4c4f654fb24 or 153ce47d3ef0). Backup: .before-servedsha1109.
+    - The Qwen4 day-one kit's 8080 preflight (dayone.py) accepts the fetch build too. Backup: .before-servedsha1109.
+    - Future gap drivers that pin P028X_SHA for "the 8080 engine" must accept 153ce47d3ef0.
+- **Karl 11-10: T and C are PARKED until after Qwen4 day one.**
+- **11-10: the version-check fix is staged and replayed** (deep-research results/bench2/fixes/version-fix-1110/SUMMARY.txt). The re-enable condition is MET on the stored replay: o04 0, o05 0, o01 10 marks, all true. Waiting for Karl: install the patch + put "version" back into JOB_DEEP_FIX (only while no run is live), optionally after one live check.
+- **11-10 live check:** o01 9 (true), o04 0, **o05 10 false** (model_type, architectures: model config keys, as quant types were). The re-enable condition is not met live; Karl decides (off again, or a small extra fix: model-config keys are not settings, replayed on the live answers).

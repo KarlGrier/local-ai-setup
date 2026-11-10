@@ -1,0 +1,498 @@
+<evidence>
+[7735] [OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them] Niko1221/Strata@v0.2.4: docs/MULTI_GPU.md lines 190-240 (source code) (https://github.com/Niko1221/Strata/blob/v0.2.4/docs/MULTI_GPU.md#L190-L240)
+Checked quotes from this page (verbatim, with dates):
+- "190: `strata serve: draft layer prompt K/V batched on CUDA<d> ...` or `strata serve: STRATA_SPLIT_MTP_BATCH=1 declined, the" (undated)
+- "191: drafter's own pass runs: <reason>`. The draft layer's K/V come out of Q8_1 x Q8_0 MMQ instead of its own mmvq, so the" (undated)
+- "192: drafts, and how many are accepted, can move; the target's tokens are decided by the verify window." (undated)
+- "193: `tools/split_mtp_batch_parity.py` compares the greedy texts of the two arms. Measured on one machine (2x RTX 3080 20 GB" (undated)
+- "194: at 220 W, Xeon E5-2696 v4, UD-Q4_K_XL, `--layer-split 23`, `--batch-mtp`, two slots, `--prefill auto:16384`), two full" (undated)
+- "195: restarts per arm in the order off, on, off, on, the same binary in every arm: pooled medians of the prompt read were 1,996" (undated)
+- "196: tok/s without and 2,129 with at 25K tokens (+6.7%), 2,448 and 2,553 at 51K (+4.3%), 2,846 and 2,940 at 104K (+3.3%); all 8" (undated)
+- "197: on/off ratios of medians are above 1 (1.03 to 1.08), and the two off restarts differ by at most 2% at 25K and 0.3% at the" (undated)
+- "198: other sizes. The host's "after each chunk" time per request fell from 0.9-1.3 s to 0.1-0.25 s (one restart per arm). Greedy" (undated)
+- "199: output (`--adapt-every 0 --suffix-draft 0`, five prompts of 256 tokens and one 25.5K-token prompt) was identical in 6 of 6" (undated)
+- "200: prompts in all five comparisons, the two runs inside one process (A/A) included, and the drafts accepted were 826 of 1,210" (undated)
+- "201: in every run, so no difference in acceptance was visible. Decode is not shown to be unchanged: the medians with the variable" (undated)
+- "202: set were about 3% lower (pooled solo 82.6 -> 80.2 tok/s, two streams 93.2 -> 90.8), and the same configuration restarted" (undated)
+- "203: twice moved up to 4.7%, so two restarts per arm can neither confirm nor exclude it; the change touches only the prompt path." (undated)
+- "205: **Each card loads only its own layers' dense weights** (0.1.39, PR #639) with explicit split points (`--layer-split" (undated)
+- "206: 27`, not `auto`): every card used to keep a full copy (~3.4 GB for the Coder) though its stage reads only its own" (undated)
+- "207: layers, and the VRAM it frees goes to that card's expert cache (2x MI50 16 GB, Coder: 8,819 -> 10,626 experts in" (undated)
+- "208: VRAM, decode 39.2 -> 41.7 tok/s). Opt-in for now, on AMD and NVIDIA alike: `STRATA_STAGE_TRIM=1` (please report how" (undated)
+- "210: A card holding more experts can change which experts run on the GPU, so the output can differ slightly from a run" (undated)
+- "213: **The resident RAM mode works on a split** (`--resident-experts`, the low-RAM mode). The RAM copy of the experts" (undated)
+- "214: leaves out the ones every card's cache holds, not only the first card's, and when the rest does not fit whole it keeps" (undated)
+- "215: the hottest by the expert profile over all the layers. An adaptive swap copies the evicted expert back into RAM from" (undated)
+- "216: the card that owns its layer. Before, `--resident-experts` with a split ran as `--mmap-experts`, and setup recommended" (undated)
+- "217: one card in the low-RAM mode; with an engine that has it (`RESIDENT_SPLIT_ENGINE` in setup.py), setup keeps the cards" (undated)
+- "218: together and the experts no card holds in RAM. The same copy, sized by a RAM budget (`--resident-budget-gib`, the" (undated)
+- "219: Unsloth UD-Q4_K_XL and UD-IQ4_XS configs), is kept on a split as well ([UNSLOTH_Q4.md](UNSLOTH_Q4.md)). Swift 1.5 IQ3_XXS at" (undated)
+- "220: 160K (q4_0 KV, `--prefill 4096`, `--spec 4` with the stock draft layer), RTX 4060 Ti (layers 0-19) + RTX 5080 (20-47)," (undated)
+- "221: i9-14900KF, 32 GB of RAM, Windows 11, four greedy prompts at a time, decode tok/s:" (undated)
+- "223: | | first four prompts | after three more rounds |" (undated)
+- "225: | 5080 alone, `--resident-experts` | 25 | 29 |" (undated)
+- "226: | split, `--mmap-experts` (what `--resident-experts` became on a split) | 32 | 64 |" (undated)
+- "227: | split, `--resident-experts` (22 GiB of experts locked in RAM) | 71 | 69 |" (undated)
+- "229: The split with `--mmap-experts` catches up once the OS file cache holds the experts, on a PC with nothing else" (undated)
+- "230: running; the resident copy is there from the first request and stays locked when other programs need the RAM. With" (undated)
+- "231: `--pcie-frac 0 --adapt-every 0` the split's greedy output is the same with either mode." (undated)
+- "233: **The prompt path's loan on a split and its streamed ring (`STRATA_SPLIT_RING`).** Under a split the prompt path borrows" (undated)
+- "234: the tail slots of each card's expert cache for its buffers (they are given back after the prompt), and the resident RAM" (undated)
+- "235: copy keeps those experts too, so a borrowed expert is not read back from the model file during a prompt. How many slots" (undated)
+- "236: are borrowed depends on the prompt path's streamed ring: a split uses 96 ring slots when at least 75% of the (layer," (undated)
+- "237: expert) pairs sit in some card's cache, and `STRATA_SPLIT_RING=N` sets N slots (`0` goes back to the pinned-share rule)." (undated)
+--- more of the page [7735] ---
+190: `strata serve: draft layer prompt K/V batched on CUDA<d> ...` or `strata serve: STRATA_SPLIT_MTP_BATCH=1 declined, the
+191: drafter's own pass runs: <reason>`. The draft layer's K/V come out of Q8_1 x Q8_0 MMQ instead of its own mmvq, so the
+192: drafts, and how many are accepted, can move; the target's tokens are decided by the verify window.
+193: `tools/split_mtp_batch_parity.py` compares the greedy texts of the two arms. Measured on one machine (2x RTX 3080 20 GB
+194: at 220 W, Xeon E5-2696 v4, UD-Q4_K_XL, `--layer-split 23`, `--batch-mtp`, two slots, `--prefill auto:16384`), two full
+195: restarts per arm in the order off, on, off, on, the same binary in every arm: pooled medians of the prompt read were 1,996
+196: tok/s without and 2,129 with at 25K tokens (+6.7%), 2,448 and 2,553 at 51K (+4.3%), 2,846 and 2,940 at 104K (+3.3%); all 8
+197: on/off ratios of medians are above 1 (1.03 to 1.08), and the two off restarts differ by at most 2% at 25K and 0.3% at the
+198: other sizes. The host's "after each chunk" time per request fell from 0.9-1.3 s to 0.1-0.25 s (one restart per arm). Greedy
+199: output (`--adapt-every 0 --suffix-draft 0`, five prompts of 256 tokens and one 25.5K-token prompt) was identical in 6 of 6
+200: prompts in all five comparisons, the two runs inside one process (A/A) included, and the drafts accepted were 826 of 1,210
+201: in every run, so no difference in acceptance was visible. Decode is not shown to be unchanged: the medians with the variable
+202: set were about 3% lower (pooled solo 82.6 -> 80.2 tok/s, two streams 93.2 -> 90.8), and the same configuration restarted
+203: twice moved up to 4.7%, so two restarts per arm can neither confirm nor exclude it; the change touches only the prompt path.
+204: 
+205: **Each card loads only its own layers' dense weights** (0.1.39, PR #639) with explicit split points (`--layer-split
+206: 27`, not `auto`): every card used to keep a full copy (~3.4 GB for the Coder) though its stage reads only its own
+207: layers, and the VRAM it frees goes to that card's expert cache (2x MI50 16 GB, Coder: 8,819 -> 10,626 experts in
+208: VRAM, decode 39.2 -> 41.7 tok/s). Opt-in for now, on AMD and NVIDIA alike: `STRATA_STAGE_TRIM=1` (please report how
+209: it goes).
+210: A card holding more experts can change which experts run on the GPU, so the output can differ slightly from a run
+211: without it.
+212: 
+213: **The resident RAM mode works on a split** (`--resident-experts`, the low-RAM mode). The RAM copy of the experts
+214: leaves out the ones every card's cache holds, not only the first card's, and when the rest does not fit whole it keeps
+215: the hottest by the expert profile over all the layers. An adaptive swap copies the evicted expert back into RAM from
+216: the card that owns its layer. Before, `--resident-experts` with a split ran as `--mmap-experts`, and setup recommended
+217: one card in the low-RAM mode; with an engine that has it (`RESIDENT_SPLIT_ENGINE` in setup.py), setup keeps the cards
+218: together and the experts no card holds in RAM. The same copy, sized by a RAM budget (`--resident-budget-gib`, the
+219: Unsloth UD-Q4_K_XL and UD-IQ4_XS configs), is kept on a split as well ([UNSLOTH_Q4.md](UNSLOTH_Q4.md)). Swift 1.5 IQ3_XXS at
+220: 160K (q4_0 KV, `--prefill 4096`, `--spec 4` with the stock draft layer), RTX 4060 Ti (layers 0-19) + RTX 5080 (20-47),
+221: i9-14900KF, 32 GB of RAM, Windows 11, four greedy prompts at a time, decode tok/s:
+222: 
+223: | | first four prompts | after three more rounds |
+224: |---|---|---|
+225: | 5080 alone, `--resident-experts` | 25 | 29 |
+226: | split, `--mmap-experts` (what `--resident-experts` became on a split) | 32 | 64 |
+227: | split, `--resident-experts` (22 GiB of experts locked in RAM) | 71 | 69 |
+228: 
+229: The split with `--mmap-experts` catches up once the OS file cache holds the experts, on a PC with nothing else
+230: running; the resident copy is there from the first request and stays locked when other programs need the RAM. With
+231: `--pcie-frac 0 --adapt-every 0` the split's greedy output is the same with either mode.
+232: 
+233: **The prompt path's loan on a split and its streamed ring (`STRATA_SPLIT_RING`).** Under a split the prompt path borrows
+234: the tail slots of each card's expert cache for its buffers (they are given back after the prompt), and the resident RAM
+235: copy keeps those experts too, so a borrowed expert is not read back from the model file during a prompt. How many slots
+236: are borrowed depends on the prompt path's streamed ring: a split uses 96 ring slots when at least 75% of the (layer,
+237: expert) pairs sit in some card's cache, and `STRATA_SPLIT_RING=N` sets N slots (`0` goes back to the pinned-share rule).
+238: The ring used to be chosen after the RAM copy's regions were sized, so the regions were sized for a different ring than
+239: the prompt path then used: with `STRATA_SPLIT_RING=384` it borrowed 5,396 slots and the copy kept 4,662, and the
+240: other 734 were read from the model file in every chunk. The ring is now chosen first (`Prefill::set_ring_override`
+
+[7737] [OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them] Niko1221/Strata@v0.2.4: bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md lines 1- (https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md#L1-L110)
+Checked quotes from this page (verbatim, with dates):
+- "1: # Community benchmark on RTX 5080 16 GB + RTX 4060 Ti 8 GB (helper expert cache), Ryzen 9 9950X3D, 96 GB" (undated)
+- "3: Measured on 2026-10-09 by KarlGrier. Stock Strata v0.1.41 on the ISTA-DASLab IQ3_S file at a 131,072-token context: three" (2026-10-09, in the quote)
+- "4: runs each at 4,096, 32,768 and 128,000 prompt tokens, plus `tools/needle_bench.py` at 32k and 128k. Two more sets are" (2026-10-09, on the page before the quote)
+- "5: listed separately because they are **not** v0.1.41 as released: the same runs on a private build (v0.1.41 with local" (2026-10-09, on the page before the quote)
+- "6: patches), and two larger files measured on 2026-10-07/08 on an older private build as stand-ins for a bigger model." (2026-10-07, in the quote)
+- "7: Main limitation: one machine, one IQ3_S file, three runs per size, temperature 0 with a 256-token output cap." (2026-10-07, on the page before the quote)
+- "9: ## Hardware and software" (2026-10-07, on the page before the quote)
+- "11: - GPUs: NVIDIA GeForce RTX 5080 16 GB (16,303 MiB, PCIe 5.0 x16, 360 W limit, stock clocks) as the main GPU; RTX 4060 Ti" (2026-10-07, on the page before the quote)
+- "12:   8 GB (8,188 MiB, PCIe 4.0 x4 in this slot, 160 W limit, stock clocks) as a helper expert cache. Neither card drives the" (2026-10-07, on the page before the quote)
+- "13:   display (the monitor is on the CPU's integrated graphics); each card had 15 MiB in use before the server started." (2026-10-07, on the page before the quote)
+- "14: - CPU: AMD Ryzen 9 9950X3D, 16 cores / 32 threads, AVX-512. RAM: 96 GB DDR5 (MemTotal 91.96 GiB). Storage: Samsung 9100" (2026-10-07, on the page before the quote)
+- "15:   PRO 2 TB (PCIe 5.0 NVMe) holds the model files." (2026-10-07, on the page before the quote)
+- "16: - OS: an Ubuntu 24.04-based distribution, Linux 7.0. NVIDIA driver 610.57.04, CUDA 13.3 (nvcc 13.3.73)." (2026-10-07, on the page before the quote)
+- "17: - Strata: tag v0.1.41 (`fb58e0db`), source build: Release, `-DSTRATA_ENABLE_CUDA=ON -DSTRATA_BUILD_TESTS=OFF" (undated)
+- "18:   -DCMAKE_CUDA_ARCHITECTURES="89;120"`, ggml from llama.cpp `3cf03257` (the commit `setup.py` pins). No other options." (undated)
+- "19: - Background: a desktop session on the integrated graphics, otherwise idle. One model server at a time." (undated)
+- "21: ## Model and configuration" (undated)
+- "23: - Model: `ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF`, IQ3_S, two shards (54,817,524,224 + 28,800,138,432 bytes;" (undated)
+- "24:   revision not recorded, downloaded 2026-09-27). Routed experts 46.8 GiB." (2026-09-27, in the quote)
+- "25: - Pack: v0.1.41's `tools/iq_pack.py`, no conversions. Expert profile: v0.1.41's `data/expert-profile.bin`. MTP draft layer" (2026-09-27, on the page before the quote)
+- "26:   from `Qwen/Qwen3.8-Flash-Next@de4b8e4d` (the revision `tools/mtp_fetch.py` pins) with the English draft vocabulary" (2026-09-27, on the page before the quote)
+- "27:   (byte-identical to v0.1.41's `data/draft_vocab_en.bin`, not setup's default). No vision encoder." (2026-09-27, on the page before the quote)
+- "28: - Context 131,072; KV int8 with 32,768 cells resident; expert cache `auto` on the 5080 (4,560 slots, 8.70 GiB) plus 3,300" (2026-09-27, on the page before the quote)
+- "29:   slots (6.21 GiB) on the 4060 Ti; the experts in a page-locked RAM arena (no low-RAM mode); prefill `auto:16384`;" (2026-09-27, on the page before the quote)
+- "30:   `--pcie-frac 0`; MTP `--spec 4 --spec-min-p 0.5`. No calibration, experimental speed projection off. v0.1.41's CPU" (2026-09-27, on the page before the quote)
+- "31:   prompt-read share at its default (on for chunks below 1,024 tokens)." (2026-09-27, on the page before the quote)
+- "32: - Requests: temperature 0, `max_tokens` 256, the server's other defaults (its settings file sets `reasoning_effort` high," (undated)
+- "33:   so the model thinks first and the first streamed token is reasoning text)." (undated)
+- "36: strata --serve --pack <pack> --native <IQ3_S shard 1> --ple-gguf <IQ3_S shard 2> --expert-profile data/expert-profile.bin" (undated)
+- "37:   --expert-cache auto --prefill auto:16384 --spec 4 --spec-min-p 0.5 --mtp <mtp/rt> --max-context 131072 --kv int8" (undated)
+- "38:   --kv-resident 32768 --pcie-frac 0 --ple-inflight 128 --vram-reserve-mib 713 --expert-cache-device1 3300" (undated)
+- "39: env: CUDA_VISIBLE_DEVICES=<RTX 5080>,<RTX 4060 Ti> STRATA_IO_THREADS=64 CUDA_MODULE_LOADING=LAZY STRATA_GR_V3=1" (undated)
+- "40:      STRATA_PF_FUSED=1 STRATA_MMVQ_IL=1 STRATA_ADAPT_LAG=2 STRATA_DISJOINT_ADAPT=1" (undated)
+- "41: served by serve/server.py on 127.0.0.1" (undated)
+- "46: - `make_prompts.py` builds the prompts from the repository's own text at v0.1.41 (docs and source files), so they can be" (undated)
+- "47:   shared and rebuilt; the file it writes has the sha256 given in the script. Every prompt is a different slice of that" (undated)
+- "48:   text and starts with its own run id, so no request can reuse another one's prefix (the engine reported 0 reused tokens" (undated)
+- "49:   for every run). The task line asks for a one-paragraph summary." (undated)
+- "50: - `benchmark.py`: a fresh server; the model's page cache dropped before it started; startup is not timed. One" (undated)
+- "51:   ~1,000-token warm-up request (not counted), then three runs at each size, one request at a time, streamed. The expert" (undated)
+--- more of the page [7737] ---
+1: # Community benchmark on RTX 5080 16 GB + RTX 4060 Ti 8 GB (helper expert cache), Ryzen 9 9950X3D, 96 GB
+2: 
+3: Measured on 2026-10-09 by KarlGrier. Stock Strata v0.1.41 on the ISTA-DASLab IQ3_S file at a 131,072-token context: three
+4: runs each at 4,096, 32,768 and 128,000 prompt tokens, plus `tools/needle_bench.py` at 32k and 128k. Two more sets are
+5: listed separately because they are **not** v0.1.41 as released: the same runs on a private build (v0.1.41 with local
+6: patches), and two larger files measured on 2026-10-07/08 on an older private build as stand-ins for a bigger model.
+7: Main limitation: one machine, one IQ3_S file, three runs per size, temperature 0 with a 256-token output cap.
+8: 
+9: ## Hardware and software
+10: 
+11: - GPUs: NVIDIA GeForce RTX 5080 16 GB (16,303 MiB, PCIe 5.0 x16, 360 W limit, stock clocks) as the main GPU; RTX 4060 Ti
+12:   8 GB (8,188 MiB, PCIe 4.0 x4 in this slot, 160 W limit, stock clocks) as a helper expert cache. Neither card drives the
+13:   display (the monitor is on the CPU's integrated graphics); each card had 15 MiB in use before the server started.
+14: - CPU: AMD Ryzen 9 9950X3D, 16 cores / 32 threads, AVX-512. RAM: 96 GB DDR5 (MemTotal 91.96 GiB). Storage: Samsung 9100
+15:   PRO 2 TB (PCIe 5.0 NVMe) holds the model files.
+16: - OS: an Ubuntu 24.04-based distribution, Linux 7.0. NVIDIA driver 610.57.04, CUDA 13.3 (nvcc 13.3.73).
+17: - Strata: tag v0.1.41 (`fb58e0db`), source build: Release, `-DSTRATA_ENABLE_CUDA=ON -DSTRATA_BUILD_TESTS=OFF
+18:   -DCMAKE_CUDA_ARCHITECTURES="89;120"`, ggml from llama.cpp `3cf03257` (the commit `setup.py` pins). No other options.
+19: - Background: a desktop session on the integrated graphics, otherwise idle. One model server at a time.
+20: 
+21: ## Model and configuration
+22: 
+23: - Model: `ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF`, IQ3_S, two shards (54,817,524,224 + 28,800,138,432 bytes;
+24:   revision not recorded, downloaded 2026-09-27). Routed experts 46.8 GiB.
+25: - Pack: v0.1.41's `tools/iq_pack.py`, no conversions. Expert profile: v0.1.41's `data/expert-profile.bin`. MTP draft layer
+26:   from `Qwen/Qwen3.8-Flash-Next@de4b8e4d` (the revision `tools/mtp_fetch.py` pins) with the English draft vocabulary
+27:   (byte-identical to v0.1.41's `data/draft_vocab_en.bin`, not setup's default). No vision encoder.
+28: - Context 131,072; KV int8 with 32,768 cells resident; expert cache `auto` on the 5080 (4,560 slots, 8.70 GiB) plus 3,300
+29:   slots (6.21 GiB) on the 4060 Ti; the experts in a page-locked RAM arena (no low-RAM mode); prefill `auto:16384`;
+30:   `--pcie-frac 0`; MTP `--spec 4 --spec-min-p 0.5`. No calibration, experimental speed projection off. v0.1.41's CPU
+31:   prompt-read share at its default (on for chunks below 1,024 tokens).
+32: - Requests: temperature 0, `max_tokens` 256, the server's other defaults (its settings file sets `reasoning_effort` high,
+33:   so the model thinks first and the first streamed token is reasoning text).
+34: 
+35: ```text
+36: strata --serve --pack <pack> --native <IQ3_S shard 1> --ple-gguf <IQ3_S shard 2> --expert-profile data/expert-profile.bin
+37:   --expert-cache auto --prefill auto:16384 --spec 4 --spec-min-p 0.5 --mtp <mtp/rt> --max-context 131072 --kv int8
+38:   --kv-resident 32768 --pcie-frac 0 --ple-inflight 128 --vram-reserve-mib 713 --expert-cache-device1 3300
+39: env: CUDA_VISIBLE_DEVICES=<RTX 5080>,<RTX 4060 Ti> STRATA_IO_THREADS=64 CUDA_MODULE_LOADING=LAZY STRATA_GR_V3=1
+40:      STRATA_PF_FUSED=1 STRATA_MMVQ_IL=1 STRATA_ADAPT_LAG=2 STRATA_DISJOINT_ADAPT=1
+41: served by serve/server.py on 127.0.0.1
+42: ```
+43: 
+44: ## Method
+45: 
+46: - `make_prompts.py` builds the prompts from the repository's own text at v0.1.41 (docs and source files), so they can be
+47:   shared and rebuilt; the file it writes has the sha256 given in the script. Every prompt is a different slice of that
+48:   text and starts with its own run id, so no request can reuse another one's prefix (the engine reported 0 reused tokens
+49:   for every run). The task line asks for a one-paragraph summary.
+50: - `benchmark.py`: a fresh server; the model's page cache dropped before it started; startup is not timed. One
+51:   ~1,000-token warm-up request (not counted), then three runs at each size, one request at a time, streamed. The expert
+52:   cache stays warm across runs and its adaptive tier is on (the default).
+53: - Prompt and decode throughput come from the server's `timings` (the engine's own clock; decode counts the reasoning
+54:   tokens). TTFT is the client's time from sending the request to the first streamed token (reasoning text).
+55: - Memory: MemAvailable and VRAM after each request, and a memory guard that samples MemAvailable, free VRAM, the server's
+56:   process-tree RSS and swap every 0.2 s for the whole session.
+57: - Then, on the same server: `python tools/needle_bench.py --url http://127.0.0.1:8081 --lengths 32k,128k --depths 10,50,90`.
+58: 
+59: ## Results: stock v0.1.41
+60: 
+61: | Configuration | Actual prompt tokens | Reused tokens | Generated tokens | Runs | Prompt tok/s median (range) | Decode tok/s median (range) | TTFT seconds median (range) |
+62: | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+63: | 4K | 4,096–4,097 | 0 | 143, 163, 178 | 3 | 3,451 (3,436–3,500) | 146.0 (135.8–147.3) | 1.20 (1.19–1.21) |
+64: | 32K | 32,768–32,774 | 0 | 238, 168, 252 | 3 | 4,277 (4,202–4,300) | 132.2 (127.9–137.8) | 7.70 (7.67–7.84) |
+65: | 128K | 128,001 | 0 | 256, 225, 231 | 3 | 4,166 (4,165–4,166) | 124.9 (123.7–126.7) | 30.80 (30.79–30.81) |
+66: 
+67: - Total latency (client, whole request): 2.2–2.5 s at 4K, 9.1–9.5 s at 32K, 32.6–32.9 s at 128K.
+68: - The first 128K run stopped at the 256-token cap; the other eight ended on their own.
+69: - Memory: MemAvailable at least 34.5 GiB (guard minimum); server process tree at most 51.5 GiB RSS; VRAM in use 15,395 MiB
+70:   on the 5080 (484–541 MiB free) and 6,605 MiB on the 4060 Ti; swap 1.97 GiB in use from before the run, not growing.
+71: - Recall: `needle_bench.py` **6 of 6 found** (32k: 33,286–33,287 prompt tokens, 4.6–8.5 s; 128k: 126,638–126,640 prompt
+72:   tokens, 26.9–30.6 s). The needle prompts share their text, so later ones reuse part of an earlier one's prefix; their
+73:   times are not prompt-read times.
+74: - Per-run data: `results-stock.json` (every request with its `timings`, TTFT, total time, memory),
+75:   `needles-stock.json`, `summary.json` (medians, ranges, the memory guard's extremes); the server config without paths or
+76:   GPU ids in `config-stock.json`; the engine's start lines (paths removed) in `engine-start-stock.txt`.
+77: 
+78: ## Same machine, same day: a private build (not v0.1.41 as released)
+79: 
+80: The same prompts, method and flags on v0.1.41 with 27 local patches (exact speculative sampling, a cost-aware draft
+81: length, decode kernel changes, a conversation cache in RAM, transplants of #567 / #652 / #619), with
+82: `STRATA_PREFILL_CPU_SHARE=0` and `--chat-cache 16 --chat-cache-mib 12288` (a local flag). These patches are not part
+83: of Strata; the numbers are here only so they are not taken for the release's.
+84: 
+85: | Configuration | Actual prompt tokens | Reused tokens | Generated tokens | Runs | Prompt tok/s median (range) | Decode tok/s median (range) | TTFT seconds median (range) |
+86: | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+87: | 4K | 4,096–4,097 | 0 | 124, 150, 196 | 3 | 3,430 (3,424–3,486) | 154.7 (148.3–158.3) | 1.21 (1.19–1.21) |
+88: | 32K | 32,768–32,774 | 0 | 176, 169, 256 | 3 | 4,259 (4,168–4,273) | 151.4 (145.3–152.2) | 7.73 (7.70–7.90) |
+89: | 128K | 128,001 | 0 | 256, 225, 236 | 3 | 4,135 (4,132–4,152) | 137.6 (130.5–139.2) | 31.02 (30.92–31.06) |
+90: 
+91: Recall 6 of 6. MemAvailable at least 21.4 GiB (its conversation cache holds parked conversations in RAM), process tree at
+92: most 64.8 GiB RSS. Prompt reads are within 1 % of the release's; decode is 6–15 % higher. Per-run data: `results-private.json`, `needles-private.json`.
+93: 
+94: ## Stand-ins for a larger model (older private build, 2026-10-07/08)
+95: 
+96: To see how a model with more experts than this PC's RAM would run, two larger files were measured as stand-ins on
+97: v0.1.40.2 with 27 local patches (not v0.1.41, not the stock engine), served, with the server's sampling defaults
+98: (temperature 1.0, top_p 0.95, top_k 20), `STRATA_UNBUFFERED_LOAD=1` (forced direct reads: faster here than the automatic
+99: choice), and the largest RAM budget that a memory guard (it stops the server when MemAvailable stays below 6 GiB for 0.6 s)
+100: let through a full session; the local file's session had one 0.2-s sample at 5.67 GiB.
+101: 
+102: | File | Routed experts | Placement | Decode tok/s (7 requests: math and code reasoning to 4,096 tokens, five short checks) | TTFT 8K / 32K / 64K / 120K (s) | Needle at 120K |
+103: | --- | ---: | --- | ---: | --- | --- |
+104: | unsloth Qwen3.8-Flash-Next Q8_0 | 119.5 GiB | RTX 5080 + the 4060 Ti as a peer expert tier (`--peer-device 1`) + `--resident-budget-gib 71` | 18.1 | 6.5 / 19.4 / 31.3 / 50.4 | 6 of 6 |
+105: | the same | 119.5 GiB | RTX 5080 + `--resident-budget-gib 71` | 15.9 | 6.5 / 19.3 / 31.3 / 50.7 | 6 of 6 |
+106: | a local file: UD-Q5_K_XL's routed experts with IQ3_S's other tensors | 91.6 GiB | RTX 5080 + `--resident-budget-gib 72` | 40.1 | 5.1 / 12.4 / 20.6 / 39.4 | 6 of 6 |
+107: 
+108: - One session each; TTFT from one fresh prompt per size (local prompts, not included). The needle check is a local
+109:   120K-token document with six questions.
+110: - Where a decode round went (Q8_0, the 5080 + 71 GiB, warm): about 127 ms = GPU ~20 ms + CPU on the RAM experts ~38 ms +
+
+[7745] Niko1221/Strata@v0.2.4: docs/DEEPSEEK41.md lines 70-142 (source code) (https://github.com/Niko1221/Strata/blob/v0.2.4/docs/DEEPSEEK41.md#L70-L142)
+Checked quotes from this page (verbatim, with dates):
+- "73: The server speaks to the engine as it does for the other models, so `/v1/chat/completions`, `/v1/messages`, streaming, stop and" (undated)
+- "74: `/metrics` work as usual (the answer speed is the tokens the model produced over the engine's decode time)." (undated)
+- "76: - Thinking is on by default, as the model's template has it. `reasoning_effort: "none"` or `chat_template_kwargs.enable_thinking: false` turns it off." (undated)
+- "77:   Effort words: `low` (50), `medium` (62), `high` (75, the default), `max` (100), or a whole number 1 to 100." (undated)
+- "78: - Prompts are the GGUF's own chat template, the same bytes as DeepSeek's `encoding.py` on the cases checked. Project Maya's own template lost the" (undated)
+- "79:   tool associations and later system instructions (their issue #299); Strata does not use it." (undated)
+- "80: - Tool calls: the model writes DSML (`<｜DSML｜ calls>` ... `<｜DSML｜ invoke name="...">` ... `<｜DSML｜ parameter name="..." string="true">`). The" (undated)
+- "81:   server turns them into OpenAI `tool_calls` and Anthropic `tool_use`, including `tool_choice`, streamed arguments and calls written inside the thinking." (undated)
+- "82:   A value marked `string="true"` stays a string." (undated)
+- "83: - Defaults when a request names none: temperature 1.0, top_p 1.0." (undated)
+- "84: - Agents and sub-agents that take turns can skip reading their prompts again (off in this version, a switch for testing). With" (undated)
+- "85:   `STRATA_DS4_SLOT_KEEP=1` the engine sets a conversation aside when another request takes the model (about 17 MB per 6.5K tokens) and takes it" (undated)
+- "86:   back when the next prompt continues it, also after a restart. Slots live in `ds4-slots` next to the run log, are capped at 2 GB" (undated)
+- "87:   (`STRATA_DS4_SLOT_GB`) and are removed after a week. `STRATA_DS4_AUTO_PIN=1` also keeps the system prompt and tools shared by an agent" (undated)
+- "88:   and its sub-agents as a checkpoint." (undated)
+- "90: Not in this version: several requests at once (`--parallel` is ignored with a warning) and pictures (`--vision` is ignored with a warning)." (undated)
+- "94: `strata launch --tune quick` (or `thorough`, or the Tuning screen) works for DeepSeek with its own short tuner, `tools/dsv41/tune.py`. It starts" (undated)
+- "95: the engine a few times on a fixed short question and measures the answer speed: the standard settings first, then the DSpark drafter forced on," (undated)
+- "96: then a shorter draft block (3), then one CPU thread for each physical core (thorough also tries every logical thread). A setting is kept only for a" (undated)
+- "97: gain of more than 5%, and the result is written into the launch's settings. Expect about 5 to 10 minutes (each run loads the model, which takes" (undated)
+- "98: 1 to 3 minutes); close other heavy programs first. If a run fails or the computer is too busy to tell, the standard settings stay and one plain line" (undated)
+- "99: says so. The RAM store (`--ssd-cache`) sizes itself when the model starts, so the tuner does not touch it, and the context stays what you chose." (undated)
+- "101: ## The engine package" (undated)
+- "103: DeepSeek's engine, `strata-dsv41`, is a separate download from the Strata engine: when you choose DeepSeek, setup (or `strata launch`) fetches the" (undated)
+- "104: package for your computer from the signed update feed (resumable, signature and every file checked) and installs it in `engine-dsv41/` beside" (undated)
+- "105: `engine/`. The Qwen engine's files are never changed. If the feed has no package for your graphics card, setup says so in plain words and stops before" (undated)
+- "106: anything big is downloaded." (undated)
+- "108: ### Getting the engine by hand" (undated)
+- "110: If the automatic download does not work for you (no access to the update feed, or an offline computer), download the engine package yourself from" (undated)
+- "111: the release page: the file is named `strata-dsv41-<version>-<system>-<backend>-<variant>.tar.gz` (Windows and Linux; pick the one for your system and" (undated)
+- "112: graphics card). Check it against `SHA256SUMS.txt` on the release page if you like. Then give it to Strata in either of two ways:" (undated)
+- "115: strata launch --model ist-das-2.00bpw --dsv41-package PATH-TO-THE-FILE" (undated)
+- "116: python setup.py --family deepseek41 --dsv41-package PATH-TO-THE-FILE" (undated)
+- "119: or put the file in the `engine-dsv41/` folder (setup tells you its exact place when it cannot find the engine) and run the same command again." (undated)
+- "120: Strata checks the package before it uses it: it must be the DeepSeek engine (not the Strata engine) for your system, its manifest must be signed by a key" (undated)
+- "121: Strata trusts, and every file must match the hash in the manifest. A damaged or foreign file is refused with a plain line and nothing is installed." (undated)
+- "122: The unpacked folder works as well as the archive. The Strata (Qwen) engine is not touched either way." (undated)
+- "124: ## Compressed experts (trellis), for testing" (undated)
+- "126: `strata-dsv41` reads the routed experts in the trellis types as well as the source MXFP4: TQK6 and TQK7 (agentionai's files), and the" (undated)
+- "127: experimental TQK5X / TQK4X (computed codebook) and TQK5T / TQK4T (table codebook), see `tools/trellis/README.md`. A layer may be converted" (undated)
+--- more of the page [7745] ---
+70: 
+71: ## Through the API
+72: 
+73: The server speaks to the engine as it does for the other models, so `/v1/chat/completions`, `/v1/messages`, streaming, stop and
+74: `/metrics` work as usual (the answer speed is the tokens the model produced over the engine's decode time).
+75: 
+76: - Thinking is on by default, as the model's template has it. `reasoning_effort: "none"` or `chat_template_kwargs.enable_thinking: false` turns it off.
+77:   Effort words: `low` (50), `medium` (62), `high` (75, the default), `max` (100), or a whole number 1 to 100.
+78: - Prompts are the GGUF's own chat template, the same bytes as DeepSeek's `encoding.py` on the cases checked. Project Maya's own template lost the
+79:   tool associations and later system instructions (their issue #299); Strata does not use it.
+80: - Tool calls: the model writes DSML (`<｜DSML｜ calls>` ... `<｜DSML｜ invoke name="...">` ... `<｜DSML｜ parameter name="..." string="true">`). The
+81:   server turns them into OpenAI `tool_calls` and Anthropic `tool_use`, including `tool_choice`, streamed arguments and calls written inside the thinking.
+82:   A value marked `string="true"` stays a string.
+83: - Defaults when a request names none: temperature 1.0, top_p 1.0.
+84: - Agents and sub-agents that take turns can skip reading their prompts again (off in this version, a switch for testing). With
+85:   `STRATA_DS4_SLOT_KEEP=1` the engine sets a conversation aside when another request takes the model (about 17 MB per 6.5K tokens) and takes it
+86:   back when the next prompt continues it, also after a restart. Slots live in `ds4-slots` next to the run log, are capped at 2 GB
+87:   (`STRATA_DS4_SLOT_GB`) and are removed after a week. `STRATA_DS4_AUTO_PIN=1` also keeps the system prompt and tools shared by an agent
+88:   and its sub-agents as a checkpoint.
+89: 
+90: Not in this version: several requests at once (`--parallel` is ignored with a warning) and pictures (`--vision` is ignored with a warning).
+91: 
+92: ## Tuning
+93: 
+94: `strata launch --tune quick` (or `thorough`, or the Tuning screen) works for DeepSeek with its own short tuner, `tools/dsv41/tune.py`. It starts
+95: the engine a few times on a fixed short question and measures the answer speed: the standard settings first, then the DSpark drafter forced on,
+96: then a shorter draft block (3), then one CPU thread for each physical core (thorough also tries every logical thread). A setting is kept only for a
+97: gain of more than 5%, and the result is written into the launch's settings. Expect about 5 to 10 minutes (each run loads the model, which takes
+98: 1 to 3 minutes); close other heavy programs first. If a run fails or the computer is too busy to tell, the standard settings stay and one plain line
+99: says so. The RAM store (`--ssd-cache`) sizes itself when the model starts, so the tuner does not touch it, and the context stays what you chose.
+100: 
+101: ## The engine package
+102: 
+103: DeepSeek's engine, `strata-dsv41`, is a separate download from the Strata engine: when you choose DeepSeek, setup (or `strata launch`) fetches the
+104: package for your computer from the signed update feed (resumable, signature and every file checked) and installs it in `engine-dsv41/` beside
+105: `engine/`. The Qwen engine's files are never changed. If the feed has no package for your graphics card, setup says so in plain words and stops before
+106: anything big is downloaded.
+107: 
+108: ### Getting the engine by hand
+109: 
+110: If the automatic download does not work for you (no access to the update feed, or an offline computer), download the engine package yourself from
+111: the release page: the file is named `strata-dsv41-<version>-<system>-<backend>-<variant>.tar.gz` (Windows and Linux; pick the one for your system and
+112: graphics card). Check it against `SHA256SUMS.txt` on the release page if you like. Then give it to Strata in either of two ways:
+113: 
+114: ```
+115: strata launch --model ist-das-2.00bpw --dsv41-package PATH-TO-THE-FILE
+116: python setup.py --family deepseek41 --dsv41-package PATH-TO-THE-FILE
+117: ```
+118: 
+119: or put the file in the `engine-dsv41/` folder (setup tells you its exact place when it cannot find the engine) and run the same command again.
+120: Strata checks the package before it uses it: it must be the DeepSeek engine (not the Strata engine) for your system, its manifest must be signed by a key
+121: Strata trusts, and every file must match the hash in the manifest. A damaged or foreign file is refused with a plain line and nothing is installed.
+122: The unpacked folder works as well as the archive. The Strata (Qwen) engine is not touched either way.
+123: 
+124: ## Compressed experts (trellis), for testing
+125: 
+126: `strata-dsv41` reads the routed experts in the trellis types as well as the source MXFP4: TQK6 and TQK7 (agentionai's files), and the
+127: experimental TQK5X / TQK4X (computed codebook) and TQK5T / TQK4T (table codebook), see `tools/trellis/README.md`. A layer may be converted
+128: while the others stay MXFP4. On the GPU they run on the tensor cores of gfx12 (and in plain FMAs elsewhere), on the CPU lane on Strata's
+129: AVX-512 / AVX2 kernels; the build needs `-DSTRATA_NATIVE_EXPERTS=ON` for the CPU lane.
+130: 
+131: ```
+132: # 1. the pack of the source model (also takes the DSpark and mmproj files that sit beside the model folder)
+133: python tools/dsv41/pack_gguf.py --model DIR/UD-Q8_K_XL --out PACK
+134: # 2. re-encode some layers (HIP encoder; one layer at K5 is 2.3 GB, the whole model 93 GB)
+135: python tools/dsv41/tq_convert.py --pack PACK --out CONV --layers 1,7,14 --type K5      # K4 K5 K4T K5T K6 K7
+136: # 3. the pack that reads them
+137: python tools/dsv41/pack_gguf.py --model DIR/UD-Q8_K_XL --out PACK2 --tq-experts CONV
+138: strata-dsv41 --pack PACK2 --score data/quant_quality/v1/set.ids.json --score-out RUN.tsv      # teacher-forced top-64 rows
+139: ```
+140: 
+141: The encode is plain error (no rotation, no activation weights). The tests are `ds4_tq_test` (device and CPU lane against a double
+142: reference, needs one GPU) and `tqw_hip_test`.
+
+[4393] [PARTLY OTHER ENGINE: the parts "# GitHub - Niko1221/Strata: Qwen3.8-Flash-Next on any consumer hardware: one-click", "## **Qwen3.8-Flash-Next**" of this page describe Strata's Qwen engine; the task is about its DeepSeek engine - flags, settings and numbers from those parts are not the DeepSeek engine's unless that engine's code shows them; quotes from them are marked [OTHER ENGINE]] GitHub - Niko1221/Strata: Qwen3.8-Flash-Next on any consumer... (https://github.com/Niko1221/Strata)
+[OTHER ENGINE: Strata's Qwen engine] (page read; its most relevant passages) # GitHub - Niko1221/Strata: Qwen3.8-Flash-Next on any consumer hardware: one-click install for Windows / Linux. Strata inference engine, OpenAI/Anthropic API on localhost, optional image input.
+
+[OTHER ENGINE: Strata's Qwen engine] *Qwen3.8-Flash-Next on any consumer hardware: one-click install for Windows / Linux. Strata inference engine, OpenAI/Anthropic API on localhost, optional image input. - Niko1221/Strata*
+
+[OTHER ENGINE: Strata's Qwen engine] Source: https://github.com/Niko1221/Strata
+
+[OTHER ENGINE: Strata's Qwen engine] Chat, code and work with images, locally.
+
+Models · **Install** ·
+  Hardware · Tools ·
+  Help · Support
+
+[OTHER ENGINE: Strata's Qwen engine] **English** · 简体中文 · 日本語 · Deutsch · Français · Español · Português · Polski
+
+[OTHER ENGINE: Strata's Qwen engine] **Free, open source, and yours to run.** Use Strata on your desktop or with your favorite coding tools. No account needed.
+
+[OTHER ENGINE: Strata's Qwen engine] We recommend **ISTA-DASLab first**, then **Unsloth** and other providers, where a compatible model fits.
+
+##   **Qwen3.8-Flash-Next**
+--- more of the page [4393] ---
+[OTHER ENGINE: Strata's Qwen engine] # GitHub - Niko1221/Strata: Qwen3.8-Flash-Next on any consumer hardware: one-click install for Windows / Linux. Strata inference engine, OpenAI/Anthropic API on localhost, optional image input.
+
+[OTHER ENGINE: Strata's Qwen engine] *Qwen3.8-Flash-Next on any consumer hardware: one-click install for Windows / Linux. Strata inference engine, OpenAI/Anthropic API on localhost, optional image input. - Niko1221/Strata*
+
+[OTHER ENGINE: Strata's Qwen engine] Source: https://github.com/Niko1221/Strata
+
+[OTHER ENGINE: Strata's Qwen engine] Chat, code and work with images, locally.
+
+  Models · **Install** ·
+  Hardware · Tools ·
+  Help · Support
+
+[OTHER ENGINE: Strata's Qwen engine] **English** · 简体中文 · 日本語 · Deutsch · Français · Español · Português · Polski
+
+[OTHER ENGINE: Strata's Qwen engine] **Free, open source, and yours to run.** Use Strata on your desktop or with your favorite coding tools. No account needed.
+
+[OTHER ENGINE: Strata's Qwen engine] We recommend **ISTA-DASLab first**, then **Unsloth** and other providers, where a compatible model fits.
+
+##   **Qwen3.8-Flash-Next**
+
+[OTHER ENGINE: Strata's Qwen engine] | Provider | Choices | 
+|---|---|
+| **ISTA-DASLab · recommended** | Q2_0, IQ2_XS, IQ3_XXS, IQ3_S. Coder: IQ1_M for coding. | 
+| **Unsloth** | UD-IQ4_XS, UD-Q4_K_XL, UD-Q5_K_XL, UD-Q6_K_XL, Q8_0 | 
+| **Gyro · agentionai** | Gyro-S, Gyro-M. Lower memory use but slower. | 
+| **Other options** | Swift 1.5, NVFP4, OrcaRouter | 
+
+##   **Qwen3.6-35B-A3B**
+
+**Unsloth:** UD-Q4_K_XL, UD-Q6_K_XL, Q8_0. These are the currently documented packs for this model.
+
+##   **DeepSeekV4.1-Flash-1017**
+
+In the **desktop app** and the **Terminal**. What does not fit in memory is read from your SSD, so it needs a lot of free
+disk space.
+
+| Set (IST-DAS) | Download | Free disk needed | 
+|---|---|---|
+| 1.75 bpw | 239 GB | about 245 GB | 
+| 2.00 bpw | 257 GB | about 265 GB | 
+| 2.25 bpw | 274 GB | about 280 GB | 
+
+Runs on NVIDIA RTX 30, 40 and 50 series (Windows and Linux), AMD Radeon AI PRO R9700 (Linux), AMD Ryzen AI Max — Strix Halo (Windows), and Apple Silicon Macs with 64 GB or more, text only (Mac). Setup downloads the files and the DeepSeek engine, then starts the model.
+
+`strata launch --family deepseek41 --model ist-das-2.00bpw --plan`
+Measured with the 2.00 bpw set on Strata 0.2.5 (Strix Halo: 0.2.7). Output is the speed of the answer, prompt is how fast Strata reads your input.
+
+| Hardware | Output | Prompt | 
+|---|---|---|
+| RTX 5070 12 GB, 64 GB RAM | 4 to 6 tokens/s | about 110 tokens/s (4K) | 
+| RTX 3060 12 GB, 46 GB RAM | 9 to 11 tokens/s | about 155 tokens/s (4K) | 
+| 1x Radeon AI PRO R9700, 251 GB RAM | 21 to 25 tokens/s | 320 to 360 tokens/s (8K) | 
+| 4x Radeon AI PRO R9700 | 74 to 77 tokens/s | 400 to 450 tokens/s (8K) | 
+| Ryzen AI Max+ 395 (Strix Halo), 128 GB unified | 19 to 21 tokens/s (code), 11 (chat) | 87 tokens/s (4K), 125 tokens/s (8K) | 
+
+Not sure what fits? Choose a model for your computer.
+
+**Download Strata for Windows, Linux or Mac →**
+
+Install the app, choose a model, and start chatting. There is one installer for each system. On first start the app downloads the engine for your graphics card. Help with the installer.
+
+<sub>Files: `Strata-0.2.7-windows-x64-setup.exe` · `Strata-0.2.7-linux-x86_64.AppImage` · `Strata-0.2.7-macos-arm64.dmg`</sub>
+
+  
+  <sub>Chat, files and a live preview in one window.</sub>
+
+Prefer the terminal? Install Strata, then run **`strata launch`**.
+
+## **Install commands**
+
+**Linux / Mac**
+
+`curl -fsSL https://github.com/Niko1221/Strata/releases/latest/download/install.sh -o install.sh && sh install.sh`
+**Windows PowerShell**
+
+`irm https://github.com/Niko1221/Strata/releases/latest/download/install.ps1 | iex`
+On Windows, open a new terminal afterwards. Then:
+
+`strata launch`
+Follow the prompts to download and start a model. Terminal guide.
+
+  
+  <sub>Watch your model and hardware while it runs.</sub>
+
+Build from source · Docker · Full install guide
+
+| Supported hardware | Guide | 
+|---|---|
+| **NVIDIA GeForce RTX 20 / 30 / 40 / 50 series** | NVIDIA setup | 
+| **AMD Radeon RX 7700 / 7800 / 7900, RX 9060 / 9070, AI PRO R9700** | AMD setup | 
+| **AMD Radeon RX 6800 / 6900 · experimental** | RX 6000 setup | 
+| **Intel Arc · Linux** | Intel setup | 
+| **Apple Silicon · M1 or newer** | Mac setup | 
+| **AMD Ryzen AI Max · Strix Halo** | Strix Halo setup | 
+| **NVIDIA DGX Spark · Linux** | DGX Spark setup | 
+
+**Claude Code · Codex CLI · OpenCode · oh-my-pi · pi.dev · Hermes Agent · OpenClaw**, and more through the OpenAI- and Anthropic-compatible APIs.
+
+Run **`strata connect`** to see setup instructions for your tool. Connection guide.
+
+All guides · Troubleshooting · Report a bug · Benchmarks · How it works · Contribute
+
+**Help keep local AI open to everyone.** A coffee helps fund development and testing on more hardware.
+
+MIT license · Credits and model licenses · Privacy
+
+<sub>For AI tools and automated readers: technical reference · setup instructions.</sub>
+
+**Sponsorships, hardware partnerships or collaborations:** EMAIL.
+</evidence>

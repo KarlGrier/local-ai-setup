@@ -1,0 +1,76 @@
+confirm0211_rules.py - r23 (Karl 11-07): THE CONFIRMATION GAP for the v0.2.11 port's prompt-speed fail. The driver is
+work/r23/gap-confirm0211.sh; the design is in results/r23/port-0211/HUNT-1107.md section 3. These rules were written down
+BEFORE any run (11-07), under the 11-07 amendment (work/r22/g17_rules.py, "11-07 park amendment"). Nothing switches;
+P028x stays served.
+
+KARL 11-07: "Port verdict: put the 'fail for serving' on hold. Run the 25-minute confirmation gap (B vs P, each also with
+the chat cache off) after Phase 5's queue. If it confirms the artifact, record the port's baseline check as passed under
+the amended rule. Passing doesn't mean switching: the before-switch requirements in the port plan still apply."
+
+WHAT IT CONFIRMS:
+  - port-0211's screen (results/r23/port-0211/gap, 11-07 00:43) failed only on R3-extract5k's prompt (-1.4 %) and
+    R4-agent33k's (-0.3 %).
+  - The hunt found the cause of R3's loss: R3's request first saves R2's 54K conversation into our chat cache, inside
+    R3's prompt time. That save (1238 MiB) has two cost levels on every build, 102-113 or 123-137 ms; B drew the fast
+    level and P the slow one. The prefill itself was equal: 1288.0 vs 1288.7 ms.
+  - R4's loss was outside the engine's prompt time.
+
+ARMS (a fresh test server each on port 8081, with_server.sh):
+  - B = configs/x28h.json (P028x's test form).
+  - P = configs/P0211x-h.json (the port, the 18 pins).
+  - Boff / Poff = the same two with --chat-cache 0, so no save happens at all. The driver makes them into
+    OUTDIR/configs/ (mkcfg: only that argument changes).
+
+REQUESTS per start: abarm.sh's warm-up, then research4's R2-report54k and R3-extract5k twice (R2, R3, R2, R3), as in
+the screen (thinking on, medium, nonce, sampling as configured). With the chat cache on, each R3 saves a fresh 54K
+conversation (1238 MiB) first.
+
+ORDER:
+  - chat cache on: B P P B B P P B. 4 starts an arm, 8 R3s and 8 saves of 1238 MiB.
+  - chat cache off: Boff Poff Poff Boff. 2 starts an arm, 4 R3s.
+
+THE RULES. The engine's numbers come from each start's engine log slice, paired with the client's records as
+g17_rules.py's _park_pair pairs them. A record the log does not match makes the verdict INCOMPLETE.
+  (a) Prefill, chat cache off.
+      - R3's prompt rate = prompt tokens / the engine's prompt ms; there is no save in it.
+      - PASS when Poff's mean >= Boff's mean x (1 - noise), noise = max(the two arms' spreads (max / min - 1), 0.3 %).
+      - INFO: the client clock and R2.
+  (b) Prefill, chat cache on.
+      - R3's prompt rate = prompt tokens / (the engine's prompt ms - the save logged just before it).
+      - PASS: P against B, the same bound as (a).
+      - INFO: the client clock minus the save.
+  (a) / (b) INFO, Karl 11-07: the outside-engine flag, never a verdict (g17_rules.py outside_flags).
+      - Per request: client TTFT - the engine's prompt ms; the save cancels.
+      - Per start: the mean over that start's requests of the workload.
+      - Flag ("outside-engine time worse in every pass - for review (INFO)") when every start of the second arm is above
+        the first arm's mean by more than the larger half-range.
+  (c) The save, chat cache on: g17_rules.py save_rule's own rule on this gap's saves (each start is a "pass").
+      - The judged saves are the 1238 MiB ones; the 186 MiB ones, under 20 ms, are INFO.
+      - PASS when P's save index (each save divided by the stored median of its level) is not above B's by more than
+        max(the spreads, 2 %), and P has no saves above the stored band in 2+ starts beyond B's count.
+      - INFO:
+        - the fast / slow counts per arm;
+        - whether a start's two saves share a level (one level per engine start, or one per save);
+        - R3's client TTFT per level and arm;
+        - the engine's minor page faults per start (the allocator hypothesis; the driver samples /proc/PID/stat).
+  (d) The stored gate re-judged (results/r23/port-0211/gap, read-only).
+      - Its required gates as port0211_rules.py decide reads them: every REQUIRED gate and every env_* PASS, no
+        fatal_* / foreign_*, exact7 vs P028x PASS, Basalt's fixtures PASS.
+      - AND its screen under the amendment: port0211_rules.py speed(amended=True) PASS and save(amended=True) PASS.
+  VOID: an arm-start with an env_* / fatal_* / foreign_* FAIL is left out. With fewer than 2 valid starts of an arm with
+  the chat cache on, or fewer than 1 with it off, the verdict is INCOMPLETE.
+  VERDICT:
+    - CONFIRMED = (a), (b) and (c) PASS.
+    - CONFIRMED with (d) PASS -> "BASELINE PASS under the 11-07 amended rule (switch requirements in the port plan
+      still apply)".
+    - (a) or (b) FAIL -> "NOT CONFIRMED: the prefill itself is slower on the port - the hunt goes back to src/prefill".
+    - (c) FAIL -> "NOT CONFIRMED: the port saves slower (the chat-cache save line FAILs)".
+    - (d) not PASS with CONFIRMED -> "CONFIRMED, BASELINE NOT PASSED", with the stored gate's reasons.
+    - A PASS is not a switch: Karl's switch conditions still apply (PORT.md "Required before v0.2.11 could replace
+      P028x", PORT-V0210-PLAN.md).
+
+Subcommands:
+  rules OUT              this text, frozen at the gap's start (OUT)
+  mkcfg SRC DST          DST = SRC with --chat-cache 0 (only that argument changes; checked)
+  decide OUTDIR          the verdict -> OUTDIR/decision.txt; exit 0 = BASELINE PASS under the amended rule
+  selftest SCRATCH       the rules on synthetic starts plus the stored gate's re-judgement (read-only); no GPU, no engine

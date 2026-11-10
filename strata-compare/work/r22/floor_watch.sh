@@ -1,0 +1,23 @@
+#!/bin/bash
+# floor_watch.sh PGID LABEL - round 22 gap 2: the 12 GB memory floor (16 until 10-19 evening) for a process group that does not run under
+# bringup/lib/guard.py (strata tune auto starts its own servers). While the group lives, MemAvailable is read every
+# 0.5 s; below KILL_GB (13: one GB of reaction room above the 12 GB floor) the whole group gets SIGTERM, then SIGKILL after
+# 15 s, and the lowest value is logged. Log: logs/r22/floor-watch.log; exit 3 if it had to stop the group.
+PG=${1:?PGID} L=${2:-?}; KILL_GB=${KILL_GB:-13}
+WS=/home/USER/ai-speed-testing/strata-compare; LOG=$WS/logs/r22/floor-watch.log
+low=999999; rc=0
+# never our own group: the caller must have started the target with setsid (its PID is then its group's id)
+own=$(ps -o pgid= -p $$ | tr -d ' ')
+[ "$PG" = "$own" ] || [ "$(ps -o pgid= -p $PG 2> /dev/null | tr -d ' ')" != "$PG" ] && {
+  echo "$(date '+%F %T') $L: $PG is not a process group of its own (or is ours) - not watching" >> $LOG; exit 2; }
+echo "$(date '+%F %T') $L: watching process group $PG (stop below $KILL_GB GB)" >> $LOG
+while kill -0 -- -$PG 2> /dev/null; do
+  a=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo); [ $a -lt $low ] && low=$a
+  if [ $a -lt $((KILL_GB * 1024)) ]; then
+    echo "$(date '+%F %T') $L: MemAvailable $a MB < $KILL_GB GB - stopping process group $PG" >> $LOG
+    kill -TERM -- -$PG 2> /dev/null; sleep 15; kill -KILL -- -$PG 2> /dev/null; rc=3; break
+  fi
+  sleep 0.5
+done
+echo "$(date '+%F %T') $L: done, lowest MemAvailable $low MB" >> $LOG
+exit $rc

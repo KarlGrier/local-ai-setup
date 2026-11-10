@@ -1,0 +1,35 @@
+# SearXNG settings for the Strata chat page's web search (round 5). Local only: 127.0.0.1:8888, JSON API on.
+use_default_settings: true
+general:
+  instance_name: "local search (strata)"
+  enable_metrics: false
+server:
+  bind_address: "127.0.0.1"
+  port: 8888
+  secret_key: "<generate: openssl rand -hex 32>"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+valkey:
+  url: false
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 10.0
+  pool_connections: 50
+  pool_maxsize: 10
+engines:
+  # CAPTCHA'd from this address / Tor-only: off (the others answer)
+  - name: duckduckgo
+    disabled: true
+  - name: ahmia
+    inactive: true
+  - name: torch
+    inactive: true

@@ -1,0 +1,82 @@
+#!/bin/bash
+# bench2-queue.sh - phase 3 runs, daytime only (2026-10-17; one question at a time since 10-18; medium pass 10-18).
+# Before each question, `bench2.py next` picks the first one in results/bench2/queue-plan.json that is not done and is
+# expected to end by 22:30, with its effort level and runs-folder label. LDR is restarted only when the profile or the
+# report/citation-check effort it was started with changes (run/ldr.profile, run/ldr.efforts). Waits while another
+# bench2 run holds run/bench.lock. Pauses at a clean point when a Strata release newer than v0.1.45 appears - final
+# tags only since 10-19 (the user: port after the phase 3 checkpoint, or at 0.2.0 final if sooner and the queue is
+# between runs) - or when tmp/bench2.stop exists. Log: logs/bench2-queue.log
+WS=/home/USER/ai/deep-research; cd $WS
+LOG=$WS/logs/bench2-queue.log
+TAGLOG=/home/USER/ai-speed-testing/strata-compare/logs/r21/tagwatch.log
+say() { echo "$(date '+%F %T') $*" >> $LOG; }
+TAGCACHE=$WS/run/strata-newest-tag
+newtag() {   # the newest Strata release tag (ls-remote at most hourly; the session's tag watch may not run after a reboot)
+  if [ ! -e $TAGCACHE ] || [ $(( $(date +%s) - $(stat -c %Y $TAGCACHE) )) -gt 3600 ]; then
+    local t=$(timeout 60 git -C /home/USER/ai-speed-testing/strata-compare/strata ls-remote --tags --refs origin 2>/dev/null \
+              | awk '{print $2}' | sed 's#refs/tags/##' | grep -v -e '-' | sort -V | tail -1)   # pre-releases (v0.2.0-beta) do not pause the queue (the user, 10-19)
+    [ -n "$t" ] && { echo "$t" > $TAGCACHE; echo "$(date -Is) newest tag: $t (bench2-queue)" >> $TAGLOG; }
+  fi
+  local t=$(cat $TAGCACHE 2>/dev/null)
+  [ -n "$t" ] && [ "$(printf '%s\nv0.2.1\n' "$t" | sort -V | tail -1)" != "v0.2.1" ] && echo "$t"   # 10-20: ported to v0.2.1; pause only for a newer release
+}
+day() { [ -e run/night-ok ] && return 0; local h=$(date +%-H); [ $h -ge 9 ] && [ $h -lt 22 ]; }   # new work starts 09:00-22:00 (and must end by 22:30); run/night-ok (the user away, 10-19) lifts it
+wait_day() { while ! day; do [ -e tmp/bench2.stop ] && exit 0; sleep 300; done; }
+SC=/home/USER/ai-speed-testing/strata-compare
+avail() { awk '/MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo; }
+ensure_strata() {   # Strata up (on demand), and its chat cache emptied if memory is short (same config, ~15 s)
+  env -u HTTP_PROXY -u HTTPS_PROXY $SC/configs/usability/bin/strata-ensure.sh "Deep research" >> $LOG 2>&1 || { say "Strata not ready"; return 1; }
+  if [ "$(avail)" -lt 20 ] && curl -s -m 5 http://127.0.0.1:8080/metrics | grep -q '"state": "idle"'; then
+    say "MemAvailable $(avail) GB: restarting Strata to empty its chat cache"
+    (cd $SC && STRATA_PORT=8080 ./run-strata.sh stop) >> $LOG 2>&1
+    for i in $(seq 60); do pgrep -f "(^|/)llama-server( |$)|strata --serve" > /dev/null || break; sleep 1; done
+    env -u HTTP_PROXY -u HTTPS_PROXY $SC/configs/usability/bin/strata-ensure.sh "Deep research" >> $LOG 2>&1 || { say "Strata did not come back"; return 1; }
+  fi
+  return 0
+}
+user_jobs() {   # a Jan job queued (not paused by you) or active
+  /usr/bin/python3 -I -c "
+import sys; sys.path.insert(0, '$WS/tools'); import research_common as rc
+sys.exit(0 if any(j.get('state') in rc.ACTIVE or (j.get('state') == 'queued' and not j.get('user_paused') and not j.get('cancel_requested')) for j in rc.all_jobs()) else 1)"
+}
+bench_busy() { ! flock -n $WS/run/bench.lock true; }   # a bench2 run (e.g. one started by the previous queue) is going
+say "queue started (pid $$)"
+while :; do
+  if bench_busy; then say "a bench2 run holds run/bench.lock: waiting for it"; while bench_busy; do sleep 60; done; fi
+  wait_day
+  T=$(newtag); if [ -n "$T" ]; then say "Strata $T released: pausing the measurements (the port comes first)"; exit 0; fi
+  [ -e tmp/bench2.stop ] && { say "stop file: stopping"; exit 0; }
+  # 2026-10-19: tmp/bench2.hold = a gap for the 0.2.0 port's builds and tests: no new run starts while it exists
+  if [ -e tmp/bench2.hold ]; then say "hold file: waiting ($(head -c 200 tmp/bench2.hold 2>/dev/null))"; while [ -e tmp/bench2.hold ]; do [ -e tmp/bench2.stop ] && exit 0; sleep 30; done; say "hold released"; continue; fi
+  # your own research from Jan goes first: wait while a job is queued or running
+  if user_jobs; then say "a research job from Jan is queued or running: waiting for it"; while user_jobs; do sleep 120; done; say "Jan job done: continuing"; continue; fi
+  read -r SET PROF ID EFF LABEL <<< "$(.venv/bin/python tools/bench2.py next 2>> $LOG)"
+  case "$SET" in
+    done) break ;;
+    wait|"") sleep 600; continue ;;      # nothing fits before 22:30 (or an error, logged): look again later
+  esac
+  [ "$EFF" = "-" ] && EFF=""; [ "$LABEL" = "-" ] && LABEL=""
+  WANT_EFF="report=${EFF:-default} verify=${EFF:-default}"
+  if [ "$(cat run/ldr.profile 2>/dev/null)" != "$PROF" ] || { [ "$PROF" = deep ] && [ "$(cat run/ldr.efforts 2>/dev/null || echo 'report=default verify=default')" != "$WANT_EFF" ]; } \
+     || [ "$(cat run/ldr.fallback 2>/dev/null || echo off)" != off ] || [ "$(cat run/ldr.s2 2>/dev/null || echo off)" != off ] || [ "$(cat run/ldr.quicklimits 2>/dev/null || echo off)" != off ] \
+     || ! curl -s -m 5 -o /dev/null http://127.0.0.1:5000/auth/login; then
+    say "LDR -> $PROF profile${EFF:+, report and citation check at $EFF}"
+    ./run-ldr.sh stop >> $LOG 2>&1
+    ensure_strata || { sleep 600; continue; }
+    if [ -n "$EFF" ]; then
+      env -u LDR_SEARCH_FALLBACK -u LDR_RESEARCH_S2 -u LDR_QUICK_LIMITS LDR_DEEP_REPORT_EFFORT=$EFF LDR_DEEP_VERIFY_EFFORT=$EFF LDR_PROFILE=$PROF ./run-ldr.sh start >> $LOG 2>&1
+    else
+      env -u LDR_DEEP_REPORT_EFFORT -u LDR_DEEP_VERIFY_EFFORT -u LDR_SEARCH_FALLBACK -u LDR_RESEARCH_S2 -u LDR_QUICK_LIMITS LDR_PROFILE=$PROF ./run-ldr.sh start >> $LOG 2>&1
+    fi || { say "LDR start failed; retry in 10 min"; sleep 600; continue; }
+  fi
+  ensure_strata || { sleep 600; continue; }
+  say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: running"
+  .venv/bin/python tools/bench2.py run $SET $PROF --ids $ID ${EFF:+--effort-all $EFF} ${LABEL:+--label $LABEL} >> $LOG 2>&1
+  rc=$?
+  [ -e results/bench2/runs/$SET-$PROF${LABEL:+-$LABEL}/$ID/bench.json ] || { say "$SET / $PROF${LABEL:+ / $LABEL} / $ID: not completed (rc $rc); retry in 10 min"; sleep 600; }
+done
+say "all planned questions done"
+for s in "screen deep" "screen deep --label medium" "hard-screen baseline" "hard-screen deep" "hard-screen deep --label medium"; do
+  .venv/bin/python tools/bench2.py grade $s >> $LOG 2>&1
+done
+say "queue finished"

@@ -1,0 +1,13 @@
+#!/bin/bash
+# codex-strata - Codex CLI 0.162.1 on Strata (127.0.0.1:8080), offline otherwise, its own settings folder.
+#   cd ~/myproject && codex-strata            (interactive)
+#   codex-strata exec "fix the failing test"  (one task, then exit)
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+# 2026-10-17: Strata on demand - starts C*18t on 8080 if nothing answers there (not while a test uses the GPUs),
+# waits until it is ready (3 minutes at most) and only then opens the app (strata-ensure.sh)
+"$HERE/strata-ensure.sh" "Codex" || exit 1
+source "$HERE/offline-env.sh"
+export CODEX_HOME="${CODEX_HOME_STRATA:-$HOME/.codex-strata}"
+mkdir -p "$CODEX_HOME"
+[ -e "$CODEX_HOME/config.toml" ] || cp "$HERE/../codex/config.toml" "$CODEX_HOME/config.toml"   # a copy: Codex writes project trust into it
+exec "$HOME/.local/opt/codex-0.162.1/bin/codex" "$@"

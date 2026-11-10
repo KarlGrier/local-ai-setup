@@ -1,0 +1,113 @@
+{
+ "name": "adaptfetch-1109",
+ "fixed": "2026-11-09",
+ "use": "STRATA_ADAPT_FETCH beside the helper cache (backlog I; results/r23/ADAPTFETCH-DESK-1109.md): P028x as served for tests against P028x + STRATA_ADAPT_FETCH=1 / =2 on the fetch build (r22-port028x + 24c6c2f68 + E1-E4 + P1, P2), the helper GPU on and adaptation on, as served",
+ "plan": {
+  "workloads": "/home/USER/ai-speed-testing/basalt-ab/scripts/workloads.json",
+  "prompts": [
+   {"name": "math", "source": "workloads", "set": "normal", "id": "W1-think"},
+   {"name": "code", "source": "workloads", "set": "normal", "id": "W2-code"},
+   {"name": "conv", "source": "workloads", "set": "calib", "id": "C-conv"},
+   {"name": "prose", "source": "workloads", "set": "calib", "id": "C-prose"}
+  ],
+  "max_tokens": 512,
+  "thinking": false,
+  "k": 8,
+  "budget_s": 600
+ },
+ "arms": {
+  "R1": {
+   "role": "reference",
+   "desc": "P028x as served for tests (configs/P028x.json without the picture reader = x28h + STRATA_HC_UPMIX=1)",
+   "base": "/home/USER/ai-speed-testing/strata-compare/configs/P028x.json",
+   "strip": true,
+   "check_equal": {"config": "/home/USER/ai-speed-testing/strata-compare/configs/x28h.json", "env": {"STRATA_HC_UPMIX": "1"}},
+   "exe_sha12": "f4c4f654fb24",
+   "seed_base": 1000000,
+   "exercise": ["common", "nofetch"]
+  },
+  "R2": {
+   "role": "noise",
+   "desc": "R1's config again, a fresh start with its own seeds (P028x against itself for the noise bound)",
+   "same_as": "R1",
+   "k": 4,
+   "seed_base": 2000000,
+   "exercise": ["common", "nofetch"]
+  },
+  "X1": {
+   "role": "candidate",
+   "desc": "P028x + STRATA_ADAPT_FETCH=1 (the PCIe share also admits into the VRAM tier) on the fetch build",
+   "same_as": "R1",
+   "top": {"exe": "/home/USER/ai-speed-testing/strata-compare/engine-r23fetch/strata"},
+   "env": {"STRATA_ADAPT_FETCH": "1"},
+   "exe_sha12": "FILL-IN",
+   "binary_has": ["STRATA_ADAPT_FETCH", "STRATA_ADAPT_FETCH_VERIFY"],
+   "seed_base": 3000000,
+   "exercise": ["common", "fetch1"]
+  },
+  "X2": {
+   "role": "candidate",
+   "desc": "P028x + STRATA_ADAPT_FETCH=2 (the share's admissions instead of the tier's own copies) on the fetch build",
+   "same_as": "R1",
+   "top": {"exe": "/home/USER/ai-speed-testing/strata-compare/engine-r23fetch/strata"},
+   "env": {"STRATA_ADAPT_FETCH": "2"},
+   "exe_sha12": "FILL-IN",
+   "binary_has": ["STRATA_ADAPT_FETCH", "STRATA_ADAPT_FETCH_VERIFY"],
+   "seed_base": 4000000,
+   "exercise": ["common", "fetch2"]
+  },
+  "VF": {
+   "role": "verify",
+   "desc": "X2 with the serve read-back check (E3: STRATA_ADAPT_FETCH_VERIFY=1 with STRATA_ADAPT_CHECKRES=1; slow, check runs only)",
+   "same_as": "X2",
+   "env": {"STRATA_ADAPT_FETCH_VERIFY": "1", "STRATA_ADAPT_CHECKRES": "1"},
+   "k": 2,
+   "seed_base": 5000000,
+   "verify": "fetchverify",
+   "covers": ["X1", "X2"]
+  }
+ },
+ "exercise": {
+  "common": {"require": ["^strata mtp: EXACT speculative sampling on \\(STRATA_SPEC_EXACT\\)"]},
+  "nofetch": {"forbid": ["STRATA_ADAPT_FETCH=\\d: the PCIe share takes", "STRATA_ADAPT_FETCH is off"]},
+  "fetch1": {"require": ["^strata serve: STRATA_ADAPT_FETCH=1: the PCIe share takes each layer's most-routed misses"],
+             "forbid": ["STRATA_ADAPT_FETCH is off", "STRATA_ADAPT_FETCH=2: the PCIe share takes"],
+             "counter": null,
+             "_todo": "E4's per-request serve line (its text is not written yet): set counter {re, group, min_total} to require admissions"},
+  "fetch2": {"require": ["^strata serve: STRATA_ADAPT_FETCH=2: the PCIe share takes each layer's most-routed misses"],
+             "forbid": ["STRATA_ADAPT_FETCH is off", "STRATA_ADAPT_FETCH=1: the PCIe share takes"],
+             "counter": null,
+             "_todo": "as fetch1"}
+ },
+ "verify": {
+  "fetchverify": {
+   "mismatch_re": "^strata: FETCH VERIFY layer \\d+ expert \\d+ slot -?\\d+: ",
+   "summary_re": "^strata: fetch verify: (\\d+) admitted slots read back, (\\d+) differ",
+   "min_read_back": 1000,
+   "min_requests": 4,
+   "require": ["^strata serve: STRATA_ADAPT_FETCH=2: the PCIe share takes"],
+   "forbid": ["STRATA_ADAPT_FETCH is off"],
+   "_note": "defaults = upstream v0.2.13's CLI read-back lines (strata-r23p0213 src/program/generate.cpp:21570-21586); E3's serve text is not written yet: put its patterns here before rule.txt is written"
+  }
+ },
+ "scorer": {
+  "desc": "decpath_rules.py's decode-path reference (gap-decpath 11-05, results/r23/decpath/gap/dec): x28h under quant_quality.py's fixed yardstick settings, 2-row verify windows",
+  "base": "/home/USER/ai-speed-testing/strata-compare/configs/x28h.json",
+  "strip": true,
+  "spec": 2,
+  "topk": 64,
+  "quant_quality": "/home/USER/ai-speed-testing/strata-compare/strata-r22p022n/tools/quant_quality.py"
+ },
+ "taint": [
+  "became non-finite",
+  "repeated reasoning detected",
+  "closing the thinking once",
+  "thinking budget reached",
+  "thinking limited to",
+  "the engine had stopped",
+  "the engine stopped while",
+  "loading the model again",
+  "the engine is running again",
+  "starts the engine again"
+ ]
+}

@@ -1,0 +1,51 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-cstar10/strata",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/work/r9/q4/packs/ud-q4_k_xl",
+  "--native",
+  "/home/USER/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/38bb39ee97821de2c9009abb7e93950eec396e66/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+  "--resident-budget-gib",
+  "40",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0131/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "auto",
+  "--spec",
+  "4",
+  "--spec-min-p",
+  "0.5",
+  "--mtp",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt",
+  "--max-context",
+  "32768",
+  "--kv",
+  "int8",
+  "--vram-reserve-mib",
+  "800"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-cstar10",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/work/r9/q4/packs/ud-q4_k_xl/tokenizer",
+ "model_name": "qwen3.8-flash-next-ud-q4_k_xl",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-Q4c-40.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8081,
+ "host": "127.0.0.1",
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "server": "/home/USER/ai-speed-testing/strata-compare/strata-cstar10/serve/server.py",
+ "env": {
+  "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX5080"
+ },
+ "_comment": "Round 9 Phase 0.4 (Q4 short test): Unsloth UD-Q4_K_XL @38bb39e (read-only HF cache, sha256 = docs/UNSLOTH_Q4.md), pack built in the workspace with v0.1.31's iq_pack.py --compat-bf16, the existing MTP layer (en draft vocab), RAM budget 40 GiB, 32K context, int8 KV, spec 4 / 0.5, no chat cache, reserve 800 (memory guard), the RTX 5080 alone. Same flags for the stock and the C*10 binary."
+}

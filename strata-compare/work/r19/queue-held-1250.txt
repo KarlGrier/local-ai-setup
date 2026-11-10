@@ -1,0 +1,4 @@
+bringup/lib/kcheck.sh q-soak17 && echo "=== $(date -Is) soak C*17 (2 h, on 8080)" >> logs/r19/soak17.log && STRATA_CONFIG=configs/Cstar17.json bringup/lib/soak13.sh 120 >> logs/r19/soak17.log 2>&1 && bringup/lib/kcheck.sh soak17-end
+bringup/lib/kcheck.sh q-soakdec17 && bringup/lib/soakdec.sh SDEC17 configs/Cstar17.json > logs/r19/soakdec17.log 2>&1 && bringup/lib/kcheck.sh soakdec17-end
+bringup/lib/kcheck.sh q-spmore && work/r19/sp_more.sh > logs/r19/sp_more.log 2>&1
+STOP

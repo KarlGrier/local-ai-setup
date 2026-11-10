@@ -1,0 +1,11 @@
+NOTICE - local-deep-research
+
+The files under deep-research/ldr-deep/ and deep-research/patches/ldr/ are modifications of
+local-deep-research 1.10.7 (MIT License, Copyright (c) 2025 LearningCircuit). Its license text is in
+LICENSE-local-deep-research next to this file.
+
+deep-research/ldr-deep/local_deep_research/deep/ is the "deep" package as installed into local-deep-research
+1.10.7 on this PC; deep-research/patches/ldr/ holds the same changes as patches against the 1.10.7 wheel
+(applied with apply.sh). The staged copies of these files under deep-research/staging/ (deep/, strategies/,
+ldr/ and the *.orig originals) are earlier or not-yet-installed versions of the same modifications and come
+under the same license.

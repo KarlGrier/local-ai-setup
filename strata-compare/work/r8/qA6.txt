@@ -1,0 +1,53 @@
+work/r8/tagcheck.sh phaseA6-start
+work/r8/screen.sh A6-mw32a configs/R8c-helper.json
+work/r8/screen.sh A6-mw16a configs/R8c-mtpw16k.json
+work/r8/screen.sh A6-mw16b configs/R8c-mtpw16k.json
+work/r8/screen.sh A6-mw32b configs/R8c-helper.json
+work/r8/decscreen.sh A6g-R8g-s5-m3 configs/R8g-s5-m3.json
+work/r8/decscreen.sh A6g-R8g-s5-m5 configs/R8g-s5-m5.json
+work/r8/decscreen.sh A6g-R8g-s5-m7 configs/R8g-s5-m7.json
+work/r8/decscreen.sh A6g-base3 configs/R8g-s4-m5.json
+work/r8/decscreen.sh A6g-R8g-s5x-m3 configs/R8g-s5x-m3.json
+work/r8/decscreen.sh A6g-R8g-s5x-m5 configs/R8g-s5x-m5.json
+work/r8/decscreen.sh A6g-R8g-s5x-m7 configs/R8g-s5x-m7.json
+work/r8/decscreen.sh A6g-base6 configs/R8g-s4-m5.json
+work/r8/decscreen.sh A6g-R8g-s6-m3 configs/R8g-s6-m3.json
+work/r8/decscreen.sh A6g-R8g-s6-m5 configs/R8g-s6-m5.json
+work/r8/decscreen.sh A6g-R8g-s6-m7 configs/R8g-s6-m7.json
+work/r8/decscreen.sh A6g-base9 configs/R8g-s4-m5.json
+work/r8/decscreen.sh A6g-R8g-s6x-m3 configs/R8g-s6x-m3.json
+work/r8/decscreen.sh A6g-R8g-s6x-m5 configs/R8g-s6x-m5.json
+work/r8/decscreen.sh A6g-R8g-s6x-m7 configs/R8g-s6x-m7.json
+work/r8/decscreen.sh A6g-base12 configs/R8g-s4-m5.json
+work/r8/decscreen.sh A6g-R8g-s8-m3 configs/R8g-s8-m3.json
+work/r8/decscreen.sh A6g-R8g-s8-m5 configs/R8g-s8-m5.json
+work/r8/decscreen.sh A6g-R8g-s8-m7 configs/R8g-s8-m7.json
+work/r8/decscreen.sh A6g-base15 configs/R8g-s4-m5.json
+work/r8/decscreen.sh A6g-R8g-s8x-m3 configs/R8g-s8x-m3.json
+work/r8/decscreen.sh A6g-R8g-s8x-m5 configs/R8g-s8x-m5.json
+work/r8/decscreen.sh A6g-R8g-s8x-m7 configs/R8g-s8x-m7.json
+work/r8/decscreen.sh A6g-base18 configs/R8g-s4-m5.json
+work/r8/decscreen.sh A6g-R8g-s4-m8 configs/R8g-s4-m8.json
+work/r8/decscreen.sh A6g-R8g-s4-m9 configs/R8g-s4-m9.json
+work/r8/decscreen.sh A6g-base100 configs/R8g-s4-m5.json
+work/r8/decscreen.sh A6g-R8g-s5-m9 configs/R8g-s5-m9.json
+work/r8/decscreen.sh A6g-R8g-s8-m9 configs/R8g-s8-m9.json
+work/r8/decscreen.sh A6g-R8g-s5-m8 configs/R8g-s5-m8.json
+work/r8/decscreen.sh A6g-base101 configs/R8g-s4-m5.json
+work/r8/decscreen.sh A6g-R8g-s4-m3 configs/R8g-s4-m3.json
+work/r8/decscreen.sh A6g-R8g-s4-m7 configs/R8g-s4-m7.json
+work/r8/decscreen.sh A6g-R8g-s4x-m3 configs/R8g-s4x-m3.json
+work/r8/decscreen.sh A6g-R8g-s4x-m5 configs/R8g-s4x-m5.json
+work/r8/decscreen.sh A6g-R8g-s4x-m7 configs/R8g-s4x-m7.json
+work/r8/decscreen.sh A6g-base99 configs/R8g-s4-m5.json
+work/r8/with_server.sh A6-slots6a configs/R8c-ours6.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots6a --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots12a configs/R8c-ours12.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots12a --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots16a configs/R8c-ours16.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots16a --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots16b configs/R8c-ours16.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots16b --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots12b configs/R8c-ours12.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots12b --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots6b configs/R8c-ours6.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots6b --engine-log \$ELOG"
+work/r8/with_server.sh SP6-R8c-helper-a configs/R8c-helper.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/shortprompt.py SP6-R8c-helper-a"
+work/r8/with_server.sh SP6-R8c-s1280-a configs/R8c-s1280.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/shortprompt.py SP6-R8c-s1280-a"
+work/r8/with_server.sh SP6-R8c-helper-b configs/R8c-helper.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/shortprompt.py SP6-R8c-helper-b"
+work/r8/with_server.sh SP6-R8c-s1280-b configs/R8c-s1280.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/shortprompt.py SP6-R8c-s1280-b"
+work/r8/tagcheck.sh phaseA6-done

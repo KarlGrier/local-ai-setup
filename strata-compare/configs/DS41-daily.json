@@ -1,0 +1,72 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-v026p343-slotram-ds41/strata-dsv41",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw-lucebox-q2k",
+  "--max-context",
+  "131072",
+  "--eos",
+  "1",
+  "--dspark",
+  "on",
+  "--dspark-conf",
+  "0.65",
+  "--tp",
+  "2",
+  "--ssd-cache",
+  "68",
+  "--experts",
+  "6",
+  "--prefill-chunk",
+  "8192",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/logs/ds41/daily-profile.bin",
+  "--dspark-block",
+  "2",
+  "--vram-experts",
+  "1.0"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v026",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw-lucebox-q2k/tokenizer",
+ "model_name": "deepseek-v4.1-flash",
+ "arch": "deepseek41",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/ds41/engine-daily.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8086,
+ "host": "127.0.0.1",
+ "engine_ready_s": 3600,
+ "sampling": {
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "env": {
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX4060TI,GPU-UUID-RTX5080",
+  "STRATA_DS4_PROMPT_SKIP": "1",
+  "DS4_STORE_FLOOR_GB": "14",
+  "DS4_SPLIT": "0,40",
+  "DS4_SETTLE_MS": "0",
+  "DS4_CACHE_DECAY": "0.8",
+  "DS4_ENGRAM_CACHE_MB": "16",
+  "STRATA_DS4_SLOT_KEEP": "1",
+  "STRATA_DS4_SLOT_CAP": "16",
+  "STRATA_DS4_SLOT_GB": "2",
+  "STRATA_DS4_AUTO_PIN": "1",
+  "STRATA_DS4_SLOT_RAM_GB": "1.7"
+ },
+ "_comment": "11-09 DeepSeek daily = C2 (Karl 11-09 OK after gaps D1 + D2: sampled test, KL and CL PASS; results/ds41/PROPOSAL-C2-DAILY-1109.md): the trunk on the 5080 + the CPU lane (DS4_SPLIT 0,40), Lucebox's DSpark drafter fully in VRAM on the 4060 Ti (--dspark on, --dspark-block 2, --vram-experts 1.0, the lucebox-q2k pack). Everything else as the daily before (backup DS41-daily.json.before-c2). Before: 10-26 DeepSeek-V4.1 daily (the user: slot keep on, cap 16, the store 68 GB, 6 experts, engine v026p343 (v0.2.6 + the kept ports ['p343']), the ship settings {\"order\": \"rev\", \"DS4_SPLIT\": \"10,30\", \"DS4_SETTLE_MS\": 0, \"DS4_CACHE_DECAY\": \"0.8\", \"DS4_ENGRAM_CACHE_MB\": 16} + {\"STRATA_DS4_PROMPT_SKIP\": \"1\", \"DS4_SPLIT\": \"8,32\"}); measured /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/daily-68-1026-1536 (lowest 15.5 GB with everything up, 16 slots full). Start: ./switch-model.sh deepseek. 14:25 (Karl): its own profile /home/USER/ai-speed-testing/strata-compare/logs/ds41/daily-profile.bin, learning; seeded once from /home/USER/ai-speed-testing/strata-compare/configs/DS41-daily-profile.seed.bin (what the final config was measured with). 10-26 night (Karl: 128K if a filled-context check passes): --max-context 131072; a ~97405-token prompt with everything up left 18.9 GB (/home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/long100k-1027-0136); slot RAM capped at 1.7 GiB (engine v026p343-slotram: the shipped engine + STRATA_DS4_SLOT_RAM_GB) - 16 chats at 128K would need 2.02 GiB. 10-27 (Karl): Qwen stays the main model; DeepSeek's default effort is 50 - \"low\" here and in DS41-daily.shared-settings.json, which the served V4.1 template (strata-v026/serve/fixtures/deepseek41) renders as Reasoning Effort: 50 (medium = 62, high = 75); a request's own effort still wins.",
+ "server": "/home/USER/ai-speed-testing/strata-compare/strata-v026/serve/server.py",
+ "warmup": false,
+ "need_vram_mib": 7000,
+ "need_ram_mib": 81305,
+ "expert_profile_seed": "/home/USER/ai-speed-testing/strata-compare/configs/DS41-daily-profile.seed.bin",
+ "expert_profile_seed_sha256": "8db93e483b34b15dbf63a0826601f1db2107a8cfea73774e7d21d8559e0a9568",
+ "reasoning_effort": "low",
+ "model_not_running": {
+  "strata-qwen3.8-flash-next-iq3s": "Qwen isn't running - use the 'Back to Qwen' desktop icon"
+ }
+}

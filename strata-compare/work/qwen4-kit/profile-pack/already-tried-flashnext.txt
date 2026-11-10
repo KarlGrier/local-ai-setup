@@ -1,0 +1,109 @@
+# already-tried-flashnext.txt - what was already tried on Qwen3.8-Flash-Next on this PC, kept as data so the Qwen4 pack reuses it.
+# One idea per line:  STATUS | idea | measured result | source[; source ...]
+# STATUS: ADOPTED (in the served config), REJECTED (measured, dropped), PARKED (measured or built, waiting),
+#         NOT MEASURED, DESK ONLY (estimate or reading only), INFO (a measured fact, not a switch).
+# Sources: repo-relative path[:line or :a-b] (repo = strata-compare), notes/<note>.md[:line] (the project's notes),
+#          ../<sibling folder>/<path>[:line]. profile_pack.py checks every file exists and every line is inside it.
+# Text rules (the pack goes to outside readers): no names of people, no home paths, no other tools of the owner
+# ("agent-workload screen" = the owner's research-agent replay screen).
+# Terms: P028x = the build served until 11-09 20:06 ("vs P028x" below ran on it; since then the same config runs on the
+#        fetch build + STRATA_ADAPT_FETCH=2, see the ADAPT_FETCH line); "screen" = the 9-workload speed screen (geometric mean tok/s); "fixtures" = the
+# cold pp16k / pp64k prompts and the conv / struct / prose decode texts; B = the Basalt-port branch's own base build.
+# Older rounds ran on older Strata releases (round 9-14 = v0.1.32-v0.1.40, 10-01..10-06); dates are 2026.
+# Curated 11-09 from results/BACKLOG-1027.md, NOTES.md, HANDOFF.md, the result folders and the project notes
+# (a read-only helper collected the lines; each cited line was spot-checked).
+
+## Prompt path (reading the prompt)
+ADOPTED | STRATA_HC_UPMIX=1 (U: hyper-connection up projection + mix in one kernel; upstream opt-in) | exact on P028x (exact7 7/7, long40 0 of 40 logit files differ); pp16k 3,975.7 vs 3,849.4 tok/s (+3.3 %, noise 0.1 %), pp64k 4,566.7 vs 4,370.4 (+4.5 %, noise 0.5 %); screen and decode no loss; served since 11-09 | results/r23/basalt-prompt/gap-speed/decision.txt:4; results/r23/basalt-prompt/gap-speed/decision.txt:9; results/r23/u-adopt/result.txt:1
+PARKED | STRATA_PF_TAIL_SPLIT=1 (T, Basalt prompt-path port) | rounding-level; pp16k +6.1 %, pp64k +2.6 % vs P028x; but it drops the 16,384-token mid-prompt checkpoint, so a prompt that shares 16,500 tokens with a parked one is read again in full (16,527 tokens in 3,950 ms vs 143 in 381 ms); needs the newer port base | results/r23/basalt-prompt/gap-speed/decision.txt:6; results/r23/basalt-prompt/gap-speed/decision.txt:11
+REJECTED | STRATA_PF_AHEAD=1 (A, Basalt prompt-path port) | exact; +0.2 % pp16k / +0.6 % pp64k vs P028x, within noise | results/r23/basalt-prompt/gap-speed/decision.txt:5
+PARKED | C = A,T,U + checkpoint pool (K, KP) + first-chunk rule at chunk 22,528 | rounding-level; pp16k +15.9 %, pp64k +8.9 % vs P028x, but decode -3.2 / -2.7 / -4.1 % (conv / struct / prose) vs B and the checkpoint pool switches the chat cache off; retry without K | results/r23/basalt-prompt/gap-speed/decision.txt:8; results/BACKLOG-1027.md:220-228
+REJECTED | K = STRATA_CKPT_POOL, KP (checkpoint pool) | pp16k +1.2 % (noise 1.6 %), pp64k +0.1 %; KP +0.8 / -0.1 %: no gain | results/r23/basalt-prompt/gap-b/decision-b.txt:5-6
+REJECTED | GDN prompt paths STRATA_GDN_TC / STRATA_GDN_CONVL2 (upstream v0.2.9-0.2.10 defaults; pinned off) | failed the 40-prompt KL band on the port (stack: KL mean 0.575, p90 1.10, 5 rows above 1; TC alone fails too); stock v0.2.10 fails the same way; a decode-path check later put every prompt path in one scatter, so the question was closed; prompt speed never priced (KL failed first) | results/r22/gap17/decision.txt:16-21; results/r22/gap19/decision.txt:11-13; results/r23/decpath/decision.txt:18-24; results/r23/decpath/decision.txt:70
+ADOPTED | prompt chunk --prefill auto:16384 (vs 8K chunks) | TTFT 32K -2.9 %, 120K -3.7 % (round 10); decode after the prompt -1.5 / -2.3 % at 32K / 120K (the chunk borrows cache slots) | NOTES.md:3014-3016
+REJECTED | prompt chunk auto:32768 (the engine picks 22,272 tokens, borrows 4,086 slots) | 33.5K-token prompt -7.6 % TTFT, others within 1 % (round 11); later calibration: decode +0.5 %, TTFT 32K +1.3 %, 120K -1.4 %, so 16K stayed | NOTES.md:4177-4178; NOTES.md:5285
+ADOPTED | equal-size prompt chunks (upstream #693) | rounding-level; up to -12.4 % TTFT where a prompt's tail is just over 1,024 tokens, never slower | NOTES.md:4190-4191
+ADOPTED | STRATA_PREFILL_CPU_SHARE 0.4 with STRATA_PREFILL_CPU_SHARE_MAX 1792 | 0.4 cuts prompt time 15-21 % up to ~1,500 tokens and costs from ~2,000 (+6 % at 2,000, +27 % at 3,000), hence the 1,792 cap; on P028x share 0 is pp16k -2.9 %, pp64k -1.0 % | notes/strata-sampler-share-findings.md:22-24; results/r23/decpath/decision.txt:68-69
+ADOPTED | STRATA_PF_FUSED=1 (fused int8 prompt experts) | TTFT -3.3 to -3.7 % (round 10); off on P028x: pp16k -6.1 %, pp64k -6.5 % | NOTES.md:3019-3025; results/r23/decpath/decision.txt:68-69
+ADOPTED | STRATA_PREFILL_V2=1 (v2 prompt-expert kernels from Basalt) + STRATA_DEQUANT_WIDE=1 + draft rule (the 10-22 bundle) | decode +1.6 %; TTFT -4.3 / -8.9 / -6.0 / -6.0 % at 1K / 4K / 32K / 120K; on the v0.2.8 port v2 is bit-identical to the stock path | results/r22/gap8/dec-K.md:3; results/r22/gap8/ttft-K.md:3-6; results/r22/gap16/gates.txt:10-12
+ADOPTED | STRATA_DEQUANT_WIDE=1 alone | output identical; TTFT -6.7 / -4.4 / -1.5 / -1.5 % at 1K / 4K / 32K / 120K | results/r22/gap7/ttft-flags.md:3-6
+REJECTED | STRATA_PROMPT_ATTN_IMMA=1 (int8 tensor-core prompt attention; upstream default since 0.2.7, pinned off) | TTFT -2.7 % at 32K / 120K; lowest KL of the variants but changed top-1 picks: 104 of 120 kept vs a floor of 108 | results/r22/gap7/ttft-flags.md:9-12; results/r22/gap9/imma.txt:10
+REJECTED | --ple-inflight 256 (vs 128) | TTFT -0.7 / -0.4 / 0.0 / 0.0 %: no gain | results/r22/gap7/ttft-flags.md:15-18
+REJECTED | STRATA_PLE_AUTO_RAM / --ple-io ram (per-layer embedding table in RAM) | on paper: 28.8 GB table + 64.7 GB engine = 93.5 of 96.4 GB, above the lock limit; rows stay on the SSD (direct reads) | results/PORT-V027-PLAN.md:30-35
+REJECTED | GDN chunked prefill / FlashQLA-style recurrence (round 8) | the recurrence is only 7.6 % of prompt GPU time; dropped | NOTES.md:1606-1618
+
+## Decode: speculative drafting
+ADOPTED | --spec 7 + STRATA_DRAFT_CUM=1 (cumulative draft length) vs --spec 4 | W1-W3 +3.2 % (ahead in 4 of 4 passes), tool-call turns +1.3 %, research call +0.3 % | results/r22/gap8/cvsa-verdict.txt:7
+INFO | draft length A/B (gap 7, W1-W3 engine tok/s) | spec 4: 148.6; spec 7: 151.4 (+1.9 %); spec 7 + DRAFT_CUM: 158.9 (+6.9 %); the same without the cost gate: 160.5 (+8.0 %, one screen) | NOTES.md:8072
+INFO | why DRAFT_CUM exists | greedy structured text at spec 7: the earlier patch series drafted 3.00 per window vs stock 5.91 and Basalt 5.74 | ../basalt-ab/PLAN.md:134-135
+REJECTED | other draft depths on spec 4 (round 9) | spec 5 / min-p 0.5 +0.2 %; spec 6 / 0.6 -3.4 %; spec 8 + split -3.6 % | NOTES.md:2388-2392
+ADOPTED | --spec-min-p 0.5 | 0.4 gave +0.5 % on one screen and -3.1 % in the rehearsal; with the cost gate on, min-p no longer sets the window | NOTES.md:5286
+ADOPTED | STRATA_COST_GATE (cost-aware draft length fitted on this PC) | round 14 on vs off: decode +3.4 %, agent-workload screen +2.8 %; round 19: +4.2 % decode on two cards, -2.0 % after 120K prompts | NOTES.md:5248-5251; notes/strata-sampler-share-findings.md:25
+ADOPTED | STRATA_SPEC_EXACT=1 (exact speculative sampling) vs upstream STRATA_SPEC_PROB | exact sampling +3.5 % decode, acceptance +8.5 % (round 14); upstream's SPEC_PROB is biased at a T 0.6 near-tie ('=' 59.6-62.2 % vs 52.3 % with speculation off; ours 54.5 %) because --spec-min-p gates on the drawn token's q | NOTES.md:5211; notes/strata-sampler-share-findings.md:13-16; notes/strata-sampler-share-findings.md:35
+REJECTED | upstream SPEC_PROB + STRATA_SPEC_PROB_GATE=top on v0.2.7 | near-tie 51.0 vs 51.9 % (pass) but a second distribution check at p 0.047; decode geomean 0.897 of the then-served build vs 0.925 for upstream paths without it | results/r22/port-027.md:100-110
+NOT MEASURED | STRATA_SPEC_COST (upstream's cost-aware draft window) | backlog item, never run | results/BACKLOG-1027.md:77
+ADOPTED | prompt-lookup drafts --suffix-draft 3 (served default); longer variants rejected | spec 8 with suffix 3 / 8 / 16: decode +0.9 / -0.8 / +0.7 %; the 8x3 variant -0.9 % on the agent-workload screen | NOTES.md:3230-3234; NOTES.md:3299-3301
+REJECTED | lookup windows up to 12 tokens (v0.2.10 --lookup-max-t) | decode +0.96 % (noise 5.6 %), but outputs depend on the window and the distribution checks fail | results/r22/gap17/decision.txt:42-51
+REJECTED | Basalt's tuned MTP draft layer on this engine | W1 / W2 / W3 at spec 7: 182.9 / 152.2 / 152.5 vs 175.1 / 153.8 / 152.3 tok/s: a wash | ../basalt-ab/PLAN.md:109-111
+NOT MEASURED | DFlash / DFlash2 drafters | skipped: not exact, slower than MTP upstream (PR closed), CLI-only at the time | notes/basalt-ab-results.md:30
+REJECTED | tree drafting, drafter adapter, next-layer warming, L3 hot set (round 12) | next-layer warming exact but -6.5 % served (its reads compete for the DRAM the CPU pool needs); tree drafting -10 %; drafter adapter ~0.4 %; L3 hot set 0.9 % | results/round12-summary.md:9-12
+
+## Decode: where experts are served
+ADOPTED | helper GPU (RTX 4060 Ti, 3,300-expert static cache) | screen decode 154.8 vs 134.5 tok/s with the helper off (+15.1 %, 0.98 ms per token); fixture blend 199.9 vs 180.2 (+10.9 %); prompts ~1 % faster without it | ../basalt-020/results/followup-decision.md:9-10; ../basalt-020/results/followup-decision.md:17
+ADOPTED | helper slot count 3300 | agent-workload screen: 3300 = 138.9 tok/s; 2400 -3.9 %; 1500 -7.3 %; 3500 +0.8 % (noise); 3475 later +2.2 % decode but slower rounds, so 3300 stayed | NOTES.md:4107-4114; NOTES.md:4158; NOTES.md:5282
+REJECTED | helper variants: helper cap, upstream --remote-expert-opt, upstream peer tier | cap -6 to -13 %; --remote-expert-opt -17.9 %; --peer-device 1 -14.7 % decode and TTFT +4-7 % | NOTES.md:4158-4160
+ADOPTED | --pcie-frac auto (PCIe share of missed experts, no longer forced to 0) | research calls + tool-call turns +3.1 %, W1-W3 +2.6 % (ahead 6 of 6), KL and decode-side checks pass; the engine re-prices the share while serving (0.40-0.45 most of the time) | notes/pcie-frac-later-test.md:16-20; results/r22/gap9/pcie-speed.txt:3
+REJECTED | STRATA_ROUTE_TAIL_SKIP (upstream's skip of low-ranked missed experts; pinned 0) | lossy; on the 5080 alone it reads 131.0 vs 114.9 tok/s (skip on vs off); with a helper GPU it never acts | NOTES.md:6135; notes/tail-skip-off-single-gpu.md:14-20
+REJECTED | --vram-reserve-mib 512 (vs 713, more cache slots) | 4,694 vs 4,586 slots; decode screen -5.0 %, full screen -1.9 %; main GPU free fell to 269-295 MiB, under the 300 MiB floor | NOTES.md:7761-7768
+ADOPTED | STRATA_ADAPT_LAG=2 + STRATA_DISJOINT_ADAPT=1 (upstream versions of the owner's helper-aware tier) | outputs identical to the owner's own versions (4 of 4), speed equal (decode -1.1 %, agent-workload screen -0.5 %); a helper-aware tier itself was worth +5.3 % on the agent-workload screen | NOTES.md:5208; NOTES.md:5229-5230
+REJECTED | adaptive-tier tuning: decay 0.8 / 0.9, more swaps, --adapt-swaps 0 | decay +0.4 / +0.7 % (noise); swaps 48 +1.7 % did not repeat; no adaptation -18 % | NOTES.md:3185-3187; NOTES.md:98; NOTES.md:5746
+NOT MEASURED | STRATA_ADAPT_ASYNC / --adapt-async (asynchronous adaptive tier; pinned 0) | the v0.2.7 repeat gate passed 7 of 7 with it; a desk reading says it would not engage on two cards; speed never run | results/r22/port-027.md:96; results/r22/switch-diag/decode-loss.md:150
+ADOPTED | STRATA_ADAPT_FETCH=2 beside the helper cache (upstream v0.2.12 admits PCIe-fetched misses into the main cache but is off with a helper GPU; the owner's patch adds a helper-aware pick list) | gap vs P028x + U, 3 passes each: screen decode +12.7 % (noise 3.4 %), conv / struct / prose +9.9 / +5.6 / +4.9 %, screen prompt +0.18 %; main cache's share of routed entries 62.6 -> 67.3 %, CPU 14.4 -> 9.4 % (screen); unset = P028x bitwise (exact7 7/7, long40 0/40); sampled-distribution test and read-back of 91,345 admitted slots pass; =1 +10.2 % (the frozen rule's proposal), =2 vs =1 +2.3 % (noise 3.4 %); by the rule =2 failed one per-workload prompt check (R4-agent33k -0.1 %, noise 0.1 %) and was adopted as a recorded owner exception; adoption check exact7 7/7, pp16k / pp64k level; served since 11-09 20:06; the desk estimate had been about +3 % | results/r23/adaptfetch/gap/decision.txt:3; results/r23/adaptfetch/gap/decision.txt:4-5; results/r23/adaptfetch/gap/decision.txt:12-18; results/r23/adaptfetch/gap/decision.txt:25; results/r23/adaptfetch/gap/fetchstats.txt:5; results/r23/adaptfetch/gap/fetchstats.txt:9; results/r23/adaptfetch/OWNER-EXCEPTION-1109.md:26-35; results/r23/afetch-adopt/result.txt:1; results/r23/ADAPTFETCH-DESK-1109.md:88-93
+REJECTED | alternative expert profiles | learned profile (#477) -4.2 % on the agent-workload screen (helper overloaded); make_profile +1.0 / -0.8 % (noise) | NOTES.md:3172-3176
+NOT MEASURED | STRATA_ROUTE_PRIOR (routing bias toward cached experts) | lossy by design (changes which experts run); upstream 0.2.7 would turn it on for the 4060 Ti; pinned 0 | results/PORT-V027-PLAN.md:28
+
+## Decode: kernels and the window's host work
+ADOPTED | STRATA_GR_FORK=1 (fork hyper-connection read) | fork off on 0.2.7 / 0.2.8 costs +3.5-3.9 % step time; vs upstream's multi-token read: -6.1 % on the agent-workload screen, +6.0 % per round | results/r22/switch-diag/decode-loss.md:16-21; NOTES.md:5231
+ADOPTED | the v0.2.8 port with GR_FORK and PREFILL_V2 back (P028x vs the earlier P021m) | screen decode +1.03 %, prompt -0.03 %; fixtures 16K -1.9 %, 64K -1.0 % (accepted); exact7 7/7 | results/r22/gap16/decision.txt:2-11
+ADOPTED | STRATA_ROUTER_Q8K / STRATA_QSA_SPLIT_ATTN / STRATA_MMVQ_IL / STRATA_SIDE_MIXER=2 (round 14) | +1.4 % / +3.0 % / +2.0 % (agent-workload screen) / +2.5 % (decode) | NOTES.md:5209; NOTES.md:5212-5214
+ADOPTED | STRATA_MMVQ_IL_ROWS (per-layer table tuned on this PC) | re-derived table +0.2 % decode, -1.8 % ms per round | NOTES.md:5296-5298
+ADOPTED | STRATA_GR_V3=1; the staged hyper-connection read (HC_SPLIT) rejected | v3 +2.7 % vs the older read; the staged read is bitwise identical and -1.4 % | NOTES.md:2275; NOTES.md:2303-2308
+PARKED | STRATA_GR_V3_PF=133 (v0.2.10) | identity 7/7, decode +2.06 % (noise 5.6 %) | results/r22/gap17/decision.txt:52-56
+REJECTED | STRATA_POOL_ONE_BATCH=1 (one CPU-pool batch per layer) | exact; screen decode -0.33 %, prompt +0.23 %; one-card timing 25.61 vs 25.65 ms per window | results/r23/decode-timing/screen-rerun/decision-b-final.txt:13-15; results/r23/decode-timing/gap-a/decision.txt:16-17
+REJECTED | STRATA_REMOTE_LATE_LAUNCH=1 (helper launches after the CPU pool starts), alone and with ONE_BATCH | exact; decode -1.03 % alone; both together +0.88 % decode but a 64K-prompt loss; two-card timing 22.15 vs 22.01 ms per window | results/r23/decode-timing/screen-rerun/decision-b-final.txt:10-12; results/r23/decode-timing/screen-rerun/decision-b-final.txt:16-28; results/r23/decode-timing/gap-a/decision.txt:14-15
+REJECTED | DF_PDL / IQ_GATHER / GRAPH_PRIO / FUSE_WAIT=2 (gap 18) | exact7 7/7 each; decode +0.15 / +0.80 / -0.06 / -0.87 %, all four +0.20 % (noise 2.6-3.9 %) | results/r22/gap18/decision.txt:2-7
+REJECTED | DF_PLE (gap 7) | decode -2.2 % and the main GPU's free VRAM fell to 25 MiB | results/r22/gap7/dec-PL.md:3
+DESK ONLY | GPU-side MoE planning (G4), one-graph draft chain (G6) | bounds ~0.15 ms (0.6 %) and 0.1-0.17 ms per window: not written | results/r23/decode-timing/ANALYSIS.md:22-24
+NOT MEASURED | PCIe groups beside the VRAM hits (P1), L2 prefetch of the next layer (G5a), helper rows written in place (H2) | P1: 0.98 ms per window of GPU overhang, 0.44 ms of PCIe groups (two-card pass); G5a needs a probe; H2's copy measured 0.108 ms per window, under the 0.15 ms bar | results/r23/decode-timing/t2/report-T2dv.txt:4-5; results/r23/decode-timing/ANALYSIS.md:160; results/r23/decode-timing/gap-a/timing/report-Bt.txt:4
+REJECTED | transparent huge pages for the expert arena (#650) | +0.01 %; makes CPU-pool time bimodal run to run | NOTES.md:3963; NOTES.md:6100
+REJECTED | IQ_GATHER / IQ_PREFETCH / n-gram prefetch | no gain | NOTES.md:3961-3962; NOTES.md:5215
+
+## Serving, caches, batching
+ADOPTED | the owner's chat cache (--chat-cache 16, 12 GiB of RAM) | same return times as the alternative (0.36-0.75 s), switching 0.06-0.18 s faster, exact; parking a 54K conversation takes 100-139 ms | NOTES.md:1444; results/r23/port-0211/PORT.md:202-215
+REJECTED | upstream 0.2.3's automatic conversation cache (--conversation-cache-mib 0) | screen prompt -6.8 %, decode -0.2 %; it parks synchronously (40-47 ms on short turns, 126 ms before an agent turn) | results/r22/gap16/decision.txt:2-3; results/r22/switch-diag/decode-loss.md:157-161
+REJECTED | --batch 4 / --batch-mtp (several requests at once) | 4 agent turns at once: 59.8 tok/s one at a time vs 58.4 / 61.1 batched; one request with batch slots allocated -12 % (138 -> 122); the main cache falls from 4,585 to 2,781 slots | NOTES.md:8047-8054; results/r22/conc/tables.md:5-14
+REJECTED | two requests in one verify window (round 12) | pairs finish 20 % later (the slots decode without drafts) | results/round12-summary.md:13
+ADOPTED | picture reader on the CPU (not the 4060 Ti) | the GPU reader on the helper costs 1-2 % decode; the CPU reader costs ~2 cache slots | ../basalt-ab/PLAN.md:120-121; HANDOFF.md:127-131
+
+## Quantization
+ADOPTED | IQ3_S GSQ-RCO (ISTA-DASLab, the served GGUF) | vs a Q8_0 reference over 4,995 positions: top-1 87.43 %, KL 0.144 | results/r21/yq/compare2.md:32
+REJECTED | NVFP4 (GPTQ pack) and FP4-Local | decode ~100 vs 143 tok/s; TTFT at 32K 9.3 vs 7.7 s; top-1 vs Q8_0 91.7 / 91.2 %; task suite level with IQ3_S (94.3 vs 94.5 at medium effort) | notes/strata-v0144-nvfp4-pack.md:21-27
+REJECTED | Unsloth UD-Q4_K_XL (kept as the KL reference) | best measured fidelity (top-1 92.37 %, KL 0.059; long-text NLL -0.35 nats vs IQ3_S) but decode 68.7 vs 138.8 tok/s (-51 %, round 16) | results/r21/yq/compare2.md:26; NOTES.md:4562-4564; NOTES.md:6031-6034
+REJECTED | Unsloth v3.1 UD-IQ3_XXS, and its experts spliced into the IQ3_S file | KL vs UD-Q4_K_XL: served 0.717, UD-IQ3_XXS 0.734, splice 0.889 (worse); decode +1.95 % / +3.01 %, no loss; not adopted | results/r23/ud31/decision.txt:24-25; results/r23/ud31/decision.txt:45-46
+REJECTED | splice of IQ3_S experts with UD-Q4_K_XL's other tensors | long-text -0.053 nats, only 15 % of the Q4 file's -0.350 | NOTES.md:4605-4608
+REJECTED | higher-precision side paths (BF16 token embedding, BF16x2 prompt math, RoPE table) | BF16 embedding worse on long texts (+0.08 / +0.10 nats); BF16x2 TTFT 120K +10 %; RoPE table no change; none adopted | NOTES.md:4232-4235
+
+## Engines, ports and settings
+REJECTED | Basalt 0.2.0 (another engine) at its defaults vs P028x | fixture blend +9.5 % (217.2 vs 198.4), 16K prompt +32.3 %, 64K +24.1 %, screen decode +2.8 % (within spread), prompt +15.3 %; not lossless (int8 hyper-connection copy, two-stage head always on) | ../basalt-020/REPORT.md:20-23
+REJECTED | Basalt made lossless + the helper GPU (estimate) | exact head -3.0 % (156.7 vs 161.5); estimate +13.0 % (+6.2..+17.6 %) over P028x; no local Basalt branch | ../basalt-020/results/followup-decision.md:14; ../basalt-020/results/followup-decision.md:18
+REJECTED | Basalt's two-stage Q6_K head | 2.2 % of verify rows have a wrong top-20 where its per-window cap binds; gain +0.7 % (noise) | ../basalt-ab/PLAN.md:113-116
+INFO | value of the patch series over stock Strata (v0.2.1, 10-21) | decode +9.8 %, prompt +8 % | notes/basalt-ab-results.md:22-23
+REJECTED | the v0.2.10 port (gap 17) | screen decode -0.87 %; fixtures struct -2.4 %, blend -2.5 %: no gain | results/r22/gap17/decision.txt:1-10
+PARKED | the v0.2.11 port (base for the Qwen4 port; not served) | exact7 7/7 vs P028x; screen decode +1.34 %, prompt +0.55 %; failed per-workload no-loss on R3 prompt -1.4 % (the chat-cache park inside the timer); passed the 11-09 confirmation gap (R3 with the chat cache off +0.20 %) | results/r23/port-0211/gap/decision.txt:1-4; results/r23/port-0211/confirm/decision.txt:3; results/r23/port-0211/confirm/decision.txt:38
+INFO | upstream v0.2.7 paths without the patch series vs the then-served build | decode -7.5 %, prompt -5 % | results/r22/port-027.md:100-112
+ADOPTED | STRATA_DEFAULTS=026 (0.2.7's new per-card defaults pinned off: GR_UP_WIDE, MMVQ_IL_89, English draft vocabulary, ...) | the new defaults were never measured one by one | results/PORT-V027-PLAN.md:22-28
+ADOPTED | reasoning effort "medium" by default | task suite: medium 94.5, xhigh 90.7, low 91.4; medium takes about a third of xhigh's time | notes/reasoning-effort-local.md:15-19
+NOT MEASURED | KV formats other than int8; --kv-resident sizes | no A/B of KV formats on this engine; --kv-resident 16384 was +1.2 % (within spread) in one round | NOTES.md:5284
+INFO | RAM at 6200 vs 6000 MT/s | 6200 MT/s was unstable (memtest errors); all numbers since 10-10 are at 6000 MT/s (76.6 GB/s); no clean speed pair | notes/kernel-oops-pinned-memory.md:11-15
+NOT MEASURED | Infernix (another engine's ideas: frame pools, prefix cache tiers, BF16-activation arithmetic) | not reviewed; desk check: its per-size frame pools would add no experts here | results/BACKLOG-1027.md:127-152; NOTES.md:9605
+NOT MEASURED | Strata's own tuner (strata tune auto) | planned, never run | HANDOFF.md:97-108

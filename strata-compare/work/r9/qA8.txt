@@ -1,0 +1,11 @@
+work/r9/tagcheck.sh "phase A track 8 (deterministic swap landing) start"
+work/r9/exact7.sh eA-r9d configs/R9d.json
+work/r9/decscreen.sh LAND-a configs/R9d-land.json
+work/r9/decscreen.sh LOFF-a configs/R9d.json
+work/r9/decscreen.sh LOFF-b configs/R9d.json
+work/r9/decscreen.sh LAND-b configs/R9d-land.json
+TF_ENV=STRATA_ADAPT_LAND=2 work/r9/tf.sh TFland-1 configs/R9-C10.json engine-r9dm/strata math long28k long64k
+TF_ENV=STRATA_ADAPT_LAND=2 work/r9/tf.sh TFland-2 configs/R9-C10.json engine-r9dm/strata math long28k long64k
+TF_ENV=STRATA_ADAPT_LAND=2 work/r9/tf.sh TFland-3 configs/R9-C10.json engine-r9dm/strata math long28k long64k
+.venv/bin/python work/r9/tf_compare9.py TFland-1=TFland-2 TFland-1=TFland-3 TFland-1=TF-C10a
+work/r9/tagcheck.sh "track 8 done"

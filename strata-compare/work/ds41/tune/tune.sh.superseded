@@ -1,0 +1,165 @@
+#!/bin/bash
+# tune.sh - 10-24 DeepSeek-V4.1 tuning round (the user: "make DS4.1 IQ2_XXS good enough to be my main chat model. Lossless
+# rules as always: exact routing, no route bias, no expert skipping, long-prompt skip off, no lower precision;
+# distribution-preserving drafting is fine. Start from the 70 GB store config (22.6 tok/s) ... Change one thing at a time;
+# keep a change only if it gains >=3% on decode or >=5% on prompt reading beyond pass-to-pass noise ... Put 8080 back on
+# P021m at the end. Time-box about 5 hours"). Started after the user's Jan research and h06/h08 (the user's order, 10-24).
+#   - one gap: work/r22/port_gap4.sh begin ... end (P021m back on 8080 at the end, checked)
+#   - LDR, SearXNG 8889/8890 and their watcher stopped for the whole round (the user allowed it for the bigger store; the
+#     same memory for every arm), started again at the end; the NVMe temperature logger runs (logs/ds41/nvme-temp.tsv)
+#   - every arm starts from a fresh copy of its profile (the engine writes its routing counts back into the
+#     --expert-profile file after every request, so the pack's own file had drifted +38 % over last night's arms):
+#     tmp/ds41-profile-arm.bin, from the shipped profile-2.00.bin unless the custom-profile arm was kept
+#   - A.1 repeatability (3 fresh engines, same prompt and seed; if they differ, 3 more with the most repeatable set),
+#     the reference arm, then one change at a time on top of the best so far (compare.py decides), the custom profile
+#     (B.8: traffic.py from an all-zero profile, then an arm with it), then C.9 / C.10 (chat5.py) on the best config.
+#   - a new full arm starts only before the time box's deadline (4 h 20 min after the start)
+#   - kernel error -> stop, 8080 left stopped, alert (the user's rule); guards per arm in tunearm.sh (12 GB hard, 15 GB
+#     soft stop, 5080 under 300 MiB free, kernel check every minute)
+set -u
+SC=/home/USER/ai-speed-testing/strata-compare
+T=$SC/work/ds41/tune
+R=$SC/results/ds41/tuning
+PY=$SC/.venv/bin/python
+L=$SC/logs/ds41/tune.log
+S=$R/tune-summary-$(date +%m%d).txt
+SHIPPED=$SC/strata-v024/data/dsv41/profile-2.00.bin
+PROF=$SC/tmp/ds41-profile-arm.bin
+mkdir -p $R $SC/logs/ds41
+say() { echo "=== $(date '+%F %T') $*" | tee -a $S; }
+
+mk() {   # mk NAME FROM_CONFIG [--flag VALUE | --no-expert-cache | ENV=VALUE ...] -> configs/DS41-tune-NAME.json
+  python3 - "$SC/configs/DS41-tune-$1.json" "$@" <<'EOF'
+import json, sys
+out, name, src, ch = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
+c = json.load(open(src)); a = c["args"]; i = 0
+while i < len(ch):
+    x = ch[i]
+    if x == "--no-expert-cache":
+        a.append(x) if x not in a else None; i += 1
+    elif x.startswith("--"):
+        v = ch[i + 1]; i += 2
+        if x in a: a[a.index(x) + 1] = v
+        else: a += [x, v]
+    else:
+        k, v = x.split("=", 1); c["env"][k] = v; i += 1
+c["_comment"] = f"10-24 DS4.1 tuning arm {name}: {' '.join(ch) or '(none)'} on top of {src.rsplit('/', 1)[-1]}. " + c.get("_comment", "")[:400]
+json.dump(c, open(out, "w"), indent=1)
+EOF
+}
+kernel_stop() { grep -q -i "kernel" "$1/GUARD" 2> /dev/null || grep -q -i -E "KCHECK FAILED|kernel check failed" "$1/summary.txt" 2> /dev/null; }
+halt_kernel() {
+  say "KERNEL ERROR in $1 - round stopped, 8080 left stopped (the user's rule); stressapptest before anything else"
+  notify-send -a "DeepSeek-V4.1" -u critical "Kernel error in the DeepSeek tuning round" "$1 stopped on a kernel error. 8080 is NOT restarted. See results/ds41/tuning/." 2> /dev/null
+  exit 1
+}
+run() {  # run NAME CONFIG NOTE [env for tunearm] -> prints the run folder
+  local name=$1 cfg=$2 note=$3; shift 3
+  env ARM_NOTE="$note" PROFILE=$PROF "$@" $T/tunearm.sh "$name" "$cfg" >> $L 2>&1
+  local d; d=$(cat $SC/tmp/ds41-arm-out)
+  kernel_stop "$d" && halt_kernel "$name"
+  echo "$d"
+}
+arm() {  # arm NAME NOTE CHANGES... : one change on top of the best so far
+  local name=$1 note=$2; shift 2
+  if [ $(date +%s) -ge $DEADLINE ]; then say "SKIPPED $name ($note): past the time box"; return 0; fi
+  mk "$name" "$CUR" "$@"; cp "$CUR_PROF" $PROF
+  local d v; d=$(run "$name" "$SC/configs/DS41-tune-$name.json" "$note")
+  grep -v -E "^ds4: |^=== .*(cool-down|before:)" "$d/summary.txt" >> $S
+  v=$(python3 $T/compare.py "$CUR_DIR" "$d")
+  echo "$name|$note|$d|$v" >> $R/decisions.txt
+  if echo "$v" | grep -q '"keep": true'; then
+    CUR=$SC/configs/DS41-tune-$name.json; CUR_DIR=$d; say "KEPT $name ($note): $v"
+  else
+    say "dropped $name ($note): $v"
+  fi
+}
+
+say "DeepSeek-V4.1 tuning round: waiting for the research queue to finish stage 3 (h06, h08 after the user's Jan research)"
+p4s5_done() { ( cd /home/USER/ai/deep-research && BENCH2_PLAN=queue-plan-p4s5.json python3 tools/bench2.py next 2> /dev/null | grep -q -x done ); }
+while systemctl --user is-active --quiet deep-research-bench.service || ! p4s5_done; do sleep 60; done
+T0=$(date +%s); DEADLINE=$((T0 + 4 * 3600 + 20 * 60))
+$SC/work/r22/port_gap4.sh begin "DS4.1 tuning round (the user, 10-24)" >> $S 2>&1 || { say "port_gap4 begin failed"; exit 1; }
+/home/USER/ai/deep-research/run-ldr.sh stop >> $L 2>&1
+systemctl --user stop searxng-watch.service searxng-ldr.service searxng-ldr-baseline.service
+say "LDR, SearXNG 8889/8890 and searxng-watch stopped for the round; MemAvailable $(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo) GB"
+rm -f $SC/tmp/ds41-nvmetemp.stop
+systemctl --user is-active --quiet ds41-nvmetemp.service || systemd-run --user --unit ds41-nvmetemp --collect bash $SC/work/ds41/nvmetemp.sh >> $L 2>&1
+P=$SC/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw
+[ -e $P/expert-profile.bin.drift-1024 ] || cp -p $P/expert-profile.bin $P/expert-profile.bin.drift-1024
+cp $SHIPPED $P/expert-profile.bin
+say "pack profile: last night's drifted file kept as expert-profile.bin.drift-1024, the shipped profile-2.00.bin restored; arms use tmp/ds41-profile-arm.bin"
+
+mk ref $SC/configs/DS41-v024-s70.json --expert-profile $PROF
+CUR=$SC/configs/DS41-tune-ref.json; CUR_PROF=$SHIPPED
+
+# --- A.1 repeatability --------------------------------------------------------------------------------------------
+rep() {   # rep VARIANT CONFIG
+  local dirs=() i
+  for i in 1 2 3; do
+    cp $SHIPPED $PROF
+    dirs+=("$(run "rep-$1-$i" "$2" "A.1 repeatability, $1, fresh engine $i" COOL_MIN=0 CLIENT="$PY $T/repeat_client.py \$URL \$OUT")")
+  done
+  say "A.1 $1 (same prompt, seed 4242, T 1.0):"
+  python3 $T/repeat_compare.py "${dirs[@]}" | tee -a $S
+}
+rep base $CUR
+if [ "$(grep -c "fresh engines): identical" $S)" -lt 2 ]; then
+  mk repeatable $CUR --no-expert-cache DS4_PATH_PICK=0 DS4_SPEC_Q=2 STRATA_DS4_REUSE=0
+  rep repeatable $SC/configs/DS41-tune-repeatable.json
+fi
+
+# --- reference and one change at a time ---------------------------------------------------------------------------
+cp $SHIPPED $PROF
+CUR_DIR=$(run ref $CUR "reference: the 70 GB store config, shipped profile, LDR/SearXNG stopped")
+grep -v -E "^ds4: |^=== .*(cool-down|before:)" "$CUR_DIR/summary.txt" >> $S
+echo "ref|reference|$CUR_DIR|{}" > $R/decisions.txt
+arm thr "B: decode host threads per GPU (--threads on)" --threads on
+arm ahead "B: next-layer expert prefetch with the store (DS4_AHEAD=1)" DS4_AHEAD=1
+arm split "B.3: uneven layer split, 25 on the 5080 / 15 on the 4060 Ti (DS4_SPLIT=25,15)" DS4_SPLIT=25,15
+arm settle0 "B.4: no catch-up swaps inside a long prompt's TTFT (DS4_SETTLE_MS=0)" DS4_SETTLE_MS=0
+arm chunk12k "B.4: bigger prompt chunks (--prefill-chunk 12288: a 20K prompt in 2 chunks, not 3)" --prefill-chunk 12288
+arm s74 "B.5: RAM store 74 GB (growth floor 15.5 GB; LDR/SearXNG stopped)" --ssd-cache 74 DS4_STORE_FLOOR_GB=15.5
+
+# B.8: a profile from chat / code / research-style traffic (not the test prompts), then an arm with it
+if [ $(date +%s) -lt $DEADLINE ]; then
+  python3 -c "open('$PROF', 'wb').write(bytes(40 * 384 * 4))"
+  TD=$(run traffic "$CUR" "B.8: routing counts from chat/code/research-style traffic (all-zero profile at start)" COOL_MIN=0 CLIENT="$PY $T/traffic.py \$URL \$OUT")
+  if [ -s $TD/profile-after.bin ]; then
+    cp $TD/profile-after.bin $R/profile-traffic.bin
+    python3 - $SHIPPED $R/profile-traffic.bin <<'EOF' | tee -a $S
+import struct, sys
+n = 40 * 384
+a = struct.unpack(f"<{n}I", open(sys.argv[1], "rb").read()[:4 * n]); b = struct.unpack(f"<{n}I", open(sys.argv[2], "rb").read()[:4 * n])
+top = lambda v, k: set(sorted(range(n), key=lambda i: -v[i])[:k])
+print(f"B.8 traffic profile: {sum(b):,} routing counts ({sum(1 for x in b if x):,} of {n:,} experts seen); shipped {sum(a):,}. "
+      f"Same experts in the top 1,357 (about what VRAM holds): {len(top(a, 1357) & top(b, 1357)):,}; in the top 6,558 (the store preload): {len(top(a, 6558) & top(b, 6558)):,}")
+EOF
+    SAVE=$CUR_PROF; CUR_PROF=$R/profile-traffic.bin
+    arm profile "B.8: hot-expert profile from our chat/code/research-style traffic instead of the shipped one"
+    grep -q "KEPT profile" $S || CUR_PROF=$SAVE
+  else
+    say "B.8: no profile came out of the traffic run - skipped"
+  fi
+fi
+arm lfu "B.6: RAM store keeps frequent experts (--ssd-policy lfu)" --ssd-policy lfu
+arm sthr16 "B.6: 16 concurrent O_DIRECT store reads (DS4_STORE_THREADS=16)" DS4_STORE_THREADS=16
+arm readers16 "B.6: 16 prompt reader threads per GPU (DS4_READERS=16)" DS4_READERS=16
+
+# --- C.9 / C.10 on the best config --------------------------------------------------------------------------------
+LOGF=$(python3 -c "import json; print(json.load(open('$CUR'))['log'])"); SLOTS=$(dirname $LOGF)/ds4-slots
+mk chat $CUR STRATA_DS4_SLOT_KEEP=1 STRATA_DS4_AUTO_PIN=1
+cp "$CUR_PROF" $PROF
+CD=$(run chat $SC/configs/DS41-tune-chat.json "C.9/C.10: 5-turn chat with the on-disk conversation state on (v0.2.4.2's defaults), then W1-W3 at the default effort" COOL_MIN=0 CLIENT="$PY $T/chat5.py \$URL \$OUT $LOGF $SLOTS")
+say "C.9/C.10:"; cat $CD/client.out >> $S
+say "slot folder after the engine stopped (it writes its RAM slots at exit): $(du -sb $SLOTS 2> /dev/null | cut -f1) bytes in $SLOTS"
+
+# --- end ----------------------------------------------------------------------------------------------------------
+say "best config: $CUR ($(basename $CUR_DIR)); profile $CUR_PROF"
+$SC/work/r22/port_gap4.sh end >> $S 2>&1 && say "8080 back on P021m" || say "port_gap4 end FAILED - check 8080"
+curl -s -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health | grep -q 200 && say "8080 answers" || say "8080 does NOT answer"
+systemctl --user start searxng-ldr.service searxng-ldr-baseline.service searxng-watch.service && say "SearXNG 8889/8890 and searxng-watch started again"
+touch $SC/tmp/ds41-nvmetemp.stop
+bash $SC/bringup/lib/kcheck.sh ds41-tune-after && say "kcheck clean" || say "KCHECK FAILED after the round"
+say "round finished ($(( ($(date +%s) - T0) / 60 )) min)"
+notify-send -a "DeepSeek-V4.1" "DeepSeek tuning round done" "$(grep -E 'KEPT|best config|8080' $S | tail -n 6 | cut -c1-120)" 2> /dev/null || true

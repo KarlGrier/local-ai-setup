@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Stop DS Harness
+Comment=Stop the DS Harness background service. Your sessions are kept and the model on 8080 is not touched.
+Exec=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/ds-harness stop
+Icon=process-stop
+Terminal=false
+Categories=Utility;

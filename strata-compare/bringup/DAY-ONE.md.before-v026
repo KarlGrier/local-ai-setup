@@ -1,0 +1,77 @@
+# Day one — a new model or a new release on this PC (one page)
+
+**Before the download (minutes)**
+1. Fetch only the headers: the first few MB of each shard (`curl -r 0-16000000 <url> -o head-0000N.gguf`, or setup's
+   `--inspect` with #911 if merged). `python3 bringup/inspect_model.py head-00001-of-0000N.gguf --tree <new release>`:
+   - **RUNS** → go on. **RUNS WITH THESE PATCHES OFF** → fine, the guards will do it. **NEEDS UPSTREAM SUPPORT** → wait for
+     the release that adds exactly what it names (hidden size, layer count, an MTP block of 2+ layers, an embedding or
+     n-gram format, the vocabulary size). The inspector lists only the guards the tree has (6 since Round 14).
+2. `python3 bringup/fitplan.py <header> --profile <release>/data/expert-profile.bin`: slots (±2.5 %), RAM against the
+   20 GB test floor and an 8 GB serving margin (`--serve-floor-gib`). If `ram_ok` is False: **one GPU +
+   `--resident-budget-gib N`** (+100 MiB reserve). v0.1.39 – v0.1.40.1 refuse a RAM budget beside a helper cache (v0.1.40
+   allows one with a layer split, unmeasured here); both GPUs + `--mmap-experts` was 40 % slower. Such a file does not
+   repeat run to run → the runbook gates it by agreement + TF NLL.
+
+**A new release (Round 14, v0.1.39 → v0.1.40.1: 2 h 41 min of unattended runbook stages + ≈ 1.5 h by hand; the round's own A/Bs took the rest of the day)**
+3. `git -C strata fetch --tags origin` (upstream may rewrite tag history: compare trees, not hashes); `run.env` with
+   `export RB_CACHE=$WS/tmp/rNN`; `RB_BUILDS=stock RB_STOCK_REF=<previous stock run> runbook.sh RUN clone inspect fitplan
+   pack build stock` — **the release alone** first: its exact7 vs the previous release's stock (bisect a difference with
+   the release's own off-switches: work/r14/s1_bisect.sh), then A B B A screens vs the promoted build.
+4. **The ledger pass** (the clone stops when the series does not apply — expected): in a worktree, `bringup/lib/pick.sh`
+   the rows in ledger order, `bringup/lib/resolve.py FILE list` per conflict. Per row: does upstream carry it (diff the
+   PR's commit against ours)? → drop. Conflicting and neither a fix nor ≥ 1 % → drop. An overlap with an upstream
+   version → keep ours beside upstream's switch for the A/B. Then `git format-patch` → RB_PATCHES (+ the twin's
+   MEASUREMENT commits → RB_MEAS). **A new local switch must join `RB_SWITCH_ENV`** (the switches-off check), and its
+   gate `RB_PATCH_ORDER` / patchtest.sh.
+5. `runbook.sh RUN build stock patched patches` — patched-off must equal stock 7/7; every switch's gate PASS. Then a
+   served A B B A per patch worth ≥ 1 % (work/r14/s2_abba.sh): for an exact patch read **ms per verify round** — tokens
+   per round moves ±1.5 % by sampling noise alone. Overlaps: identity first (CLI, adaptive swaps live), then A B B A;
+   equal → upstream's.
+
+**Calibration and the B.3 table (≤ 1.5 h)**
+6. `runbook.sh RUN calib b3table` — one screen per arm; the unchanged arms alone spread ~2.6 %, so change a value only
+   for ≥ +2 % beyond that. **A differing B.3 table → paste it into native_mmvq.cu as a commit** (speed only; exact7 must
+   stay 7/7). The cost-aware draft gate's table (configs/r12-cost-gate.txt) is fitted to this drafter: **re-fit it for a
+   new model or drafter** (one recording of research traffic; work/r12/policy*.py), then its chi-square + A B B A.
+
+**Integrate and serve (evening)**
+7. Clean clone of the final series (`runbook.sh RUN clone build`), `accept` (57 min, no FAIL), the gate set
+   (work/r14/s8_gates.sh: exact7, needles, Stop at 120K, follow-ups, stops, tool calls, #931 probe, repeat, round trips,
+   browser), screens + unseen holdouts vs the promoted build (work/r14/s8_screens.sh), `RB_SOAK=1 runbook.sh RUN soak`
+   (2 h on 8080), then promote with a real rollback test (work/r14/promote-c14.sh is the pattern). Keep the old config.
+
+**Known traps on this PC**: keep `--remote-expert-opt` out (−18 % here); `--pcie-frac 0`; helper slots 3,300 for IQ3_S;
+the desktop on the 4060 Ti slows the helper while the screen redraws; one model server at a time; MemAvailable ≥ 20 GB;
+don't edit runbook.sh while it runs; `pkill -f` can match your own shell — kill by PID; serve-mode engine logs carry no
+`patch guards` line (read it from the CLI stage). My settings' `STRATA_GR_V3=1` routes v0.1.40's one-launch final mixer
+through the V3 read (a rounding-level change vs v0.1.39; harmless). STRATA_DMA_BATCH cannot act with a helper GPU.
+
+**Round 15 additions (a model bigger than RAM; see REPORT.md "Round 15")**
+* Before downloading the real file: `bringup/inspect_model.py` now reads the expert formats and build options from the
+  tree and **flags a shard whose header the engine's own reader rejects** (UD-Q5_K_XL's first shard was 6 bytes short of the
+  aligned data section: gguf-py reads it, Strata does not). Fallback: splice its experts into a file that loads
+  (work/r15/splice.py).
+* If the experts do not fit in RAM: the placements are A (helper + mmap), B (5080 + `--resident-budget-gib`), C (layer
+  split, `--serve` only; on the 8 GB 4060 Ti it caps the prompt chunk at 1,024 tokens: 5x slower prompts), D (the 4060 Ti
+  as `--peer-device 1` + a budget), E (`--resident-experts`, sizes itself past a tight floor). **Force direct reads
+  (`STRATA_UNBUFFERED_LOAD=1`): +15–48 % here; v0.1.40.2's rule picked the page cache.** Size the budget by a FULL run,
+  not a probe (the chat cache's parked chats add ~3 GiB over an hour), and at the user's margin (planner: 10 GiB of
+  other use assumed; 2–5 is real). Expect ~0.5 GiB of SSD reads per decode round at IQ3_S size of a 300B model.
+* `STRATA_PREFILL_TIMING=1` (+ `STRATA_SPLIT_TIMING=1`) splits a prompt read by phase and stage (work/r15/s3_prompt_split.py).
+* **Check bringup/out/tmp/NEW-RELEASE-* at every phase boundary** (Round 15 reported three releases late).
+
+**Round 16 additions (v0.1.41)**
+* **A new default can change outputs without any of our patches:** v0.1.41 turns the CPU prompt-read share on for chunks
+  below 1,024 tokens on a two-card helper config too (`STRATA_PREFILL_CPU_SHARE`, timing-dependent → not repeatable). Run the
+  release alone with upstream's defaults AND with each new output-changing default off; gate the series with them off
+  (run r16z: `RB_BASECFG` = the flags + `STRATA_PREFILL_CPU_SHARE=0`), and decide each such default on its own.
+* **A long-text NLL check must exercise what it tests:** the harness's long TF prompts are 4,096-multiples (no chunk below
+  1,024) and the forced text goes through the verify windows, not the prompt path. Cut the prompt to N x 16,384 + a short
+  last chunk and force the tokens right after the cut (work/r16/s1_tflong2.sh); and **run a known rounding-level switch as a
+  control on the same texts** (work/r16/s1_tfctl.sh) — long texts move ~0.08 nats per text under ANY rounding change, so the
+  short texts' 0.005 bound cannot apply per long text.
+* The chat-cache round trip fails for any prompt-path change that does not repeat itself (a follow-up turn's short read):
+  check "direct vs direct" first — if that differs, the cause is not the cache.
+* Upstream's own `test_vision_device` fails on this PC (card order, #1352): machine-dependent, not ours.
+* The waiter now checks every NEW-RELEASE flag; start a waiter only after a hold has been released (it returns at once
+  while the queue's last line is the hold).

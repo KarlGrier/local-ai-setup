@@ -1,0 +1,1161 @@
+# strata-dsv41: code plan for lossless speed work on our two-GPU PC (part D)
+
+Read-only research and estimation, 2026-10-24. Nothing was built, started or run on a GPU, and nothing was posted.
+Sources: the engine at tag v0.2.4 (`strata-v024/src/dsv41`; v0.2.4.2 differs there only in `ds4_gg_cpu.cpp`), our arm
+logs in `results/ds41/arm-*`, read-only sysfs, and Project Maya on GitHub (`gh api` GET only).
+
+Labels:
+- **measured**: from our logs.
+- **computed**: arithmetic on the pack's `tensors.txt`, `expert-profile.bin` and the code's own formulas. The scripts are
+  in the session scratchpad `model/`.
+- **static**: reading of the code.
+- **model**: a rough timing model, good for ranking options, not for promising numbers.
+
+Short file names are the ones `engine-options.md` uses: `model.cu`, `main.cpp`, `store.hpp`, `pool.hpp`, `os.hpp`,
+`engram_io.hpp`, `iq.cu`, `kernels.cuh`.
+
+"Outputs" in each item uses the same words as `engine-options.md`:
+- **same bits**: no change to the numbers.
+- **rounding-level**: another summation order or another lane computes an expert. Not a quality loss, but greedy text can
+  flip at near-ties. It must pass our KL yardstick.
+- **distribution-preserving**: drafting with the exact speculative-sampling rule.
+
+## TOP (added 10-25 16:30): a follow-up re-reads the whole chat - the checkpoint fix
+
+**What we see** (measured, conf-c2048-chat and -chat-A, v0.2.4, slot keep off as v0.2.4's server ships): every follow-up in a
+~23-25K-token chat read its whole prompt ("0 reused + 23,521 read", ~44-47 s to the first token). Every one of them came
+after an answer whose thinking hit answer_room's budget (the server's short second pass).
+
+**What the template does** (static + rendered offline with the server's own request path, `ckpt_client.renderer`): the
+history matches the previous prompt (no dates in the template, same tool list, Jan sends no system prompt). With Jan's tools
+the next turn shares the whole previous prompt (678 of 678 tokens in the check); without tools it shares all but the last
+token (`<think>` becomes `</think>`, 47 of 48). So the follow-up should go back to checkpoint 0 or 1.
+
+**Cause** (static; `main.cpp` v0.2.4 = v0.2.6 here; `model.cu` checkpoint/pin/best_check):
+- ck1 (before a prompt's last token) and ck0 (its end) are rewritten by every pass: `main.cpp`:781 (`checkpoint(1)` at a
+  continued prompt's start), :795 / `feed_mark` (ck1 before the end), :834 (`checkpoint(0)`).
+- answer_room's second pass continues the state in place (prompt + thinking + wrap-up), so after it ck0/ck1 sit past the
+  thinking. The next turn drops the thinking, shares at most the first pass's prompt, and `best_check` finds nothing at or
+  before that: `m.reset()`, the whole chat again.
+- The anchor that covers exactly this case (`pin()`: ck2 = the first pass's ck1, "where a re-rendered history splits") is
+  set only with slots on: `main.cpp`:835 `if (!continued && slot_max > 0) m.pin();`. Expected: slot keep on (v0.2.6's
+  default) avoids the re-read; the end test `ckpt-*` measures it.
+- The anchor also moves when a continuation is not continued in place: with DSpark on, 5 of 6 continuations re-read the
+  thinking (summary item 5, the STOP race). That pass restores ck0, counts as a new run and pins its own ck1, so even with slots
+  on the next follow-up re-reads everything.
+
+**Fix** (engine only, outputs: rounding-level, same as a slot restore today):
+1. `main.cpp`:835: `if (!continued && !extends) m.pin();` - the anchor without slots too (a host-side copy of ck1, no device
+   copy; a checkpoint's bytes are the window rings and the compressors' partial groups).
+2. `extends` = the prompt shares more than the previous request's whole prompt (`c > last_len`, the previous GEN's
+   `r.ids.size()`): a continuation of that turn (answer_room's second pass, also after a STOP race) keeps the first pass's
+   anchor. A new turn shares at most the previous prompt (`c <= last_len`) and pins its own.
+3. With item 5's STOP-race fix (`tcap`/`tend`) the continuation goes on in place again (no re-read of the thinking).
+
+**Maya (read 10-25, maya-catchup.md):** fix 1 is Maya's own line - v1.1.28 `ds4_main.cpp`:927 `if (!continued) m.pin();`,
+unconditional since 2eec745 (#394, v1.1.25). Strata made it conditional on 10-24 in fa3252ad ("with slots off the loop is
+as before (no anchor copy ...)"), so fix 1 reverts that one condition; its cost is the one host copy of ck1 per new prompt.
+Maya needs no `extends` (fix 2): its thinking budget lives in the engine (#363, `</think>` forced inside one GEN), so there
+is no second pass and the checkpoints stay at the prompt's end. Moving the budget into the engine is the larger
+alternative to fix 2 + 3 (it changes outputs: no wrap-up sentence before `</think>`), not proposed here.
+
+**Estimate:** 1 + 2: about 10 lines and 1 h with the summary; CPU build 15-20 min in a gap; tests ~1.5 h of GPU in gaps
+(`ckpt_client` on the patched engine with slot keep off and on, `cont_client exact`, the KL yardstick on follow-ups read
+from a checkpoint). Gain: a follow-up in a ~24K chat from ~45 s to the first token to about 2-5 s (the last answer + the new
+message, ~0.3-1.5K tokens), for every client, with slots off or on. Rank: first - it is the largest time-to-first-token item
+in daily chat use and needs no new kernels. Pending: the end test's numbers on both engines, slot keep off and on.
+
+## Summary
+
+1. **We do not yet know what limits a prompt.** All prompt data fits two different explanations.
+   - (H-read) The streamed reads run at about 3.9 GB/s across both cards, and that sets the pace. The start-up preload
+     reads at about 10 GB/s with 8 threads, so the drive itself can do more.
+   - (H-dev1) The 4060 Ti's stage sets the pace: its compute, or its PCIe 4.0 x4 link through two chipsets.
+
+   One diagnostic run (`DS4_FLOW_STATS=1`, `DS4_PROF=1`, `--verbose`) tells them apart, with no code. Item (a) helps
+   only under H-read. Items (b) and (g) help under both.
+2. **The 4060 Ti slows decode through its memory bandwidth (288 GB/s against the 5080's 960).** Its 18 layers'
+   attention weights and the 455 MB head are read on every token's critical path: about 7.5-9.4 ms of our 44 ms
+   (computed). Moving layers to the 5080 needs no code (`DS4_SPLIT`, also with the 4060 Ti first in device order). The
+   model says +5 to +14 % decode.
+3. **The long-prompt layer skip in mode 1 is full-dependency** (b). Layers 21-39 see earlier positions only through layer
+   20's compressed KV and index keys plus a 128-row window. So the last 2,668 rows decide everything the answer and the
+   decode read, and the rest is summing order (static). It is one-GPU only because of a lock-step hand-off. Maya has
+   already solved this for splits where layers 20-39 share one GPU (#343). With the 4060 Ti first and about 10 layers on
+   it, that also helps decode (point 2). Expected about +60-120 % prompt speed at 20K. **Only if our KL check passes.**
+   That check can run today on the 5080 alone.
+4. **Maya has items (c) and (g) already.**
+   - (c) `DS4_BORROW`, v1.1.18: the prompt buffers lend their VRAM to experts between prompts.
+   - (g) Open PR #415, `MAYA_DS4_HELPER`: a GPU that holds only experts.
+
+   Both are ports, not new designs. (g) also gives the one-GPU prompt paths (layer-major, skip) with no 2-GPU work.
+5. **With DSpark on, 5 of the 6 thinking-budget continuations re-read the whole thinking pass** (measured, arm dsp70):
+   2,321 or 1,553 tokens, 14.6-15.9 s each. Without drafts they always resume ("+17 read"). The cause is the server's
+   STOP landing after a burst of accepted drafts. Our Qwen engine's `tcap`/`tend` fix applies directly. It is needed
+   before any drafter, including the no-model drafter in (e).
+6. **A no-model prompt-lookup drafter fits the existing exact verifier** with about 1 MB of VRAM. On our box one more
+   verify row costs about 0.4 of a step (measured on the DSpark arm). So it pays only on copied spans (code edits, quoted
+   tool output). The model says +10-30 % on edit turns and about 0 elsewhere, with a cost gate.
+7. **Small items:**
+   - Huge pages on the RAM store: 1 hour of work, +1-4 % decode.
+   - Engram `FADV_RANDOM`: about 0 (Engram I/O is small).
+   - io_uring: about 0.
+   - Per-layer VRAM placement by bytes: +0.8 % of VRAM picks (computed).
+
+## 0. What the time goes to now
+
+### Hardware facts used here (sysfs, read-only)
+
+- **RTX 5080:** PCIe Gen5 x16 on CPU lanes (00:01.1).
+- **Samsung 9100 PRO:** Gen5 x4 on CPU lanes (00:01.2). `max_hw_sectors_kb` 128 (a 3 MB read is 24 NVMe commands),
+  mq-deadline. The model shards have 43 extents per 39 GB file, so they are not fragmented.
+- **RTX 4060 Ti:** runs at **Gen4 x4** (an x8 card), behind two daisy-chained chipsets on a Gen4 x4 uplink (00:02.1).
+  It shares that uplink with the WD SN750, LAN and USB, but **not** with the 9100 PRO.
+- **Transparent huge pages:** `madvise` mode. The RAM store arena is not advised (see h).
+
+### Prompts (measured unless marked)
+
+- **P4K:** 21.0-22.4 s, disk 75-87 GB.
+- **P20K:** 57.2-59.9 s, disk 174-184 GB.
+- **Chunk boundaries of the 19,755-token prompt** (3 chunks of 6,585), from the server's progress lines: chunk 0 done at
+  about 23.5 s, chunk 1 at about 40.5 s, chunk 2 at about 56.5 s, end 59.9 s. So a pipeline stage takes about 16.5 s.
+- **Bytes per chunk** (computed with the current profile; the same for 1K-8K-token chunks, because nearly every expert
+  is picked):
+
+  | Card | From the RAM store | From the SSD | All streamed |
+  |---|---|---|---|
+  | dev0 (5080, layers 0-21) | 28.6 GB | 31.2 GB | 7,309 experts |
+  | dev1 (4060 Ti, layers 22-39) | 27.7 GB | 33.5 GB | 6,721 experts |
+
+  3 chunks of SSD reads give 194 GB, against 174-184 GB measured.
+- **NVMe 30-second samples** during prompts plateau at **3.79-3.80 GB/s** (P4K) and 2.5-3.8 GB/s (P20K).
+- **The start-up preload** reads 6,558 experts (about 56 GB of real bytes) in 5.5 s: **about 10 GB/s** with 8 threads of
+  the same O_DIRECT reads.
+- **How the hypotheses fit:**
+  - H-read with about 3.9 GB/s in all reproduces P4K (64.7 GB / 3.9 = 16.6 s, plus about 5 s of settle), the 16.5 s
+    stages and chunk 0 at about 23.5 s.
+  - H-dev1 (4060 Ti stage about 10 s per 4K chunk, about 16.5 s per 6.6K chunk) fits as well.
+  - The flow's own pipeline (staging = ring = about 38-40 slots a GPU, batches of half the ring, `model.cu`:2685,
+    3446-3463) is the likely gate, not the drive.
+- **TTFT includes** `cache_settle` (up to 6 s of VRAM swaps) and a blocking store refill after every chunked prompt
+  (`model.cu`:5911-5949).
+
+### Decode (measured unless marked)
+
+- **Speed:** about 44 ms a token (22.6 tok/s W1-W3).
+- **CPU-lane share:** about 42-57 % of the 240 picks a token, so about 100-140 experts of about 8.6 MB each from RAM.
+  Derived from the engine's cumulative "CPU lane %" lines between requests, which are rounded to 0.1 %.
+- **Disk:** 45-62 MB a token on W1/W2 (about 5-7 expert misses), 141-157 MB on W3. W3 is only about 5 % slower with 3x
+  the misses, so a miss costs about 0.2 ms or less (the reads overlap).
+- **Dense weights a token** (computed): about 123 MB a layer plus the 455 MB Q5_K head.
+  - On the 4060 Ti: 18 x 123 MB + 455 MB = 2.67 GB a token, 9.3 ms at the 288 GB/s peak.
+  - The critical-path part (attention + head; the shared expert overlaps the CPU lane) is about 2.17 GB, **7.5-9.4 ms**.
+  - The same bytes on the 5080 take about 2.3-2.8 ms.
+- **Rough decode model** (`decode_model.py`): per layer, attention bytes / card bandwidth + CPU-lane bytes / 45 GB/s +
+  0.12 ms sync, plus the head. The VRAM share is either from the static profile or scaled x1.6 to match the logs' about
+  50 %. It reproduces 45.6 ms for the current split.
+
+## Step 0: one diagnostic gap, no code (decides a, b, c, g)
+
+Every arm:
+- holds `tmp/gpu-test.lock`;
+- restores the same `expert-profile.bin` first (the file is rewritten after every request);
+- keeps `STRATA_DS4_PROMPT_SKIP=0` unless stated;
+- runs P4K, P20K and W1-W3 as in the arms so far.
+
+| Arm | Settings | What it answers |
+|---|---|---|
+| S0 diag | as s70 + `DS4_FLOW_STATS=1 --verbose`; separately one P20K with `DS4_PROF=1` | Per card: GB from files and from RAM, GB/s, "the compute waited N ms for reads" (`model.cu`:8085-8107); GPU time by stage. Decides H-read or H-dev1 |
+| S0 decode | CLI `strata-dsv41 --pack P --ids @W1.ids --n 512 --temperature 1 ... --verbose`, `DS4_PROF=1` | Per token: CPU-lane ms, routing waits, store hit rate and wait ms, Engram, GPU stages (`main.cpp`:1430-1500) |
+| S1 5080 alone | `CUDA_VISIBLE_DEVICES`=5080, `--prefill-chunk 8192`, `DS4_LAYER_CACHE_MB` capped or `--ssd-cache 66` | Layer-major on one GPU for P20K, and decode with every dense layer on the fast card (model: decode -5 to +9 %, about 720 VRAM experts instead of 1,357) |
+| S2 4060 Ti first | `CUDA_VISIBLE_DEVICES`=4060Ti,5080, `DS4_SPLIT=10,30` (also 8,32) | Decode with the head and 30 layers on the 5080 (model +9 to +13 %); the split Maya's skip port (b) needs |
+| S3 5080 first | `DS4_SPLIT=30,10` (also 26,14) | The same idea in the normal order (model +7 to +10 %) |
+| S4 | `DS4_CHUNK_MIN=64` | Short prompts: W1 continuations (17 tokens) take 3.7-4.3 s in every arm against 0.76-1.2 s for W2/W3; the 140-token W2 prompts take 7.9-8.2 s. Looks like timing-based path picks; `--verbose` shows them |
+| S5 | `DS4_AHEAD=1`; `DS4_READERS=16`; `DS4_SETTLE_MS=0` + `DS4_SETTLE_STORE=0` | Already on the `engine-options` list; one arm each |
+| KL0 | 5080 alone, the `tools/dsv41/test_prompt_skip.py` harness (`--score` with `DS4_SCORE_PREFIX`), skip 0 twice and skip 1 once | The KL gate for (b). Use long prefixes (8K and 20K) |
+
+RAM note: layer-major takes about 2-4 GB more RAM during long prompts:
+- the chunk states are pinned, about 92 KB a token (2.3 GB at 3 x 8,192);
+- the layer cache is about 1.5-1.9 GB.
+
+`lm_begin` sizes the cache from MemAvailable less 8 GB (`model.cu`:7811-7821). With the 70 GB store that would take
+MemAvailable below our 15-16 GB line, so cap it.
+
+---
+
+## a. Layer-major cross-chunk expert reuse on both GPUs
+
+**Where and why it is one-GPU only:**
+- `lm_begin` returns false when `devs.size() != 1` (`model.cu`:7791-7793).
+- `run_dev_layers` (`model.cu`:7214-7324) runs every trunk layer of one device. Each layer goes through all chunks, and a
+  chunk's state (h | pre | topk | cand, about 92 KB a token) goes to host memory after every layer and back. Each
+  layer's file-read experts are kept in a RAM layer cache (`flow_push`, `model.cu`:3195-3216) so later chunks do not
+  read them again.
+- On two cards the run is chunk-major and pipelined (`run_dev_chunks`, `model.cu`:7325-7516):
+  - Chunk hand-offs go through **two** host slots, with flags and acknowledgements (`hand[2]`, `model.cu`:2886-2894,
+    7436-7445, 7480-7484).
+  - Layer 20's compressed KV and index keys (read by layers 21-39) are copied to the other card per chunk through
+    two-slot staging (`sr.stage(slot)`, `x_ack`, `model.cu`:7447-7468).
+  - Layer-major on the first card would produce chunk k's hand-off and source rows only after all its layers, so the
+    two-slot protocol would deadlock. The state at the device's last layer goes to logits, not to a hand-off.
+
+**What a two-GPU version needs (design A1: layer-major on the 5080, chunk-major on the 4060 Ti):**
+1. `lm_begin` decides per device. Allow it for a group that is not the last one. Its RAM is that device's layer cache
+   plus the full-run states.
+2. `run_dev_layers` on the first card, at its last layer: write every chunk's state into a full-run pinned buffer (the
+   existing `lm_state`, `cudaHostAllocPortable`), with a per-chunk ready flag instead of the head.
+3. `run_dev_chunks` on the second card: chunk k's input comes from that buffer slot (wait on flag k), not from
+   `hand[k % 2]`. No acknowledgement is needed.
+4. Source rows: after the first card has finished layer 20 for all chunks, copy layer 20's compressed KV and index-key
+   range for the run to the second card's copies once (about 300-400 B a row, about 8 MB for 20K). This replaces the
+   per-chunk stage for this run.
+5. Per-device Stop (`halt_now`/`chunk_go`), progress (`lm_layers` is per run, `model.cu`:7993-7997), and `lm_end` for
+   each device.
+
+A2 (both cards layer-major) is not worth it: the 4060 Ti would move the chunk state over its x4 link at every layer
+(2 x 92 KB x rows x 18 layers = 66 GB for 20K), and expert DMAs stay one per chunk anyway.
+
+**Why it could help here:** each chunk re-reads about 31 GB from the SSD on the 5080's side (computed). A1 reads them once
+per run. The layer cache does not reduce the H2D copies, which stay one per chunk. That costs nothing on Gen5 x16.
+
+**Cost:** the 4060 Ti starts only when the 5080 has finished its last layer for chunk 0, at the very end of its run. The
+pipeline overlap is lost.
+
+**Effort / risk:** 2-3 days plus 1 day of tests. Risk medium-high: a flag-protocol deadlock or a missed source row gives
+wrong text. The KL check catches the latter.
+
+**Expected gain:**
+- Prompts of 8,192 tokens or fewer: 0 (one chunk).
+- 20K under H-read: SSD bytes 194 → 132 GB, but serial. About 34 s of reads plus settle, against 55-58 s, so **+20 to
+  +45 %**.
+- 20K under H-dev1: **-10 to -25 %** (the lost overlap).
+- Combined with (b), the 4060 Ti handles one chunk only, so A1 is worth doing only if Step 0 shows the 5080 waiting for
+  reads. Maya has no multi-GPU layer-major either (`lm_begin` at v1.1.26 still checks `devs.size()==1`).
+- Maya #280 is a caveat: one-GPU layer-major read 152 GB instead of 579 GB but was only 1.3x faster, because its read rate
+  fell from 2.3 to 0.77 GB/s.
+
+**Outputs:** rounding-level. The "likely" pre-reads and virtual-slot order depend on the stream (`flow_spec`,
+`model.cu`:3237-3278), which changes the summing order.
+
+**Test:**
+- P20K and a 30K prompt with `DS4_FLOW_STATS=1`: the 5080's "from the files" GB should fall to about 1/nk.
+- TTFT A/B against chunk-major (profile restored).
+- Teacher-forced KL with two references (`--score`, long prefix) against our yardstick.
+
+## b. The full-dependency prompt skip (mode 1 only) on both GPUs
+
+**What mode 1 is (static):**
+- `yoco_layer()` (`model.cu`:7875-7887) finds layer 20: the first with compress ratio 1, a KV source, and every later
+  layer is ratio 1 and owns no KV.
+- `forward_chunks` (`model.cu`:7902-7932) keeps `(40 - 20) x 127 + 128 = 2,668` rows through layers 21-39 and runs layer
+  20 `kv_only` on the rest. Layers 21-39 see earlier positions only through layer 20's compressed KV and index keys
+  (`kv_source_layer_ids 2,8,14,20`; layers 24/28/32/36 index from layer 20's keys) and their own 128-row window. So the
+  last rows' logits and the rings decode reads depend only on the kept rows.
+- Mode 2 and `DS4_YOCO_KEEP` cut that cone and are lossy: never.
+- The 0.2.4 notes (99.5 % same top-1 over 799 positions) fit rounding-level, but **our KL gate decides**.
+
+**Why it is one GPU only:**
+- `yoco_layer` returns -1 unless every trunk layer is on `L[0].dev` (`model.cu`:7882).
+- On a split, skipped chunks (`k < cut_k`) never reach the second card's loop (`run.runs`, `model.cu`:7421). That card
+  then never takes layer 20's source rows for those positions, so its copy has holes, and it never acknowledges them, so
+  the first card waits for good.
+- The second card's first stream entry (`flow_spec(c, 0, fl_layers[0], ...)`, `model.cu`:7357) assumes chunk 0 runs
+  ("out of step" error, `model.cu`:3441-3445).
+
+**Two designs:**
+- **B1, port Maya #343** (v1.1.26, commit 76447431ae, 269-line diff): the skip works on a split whose source layer and
+  every later layer sit on one GPU (the "suffix on one GPU"). Earlier groups hand off every row, because the source needs
+  them for its `kv_only` work.
+  - For us: `CUDA_VISIBLE_DEVICES`=4060Ti,5080 with `DS4_SPLIT=10,30` (or 8,32). Layers 20-39 and the head go to the 5080.
+  - The same split is the decode win of Step 0 S2 (model +9 to +13 %).
+  - Effort 0.5-1 day (by hand: both sides changed `forward_chunks`/`run_dev_chunks`).
+- **B2, any split:** for a skipped chunk the second card still runs the source-row "take" (`xfer_get` into
+  `sr.ckv[di]`/`sr.ik[di]`, set `x_ack`) and no layer. Start its flow at the first (k, il) that runs. Relax
+  `yoco_layer`. Effort 1-2 days.
+
+**Expected gain** (both hypotheses agree, because the 4060 Ti's side shrinks to one 2,668-row pass):
+
+| Prompt | Gain | Why |
+|---|---|---|
+| 20K | **+60 to +120 %** (about 25-35 s instead of 57-60 s) | B1 split: the 4060 Ti runs layers 0-9 on all chunks, the 5080 runs layers 10-20 on all chunks and 21-39 on the last 2,668 rows |
+| 8K | +5 to +25 % | one chunk: compute only on layers 21-39 |
+| 4K | 0 to +15 % | cut at 1,460 rows; nearly every expert is still streamed |
+
+Long agentic turns gain most.
+
+**Outputs:** rounding-level **if** KL0 passes. Run it first on the 5080 alone (no code):
+- the existing harness `tools/dsv41/test_prompt_skip.py` (`--score ... --window 128`, `DS4_SCORE_PREFIX`), with 8K and
+  20K prefixes;
+- two skip-0 references against skip 1;
+- judged by our yardstick (mean, p90, count KL > 1, top-1).
+
+**Test after the port:** the same harness on the split, then P4K/P8K/P20K plus W1-W3 (decode should not change).
+
+## c. Give the prompt workspace's VRAM to experts during decode
+
+**Today:**
+- `alloc_chunks` (`model.cu`:2816-2898) runs before `place_experts` and keeps about 1.9 GB (5080) / 1.76 GB (4060 Ti) of
+  chunk buffers, plus a 400 MB ring and about 0.13 GB of slabs, per card for the whole run.
+- VRAM experts sit in one contiguous block per layer (`vram_base + slot x unit`, `model.cu`:3898-3911). Decode reaches
+  them through per-expert pointers in `vram_tab` (`model.cu`:6034-6041), so extra slots can live anywhere for decode.
+- The prompt path computes VRAM experts as one contiguous set (`run_set(..., vbase, ...)`, `model.cu`:3489-3493).
+
+**Port Maya's `DS4_BORROW`** (v1.1.18; read in Maya v1.1.26 `ds4_model.cu`):
+- `Dev::tail` is the last `tail_k` VRAM slots of every layer in one slot-major region (`place_experts` ~4753-4790).
+- A run lays its chunk buffers at the region's end (`borrow_begin` ~10568). The experts under them leave that run's VRAM
+  set (`pv_n`) and are streamed like CPU-lane ones.
+- Afterwards they are read back (`borrow_end` ~10603).
+- `chunk_default` can then grow to 16K/32K tokens because larger chunks cost decode nothing. On several GPUs it needs
+  `DS4_BORROW=1`.
+- In Strata this touches `alloc_chunks`, `place_experts`, `forward_chunks` (begin/end around the run), the flow's
+  virtual slots (`plan_streams`, `model.cu`:7141-7153), `cache_tick_swaps` (never swap into lent slots during a run) and
+  the store refill.
+- Make the read-back asynchronous (through the existing swap thread) so it stays out of TTFT.
+
+**Why it helps here:**
+- Decode: the 4060 Ti holds only about 10 experts a layer (log: 201 for 18 layers). Getting about 2.2 GB back roughly
+  doubles that, and the 5080 gets about +10 a layer (computed: +232/+193 experts).
+- Prompts: the 4060 Ti could take about 16K chunks (tail about 3.6 GB at about 23 slots a layer), so P20K runs in 2
+  chunks instead of 3.
+
+**Effort / risk:** 2-4 days. Risk medium: slot bookkeeping across swaps, flow and refill. A bug here gives wrong experts,
+so check bits with `DS4_CHECK_SWAPS=1`.
+
+**Expected gain:**
+- Decode **+5 to +12 %**. The model gives +7.6 % with static VRAM shares and +14.9 % scaled to the logs' share; it adds
+  15-30 VRAM picks a token.
+- P20K **+20 to +35 %** (2 read passes instead of 3).
+- About 0.3-1 s of read-back after each long prompt (the 4060 Ti's x4 link is about 0.35 s of it), hidden if
+  asynchronous.
+
+**Outputs:** rounding-level (which experts the GPU computes).
+
+**Test:**
+- W1-W3 decode and P4K/P20K A/B with the profile restored.
+- The decode CLI breakdown (CPU-lane ms a token should fall).
+- A teacher-forced KL.
+- `nvidia-smi` headroom (keep `--reserve-mib`).
+
+## d. Project Maya: port claim, later releases, PR #453
+
+**Port claim: verified** (helper run with `gh api`):
+- Maya tag v1.1.17 is commit `8d9a9b5d` (2026-10-20).
+- All 53 files of Strata commit `bbd0a2c6` ("import ... unmodified") have the same git blob SHA as Maya's tree at
+  8d9a9b5d. `ds4_model.cu`, `ds4_main.cpp`, `ds4_kernels.cu` and `ds4_os.hpp` were also compared with `cmp`: identical.
+- 27 headers carry the "Copyright (c) 2026 Peasant Smith and the Project Maya contributors (MIT ... v1.1.17). Ported
+  into Strata" line.
+- `ds4_store.hpp`, `ds4_gg_cpu.cpp`, `ds4_packinfo.*`, `ds4_tq*` and `ds4_iq_hip*.inc` are Strata's own. **The RAM store
+  is not Maya's.**
+- Divergence since: Strata +6,788/-323 in 38 files. Maya v1.1.17→v1.1.26 is about +8.5k lines (`ds4_model.cu` 7,786 →
+  12,198, plus six new files). Anything taken from Maya is a hand rewrite.
+
+**Maya releases after v1.1.17:**
+
+| Release | Date | Size (`src/ds4`) | What is in it |
+|---|---|---|---|
+| v1.1.18 | 10-20 | +2268 | BORROW, PCIe lane, `IQ_Q8K`, measured CPU-lane layout |
+| v1.1.19 | 10-20 | +334 | prompt skip, one GPU |
+| v1.1.20 | 10-21 | +164 | Stop, `DSPARK_CUM` |
+| v1.1.21 | 10-21 | +935 | NVIDIA "leaner tiles", router 8 rows, host-free layers |
+| v1.1.22 | 10-22 | +2635 | IQ1 kernels, #344 TP + decode pieces + placement by profile share |
+| v1.1.23 | 10-22 | +20 | top-k buffer fix |
+| v1.1.24 | 10-22 | +720 | #369 prompt attention on tensor cores, `Q8_BATCH`, `ENGRAM_RAM` |
+| v1.1.25 | 10-23 | +936 | slots, thinking budget, PCIe-lane check |
+| v1.1.26 | 10-23 | +1166 | `FAT_ROWS`, #343 skip across a split, flow pump, lane-free, cold prefetch |
+
+Already in Strata: prompt skip (one GPU), budget, slots, Stop, flow pump, lane-free, `DSPARK_CUM` (off), cold prefetch
+(off).
+
+**The items asked about:**
+
+| Item | What it does | Exact? | In Strata | Port effort | For us |
+|---|---|---|---|---|---|
+| Host-free layers (v1.1.21, 3453271384) | A layer whose experts all sit in VRAM skips the host mailbox and its wait | same tokens | no | 2-4 h | **none**: no trunk layer fits whole in our 24 GB |
+| PCIe streaming lane (v1.1.18 #312, check #329) | Some missed experts go to GPU staging and are computed there beside the CPU lane; cost-model split per start | **not bit-identical, run-to-run** (#329: KL 1.8e-2 between starts) | no (nearest: `DS4_STORE_ZC`, one GPU, measured slower) | 4-7 d | **low or negative**: lost on 2x4090 (#329, #393); wins only with a slow CPU lane, while ours is AVX-512 exact rows |
+| DSpark verify speedup | `DSPARK_CUM` (ported, off); #344's "1.85x" is Windows HIP; on CUDA a verify round is about 2 % faster (second `hc_mix` stream, batched compressor rollback, one-launch table writes, segmented top-k) | lossless | `DSPARK_CUM` only | 1-2 d (mixed into the 958-line TP diff) | about 2-3 % of drafted decode; we run without DSpark |
+| `DS4_FAT_ROWS` (v1.1.26, c8cb6ea85c) | Experts with 64+ rows in a chunk decoded to FP16 once, then a cuBLAS GEMM | summing order | no | about 1 d | **none or negative** on short-VRAM cards (#438; Maya will skip RAM-streamed experts); PR #446 fixes an overrun |
+| CPU-lane prefetch of missing pages only (#425) | `os::prefetch_cold` | same bytes | yes (`e6e14f27`, off by default; skipped with the store) | none | **none**: no file-range prefetch with the store, and on Linux it is plain `madvise WILLNEED` |
+
+**Other lossless pieces worth a look:**
+
+| Item | Effort | Exactness | Possible gain | Condition |
+|---|---|---|---|---|
+| v1.1.21 NVIDIA prompt tiles / router 8 rows / FP16 rows | 1-1.5 d | same bits | +5-11 % on expert sets (V100) | only if `DS4_PROF` shows the expert kernels pacing the prompt |
+| #369 prompt sparse attention on tensor cores | about 1 d | rounding-level | +15-25 % prefill at 8-30K on 3090s | only if attention is a large share |
+| #382 `Q8_BATCH` | 0.5 d | bit-identical | 1-2 % decode | — |
+| #344 VRAM slots per layer by profile share per byte | 0.5 d | placement only | small; see (f) | — |
+| `DS4_IQ_Q8K` (GPU activations rounded as Q8_K) | 0.5 d | — | no speed gain | answers depend less on where an expert sits |
+
+io_uring: Maya dropped `DS4_EG_URING` as "not a win". There is no prompt-lookup drafter and no multi-GPU layer-major in
+Maya.
+
+**PR #453 (GSQ-RCO loading):**
+- **OPEN**, created 2026-10-24 14:00 UTC by Whamp: one commit (3b829c46) on v1.1.26, +1,589/-91 in 17 files, no
+  reviews yet.
+- It loads ISTA-DASLab's GSQ-RCO **IQ2_XXS** set plus the separate Engram IQ4_NL file **without conversion**
+  (`pack_gguf.py` writes a pack pointing at the original bytes).
+- It recovers the I32 Engram hash tensors and adds Q5_K dense rows, IQ4_NL Engram rows and IQ2_XS dispatch. The IQ2_XS
+  and Q5_K code is adapted from Strata 96ca4383.
+- The author's evidence on 4x3090 + Zen 2: 10.6 tok/s decode (19.1 with open PR #452), 425-660 tok/s prefill.
+
+**Could Maya run our files for an A/B?** Yes in principle (inferred):
+- **Build:** Maya v1.1.26 + #453, Linux CUDA build with `CMAKE_CUDA_ARCHITECTURES="89;120"` and its pinned ggml.
+- **No DSpark:** Maya cannot read Unsloth's dflash GGUF, and we run without DSpark anyway.
+- **Lossless settings:** `MAYA_DS4_PROMPT_SKIP=0`, `MAYA_DS4_STREAM=0`, probably `DS4_FAT_ROWS=0`, the same `DS4_SPLIT`.
+- **Memory model differs:** Maya has no RAM store and copies hot experts to RAM with `DS4_COPY_GB`. Cap that at about
+  60-66 to respect our MemAvailable line.
+
+This is a separate build that needs the user's go. It is useful mainly to measure Maya's engine and kernels against
+Strata on identical bytes.
+
+## e. A no-model prompt-lookup drafter on the exact verifier
+
+**Hook:**
+- `round()` in `main.cpp`:167-204 drafts only when `m.draft_block() > 0` (a loaded DSpark).
+- Add a lookup source there:
+  - Keep a hash from the last k tokens (k = 3..8) of `m.tokens()` (prompt plus everything generated) to their latest
+    earlier position.
+  - Propose up to `n` of the tokens that followed (n ≤ `kWin - 1` = 15, `kernels.cuh`:18).
+  - Call the existing `m.verify()`.
+- `verify()` (`model.cu`:6629-6698) is already exact:
+  - **Greedy:** keeps drafts while they equal the argmax.
+  - **Sampled:** q is a point at each draft unless the drafter's own distribution is known, so draft d stands with
+    probability p(d) under the request's own top_k/top_p/min_p/temperature chain. Otherwise it draws from the residual.
+- `rollback` (`model.cu`:6702-6741) undoes the rest.
+
+**Needed changes:**
+1. Allocate the verify buffers when lookup is on. Today they exist only with a loaded drafter (`g.n_mtp > 0`):
+   - `l.ring_bak` and the compressor snapshots (`model.cu`:3643-3648);
+   - `d_confv`/`d_ints`/`d_specq` (`model.cu`:2294-2296).
+2. Make `seed_drafter` a no-op path (it already returns when `n_mtp == 0`, `model.cu`:6382).
+3. An engine flag `--lookup N` and a GEN key `lookup=0|1` (`main.cpp`:304-313). Keep `cool` (`main.cpp`:895-907)
+   from switching drafting off for good.
+4. A **cost gate**, i1 below. One more verify row costs about β = 0.4 of a step here. From arm dsp70's W1 run: 1,062
+   rounds, 649 with drafts; a plain step was about 55 ms and a drafted round about 119 ms for 2.5 drafts, so about 22 ms
+   a row. Each draft position needs a predicted acceptance above about β.
+5. Prerequisite: the continuation fix (i2).
+
+**VRAM:** about 1 MB in all (the ring backups are 16 rows of FP8 KV a layer; the compressor snapshots are a few tens of
+KB on the compressing layers). Host: a hash of token n-grams, a few MB.
+
+**Expected acceptance and gain (estimate):**
+- On copied spans (an edit turn re-emitting a file, quoting tool output, repeated JSON/tool-call boilerplate), the target
+  usually gives the copied token p ≥ 0.8-0.95 at our sampling settings. With β ≈ 0.4 and n ≈ 2-5, a round yields about
+  2.7-4.7 tokens for 1.8-3 steps of cost: **about 1.4-1.6x on those spans**.
+- Edit turns with 30-70 % copied tokens: **+10 to +30 % decode**.
+- Thinking and prose: few matches, so about 0. The gate keeps it from costing anything.
+- For comparison, DSpark here kept 74-92 % per position and about 2.9 tokens a round, and still lost on balance because it
+  takes 8 GB of VRAM. Lookup takes none.
+
+**Outputs:** distribution-preserving. Realised tokens differ from plain decoding at the same seed, as with DSpark. Greedy
+can differ at near-ties (a T-row window against single steps).
+
+**Effort:** drafter and wiring 1.5-2 days, gate 1 day, plus i2 (0.5-1 day).
+
+**Test:**
+- Edit-turn prompts (an `agentturn`-style file edit and a W2-code rewrite) plus W1-W3 as a guard.
+- `DS4_ROUND_LOG` for per-position acceptance.
+- A seeded next-token frequency check at fixed prefixes (lookup on against off: χ² within noise).
+- A thinking-budget continuation that must show "+17 read".
+
+## f. Expert placement by time saved per byte, from our own traffic
+
+**Today:**
+- VRAM: each card gives every one of its layers the same fraction of experts (`model.cu`:3838-3851), the profile's
+  hottest first (3880-3897). Swaps then follow heat.
+- The store is preloaded by count per byte (4562-4589), then runs LRU.
+- `expert-profile.bin` mixes prompt and decode picks and is rewritten after every request (8996-9006). Prompts dominate
+  it (a 20K prompt adds 4.8 M counts; a 2K-token answer adds 0.5 M).
+
+**Time saved per byte** (measured or computed):
+- VRAM against the CPU lane saves about 8.6 MB / 45 GB/s ≈ 0.19 ms of critical-path CPU time per pick, against about
+  0.01 (5080) to 0.04 ms (4060 Ti) on the GPU.
+- RAM store against SSD saves at most about 0.2 ms per miss, since misses overlap (W3 data).
+- Both costs scale with bytes, so "picks per byte" orders experts almost the same way as "time per byte".
+
+**What to change:**
+1. Keep a **decode-only** count array beside the profile (prompt picks are counted in the chunk path,
+   `model.cu`:7090-7099).
+2. Place VRAM per card by decode picks per byte across that card's layers (Maya #344's rule).
+3. Preload the store by decode counts.
+4. Freeze a reference copy for A/B arms.
+
+"Our own traffic" then comes from normal daily use of the engine. It writes the counts itself, so we never have to read
+the user's research content. A replay set from our own suite (W1-W3, `agentturn`, research replays) can seed it.
+
+**Expected gain (computed):**
+- Per-layer greedy by picks per byte at the same VRAM bytes: 64.3 → 64.8 VRAM picks a token (**+0.8 %**), about 0-1 %
+  decode.
+- Pooling across both cards (only possible with g): +4.6 picks a token (+7 %).
+- A decode-only profile may help right after start or after prompts, but the swap cache adapts within a conversation
+  anyway. Unknown, probably ≤ 3 %.
+
+**Effort / risk:** 0.5-1 day, low. **Outputs:** rounding-level (placement). **Test:** matched restarts with the frozen
+profile, W1-W3 several passes.
+
+## g. The 4060 Ti as an expert-only helper card
+
+**Today:** experts live only on the card that owns the layer (`place_experts`, `model.cu`:3898-3911). There is no
+cross-device expert tier. Tensor parallel is refused for these quants (`model.cu`:1894-1911).
+
+**Port Maya PR #415** (open, `MAYA_DS4_HELPER`, +748 lines in 6 files; read from the PR text):
+- Take a GPU off the layer devices. It holds a pool of the most-routed experts the layer cards do not hold, chosen by the
+  profile and pooled over all layers.
+- The helper computes its picks on its own stream from the window's plan.
+- The CPU lane's service thread adds the helper's sums. A failure or a 10 s silence hands the picks back to the CPU lane.
+- DSpark verify windows use a grouped window path that is bit-identical to its per-token path.
+- Every pick is computed once, by VRAM, the helper or the CPU lane. Swaps and read-ahead skip the helper's experts.
+- Measured there (HIP, 2x 7900 XTX + an 8060S helper): decode 25.7 → 29.4 tok/s warm; CPU-lane experts a pass 25-32K →
+  1.2-2.1K.
+
+**What Strata needs beyond the PR:**
+- Wire it into `ExpertStore`/`StoreHold` (a helper pick must never trigger a store read).
+- `cache_tick_swaps` must exclude helper experts.
+- The prompt path: the 5080 streams the helper's experts like CPU-lane ones, or the helper computes them.
+- STAT counters.
+
+**Why it helps here:**
+- Every dense layer and the head move to the 5080 (about -5 to -6.5 ms a token, see 0).
+- About 750-800 extra VRAM experts on the 4060 Ti, pooled across layers.
+- With one layer card, `lm_begin` and `yoco_layer` work as they are, so (a) and (b) come for free for prompts.
+- Cost: a host hop per layer, about 20-40 µs, so 1-1.6 ms a token (in the model).
+
+**Effort / risk:** 4-7 days, high (a new lane, cross-device synchronisation, fallbacks).
+
+**Expected gain (model):**
+- Decode **+18 to +27 %**, +22 to +36 % with (c).
+- Prompts: whatever S1 (5080 alone) shows. P20K could be about 2x once (b)'s KL gate passes.
+
+**Outputs:** rounding-level (GPU against CPU arithmetic for the helper's experts).
+
+**Test:** S1 first (no code) to see the one-trunk-GPU prompt and decode. Then the port: load-time `HELPER_CHECK`-style
+bit compare, W1-W3, P4K/P20K, KL.
+
+## h. Two small patches
+
+**h1. Engram readahead**
+- **Today:** Engram rows (IQ4_NL, 144 B a row; 24 rows a token on each of layers 1 and 14) are read with buffered
+  `pread` on per-thread descriptors (`engram_io.hpp`:236-251). The unbuffered path is Windows only
+  (`os::open_unbuffered` returns `kBadFd` on Linux, `os.hpp`:156-165; `DS4_EG_DIRECT` under `_WIN32`,
+  `model.cu`:2470-2492).
+- **Patch A:** `posix_fadvise(fd, 0, 0, POSIX_FADV_RANDOM)` where each reader opens its descriptor. 1-2 hours.
+- **Patch B:** a Linux `O_DIRECT` `open_unbuffered`, with direct reads enabled for the Engram-only file. The read path
+  already handles a span of at most 2 pages. 3-4 hours.
+- **Expected:** about 0-1 %.
+  - Random small `pread` already reads about one 4 KB page per miss. Our totals leave little room for readahead waste:
+    at most about 0.2 MB a token in decode against 45-60 MB measured, and at most a few GB per 20K prompt.
+  - O_DIRECT also loses the page cache's repeat hits; Maya measured -8 % on a 4K prompt (Windows).
+- **Outputs:** same bits.
+- **Test:** the decode CLI's Engram line (rows, % without a read, reads a token) and disk MB a token, before and after;
+  P4K.
+
+**h2. Huge pages for the RAM store arena**
+- **Today:** the arena is `mmap(PROT_NONE)` + `mprotect` per 64-slot chunk (`os.hpp`:423-436, `store.hpp`:85, 465-480),
+  never advised, so the store uses 4 KB pages under the `madvise` THP mode. `anon_alloc` already advises
+  (`os.hpp`:412).
+- **Patch:** `madvise(arena, bytes, MADV_HUGEPAGE)` after `range_reserve` on Linux. 1 hour.
+- **Why:** the CPU lane streams about 1 GB a token from the store. With 4 KB pages that is about 250K TLB misses a token
+  (page tables for 70 GB do not stay cached). O_DIRECT reads into the store also pin 750 pages per 3 MB instead of 2.
+- **Expected:** decode **+1 to +4 %**; a slightly faster store refill.
+- **Risk:** compaction stalls at the preload (defrag = `madvise`), so watch the preload time. Memory use is unchanged.
+- **Outputs:** same bits.
+- **Test:** `AnonHugePages` in the engine's `smaps_rollup`, preload time, the decode CLI's CPU-lane ms a token, W1-W3.
+
+## i. Ideas from our Qwen engine work
+
+**i1. Adaptive draft length and a cost gate**
+- **dsv41 has:**
+  - a per-draft confidence floor (`--dspark-conf`);
+  - the cumulative product cut (`STRATA_DS4_DSPARK_CUM`, off; Strata measured it slower on an H100);
+  - a block cap;
+  - "cool" (skip drafting after a round with no draft).
+- **It has no timing-based gate.** `--dspark auto` is only a load-time decision.
+- **Port:** our `STRATA_COST_GATE` idea (94b00fbe): a draft joins while the product of predicted acceptances stays above
+  θ(d) = decode rate x the extra time of one more row. Use a per-request table of acceptance by step and confidence bin
+  (lookup: by match length), with β measured online from `verify_ms` against step time.
+- **Effort:** 1-1.5 days. **Gain:** only with a drafter; it is what makes (e) safe. **Outputs:** distribution-preserving.
+
+**i2. Continuation fix**
+- **dsv41 resumes in place from checkpoints** (`main.cpp`:681-720). Without drafts it always works: every arm shows
+  "N reused + 17 read".
+- **With DSpark it fails** (arm dsp70):
+  - `2445 = 124 reused + 2321 read in 15,935 ms`;
+  - `2446 = 125 + 2321` (15,690 ms);
+  - `2460 = 139 + 2321` (15,327 ms);
+  - both W3 runs `25105 = 23552 + 1553` (14.6 s each);
+  - one success (`2462 = 2445 + 17`).
+- **Why (static):**
+  - The server counts thinking tokens and breaks at the budget, then sends STOP (`server.py`:5338-5343, 5366-5370).
+  - With drafts, `round()` emits a burst of accepted tokens, so the engine's state runs past the budget.
+  - The continuation's prefix then diverges inside the generated tokens, where no checkpoint exists, and the engine falls
+    back to checkpoint 0.
+- **Fix (as P021m, a653ae6c):** GEN keys `tcap=N tend=ID`. The engine stops the thinking pass after N tokens unless the
+  `</think>` id was emitted, and caps `room` in `round()` so a draft round never crosses N. The server sends them on the
+  DS41 path (`server.py`:1408-1462).
+- **Effort:** 0.5-1 day. **Gain:** 14-16 s per thinking-budget continuation whenever any drafter is on. **Outputs:** no
+  change to content or bits.
+- **Test:** W1/W2 thinking-capped runs with DSpark or lookup on: "+17 read" in every continuation. Also the server's unit
+  tests unchanged, as with P021m.
+
+**i3. Lookahead prefetch, pinned arena, deeper queue / io_uring**
+- **dsv41 already has `DS4_AHEAD`:**
+  - It guesses the next layer's picks from that layer's gate on the current FFN input and queues low-priority store
+    reads, with demand-first priority and cancellation of stale guesses (`model.cu`:6136-6171, 8760-8768;
+    `store.hpp`:250-257, 443).
+  - It is **off with the store unless set** (`model.cu`:4530-4532).
+  - It never guesses across the card boundary (`ahead_layer` requires the same device, `model.cu`:6125).
+- **The queue:** threads with blocking `pread` (store: 8, flow: 8 per card; `pool.hpp`:132-235).
+- **Expected:**
+  - `DS4_AHEAD=1` is an env A/B (S5). Decode misses are about 5-7 a token and cheap, so 0-3 %.
+  - Guessing across the card boundary (copy layer 22's 3.9 MB gate to the 5080): 0.5 day, about +0-0.3 %.
+  - io_uring: 2-3 days, about 0. The preload shows 10 GB/s at 8 threads, decode needs about 1-3 GB/s, and Maya found no
+    win for Engram.
+  - A pinned (registered) store would let the prompt DMA straight from it, saving 28 GB a chunk a card of memcpy. That
+    locks about 70 GB, so per our memory rule run stressapptest first. Worth it only if S0 shows the copies limiting.
+
+## Other things found on the way
+
+- **Short-prompt path picks** (S4): the timing-based `pick_path` (`model.cu`:7697-7748) looks wrong in both directions.
+  - W1's 17-token continuations take 3.7-4.3 s in all four arms. W2/W3's take 0.76-1.2 s.
+  - 125-140-token first prompts take 4.2-8.2 s.
+  - `DS4_CHUNK_MIN=64` is a zero-code test: windows below 64 tokens, the flow from 64, calibration off. It may save about
+    3 s on such turns.
+- **Settle in TTFT:** after every chunked prompt, up to 6 s of swaps plus a blocking store refill (S5).
+- **The profile drifts with every request** (already in `engine-options.md`): restore it before each arm.
+
+## Ranked table (expected gain per effort)
+
+| Rank | Item | Effort | Expected gain | Outputs | GPU test first? |
+|---|---|---|---|---|---|
+| 1 | Step 0 arms S0-S5 (no code): diagnostics, 5080 alone, 4060 Ti first `DS4_SPLIT=10,30`, `30,10`, `DS4_CHUNK_MIN=64`, `AHEAD`, `READERS`, settle off | 1 gap | decode 0 to +13 % (split), about -3 s TTFT on short turns, and the facts every item below depends on | placement / path bits | **yes, this is the test** |
+| 2 | h2 huge pages on the store | 1 h | decode +1-4 % | same bits | A/B after build |
+| 3 | b mode-1 skip across the split (Maya #343 + 4060 Ti-first split; or B2 any split) | 0.5-1 d (B2 1-2 d) | P20K +60-120 %, P8K +5-25 %, P4K 0-15 % | rounding-level **if KL0 passes** | **KL0 first** (5080 alone, no code) |
+| 4 | i2 continuation fix (`tcap`/`tend`) | 0.5-1 d | 14-16 s saved per budget continuation with any drafter | none | no (CLI/serve test) |
+| 5 | c lend chunk buffers to experts (`DS4_BORROW` port) | 2-4 d | decode +5-12 %, P20K +20-35 % | rounding-level | A/B after build |
+| 6 | e lookup drafter + i1 cost gate (needs 4) | 2.5-3 d | edit turns +10-30 %, others about 0 | distribution-preserving | A/B after build |
+| 7 | g helper card (Maya #415 port) | 4-7 d | decode +18-27 % (model); prompts about 2x at 20K via the one-GPU paths | rounding-level | **S1 first** |
+| 8 | d NVIDIA prompt tiles / #369 attention TC / `Q8_BATCH` | 0.5-1.5 d each | prompts +3-10 %, or +0-20 % at 20K if attention-bound; decode +1-2 % | same bits / rounding / same bits | **S0 `DS4_PROF` first** |
+| 9 | a two-GPU layer-major (5080 side) | 2-3 d + 1 d tests | P20K -25 to +45 % alone; little once (b) is in | rounding-level | **S0 `FLOW_STATS` first** |
+| 10 | i3 `DS4_AHEAD` / cross-card guess | 0 / 0.5 d | decode 0-3 % | same bits | A/B |
+| 11 | f decode-only profile + per-card placement by bytes | 0.5-1 d | 0-1 % (+0.8 % VRAM picks computed) | placement bits | matched-restart A/B |
+| 12 | h1 Engram `FADV_RANDOM` / O_DIRECT | 1-4 h | about 0-1 % | same bits | cheap A/B |
+| 13 | i3 io_uring | 2-3 d | about 0 | same bits | — |
+| 14 | d PCIe lane / `FAT_ROWS` / host-free layers | 1-7 d | ≤ 0 on this box | lane not bit-identical | not recommended |
+
+## Which items need a GPU test first
+
+- **Before writing any code:**
+  - S0 diagnostics: decides whether (a) and the Maya prompt kernels (d) are worth anything.
+  - KL0: gates (b).
+  - S1 (5080 alone): checks (g)'s premise and the one-GPU prompt paths.
+  - S2/S3 splits: a free decode win, and the split (b) needs.
+  - S4/S5: free settings.
+- **After building, as A/B:** h2, c, e (+i1, i2), f, h1, and the Maya kernels (d).
+- **Every GPU test:**
+  - holds `tmp/gpu-test.lock` and restores `expert-profile.bin` first;
+  - keeps MemAvailable above our line (cap `DS4_LAYER_CACHE_MB` or drop `--ssd-cache` to about 66 in layer-major arms);
+  - checks the kernel log afterwards;
+  - runs stressapptest before anything that pins more than 60 GiB (a registered store).
+
+## From the user's 10-24 research report
+
+Read-only, 2026-10-24. Nothing was built, started or run on a GPU, and nothing was posted.
+- **Source:** the user's deep-research report of 10-24, "lossless speed-ups for this PC". The user allowed reading this one
+  report. Its claims are paraphrased here, not quoted.
+- **Method:** each idea in the report was mapped to the settings round ("round"), to items a-i above, or to `src/dsv41` at
+  v0.2.4. Every knob named below was checked in the source.
+- **Labels:** as at the top (measured / computed / static / model).
+
+### Summary
+
+1. **Most of the report's flags belong to other engines:** Strata's Qwen engine, Xolotl, or llama.cpp.
+   - strata-dsv41 reads none of them.
+   - It stops at start on any unknown flag (`main.cpp`:1268-1272).
+   - See the flag table below.
+2. **Three of the report's premises are wrong for our PC:**
+   - The 9100 PRO does not share the 4060 Ti's chipset uplink (§0).
+   - Decode never copies a missed expert to a GPU. The CPU lane computes it.
+   - A follow-up turn does not read its history again: the state is reused in place.
+3. **Most ideas are already covered**, by the round, by items a-i, or by code dsv41 already has: next-layer prestage,
+   Engram prefetch, per-expert grouped GEMMs, decayed-frequency caches.
+4. **New zero-code arms:**
+   - Z1 `DS4_ENGRAM_THREADS=64`: cheap, add it.
+   - Z2 DSpark on the 4060 Ti: optional.
+   - Z4 a FreeToken probe on the 5080 alone: measurement only.
+   - Z3 a huge-page preview of h2: needs root, so the user's decision.
+5. **New code:** the clear winner is **N1, exact-size RAM store slots**.
+   - +19 % experts in the same RAM (computed).
+   - Decode +3 to +7 % (model).
+   - 1-1.5 days, same bits.
+   - The other new code items are small or depend on a measurement first.
+
+### Every idea in the report, mapped
+
+| # | Idea (report section) | Outputs | Status | dsv41 evidence / note |
+|---|---|---|---|---|
+| 1 | Fewer or no layers on the 4060 Ti: `"gpu": [0]`, `layer_split`, `STRATA_SPLIT_UNIFORM` (A1) | rounding-level (placement) | **round** (`DS4_SPLIT` splits, card order, 5080 alone); Step 0 S1-S3; g | `DS4_SPLIT` `model.cu`:2150-2162. `--layer-split` ignored (`main.cpp`:1265). `STRATA_SPLIT_UNIFORM` not read. Report: decode +8-15 %. Our model: S1 -5 to +9 %, S2 +9 to +13 % |
+| 2 | `--prefill-chunk 4096` + `--chunk-prestage` (A2, B7) | rounding-level | chunk sizes: **round**. Prestage: **exists** | The flow queues the next layer's likely experts once the layer before routes, and keeps reading and copying while attention runs (`model.cu`:560-566, 3237-3278, 7015-7024). For 20K, 4096 means 5 read passes, not 3 |
+| 3 | `--host-core sibling` (A3) | same bits | **round** (`--cpu-threads 14/12/8`) | Service thread on core 0, 15 pinned workers, launch thread unpinned (`model.cu`:2743-2747, 4626-4655). `STRATA_DS4_LANE_FREE` is inactive (the lane uses 16 of 32 CPUs). If 14 wins, pinning the launch thread to the freed core is about 1 h of code |
+| 4 | Per-card `--pcie-frac` / `--tier-batch-pcie 0`; FreeToken's per-miss CPU-or-GPU choice (A4, B1) | rounding-level | decode: **NEW N8** (5080 layers only; zero-code probe Z4). Prompts: **NEW N4** | Today no per-miss choice exists on two GPUs. See "The four ideas asked about" |
+| 5 | Conversation slots, `STRATA_DS4_SLOT_GB=16`, Xolotl's pool (A5) | same bits | **round** (conversation-cache test) | In-place reuse `main.cpp`:681-720. Slots `main.cpp`:331-353. `SLOT_GB` caps a folder on disk; RAM holds `SLOT_CAP` = 4 conversations |
+| 6 | Bigger Engram row cache (`--ple-row-cache`) (A6) | same bits | **round** (`DS4_ENGRAM_CACHE_MB=4096`) | `model.cu`:2464-2467 |
+| 7 | More Engram reads in flight (`--ple-inflight`) (A6) | same bits | **NEW Z1** | `DS4_ENGRAM_THREADS`, `model.cu`:2461-2463 |
+| 8 | Engram direct I/O (`--ple-io direct`) (A6) | same bits | **h1** | The Linux path is buffered (`engram_io.hpp`:236-251) |
+| 9 | Learned profile, one per kind of work (A7) | rounding-level | **round** (custom profile); f | `--expert-profile` `main.cpp`:1216. Rewritten after every request (`main.cpp`:930, 957) |
+| 10 | I/O prefetch threads, depth, router lookahead (A8) | same bits | **round** (`DS4_AHEAD` 1/2, `AHEAD_EXTRA`, `STORE_THREADS`, `READERS`) | `model.cu`:984-991, 4489, 2659-2660 |
+| 11 | `STRATA_DMA_BATCH` (A8) | same bits | not worth it (report: about 0) | nothing similar in dsv41 |
+| 12 | A bigger RAM store (key findings) | same bits | **round** (74 GB). **NEW N1**: more experts in the same RAM | `store.hpp`:80-82 |
+| 13 | io_uring QD64 / 32 reads in flight (B4) | same bits | **i3** (about 0). The queue-depth part is in the **round** (`READERS` 32, `STORE_THREADS` 32) | `pool.hpp`:132-235 |
+| 14 | N-gram / prompt-lookup drafting (B6) | distribution-preserving | **e + i1 + i2** | Needs code; the report's "zero rebuild" is wrong |
+| 15 | LFRU / Least-Stale / EdgeMoE eviction (B2) | same bits (store), rounding-level (VRAM) | **round** (`--ssd-policy lfu`, `DS4_CACHE_MARGIN`). **NEW N5** (knob) | Both caches already use decayed frequency. See below |
+| 16 | Engram rows read ahead from the token ids (B3) | same bits | **exists** | `engram_io.hpp`:4-9; `model.cu`:7226-7241, 7392-7400, 8300-8320 |
+| 17 | One GEMM per expert over its tokens (B5) | - | **exists** | `run_set` `model.cu`:3498-3567; cuBLAS 2900-2919 |
+| 18 | Keep the store warm during and after prompts | same bits | **exists** as the refill after the prompt. **round** (`DS4_SETTLE_STORE=0`) | `model.cu`:5928-5945. Inserting during the scan would thrash (121 GB CPU-lane set, 70 GB store) |
+| 19 | Avoid page-cache thrash on expert reads | same bits | flow and store already use O_DIRECT. Swaps do not: **NEW N2** | `model.cu`:1737-1743, 5856 |
+| 20 | Next-layer predictors (pre-attention, Mira i+2, SPICE, Mixtral-offloading) as prefetch hints | same bits | **round** (`DS4_AHEAD`); cross-card guess **i3** | `model.cu`:6136-6171 |
+| 21 | Staging ring vs VRAM headroom | same bits | **round** (`DS4_RING_MB`); **c** | `model.cu`:2796-2815 |
+| 22 | The 4060 Ti only as a resident expert cache, never a pipeline stage | rounding-level | **g**; S2/S3 | - |
+| 23 | Placement by frequency or cost per byte | rounding-level | **f** | - |
+| 24 | Read each expert once per prompt across chunks | rounding-level | **a**, **b** | - |
+| 25 | DSpark with its experts in RAM (`--spec-draft-cpu-moe`) | distribution-preserving | **NEW Z2** (no code), **N3** (code) | See below |
+| 26 | DSpark with 2-3 drafts or a confidence cut | distribution-preserving | existing knobs, only with DSpark on (a Z2 sub-arm) | `--dspark-block`, `--dspark-conf`, `STRATA_DS4_DSPARK_CUM` (`main.cpp`:1229-1230, 152-162) |
+| 27 | Self-drafting from the dense trunk | distribution-preserving | **NEW N7** (research only) | - |
+| 28 | Medusa/EAGLE heads | - | not applicable (none exist for V4.1) | - |
+| 29 | Prefix/KV caches (APC, RadixAttention, HiCache, LMCache, disk KV) | same bits | checkpoints + slots cover it; the rest not applicable | KV is 0.03 GB here |
+| 30 | `--kv-fp4` | same bits | not applicable (no such option; KV is tiny) | - |
+| 31 | Engram table in pinned host RAM (SGLang) | same bits | not applicable (111 GB > RAM) | - |
+| 32 | Huge pages | same bits | **h2**; **NEW Z3** preview | - |
+| 33 | Keep the SSD out of low-power states | same bits | not worth it: the drive is busy during decode, and this is a host setting | - |
+| 34 | CUDA graphs / launch overhead | same bits | **NEW N6** (needs a trace first) | No graphs in dsv41 (`engine-options` 2l) |
+| 35 | The second card helps short prompts (`STRATA_PREFILL_HELP`) | rounding-level | not applicable; over the x4 link, not worth it | - |
+| 36 | CPU or GPU per expert call (Fiddler, DALI) | rounding-level | decode already works like Fiddler. The dynamic version = Maya's PCIe lane (**d**, ≤ 0, not repeatable) | - |
+
+### Lossy ideas (excluded)
+
+- `--chunk-mmq`: Xolotl's int8 MMQ expert products, +0.3 % perplexity.
+- `--route-bias`: a routing change.
+- vLLM's SWA bounded replay. Our counterpart is `STRATA_DS4_PROMPT_SKIP`:
+  - mode 2 and `DS4_YOCO_KEEP` are lossy;
+  - mode 1 is allowed only through the teacher-forced KL gate (KL0, item b), which is already queued.
+- Fewer, skipped or pruned experts: HOBBIT, Lynx, MoE-I2, MoBiLE.
+- Lower precision: Mira's INT8 expert compression, and any KV or activation quantisation below the files'.
+- Routing constraints: EPLB/CRAFT group-limited routing, and Pre-gated MoE's pre-gate used as the router. As a prefetch hint
+  it is `DS4_AHEAD`, which is lossless.
+- Skipping Engram reads by gate value.
+- `DS4_STORE_ZC` is not lossy, but it is run-to-run (timing decides the lane). Use it only as the Z4 measurement, never
+  served.
+
+### The report's flags and variables: does strata-dsv41 read them?
+
+| Name | Read by | Where | Result |
+|---|---|---|---|
+| `"gpu": [0]` (config) | server | `server.py`:2914-2920, 3507-3510 | Becomes `CUDA_VISIBLE_DEVICES`, so one card works. Our config's env `CUDA_VISIBLE_DEVICES` overrides it (`server.py`:3511-3512). A two-card list is reordered with the faster card last (3346-3400) |
+| `"layer_split"` | server, as `--layer-split` | `server.py`:3010-3043, 3115-3116 | The engine discards it (`main.cpp`:1265). A manual value only stops the server's reorder (3359-3360) |
+| `"gpu_order"` | server | `server.py`:3357 | `as_given` keeps the config's card order. The engine never sees it |
+| `--prefill-chunk` | engine | `main.cpp`:1232; `model.cu`:1968-1974 | yes (in the round) |
+| `--chunk-prestage`, `--chunk-mmq`, `--host-core`, `--tier-batch-pcie`, `--ple-io`, `--ple-row-cache`, `--ple-inflight`, `--conversation-cache-mib`, `--kv-fp4`, `--route-bias` | nobody | grep: none in `src/dsv41`. `server.py` mentions only `--ple-io` (an argument-format check, 7795-7832) and `--conversation-cache-mib` (a Monitor card, 827-829) | "unknown option", exit 2 (`main.cpp`:1268-1272) |
+| `STRATA_IO_PREFETCH*`, `STRATA_SPLIT_UNIFORM` | nobody | grep: none in `src/dsv41` or `server.py` | no effect |
+| `"expert_profile_save"` | server | `server.py`:3197-3212 | Adds `--expert-profile-save`, so the engine exits 2. The engine already rewrites `expert-profile.bin` after every request (`main.cpp`:930, 957) |
+| `"pool_cores"` (next to them in the server) | server | `server.py`:3128, 3159 | Adds `--pool-cores`, so exit 2. Do not use it for DS41 |
+
+**Engram row cache:**
+- **Values:** `DS4_ENGRAM_CACHE_MB` takes any value ≥ 0 (`strtoull`, `model.cu`:2466).
+- **0 turns the row cache off:** `EgRowCache::put` returns nothing at capacity 0 (`engram_io.hpp`:58).
+- **Unset:** min(256, max(16, MemAvailable MB / 64)) = 256 here.
+- **Size per row:** a cached row is 264 B (codes + scales, `model.cu`:2455). So 256 MB holds about 1.0 M rows and 4096 MB
+  about 16 M.
+- **Repeats within one batch** are still read once (`eg_issue`'s `first` map).
+
+**Engram reads on Linux always go through the page cache:**
+- The unbuffered path is Windows-only (`DS4_EG_DIRECT` under `_WIN32`, `model.cu`:2474-2492).
+- The readers use buffered `pread` (`engram_io.hpp`:236-251).
+- So a row cache of 0 still hits the page cache.
+
+**Engram read time per token:**
+- **Serve mode:** the engine prints `STAT ... engram_ms=` (the wait per decoded token) every 8 tokens
+  (`main.cpp`:849-874, 883). The v0.2.4 server has no branch for STAT lines (`server.py`:1502-1540), so the line is
+  dropped. It is not in our logs (grep of arm-s70: none).
+- **CLI decode** (`--ids`/`--n`, the S0 decode arm) prints two lines (`main.cpp`:1442-1452):
+  - "decode per token: ... Engram reads X ms";
+  - "Engram per token: rows, % without a read, reads, the reads' ms (left to wait)".
+  - It also prints the prompt's Engram row counts (`main.cpp`:1375-1377).
+- **Other diagnostics:**
+  - `DS4_FLOW_STATS`: no Engram figure (`model.cu`:8096-8105).
+  - `DS4_PROF`: GPU stages only. The Engram wait happens on the host before the layer (`model.cu`:8300-8320, 8520) and is
+    not a stage (`model.cu`:1142-1145).
+  - `--verbose`: only the start line (`model.cu`:2533).
+- **Chunked prompts:** no Engram time is logged anywhere (counts only, CLI).
+
+**Notes for arms already queued:**
+- **Conversation-cache test:**
+  - Set both `STRATA_DS4_SLOT_KEEP=1` and `STRATA_DS4_AUTO_PIN=1` (`server.py`:3482 has slots off in v0.2.4).
+  - `STRATA_DS4_SLOT_GB` matters only past `STRATA_DS4_SLOT_CAP` = 4 conversations in RAM (`main.cpp`:350-353). Raising it
+    costs disk, not RAM.
+- **Card-order arms:**
+  - Keep swapping the UUIDs in the config's env.
+  - Do not add a `"gpu"` key. Without `"gpu_order": "as_given"` the server puts the faster card last on its own
+    (`server.py`:3346-3354, #1352). Its reason is the same as S2's: the last stage carries the head and the verify.
+
+### The four ideas asked about
+
+**1. FreeToken's per-miss choice: compute a missed expert on the CPU or copy it to the GPU, from measured bandwidths.**
+
+What dsv41 does today (static):
+- **Decode:**
+  - The GPU computes only VRAM experts. Every other pick goes to the CPU lane, from the store or by a demand read
+    (`StoreHold`, `model.cu`:5599-5616).
+  - There is no per-expert cost choice on two GPUs.
+- **Store zero-copy (`DS4_STORE_ZC=1`):**
+  - The GPU computes a fixed-hash share (`DS4_STORE_ZC_FRAC`, 50) of the store's ready slots over PCIe
+    (`model.cu`:4494-4500, 4590-4615, 6249-6251).
+  - It works with **one GPU only**.
+  - Whether a slot is ready at the window boundary depends on timing, so it is run-to-run.
+  - Upstream measured it slower on a 5070 with PCIe 5.0 (`model.cu`:4495-4497).
+- **VRAM swaps:**
+  - A heat rule: the hottest CPU-lane pick comes in when its heat exceeds the coldest VRAM expert's x 1.25 + 1.
+  - One swap per layer in flight (`model.cu`:1010-1015, 6046-6073).
+  - There is no bandwidth term.
+- **Prompts:**
+  - The only cost model is the binary per-prompt pick between the flow (every streamed expert on the GPU) and windows of 16
+    (the CPU lane computes).
+  - It applies to 2-2047-token prompts and uses load-time probes of DMA, RAM-to-staging, disk and CPU-lane speed
+    (`calibrate_paths` `model.cu`:7517-7650, `pick_path` 7697-7748).
+  - There is no per-expert split.
+
+Code ideas:
+- **N8, decode, the 5080's layers only:**
+  - The change: a **fixed** share of each 5080 layer's store-resident CPU-lane picks (by expert hash or profile, never by
+    timing) is computed on the 5080 from a registered store. The rest stays on the CPU lane.
+  - **Why it could help:** PCIe 5.0 x16 (about 50 GB/s) is close to the CPU lane's rate (about 45 GB/s in our decode
+    model), so FreeToken's rule splits about half and half.
+  - **Why it may not:** both lanes read the same dual-channel DDR5.
+  - **Model:** the 5080 layers' CPU-lane part (about 12.6 ms of the 23 ms CPU-lane time per token) falls by at most a third:
+    -4 ms, about +9 %.
+  - **Evidence against:** upstream's ZC was slower on a PCIe 5.0 5070, and Maya's PCIe lane lost on 2x4090 (d).
+  - **Expected:** decode **-5 to +8 %**.
+  - **Effort / risk:** 3-5 days, high. ZC is one-GPU-only: needs per-device tables, the staging copy
+    (`kernels.cu`:1837-1838) per device, and a deterministic split. It also locks about 70 GB (stressapptest first, per our
+    memory rule).
+  - **Outputs:** rounding-level (GPU vs CPU arithmetic), repeatable only with the fixed split.
+  - **Test:** Z4 first. Then W1-W3 with the profile restored, and the decode CLI's CPU-lane ms per token.
+  - **The 4060 Ti's layers:** never worth it. Its Gen4 x4 link (about 6.5 GB/s) is about 7x slower than computing the
+    expert on the CPU.
+- **N4, prompts, the 4060 Ti's layers:**
+  - The change: the CPU lane computes a fixed share of the experts that the 4060 Ti would otherwise stream over its link,
+    on the chunk's rows. The GPU then adds the per-token sums.
+  - Today the 4060 Ti streams about 61 GB per 6.6K chunk (computed, §0), at least 9 s over its link against a 16.5 s stage.
+  - The CPU lane's multi-token entries hold at most 16 tokens (`model.cu`:5409-5417), so chunk-sized entries are new work.
+  - **Model:** about 1.6 ms of CPU time per expert at about 100 rows. A 30-40 % share takes 2-3 s off a 16.5 s stage.
+  - **Expected:** P20K **0 to +20 %**, decode 0. Only if S0 shows the 4060 Ti's stage waiting on its link (H-dev1) and S2/S3
+    do not already remove that.
+  - **Effort / risk:** 3-5 days, medium-high.
+  - **Outputs:** rounding-level.
+  - **Test:** `DS4_FLOW_STATS` wait ms per card, then P4K/P20K, then a teacher-forced KL.
+
+**2. Frequency + recency (LFRU) eviction for the VRAM expert cache and the RAM store.**
+
+What dsv41 does today (static):
+- **VRAM cache: already a decayed frequency with hysteresis.**
+  - Heat +1 per pick, x 0.9 every 256 tokens (`DS4_CACHE_DECAY`).
+  - A swap needs heat > coldest x 1.25 + 1 (`DS4_CACHE_MARGIN`/`BONUS`; `model.cu`:1010-1015, 6046-6073).
+- **Store:**
+  - LRU by default.
+  - `--ssd-policy lfu` is a decayed hit count: x 0.97 every 240 accesses of the layer, ties by last touch
+    (`store.hpp`:62-64, 389-397). That is LFRU in all but name.
+  - The decay constants are hard-coded (`model.cu`:4487-4494 sets neither).
+- **Least-Stale** equals LRU without prefetch (the report's own source says so). A layer-distance term means nothing for one
+  stream that visits every layer every token.
+
+The code idea:
+- **N5:** `DS4_STORE_DECAY` / `DS4_STORE_DECAY_EVERY` env knobs. 15 minutes of work.
+- **Only if** `--ssd-policy lfu` (round) moves decode against LRU. Then sweep 0.9/0.97/0.99.
+- **Expected:** 0-2 % (W1/W2 decode misses are only 5-7 a token, about 0.2 ms each).
+- **Outputs:** same bits (store), rounding-level (VRAM).
+- **Test:**
+  - matched restarts with the frozen profile;
+  - W1-W3 twice each;
+  - disk MB per token;
+  - the decode CLI's store line.
+- `DS4_CACHE_DECAY` already exists (0.9). Add an arm only if the margin arm shows the swap rule matters.
+
+**3. DSpark with its experts in RAM / on the CPU lane, so it takes no VRAM expert slots.**
+
+What dsv41 does today (static):
+- **Placement:** the drafter's blocks always sit on the first GPU group (`model.cu`:2088-2092, 2150).
+- **VRAM:** its experts get that group's expert VRAM **before** any trunk expert (`budget_t`, `model.cu`:3832-3836). Only
+  what does not fit goes to the CPU lane, which has MXFP4 rows (`DS4_MX_TIER`).
+- **Store:** it does not cover the drafter's layers (`store.hpp`:126), so CPU-lane drafter experts are read through the
+  mmap and page cache.
+- **Load rule:** `--dspark auto` does not load the drafter on our PC (`model.cu`:1998-2008).
+
+**Z2 (zero-code) and N3 (code):**
+- **Z2:** put the 4060 Ti first (see Z2 below). The drafter then lives there.
+- **N3:**
+  - An env cap on the drafter's VRAM experts in `place_experts` (for example `DS4_MTP_VRAM_MB`). DSpark keeps its 0.75 GB
+    dense part in VRAM and computes its experts on the CPU lane, in any card order.
+  - Optionally, let the store cover the drafter's layers.
+  - Needs **i2** first (the continuation fix).
+- **Model**, using arm dsp70's figures (649 of 1,062 rounds drafted, about 2.9 tokens per drafted round, about 0.4 of a step
+  per verify row, which over-predicted dsp70 by about 9 %):
+  - With the drafter's experts on the CPU lane, about 30 drafter picks of about 18.8 MB each per round take about 8-12 ms.
+  - The trunk keeps its VRAM experts except about 87 displaced by the dense part.
+  - Result: **-5 to +10 %** decode for N3, **-10 to +10 %** for Z2 (Z2 also costs the 4060 Ti's about 400 trunk VRAM
+    experts in that split).
+  - Worse at long context (dsp70: -16 % at 23.5K).
+- **Effort:** N3 0.5 day + i2 (0.5-1 day). Risk low.
+- **Outputs:** distribution-preserving. With `DS4_DSPARK_SAMPLE` unset, q is a point at the draft, so the drafter's numerics
+  change only which drafts are offered.
+- **Test:**
+  - W1-W3 with `DS4_ROUND_LOG`;
+  - CPU-lane ms per round;
+  - "+17 read" on every continuation.
+- **Rank:** behind the lookup drafter (e), which needs no drafter compute at all. Build N3 only if Z2 comes out ≥ +5 %.
+
+**4. Engram rows are fixed by the tokens: does dsv41 prefetch them? Yes (low priority).**
+- **Decode:** a window's rows are asked for as soon as its tokens are known, and collected just before Engram layers 1 and
+  14 (`engram_io.hpp`:4-9; `model.cu`:8300-8320, 8520).
+- **Prompts:** chunk k+1's rows are read on a helper thread while chunk k runs (`model.cu`:7226-7241, 7392-7400).
+- **What is left:**
+  - Chunk 0's rows, which the 5080 waits for before layer 1. That is about 158K row lookups per Engram layer per 6.6K
+    chunk, before cache hits and repeats.
+  - The queue depth: 16 threads, each doing one blocking `pread`.
+- **The setting:** Z1. No code needed.
+
+### NEW zero-code settings (checked in the source)
+
+**Z1. `DS4_ENGRAM_THREADS=64`.** Default min(16, max(4, logical CPUs / 2)) = 16 here (`model.cu`:2461-2463). **Add it to the
+round** (it can share an arm with `DS4_ENGRAM_CACHE_MB=4096`).
+- **Why:** each Engram reader thread does one blocking buffered `pread`, so threads = queue depth. Chunk 0's rows sit on
+  the prompt's critical path (Engram above).
+- **Upstream** (the engine's own comment, `model.cu`:2454-2460, Windows):
+  - Maya: a 28K one-chunk prompt took 17.1 s with 10 threads and 13.4 s with 64;
+  - Strata: +4.5 % on a 4K prompt, no decode gain.
+- **Expected:** P4K/P20K 0 to +3 %, decode 0.
+- **Outputs:** same bits.
+- **Caveat:** prompts repeated across arms find their rows in the page cache, which hides the effect. Judge it on prompts
+  the arm set has not seen, or with the S0 decode CLI's Engram lines.
+
+**Z2. DSpark on the 4060 Ti (4060 Ti first).** Optional, right after S2, which is its control.
+- **Settings:**
+  - `CUDA_VISIBLE_DEVICES=<4060 Ti UUID>,<5080 UUID>`;
+  - `DS4_SPLIT=10,30`;
+  - `--dspark on --dspark-conf 0.65` in place of `--dspark auto`.
+- **Why:**
+  - The drafter's blocks go to the first group, so the 4060 Ti.
+  - There its experts take only the room the 4060 Ti has left, about 2.8 GB or about 150 of 384 (computed). The rest go to
+    the CPU lane.
+  - The 5080 keeps every trunk expert it holds in S2.
+  - This is the report's "drafter that does not steal VRAM", with no code.
+- **Expected:** decode -10 to +10 % against S2 (model above).
+- **Caveats:**
+  - Stock v0.2.4 has no continuation fix (i2), so thinking-budget continuations re-read for 14-16 s. Compare decode tok/s,
+    not wall time.
+  - The drafter's CPU-lane experts fill up to about 5 GB of page cache (reclaimable).
+- **Optional sub-arm:** `--dspark-block 3`.
+
+**Z3. Huge-page preview of h2.** Optional, and the user's decision: it needs root and changes the whole host.
+- **What:** set `/sys/kernel/mm/transparent_hugepage/enabled` to `always` for one arm. Defrag stays `madvise`. Restore
+  `madvise` afterwards.
+- **Why:** the store arena is never advised (`os.hpp`:423-436), so today it uses 4 KB pages.
+- **Check:** `AnonHugePages` in the engine's `smaps_rollup`.
+- **Expected:** h2's +1-4 % decode.
+- **Skip it** if h2 (1 hour of code) gets built anyway.
+
+**Z4. FreeToken probe: S1 (5080 alone) + `DS4_STORE_ZC=1`.** Optional, measurement only. Also try `DS4_STORE_ZC_FRAC=25`.
+- **What it shows:** whether the 5080 computing store experts over PCIe 5.0 beats the CPU lane on our PC, before anyone
+  writes N8.
+- **Cost:** it registers (locks) the whole store, so run stressapptest first and use `--ssd-cache` ≤ 66.
+- **Outputs:** run-to-run (timing decides the lane), so never serve it.
+
+**Checked, not worth an arm:**
+- `DS4_SPEC_WASTE` (0.2): nearly every expert is picked in each chunk.
+- `DS4_READAHEAD_MB`: the non-flow path only (`model.cu`:3062-3066).
+- `STRATA_DS4_LANE_FREE`: inactive here.
+- `DS4_CACHE_DECAY`: see point 2 above.
+
+### NEW code ideas (beyond the four above)
+
+**N1. Exact-size RAM store slots**
+
+**Today:**
+- Every slot is sized for the largest expert blob (`store.hpp`:78-82): 10.27 MB.
+- Our pack has 8 blob sizes: 14 layers of 7.76 MB (IQ1_M only), then 8.22-10.25 MB.
+- Padding is not touched at first (RSS 60 GB at ready with 70 GB of slots).
+- But slots are reused across layers, so RSS climbs to the whole arena (measured: peak 71.6 GB at `--ssd-cache 70`, 63.1 GB
+  at 60).
+
+**Change:**
+- One slot class per blob size (8 classes; 3-4 give most of the gain).
+- Each class gets its own slot array and its own victim search.
+- Its share of the budget comes from the existing preload order (count per byte), and the reserve is split the same way.
+- With ZC (one GPU) keep uniform slots.
+
+**Computed** (the shipped `profile-2.00.bin` and the pack's current profile give the same numbers; VRAM sets as in the s70
+log):
+
+| Store slots at 70 GB | Experts preloaded | CPU-lane picks held (profile) | CPU-lane bytes left to the SSD |
+|---|---|---|---|
+| uniform (today) | 6,563 | 70.8 % | 64.8 GB |
+| 2 classes (IQ1_M-only / rest) | 7,201 (+9.7 %) | - | - |
+| 3 classes | 7,548 (+15.0 %) | - | - |
+| exact (8 classes) | 7,819 (+19.1 %) | 78.6 % | 53.9 GB |
+
+**Why it helps here:**
+- Store size is our measured first-order lever: 48 / 60 / 70 GB gave 19.3 / 21.2 / 22.6 tok/s.
+- 60 → 70 GB (+974 slots) gave +6.7 %.
+- N1 adds about 1,256 experts at the same peak RAM, with no change to our MemAvailable line. RSS reaches its peak at start
+  instead of later.
+
+**Expected (model):**
+- Decode **+3 to +7 %**.
+- Prompts **+10 to +17 %** under H-read (about 11 GB less SSD per chunk), about 0 under H-dev1.
+
+**Effort / risk:** 1-1.5 days, low-medium.
+- `store.hpp` is Strata's own code (530 lines): `init`, `grow`, the victim search, `preload`, and the `slots_max` users in
+  `cache_settle` and `preload_store`.
+
+**Outputs:** same bits (the same bytes).
+
+**Test:**
+- `--verbose` store lines (slots per class; about 7,800 preloaded);
+- `DS4_FLOW_STATS` GB from RAM against GB from the files;
+- W1-W3 and P4K/P20K with the profile restored;
+- peak RSS and lowest MemAvailable the same as s70.
+
+**N2. VRAM swaps take the incoming expert from the RAM store**
+
+**Today:**
+- A swap reads the incoming expert from the GGUF with a buffered `pread` (`read_mx_file`, `model.cu`:1737-1743, 5856).
+- It does so even though the hottest CPU-lane expert is almost always in the store.
+- One prep thread by default.
+
+**Change:**
+- `store->find`, hold the slot, `memcpy` into the swap buffer.
+- Otherwise read with O_DIRECT.
+- 2-4 hours.
+
+**Why it helps here:**
+- A RAM copy of about 8.6 MB takes about 1 ms, against several ms from the SSD.
+- No page-cache churn next to the store.
+- `cache_settle` (up to 6 s after each chunked prompt, `model.cu`:5911-5927) waits on exactly this work.
+
+**Expected:**
+- Decode 0-2 %.
+- TTFT after long prompts 0 to -3 s, **only if** S0's `--verbose` line "expert cache: N swaps after the prompt (M ms)"
+  shows the 6,000 ms cap being reached.
+
+**Outputs:** same bits (store and file bytes are the same, `model.cu`:4496-4497).
+
+**Test:** `DS4_CHECK_SWAPS=1` once, then the settle time and W1-W3.
+
+**N6. CUDA graphs for the decode's per-layer kernel runs**
+- **Effort / risk:** 3-5 days, medium (per-token tables, the host mailbox per layer, two devices).
+- **Expected:** unknown, probably ≤ 3 %. The CPU lane's about 0.5 ms per layer hides most launch time.
+- **Gate:** an nsys trace of one decode token showing GPU gaps that are not CPU-lane waits.
+- **Outputs:** same bits.
+
+**N7. Self-drafting from the dense trunk (shared expert only, no routed experts, then the head)**
+- **Effort:** 2-4 days.
+- **Cost of a draft:** about 10 ms (every dense byte on both cards, computed from §0), against a 44 ms step and about 0.4 of
+  a step per verify row.
+- **What it would need:** well over 50 % acceptance, which a 2-bit trunk without its routed experts is unlikely to reach.
+- **Rank:** research only, after e.
+- **Outputs:** distribution-preserving.
+
+### Where the new items go in the ranked table
+
+| Position | Item | Effort | Expected gain | Outputs | Gate |
+|---|---|---|---|---|---|
+| with rank 1 (Step 0) | Z1 `DS4_ENGRAM_THREADS=64`; Z2 after S2; Z4 with S1 | 1 arm each | Z1 prompts 0-3 %; Z2 decode -10 to +10 %; Z4 diagnostic | same bits / distribution-preserving / run-to-run | - |
+| **between 2 and 3** | **N1 exact-size store slots** | 1-1.5 d | decode +3-7 %, prompts up to +17 % (H-read) | same bits | none (A/B after build) |
+| after 4 | N2 swaps from the store | 2-4 h | 0-2 % decode, 0-3 s TTFT | same bits | S0 settle line |
+| after 6 | N3 DSpark experts off VRAM (needs i2) | 0.5 d + i2 | -5 to +10 % decode | distribution-preserving | Z2 ≥ +5 % |
+| after 9 | N4 CPU share of the x4 card's prompt experts | 3-5 d | P20K 0-20 % | rounding-level | S0 shows H-dev1 (link) |
+| after 9 | N8 FreeToken split on the 5080's layers | 3-5 d | -5 to +8 % decode | rounding-level (fixed split) | Z4 positive; stressapptest |
+| after 11 | N5 store decay knobs | 15 min | 0-2 % | same bits | `--ssd-policy lfu` arm moves |
+| after 12 | N6 CUDA graphs | 3-5 d | ≤ 3 % | same bits | nsys trace |
+| last | N7 trunk self-drafting | 2-4 d | likely < 0 | distribution-preserving | after e |
+| optional | Z3 THP preview | root | = h2 | same bits | the user's decision |
+
+### Report claims the source contradicts
+
+1. **Its flags are not strata-dsv41 options.** Each of them stops the engine at start (table above; `main.cpp`:1268-1272).
+   `pcie_frac` sent with a request is ignored (`main.cpp`:304-313).
+2. **`"expert_profile_save"`** makes the server append `--expert-profile-save`, which the engine rejects
+   (`server.py`:3197-3212). The engine already rewrites the profile after every request (`main.cpp`:930, 957).
+3. **"Chunked prefill is bit-identical and the chunk size carries no determinism risk."**
+   - The flow (FP16-rebuilt weights + cuBLAS, `model.cu`:2900-2919) and the windows path (GEMV + CPU lane) do different
+     arithmetic.
+   - The path pick is timing-based (`model.cu`:7697-7748).
+   - So the chunk size changes bits (rounding-level).
+4. **"A 4K prompt's 75-104 GB comes from eviction and re-reading inside one pass."**
+   - The flow reads each picked (layer, expert) once per chunk, with O_DIRECT, and never inserts it into the store
+     (`model.cu`:3177-3194).
+   - The bytes above the about 65 GB that lives only on the SSD come from the store refill and the swaps after the prompt
+     (`model.cu`:5911-5945), plus Engram rows.
+5. **"`--prefill-chunk 4096` halves the working set."** Nearly every expert is picked in any chunk of 1K tokens or more
+   (§0). For 20K, 4096 means 5 read passes instead of 3.
+6. **"The default picks 8192 from VRAM."** It is 8192 because `--tp 2` turns off the one-card default and the experts are
+   read from the files (`model.cu`:1968-1969).
+7. **"Next-layer prestage needs a flag" and "experts are computed per token, not grouped."** Both already exist
+   (`model.cu`:560-566, 7015-7024; `run_set` 3498-3567).
+8. **"Engram rows are fetched synchronously per layer, with O_DIRECT, in a set-associative cache."**
+   - They are asked for as soon as the tokens are known (`engram_io.hpp`:4-9), and a chunk ahead in prompts
+     (`model.cu`:7392-7400).
+   - Linux reads are buffered (`engram_io.hpp`:236-251).
+   - The cache uses clock eviction (`engram_io.hpp`:38-80).
+9. **"The 4060 Ti's decode misses are copied over its x4 link (8.5-10 ms a token)", so per-card pcie-frac would help.**
+   Decode computes every non-VRAM expert on the CPU lane. The GPU-over-PCIe path is one-GPU-only and off
+   (`model.cu`:4495-4500).
+10. **"The 70 GB store is pinned (cudaHostRegister)."**
+    - It is pageable unless `DS4_STORE_ZC` is on (`model.cu`:4498-4500).
+    - Prompt copies go through pinned staging (`model.cu`:3192-3194).
+11. **"`STRATA_DS4_SLOT_GB` is a RAM cache, slots are on by default, and every turn re-reads 75-104 GB."**
+    - `SLOT_GB` caps the slot folder on disk (`main.cpp`:353, 419-440); RAM holds `SLOT_CAP` = 4 (`main.cpp`:350).
+    - The v0.2.4 server's default is off (`server.py`:3482).
+    - A continuing turn reads only its new tokens (`main.cpp`:681-703; measured "2429 reused + 17 read").
+12. **Not code, but its A1/A4/B1/B4 reasoning rests on these:**
+    - **"The NVMe shares the 4060 Ti's chipset x4 uplink."** The 9100 PRO is on CPU lanes (00:01.2). The uplink carries the
+      4060 Ti, the SN750, LAN and USB (§0).
+    - **"The 4060 Ti's 18 layers need about 8.4 GB of dense weights."** Our log shows 2.78 GB on CUDA1 including the head,
+      and 201 VRAM experts. The 16.8 GB in `DEEPSEEK41.md` is for the MXFP4 pack.
+    - **"DSpark took 592 slots (1357 → 765)."** The 765 includes the drafter's 384, so trunk VRAM experts fell to 381.
+
+## 10-25 re-rank: Maya's prompt-path ports up (the user)
+
+**Why:** an X post (10-24, another person's machine, hardware not known to us) put Maya v1.1.26 and Strata's DeepSeek
+engine on the same weights:
+
+| Engine | Decode | 2K prompt | 8K prompt |
+|---|---|---|---|
+| Strata, `--mmap-experts auto` | 12.9 tok/s | 270 | 760 |
+| Strata, `--mmap-experts off` | 28.6 | 214 | 1008 |
+| Maya v1.1.26 | 22.8 | 480 | 1406 |
+
+Maya reads prompts 1.4-2.2x faster there. The user: "Rank the Maya prompt-path ports higher." (Our box is not in his slow
+decode case: with the RAM store set, the CPU lane's experts come from the store, not from the files' mapping. That was
+checked in the source, `mx_mat` and `StoreHold::ensure`, and on the running engine: anonymous 60 GB, file pages 0.36 GB.)
+
+| New rank | Item (old rank) | Effort | Expected gain | Outputs | Gate |
+|---|---|---|---|---|---|
+| 1 | Step 0 (1) | - | - | - | mostly done in the 10-24 round |
+| 2 | **b** Maya #343 mode-1 skip across the split (3) | 0.5-1 d | P20K +60-120 %, P8K +5-25 %, P4K 0-15 % | rounding-level if KL0 passes | the round's skip check (5080 alone) |
+| 3 | **d1** Maya v1.1.21 NVIDIA prompt tiles + router 8 rows + FP16 rows, and #369 prompt attention on tensor cores (8, split out) | 1-1.5 d + about 1 d | prompts +3-25 % | same bits / rounding-level | the round's profiled baseline (`DS4_PROF`, already measured): which of expert kernels / attention paces the prompt |
+| 4 | **c** Maya v1.1.18 `DS4_BORROW`, chunk buffers lent to experts (5) | 2-4 d | decode +5-12 %, P20K +20-35 % | rounding-level | A/B after build |
+| 5 | h2 huge pages on the store (2) | 1 h | decode +1-4 % | same bits | can ride along with any build; the round's `mmapoff` screen (a fixed copy on huge pages) gives a first number |
+| 6 | N1 exact-size store slots (between 2 and 3) | 1-1.5 d | decode +3-7 %, prompts up to +17 % | same bits | A/B after build |
+| 7 | **g** Maya #415 helper card (7) | 4-7 d | decode +18-27 % (model), prompts about 2x at 20K | rounding-level | S1 |
+| 8 | i2 continuation fix (4) | 0.5-1 d | 14-16 s per budget continuation | none | CLI/serve test |
+| 9 | e lookup drafter + i1 cost gate (6) | 2.5-3 d | edit turns +10-30 % | distribution-preserving | A/B |
+| 10 | a two-GPU layer-major (9) | 2-3 d + 1 d | P20K -25 to +45 % alone | rounding-level | FLOW_STATS (the round's full runs) |
+| 11 | d2 `Q8_BATCH` (8, split out: decode, not prompt) | 0.5 d | decode 1-2 % | same bits | - |
+| 12- | 10-14 as before (AHEAD measured worse in the round, -2 to -8 %) | | | | |
+
+**FAT_ROWS** (Maya v1.1.26, prompt path, summing order = rounding-level) stays near the bottom ("none or negative on
+short-VRAM cards", #438). It gets a re-check if the profiled baseline shows expert GEMMs pacing the prompt, since it is
+one of Maya's prompt-path differences.
+
+**Caveat before porting:** how much of the 1.4-2.2x is lossless is not known. Maya's defaults on his machine may include
+settings we exclude as lossy (prompt skip modes beyond 1, `MAYA_DS4_STREAM`), and his GPUs and RAM are not known. Before
+the first Maya port, read Maya v1.1.26's prompt defaults from the public repo (read-only) and split the gap into lossless
+and lossy parts.

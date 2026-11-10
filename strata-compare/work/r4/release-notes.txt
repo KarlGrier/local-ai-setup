@@ -1,0 +1,69 @@
+=== v0.1.15 2026-09-28T11:34:55Z main
+**Fixed: IQ3_XXS stopping on long prompts, and new speed tables.**
+
+- **Fixed: IQ3_XXS could stop on prompts of 64K tokens and more** on a 12 GB card, with `out of memory: cudaFuncSetAttribute` in the log. CUDA loads a kernel's code the first time it is used, and in the middle of a long prompt there was no VRAM left for it. The engine now loads all of its kernels when it starts, before the expert cache takes the free VRAM (~30 MB, about 20 fewer experts on the GPU). Other models and shorter prompts were not affected.
+- **New speed tables** in the README and [details](https://github.com/Niko1221/Strata/blob/main/docs/DETAILS.md#speed-measured), measured with the current engine and settings: prompts are read 1.2x (1K) to 2.4x (32K-128K) faster than the old tables showed - Q2_0 reads a 32K prompt at 1,308 tokens/s (was 571), IQ3_S at 1,070 (was 397). Raw numbers: `bench/results/2026-09-28-speed-0114`.
+
+**Updating:** get the latest files (`git pull` or download the repo again), then run `START-HERE.bat` with the model window closed: it updates the engine to 0.1.15 by itself. On Linux, run `./setup.sh`: it compiles the new engine.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+
+=== v0.1.14 2026-09-28T10:02:48Z main
+**Fixed: the remaining stall with the IQ models, and a lot for Linux.**
+
+- **Fixed: generation could stop mid-answer with the IQ models (IQ2_XS, IQ3_XXS, IQ3_S) (#31, #29, thanks @Zauberio, @marcosandresacevedo, @Lufen34).** The thread dumps from 0.1.13's stall reports showed the engine waiting forever inside the NVIDIA driver while it copied experts to the GPU in the middle of a verify window. The experts are now copied by a GPU kernel instead, which needs no driver call at that point (Q2_0 always worked this way). About 1% slower output with IQ3_S. `--pcie-mode dma` restores the old way.
+- **Linux: 0.1.13 did not compile** (`std::isfinite`, #49, thanks @pdsmike, @siganos, @Lufen34). Fixed.
+- **Linux: an engine that stopped on an error could hang instead of exiting**, so the server never started it again. Fixed; errors in the middle of an answer now also reach the client as an error instead of an empty answer.
+- **Linux setup:** `./setup.sh` runs on a fresh clone again; Python without `venv` support is detected; Arch and other distributions work when CUDA is installed (`/opt/cuda` is found, #46, thanks @siganos); after a failed update compile, the old engine starts again instead of failing on a setting it cannot read (#49); a failed build is retried once (#45, thanks @pipeob0).
+- **Linux: one expert-pool worker per physical core** instead of per hyper-thread (#40, thanks @jugeeeemu, who measured +16% on a 13700K).
+- **WSL works**, with KV streaming off there (the driver pins only about 1 GB of RAM); the engine now says so at start instead of failing at the first request.
+- **24-32 GB cards fill their VRAM with experts** (#46): the expert profile ranks all 24,576 experts (the cache stopped at 8,000 before). `tools/make_profile.py` builds one from your own prompts.
+- **AVX2-only CPUs** (Ryzen 5000, X3D, Ice Lake...) decode the IQ models' rows once per verify window instead of once per token (#43, thanks @pipeob0): about 5% faster there.
+- **Windows large pages actually work** for accounts with "Lock pages in memory" (#42, thanks @pipeob0), and the log says why when they are refused.
+- `--port` works for existing installs (#32, thanks @uvhat); the Monitor keeps the last 500 requests with totals and a Show all button (#35, thanks @XeonG); the server window shows how far a long prompt is (`N of M tokens`).
+
+**Updating:** get the latest files (`git pull` or download the repo again), then run `START-HERE.bat` with the model window closed: it updates the engine to 0.1.14 by itself. On Linux, run `./setup.sh`: it compiles the new engine.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+
+=== v0.1.13 2026-09-28T05:09:05Z main
+## Strata engine 0.1.13 - long prompts about twice as fast
+
+**Update:** run `START-HERE.bat` (Windows) or `git pull` + `./setup.sh` (Linux). Setup installs the new engine and
+switches your config to the new prompt reading (`--prefill auto`) by itself.
+
+### Faster prompts
+Reading a prompt (the time before the first word) is about 2x faster on long prompts. RTX 5070 12 GB, 64 GB RAM:
+
+| | 0.1.12 | 0.1.13 |
+|---|---:|---:|
+| Q2_0, 32K-token prompt | 572 tokens/s | 1,290 tokens/s |
+| IQ3_S, 32K-token prompt | 383 tokens/s | 1,208 tokens/s |
+| Through the server, 7K-token prompt (Q2_0, 128K context) | 529 tokens/s | 1,077 tokens/s |
+| Through the server, 28K-token prompt | 584 tokens/s | 1,249 tokens/s |
+
+How: bigger prompt chunks (up to 8,192 tokens, sized to what fits), llama.cpp's quantized MMQ kernels for the
+experts, the next layer's experts streaming over PCIe while the current layer runs, and the PLE block computed for the
+whole chunk at once. Output speed is unchanged; needle tests pass 5/5 from 1K to 262K. Details:
+`bench/results/2026-09-28-prefill-speed`.
+
+### Stalls (issues #29, #31)
+- A request that stops moving now ends after 60 s (was 120 s), and the log gets a **stall report** under the
+  `no progress` line: what every expert-pool thread and the GPU handshake were doing, memory and page faults. On
+  Windows the engine also writes `strata-stall-<pid>.dmp` with every thread's stack. If you see one, please attach
+  both to the issue.
+- The engine prints its version at start (`session is up (engine 0.1.13)`).
+- Linux: `git pull` + `./setup.sh` now recompiles a self-compiled engine when its source changed (it kept the old one).
+
+### Assets
+- `strata-windows-x64.zip` - the engine (RTX 30/40/50).
+- `strata-windows-x64-symbols.zip` - the matching `strata.pdb`, only needed to read a stall dump.
+

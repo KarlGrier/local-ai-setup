@@ -1,0 +1,83 @@
+diff --git a/serve/server.py b/serve/server.py
+index 175125ef..3a10d40a 100644
+--- a/serve/server.py
++++ b/serve/server.py
+@@ -592,6 +592,7 @@ class Service:
+         parser = OutputParser(thinking=thinking, tools=tools, stream_tools=True)
+         detok, n, finish = Detokenizer(self.tok), 0, "length"
+         raw_ids = []                                    # every generated id (STRATA_DEBUG: dump raw model text)
++        request_stats = {}                              # this request's DONE, captured before releasing the FIFO
+         emb = getattr(self.embeddings, "path", None)
+         with self.status_lock:
+             self.status["queued"] += 1
+@@ -610,6 +611,7 @@ class Service:
+                     self.status.update(busy=True, phase="reading the prompt", prompt_tokens=len(ids), generated=0,
+                                        started=time.time(), first_token=None, tool=None, tail="", max_tokens=max_new)
+                 last_print = time.time()
++                previous_stats = getattr(self.engine, "last", None)
+                 gen = self.engine.generate(ids, max_new, sampling, cancel, embeddings=emb) if emb else \
+                     self.engine.generate(ids, max_new, sampling, cancel)
+                 try:
+@@ -643,6 +645,9 @@ class Service:
+                     gen.close()                         # STOP+drain to THIS request's DONE while still holding the
+                     #                                     fifo, so a stop-token break can't leave the shared engine
+                     #                                     queue mid-drain for the next request to read as its own DONE
++                    current_stats = getattr(self.engine, "last", None)
++                    if isinstance(current_stats, dict) and current_stats is not previous_stats:
++                        request_stats = dict(current_stats)
+         except GeneratorExit:                           # the client disconnected mid-stream
+             finish = "disconnect"
+             raise
+@@ -673,7 +678,7 @@ class Service:
+                 self.status["busy"] = False
+         for ev in parser.finish():
+             yield "event", ev
+-        yield "done", {"finish": finish, "completion_tokens": n}
++        yield "done", {"finish": finish, "completion_tokens": n, "engine_stats": request_stats}
+ 
+ 
+ def _debug_req(api, req, messages, tools, max_new, thinking, prompt_tokens):
+@@ -692,6 +697,35 @@ def _debug_req(api, req, messages, tools, max_new, thinking, prompt_tokens):
+ 
+ 
+ # ------------------------------------------------------------------------------------------------ OpenAI
++def openai_timing_usage(stats: dict) -> dict:
++    """Engine timings for the latest model call, displayed by Open WebUI's usage tooltip.
++
++    Match Strata's own DONE/log counters: prefill counts only fresh tokens; decode includes all tokens the
++    engine produced (including reasoning/control tokens). Never estimate missing timings or divide by zero.
++    Open WebUI sums input/output token totals across tool rounds, but retains these fields from the last call.
++    """
++    if not stats:
++        return {}
++    extra = {"timing_scope": "last_model_call"}
++    prompt_n = stats.get("prompt_tokens")
++    reused = stats.get("reused")
++    fresh = None
++    if isinstance(prompt_n, int) and isinstance(reused, int) and 0 <= reused <= prompt_n:
++        fresh = prompt_n - reused
++        extra["prefill_tokens"] = fresh
++        extra["cached_prompt_tokens"] = reused
++    for source, count, duration_key, rate_key in (
++        ("prompt_ms", fresh, "prefill_ms", "prefill_tokens_per_second"),
++        ("decode_ms", stats.get("generated"), "decode_ms", "decode_tokens_per_second"),
++    ):
++        ms = stats.get(source)
++        if isinstance(ms, (int, float)) and 0 <= ms < float("inf"):
++            extra[duration_key] = round(ms, 2)
++            if isinstance(count, int) and count > 0 and ms > 0:
++                extra[rate_key] = round(1000.0 * count / ms, 2)
++    return extra
++
++
+ def openai_chunks(svc: Service, req: dict, ids, thinking, tools, max_new, cancel):
+     cid, created = "chatcmpl-" + uuid.uuid4().hex[:24], int(time.time())
+ 
+@@ -730,6 +764,7 @@ def openai_chunks(svc: Service, req: dict, ids, thinking, tools, max_new, cancel
+             last = chunk({}, finish)
+             last["usage"] = {"prompt_tokens": len(ids), "completion_tokens": x["completion_tokens"],
+                              "total_tokens": len(ids) + x["completion_tokens"]}
++            last["usage"].update(openai_timing_usage(x.get("engine_stats") or {}))
+             yield last
+ 
+ 

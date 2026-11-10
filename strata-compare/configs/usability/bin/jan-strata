@@ -1,0 +1,21 @@
+#!/bin/bash
+# jan-strata - Jan 0.8.6 (AppImage in ~/.local/opt/jan-0.8.6) for Strata, offline except 127.0.0.1.
+# Started by the "Jan (Strata)" app icon (~/.local/share/applications/jan-strata.desktop).
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+# 2026-10-17: Strata on demand - starts C*18t on 8080 if nothing answers there (not while a test uses the GPUs),
+# waits until it is ready (3 minutes at most) and only then opens the app (strata-ensure.sh)
+"$HERE/strata-ensure.sh" "Jan" || exit 1
+# 11-06 (Karl): the DeepSeek model entry, added once while Jan is closed (jan-add-deepseek.py; silent otherwise)
+"$HERE/jan-add-deepseek.py" --if-pending 2> /dev/null || true
+source "$HERE/offline-env.sh"
+# Strata keeps the RTX 5080's memory nearly full: Jan's window is drawn in software, so it takes no VRAM from the model
+# (with the monitor on the iGPU this changes nothing visible).
+export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1
+# Jan starts its own llama.cpp worker even when every model is remote; keep it off the NVIDIA cards Strata uses
+# (remove this line to run models inside Jan itself).
+export CUDA_VISIBLE_DEVICES=-1
+# No "shell" tool in chats: Jan offers it only while its command sandbox (bubblewrap) is active, and has no setting
+# for it; this turns the sandbox off, so the tool is not offered (Settings shows running commands as unavailable).
+# Remove this line to get the shell tool back.
+export JAN_AGENT_SANDBOX=off
+exec "$HOME/.local/opt/jan-0.8.6/Jan_0.8.6_amd64.AppImage" "$@"

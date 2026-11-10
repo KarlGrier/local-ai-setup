@@ -1,0 +1,675 @@
+#!/usr/bin/env python3
+"""research-runner.py - runs the deep-research jobs that Jan (tools/research-mcp.py) queues (2026-10-17).
+
+Runs as the systemd user service deep-research-runner.service. One job at a time, in the order they were asked;
+everything is on disk (jobs/<id>/job.json), so jobs survive a restart of the runner, LDR or the PC.
+
+  start      Strata on demand (strata-compare's strata-ensure.sh: "Starting Strata..."), LDR + strata-proxy + LDR's
+             SearXNG (run-ldr.sh start), the job's settings for the deep patch (run/next-research.json: research
+             time, files, seed), then LDR's /api/start_research. Not while a test holds strata-compare's measurement
+             lock, and not during the night pause (a queued job waits).
+  run        pause / resume / cancel / yield / night pause go to the proxy gate through run/research-control.json:
+             the gate holds the research between model calls and stops the research clock (run/research-clock.json).
+  finish     the deep report (results/deep-runs/research-<rid>/report.md) is copied to reports/<date>-<slug>.md with
+             a header, plus an .html copy; a desktop notification. Failures notify too.
+  interrupt  if LDR is gone while a job runs (the PC was off, LDR restarted), the job continues as a new run seeded
+             from the earlier runs' evidence and notes, with the research time that is left.
+  memory     MemAvailable below 12 GB stops the research (the standing floor since 2026-10-19 evening; 16 / 20 before) and reports the lowest value.
+
+Settings: research.conf (read every few seconds). Log: logs/research-runner.log.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import traceback
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import research_common as rc  # noqa: E402
+
+import requests  # noqa: E402  (LDR's venv)
+
+WS = rc.WS
+LDR = "http://127.0.0.1:5000"
+STRATA = "http://127.0.0.1:8080"
+CREDS = WS / "run" / "ldr-credentials"
+LOG = WS / "logs" / "research-runner.log"
+ENSURE = rc.SC / "configs" / "usability" / "bin" / "strata-ensure.sh"
+MODE_FILE = WS / "run" / "proxy-mode.json"
+# the deep profile (README "Thinking effort"). 2026-10-20, the user after the phase 3 replays: medium for the agent,
+# extraction and report writing; the citation check stays xhigh (agent and extraction through the proxy mode file,
+# report and citation check through LDR's environment at start - run_ldr, checked against run/ldr.efforts)
+DEEP_EFFORTS = {"agent_effort": "medium", "extract_effort": "medium"}
+DEEP_LDR_EFFORTS = {"LDR_DEEP_REPORT_EFFORT": "medium", "LDR_DEEP_VERIFY_EFFORT": "xhigh"}
+DEEP_LDR_EFFORTS_FILE = "report=medium verify=xhigh"     # what run-ldr.sh writes to run/ldr.efforts for those
+# Quick jobs (mode "quick", 2026-10-18): plain LDR's quick summary (the baseline profile, Strata's default effort) - the
+# setup that answered the hard checkable set 10/10 in 1-2 min each. Stopped if it runs longer than this.
+QUICK_CAP_S = 15 * 60
+# the search fallback after SearXNG (patch 0005: Exa, then Tavily) is on when either key file exists; only their
+# existence is checked here
+FALLBACK_KEYS = [Path.home() / ".config" / "deep-research" / n for n in ("exa.key", "tavily.key")]
+
+
+def fallback_keys() -> bool:
+    return any(k.is_file() for k in FALLBACK_KEYS)
+
+
+MEM_FLOOR_GB = 12.0                # the user, 2026-10-19 evening (16 that morning, 20 before)
+# Strata's chat cache (C*18t: 12 GiB) fills up during every report stage and can only be emptied by a restart; with
+# it full, MemAvailable sits at ~20-21 GB. Below this the runner restarts Strata (same config) between model calls,
+# when nobody else is using it, instead of letting the research run into the floor (16 GB since 2026-10-19; was 20).
+MEM_RELIEF_GB = 20.0             # the user, 10-19 evening: 20 until proposal A is in (phase 4); 18 earlier on 10-19 (o08 dipped to 16.7 after an 18 trigger), 22 before
+RELIEF_COOLDOWN_S = 600
+TICK_S = 3.0
+
+
+def log(msg: str) -> None:
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG, "a") as f:
+        f.write(f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')} {msg}\n")
+
+
+def notify(title: str, body: str, urgency: str = "normal") -> None:
+    try:
+        subprocess.run(["notify-send", "-a", "Deep research", "-i", "system-search", "-u", urgency, title, body],
+                       capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def avail_gb() -> float:
+    for line in open("/proc/meminfo"):
+        if line.startswith("MemAvailable"):
+            return int(line.split()[1]) / 1048576
+    return 0.0
+
+
+def clean_env() -> dict:
+    """No proxy variables (Jan's offline proxy must not reach LDR, SearXNG or Strata)."""
+    return {k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy")}
+
+
+# -- LDR ------------------------------------------------------------------------------------------------------------
+class LDRClient:
+    def __init__(self):
+        self.s = None
+        self.csrf = None
+
+    def login(self) -> None:
+        d = json.loads(CREDS.read_text())
+        s = requests.Session()
+        s.trust_env = False
+        tok = s.get(f"{LDR}/auth/csrf-token", timeout=10).json()["csrf_token"]
+        r = s.post(f"{LDR}/auth/login", data={"username": d["username"], "password": d["password"], "csrf_token": tok},
+                   timeout=120, allow_redirects=False)
+        if r.status_code != 302:
+            raise RuntimeError(f"LDR login failed: HTTP {r.status_code}")
+        self.csrf = s.get(f"{LDR}/auth/csrf-token", timeout=10).json()["csrf_token"]
+        self.s = s
+
+    def api(self, method: str, path: str, **kw):
+        for attempt in range(2):
+            if self.s is None:
+                self.login()
+            try:
+                r = self.s.request(method, f"{LDR}{path}", headers={"X-CSRFToken": self.csrf},
+                                   timeout=kw.pop("timeout", 60), **kw)
+            except requests.RequestException:
+                self.s = None
+                if attempt:
+                    raise
+                continue
+            if r.status_code in (401, 403) and attempt == 0:
+                self.s = None
+                continue
+            return r
+        raise RuntimeError("unreachable")
+
+
+def ldr_pid() -> int | None:
+    try:
+        pid = int((WS / "run" / "ldr.pid").read_text().strip())
+        os.kill(pid, 0)
+        return pid
+    except (OSError, ValueError):
+        return None
+
+
+def ldr_up() -> bool:
+    try:
+        return requests.get(f"{LDR}/auth/login", timeout=5).status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def strata_idle_for_us() -> tuple[bool, str]:
+    """Strata may be restarted: no other client used it within the yield window (the gate's view)."""
+    c = rc.read_clock()
+    last = float(c.get("last_foreign") or 0)
+    window = max(5.0, float(rc.settings()["yield_minutes"])) * 60
+    if last and time.time() - last < window:
+        return False, f"another client used Strata {(time.time() - last) / 60:.0f} min ago"
+    return True, ""
+
+
+def restart_strata(reason: str) -> bool:
+    """Free Strata's chat cache: hold research at the gate, wait for the call in progress, stop Strata, start it again
+    (strata-ensure.sh), release. Same config (C*18t); takes ~15 s plus the wait."""
+    ctl = json.loads(rc.CONTROL_FILE.read_text()) if rc.CONTROL_FILE.exists() else {}
+    ctl.update(pause=True, reason=reason)
+    rc.CONTROL_FILE.write_text(json.dumps(ctl))
+    try:
+        r = requests.get("http://127.0.0.1:8090/_research/wait-idle?timeout=900", timeout=960,
+                         proxies={"http": None, "https": None})
+        if not r.json().get("idle"):
+            log(f"restart_strata: a research call is still running after 15 min; not restarting")
+            return False
+    except (requests.RequestException, ValueError):
+        pass                                       # no proxy: nothing of ours can be running
+    stop = subprocess.run([str(rc.SC / "run-strata.sh"), "stop"], cwd=rc.SC, env={**clean_env(), "STRATA_PORT": "8080"},
+                          capture_output=True, text=True, timeout=180)
+    for _ in range(60):                            # the old server must be gone, or strata-ensure.sh says "busy"
+        if subprocess.run(["pgrep", "-f", r"(^|/)llama-server( |$)|strata --serve"], capture_output=True).returncode:
+            break
+        time.sleep(1)
+    start = subprocess.run([str(ENSURE), "Deep research"], env=clean_env(), capture_output=True, text=True, timeout=600)
+    log(f"restart_strata ({reason}): stop rc {stop.returncode}, start rc {start.returncode}, "
+        f"MemAvailable now {avail_gb():.1f} GB")
+    return start.returncode == 0
+
+
+def run_ldr(cmd: str, profile: str = "deep") -> tuple[int, str]:
+    env = clean_env()
+    env["LDR_PROFILE"] = profile
+    if fallback_keys():                        # 2026-10-19: Jan's research gets the Exa/Tavily fallback once a key exists
+        env["LDR_SEARCH_FALLBACK"] = "1"
+    else:
+        env.pop("LDR_SEARCH_FALLBACK", None)
+    env["LDR_RESEARCH_S2"] = "1"               # Semantic Scholar's own engine for Jan's research (no key; filters off)
+    if profile == "baseline":                  # 2026-10-19: quick answers (the only jobs in this profile) stay quick:
+        env["LDR_QUICK_LIMITS"] = "1"          # no subtopic agents, at most 12 agent cycles (run-ldr.sh)
+    else:
+        env.pop("LDR_QUICK_LIMITS", None)
+    for k, v in DEEP_LDR_EFFORTS.items():      # 2026-10-20: report medium, citation check xhigh (deep profile only)
+        if profile == "deep":
+            env[k] = v
+        else:
+            env.pop(k, None)
+    env["LDR_DEEP_VERIFY_MAX_CLAIMS"] = str(int(rc.settings()["verify_max_claims"]))
+    r = subprocess.run([str(WS / "run-ldr.sh"), cmd], cwd=WS, env=env, capture_output=True, text=True,
+                       timeout=300)
+    return r.returncode, (r.stdout + r.stderr).strip()
+
+
+# -- the runner -------------------------------------------------------------------------------------------------------
+class Runner:
+    def __init__(self):
+        self.ldr = LDRClient()
+        self.last_activity = time.time()
+        self.min_avail = None
+        self.last_save = 0.0
+        self.last_relief = 0.0
+        self.rebase_at = None             # tells the proxy gate to re-base its foreign-request count (after a restart)
+        self.ev_offset = {}               # research id -> bytes of its evidence file already scanned (milestones)
+
+    # control file for the proxy gate
+    def write_control(self, job: dict | None, s: dict) -> None:
+        night = rc.is_night(s=s)
+        # a quick job is short and was just asked for in a chat: it does not yield to that chat
+        ym = 0 if job and job.get("mode") == "quick" else s["yield_minutes"]
+        ctl = {"yield_minutes": ym, "job": job["id"] if job else None, "updated": round(time.time(), 1),
+               "rebase_at": self.rebase_at}
+        if job and job.get("cancel_requested"):
+            ctl["abort"] = True
+        elif job and job.get("user_paused"):
+            ctl.update(pause=True, reason="you paused it")
+        elif job and night:
+            ctl.update(pause=True, reason=f"night pause (resumes at {rc.night_end_text(s)})")
+        tmp = rc.CONTROL_FILE.with_suffix(".tmp")
+        rc.RUN.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(ctl))
+        os.replace(tmp, rc.CONTROL_FILE)
+
+    def update(self, job_id: str, **changes) -> dict:
+        with rc.jobs_lock():
+            job = rc.load_job(job_id) or {}
+            hist = job.setdefault("history", [])
+            if "state" in changes and changes["state"] != job.get("state"):
+                hist.append({"t": round(time.time(), 1), "state": changes["state"], "note": changes.get("note", "")})
+            job.update(changes)
+            rc.save_job(job)
+            return job
+
+    def loop(self) -> None:
+        log(f"runner started (pid {os.getpid()})")
+        while True:
+            try:
+                self.tick()
+            except Exception:  # noqa: BLE001 - keep running; the log has the details
+                log("tick failed:\n" + traceback.format_exc())
+                time.sleep(10)
+            time.sleep(TICK_S)
+
+    def tick(self) -> None:
+        s = rc.settings()
+        jobs = rc.all_jobs()
+        active = next((j for j in jobs if j.get("state") in rc.ACTIVE), None)
+        self.write_control(active, s)
+        if active:
+            self.last_activity = time.time()
+            self.watch(active, s)
+            return
+        if rc.bench_running():                         # a measurement owns LDR: no job starts, LDR is not stopped
+            self.last_activity = time.time()
+            # the same memory relief as for jobs: Strata restarted between model calls before the floor
+            av = avail_gb()
+            if MEM_FLOOR_GB <= av < MEM_RELIEF_GB and time.time() - self.last_relief > RELIEF_COOLDOWN_S:
+                ok, why = strata_idle_for_us()
+                if ok:
+                    self.last_relief = time.time()
+                    log(f"measurement run: MemAvailable {av:.1f} GB - restarting Strata to free its chat cache")
+                    restart_strata(f"freeing memory (MemAvailable {av:.1f} GB): Strata restart")
+                    self.rebase_at = time.time()
+                    self.write_control(None, s)
+            for j in jobs:
+                if j.get("state") == "queued" and not j.get("cancel_requested"):
+                    self.note_wait(j, "waiting: a measurement run is using LDR")
+            return
+        queued = [j for j in jobs if j.get("state") == "queued" and not j.get("user_paused")]
+        for j in jobs:                                    # a queued job cancelled before it started
+            if j.get("state") == "queued" and j.get("cancel_requested"):
+                self.update(j["id"], state="cancelled", note="cancelled before it started", finished=time.time())
+        queued = [j for j in queued if not j.get("cancel_requested")]
+        queued.sort(key=lambda j: j.get("mode") != "quick")       # quick answers go before queued deep research
+        if queued:
+            self.last_activity = time.time()
+            nxt = queued[0]
+            if rc.is_night(s=s):
+                self.note_wait(nxt, f"waiting: night pause until {rc.night_end_text(s)}")
+                return
+            lock = rc.test_lock_held()
+            if lock:
+                self.note_wait(nxt, f"waiting: a test holds the GPUs ({lock})")
+                return
+            self.start(nxt, s)
+            return
+        # nothing to do: stop LDR after a while - but not one that someone else (the measurement queue) started within
+        # that time: the queue starts LDR before its run takes the bench lock (10-19 08:00: stopped 1 s after its start)
+        idle_s = s["ldr_idle_stop_minutes"] * 60
+        try:
+            ldr_age = time.time() - (WS / "run" / "ldr.pid").stat().st_mtime
+        except OSError:
+            ldr_age = idle_s + 1
+        if time.time() - self.last_activity > idle_s and ldr_age > idle_s and ldr_pid():
+            code, out = run_ldr("stop")
+            # SearXNG 8889 / 8890 are their own user services since 10-21 (the user): never stopped here (stage 1's
+            # "not yet" check ran with every search failing after this stop took 8889 down at 08:29)
+            log(f"idle {s['ldr_idle_stop_minutes']:g} min: LDR and strata-proxy stopped; SearXNG keeps running ({out[-200:]})")
+            self.last_activity = time.time()
+
+    def note_wait(self, job: dict, note: str) -> None:
+        if job.get("note") != note:
+            self.update(job["id"], note=note)
+            log(f"{job['id']}: {note}")
+
+    # -- start (also a seeded continuation after an interruption) ----------------------------------------------------
+    def start(self, job: dict, s: dict) -> None:
+        jid = job["id"]
+        quick = job.get("mode") == "quick"
+        want = "baseline" if quick else "deep"
+        seeded = bool(job.get("runs")) and not quick
+        budget_s = QUICK_CAP_S if quick else float(job.get("budget_minutes") or s["default_budget_minutes"]) * 60
+        used = 0.0 if quick else float(job.get("research_used_s") or 0.0)
+        left = max(0.0, budget_s - used)
+        self.update(jid, state="starting", note="starting Strata" if not seeded else "continuing after an interruption")
+        log(f"{jid}: start ({'seeded continuation, ' if seeded else ''}research time left {left / 60:.0f} min)")
+        # Strata on demand (a notification "Starting Strata..." when it was down)
+        r = subprocess.run([str(ENSURE), "Deep research"], env=clean_env(), capture_output=True, text=True, timeout=600)   # 2 x 3-min waits + a stale-server stop (strata-ensure 10-18)
+        if r.returncode != 0:
+            why = (r.stderr or r.stdout).strip().splitlines()[-1:] or ["Strata did not start"]
+            self.update(jid, state="queued", note=f"waiting: {why[0][:200]}")
+            log(f"{jid}: Strata not ready: {why}")
+            time.sleep(60)
+            return
+        if avail_gb() < MEM_FLOOR_GB + 2:
+            ok, why = strata_idle_for_us()
+            if ok and time.time() - self.last_relief > RELIEF_COOLDOWN_S:
+                self.last_relief = time.time()
+                self.update(jid, note=f"restarting Strata to free memory (MemAvailable {avail_gb():.1f} GB)")
+                restart_strata("freeing memory before the research starts (Strata restart)")
+                self.rebase_at = time.time()
+        if avail_gb() < MEM_FLOOR_GB + 2:
+            self.update(jid, state="queued", note=f"waiting: MemAvailable {avail_gb():.1f} GB")
+            time.sleep(60)
+            return
+        # 10-21 (the user): the search services answer before a research starts. LDR searches with SearXNG 8889 - a
+        # run without it would write its report from the model alone - so the job waits; 8890 / 8888 are warnings.
+        probs = rc.searxng_problems()
+        for p, why in sorted(probs.items()):
+            log(f"{jid}: {'not starting: ' if p == 8889 else 'warning: '}{why}")
+        if 8889 in probs:
+            self.update(jid, state="queued", note=f"waiting: {probs[8889]}")
+            time.sleep(60)
+            return
+        self.update(jid, note="starting LDR")
+        if not ldr_up() or not ldr_pid():
+            code, out = run_ldr("start", want)
+            if code != 0 or not ldr_up():
+                self.update(jid, state="queued", note=f"waiting: LDR did not start ({out[-200:]})")
+                log(f"{jid}: run-ldr start failed: {out[-500:]}")
+                time.sleep(60)
+                return
+            self.ldr.s = None
+        have = (WS / "run" / "ldr.profile").read_text().strip()
+        fb_have = (WS / "run" / "ldr.fallback").read_text().strip() if (WS / "run" / "ldr.fallback").exists() else "off"
+        fb_want = "on" if fallback_keys() else "off"
+        s2_have = (WS / "run" / "ldr.s2").read_text().strip() if (WS / "run" / "ldr.s2").exists() else "off"
+        ql = WS / "run" / "ldr.quicklimits"
+        ql_have = ql.read_text().strip() if ql.exists() else "off"
+        ql_want = "on" if quick else "off"
+        ef = WS / "run" / "ldr.efforts"
+        ef_ok = quick or (ef.read_text().strip() if ef.exists() else "") == DEEP_LDR_EFFORTS_FILE
+        it_f = WS / "run" / "ldr.items"           # 10-21: phase 4 stage 2 items - measurements only, for now
+        setup_left_on = it_f.exists() and it_f.read_text().strip() not in ("", "off")
+        if have != want or fb_have != fb_want or s2_have != "on" or ql_have != ql_want or not ef_ok or setup_left_on:
+            # left in the other profile (by a measurement, or a quick / deep job): restart LDR in this job's profile
+            code, out = run_ldr("stop")
+            code, out = run_ldr("start", want)
+            if code != 0 or not ldr_up() or (WS / "run" / "ldr.profile").read_text().strip() != want:
+                self.update(jid, state="queued", note=f"waiting: LDR did not start in the {want} profile ({out[-160:]})")
+                time.sleep(60)
+                return
+            self.ldr.s = None
+            log(f"{jid}: LDR was in the {have} profile; restarted in the {want} profile")
+        MODE_FILE.write_text(json.dumps({} if quick else DEEP_EFFORTS))     # quick: pass-through (Strata's default)
+        seed_dirs = [r["out_dir"] for r in job.get("runs", []) if r.get("out_dir") and Path(r["out_dir"]).exists()]
+        if quick:
+            seed_dirs = []
+        else:
+            nxt = {"job_id": jid, "question": job["question"], "budget_s": round(left), "files": job.get("files", []),
+                   "seed_dirs": seed_dirs, "written": time.time()}
+            rc.NEXT_FILE.write_text(json.dumps(nxt, ensure_ascii=False))
+        resp = self.ldr.api("POST", "/api/start_research", json={"query": job["question"], "mode": "quick"},
+                            timeout=120)
+        if resp.status_code != 200:
+            self.update(jid, state="queued", note=f"waiting: LDR refused the start (HTTP {resp.status_code})")
+            log(f"{jid}: start_research HTTP {resp.status_code}: {resp.text[:300]}")
+            time.sleep(60)
+            return
+        rid = resp.json().get("research_id")
+        run = {"research_id": rid, "started": time.time(), "paused_at_start": rc.paused_total(), "ldr_pid": ldr_pid(),
+               "out_dir": str(WS / "results" / ("quick-runs" if quick else "deep-runs") / f"research-{rid}"),
+               "seeded_from": seed_dirs,
+               "budget_s": round(left), "log_line0": sum(1 for _ in open(rc.CALL_LOG)) if rc.CALL_LOG.exists() else 0}
+        runs = list(job.get("runs", [])) + [run]
+        self.update(jid, state="running", note="researching", runs=runs, started=job.get("started") or time.time())
+        self.min_avail = avail_gb()
+        log(f"{jid}: {'quick answer' if quick else 'research'} {rid} started "
+            f"({'cap' if quick else 'budget'} {left / 60:.0f} min, seeds {len(seed_dirs)})")
+
+    # -- watch the running job -----------------------------------------------------------------------------------------
+    def watch(self, job: dict, s: dict) -> None:
+        jid = job["id"]
+        if job.get("state") == "starting":            # the runner died while starting it: start again
+            self.update(jid, state="queued", note="restarting the start")
+            return
+        run = job["runs"][-1]
+        rid = run["research_id"]
+        now = time.time()
+        # research time used so far (the clock stops while the gate is closed)
+        used_run = max(0.0, (now - run["started"]) - (rc.paused_total(now) - run.get("paused_at_start", 0.0)))
+        prev = sum(r.get("used_s", 0.0) for r in job["runs"][:-1])
+        # interrupted? (LDR is not the process that ran it)
+        pid = ldr_pid()
+        if pid is None or pid != run.get("ldr_pid") or not ldr_up():
+            run["used_s"] = round(min(used_run, run.get("budget_s", used_run)), 1)
+            run["ended"] = now
+            run["status"] = "interrupted"
+            runs = job["runs"][:-1] + [run]
+            if job.get("cancel_requested"):
+                self.update(jid, state="cancelled", note="cancelled", runs=runs, finished=now)
+                return
+            self.update(jid, state="queued", note="interrupted (LDR or the PC stopped): continues from its evidence",
+                        runs=runs, research_used_s=round(prev + run["used_s"], 1))
+            log(f"{jid}: run {rid} interrupted (LDR pid {pid}, was {run.get('ldr_pid')}); requeued as a seeded run")
+            notify("Research interrupted", f"{job['question'][:120]}\nIt continues from what it found so far.")
+            return
+        # memory: restart Strata (frees its chat cache) before the floor is reached; stop the research at the floor
+        av = avail_gb()
+        self.min_avail = min(self.min_avail or av, av)
+        if MEM_FLOOR_GB <= av < MEM_RELIEF_GB and time.time() - self.last_relief > RELIEF_COOLDOWN_S \
+                and not job.get("cancel_requested"):
+            ok, why = strata_idle_for_us()
+            if ok:
+                self.last_relief = time.time()
+                self.update(jid, note=f"restarting Strata to free memory (MemAvailable {av:.1f} GB)")
+                restart_strata(f"freeing memory (MemAvailable {av:.1f} GB): Strata restart")
+                self.rebase_at = time.time()
+                self.write_control(job, s)
+                return
+        if av < MEM_FLOOR_GB and not job.get("cancel_requested"):
+            log(f"{jid}: MemAvailable {av:.1f} GB < {MEM_FLOOR_GB}: terminating research {rid}")
+            self.ldr.api("POST", f"/api/terminate/{rid}")
+            self.update(jid, cancel_requested=True, stop_reason=f"memory floor: MemAvailable fell to {av:.1f} GB")
+            notify("Research stopped", f"MemAvailable fell to {av:.1f} GB (floor {MEM_FLOOR_GB:g} GB).", "critical")
+            return
+        if job.get("mode") == "quick" and used_run > QUICK_CAP_S and not job.get("cancel_requested"):
+            log(f"{jid}: quick answer still running after {QUICK_CAP_S // 60} min: terminating {rid}")
+            self.ldr.api("POST", f"/api/terminate/{rid}")
+            self.update(jid, cancel_requested=True, stop_reason=f"the quick answer took over {QUICK_CAP_S // 60} min")
+            return
+        # 10-21 (the user): a research whose web searches mostly fail stops and is marked FAILED with the reason - it
+        # must not write a report from the model's own knowledge (research_common.search_health, patch 0005 part 2)
+        if not job.get("cancel_requested"):
+            h = rc.search_health(run["started"])
+            if h["bad"]:
+                why = f"FAILED: {h['reason']} - stopped so that no report is written from the model's own knowledge"
+                log(f"{jid}: {why}; terminating {rid}")
+                self.ldr.api("POST", f"/api/terminate/{rid}")
+                self.update(jid, cancel_requested=True, search_failed=True, stop_reason=why)
+                return
+        # LDR's view
+        try:
+            st = self.ldr.api("GET", f"/api/research/{rid}/status").json()
+        except (requests.RequestException, ValueError, RuntimeError) as e:
+            log(f"{jid}: status poll failed: {e}")
+            return
+        status = st.get("status")
+        clock = rc.read_clock()
+        gate = clock.get("reason")
+        if job.get("cancel_requested") and not job.get("terminate_sent"):
+            self.ldr.api("POST", f"/api/terminate/{rid}")
+            self.update(jid, terminate_sent=time.time(), note="cancelling")
+            log(f"{jid}: terminate sent for {rid}")
+            return
+        state = "paused" if (job.get("user_paused") or (rc.is_night(s=s))) else "running"
+        note = gate and f"held: {gate}" or ("researching" if status == "in_progress" else str(status))
+        changes = {"progress": st.get("progress"), "ldr_status": status, "gate": gate, "note": note,
+                   "research_used_s": round(prev + min(used_run, run.get("budget_s", used_run)), 1)}
+        if state != job.get("state") and status == "in_progress":
+            changes["state"] = state
+        if now - self.last_save > 15 or "state" in changes:
+            self.last_save = now
+            self.update(jid, **changes)
+        if status == "in_progress" and job.get("mode") != "quick":
+            self.milestones(job, run)
+        if status in ("completed",):
+            self.finish(job, run, ok=True)
+        elif status in ("failed", "error", "suspended", "cancelled", "terminated"):
+            if job.get("cancel_requested"):
+                run.update(ended=now, status=status, used_s=round(used_run, 1))
+                sf = bool(job.get("search_failed"))
+                self.update(jid, state="failed" if sf else "cancelled", note=job.get("stop_reason") or "cancelled",
+                            runs=job["runs"][:-1] + [run], finished=now, min_avail_gb=round(self.min_avail or av, 1))
+                rmsg = job.get("stop_reason") or "cancelled"
+                notify("Research FAILED" if sf else "Research stopped", f"{job['question'][:120]}\n{rmsg}",
+                       "critical" if sf else "normal")
+                log(f"{jid}: {status} after cancel ({rmsg})")
+            else:
+                self.finish(job, run, ok=False, why=f"LDR status {status}: {str(st.get('error') or st.get('message') or '')[:200]}")
+
+    # -- milestones (2026-10-19): a notification when the research ends and the report starts, and when the report is
+    # written and its citation check starts (finished / failed already notify) -------------------------------------
+    def milestones(self, job: dict, run: dict) -> None:
+        jid, rid = job["id"], run["research_id"]
+        seen = dict(job.get("milestones_seen") or {})
+        out = Path(run["out_dir"])
+        key_report, key_check = f"{rid}:report", f"{rid}:check"
+        if key_report not in seen:
+            ev = out / "evidence.jsonl"
+            try:
+                with open(ev, "rb") as f:
+                    f.seek(self.ev_offset.get(rid, 0))
+                    chunk = f.read()
+                    self.ev_offset[rid] = f.tell()
+            except OSError:
+                chunk = b""
+            if b'"kind": "lead_answer"' in chunk:
+                seen[key_report] = time.time()
+                used = float(job.get("research_used_s") or 0)
+                notify("Research: writing the report",
+                       f"{job['question'][:120]}\nThe research is done ({rc.fmt_minutes(used)}); the report is being written.")
+                log(f"{jid}: milestone - research done, report started")
+        if key_check not in seen and (out / "report-unverified.md").exists() and not (out / "report.md").exists():
+            seen[key_check] = time.time()
+            notify("Research: checking citations",
+                   f"{job['question'][:120]}\nThe report is written; its citations are being checked.")
+            log(f"{jid}: milestone - report written, citation check started")
+        if seen != (job.get("milestones_seen") or {}):
+            self.update(jid, milestones_seen=seen)
+
+    # -- report -------------------------------------------------------------------------------------------------------------
+    def finish(self, job: dict, run: dict, ok: bool, why: str = "") -> None:
+        jid = job["id"]
+        now = time.time()
+        out = Path(run["out_dir"])
+        # 10-21 (the user): searches mostly failed (also when LDR finished before the stop) -> FAILED, no report handed
+        # out: it would be written from the model's own knowledge. The file stays in the run folder.
+        h = rc.search_health(run["started"], final=True)
+        if h["bad"] or job.get("search_failed"):
+            why = job.get("stop_reason") or f"FAILED: {h['reason']} - no report is given, it would come from the model's own knowledge"
+            run.update(ended=now, status="failed", search_health=h)
+            self.update(jid, state="failed", note=why, runs=job["runs"][:-1] + [run], finished=now, search_failed=True)
+            notify("Research FAILED", f"{job['question'][:120]}\n{why}", "critical")
+            log(f"{jid}: {why}")
+            return
+        if job.get("mode") == "quick":                 # plain LDR: its own answer with sources, through the API
+            try:
+                rep = self.ldr.api("GET", f"/api/report/{run['research_id']}")
+                content = rep.json().get("content") if rep.status_code == 200 else None
+            except (requests.RequestException, ValueError, RuntimeError, AttributeError) as e:
+                content, why = None, why or f"report fetch failed: {e}"
+            if content:
+                out.mkdir(parents=True, exist_ok=True)
+                (out / "report.md").write_text(content, encoding="utf-8")
+        src = out / "report.md" if (out / "report.md").exists() else out / "report-unverified.md"
+        run.update(ended=now, status="completed" if ok else "failed")
+        runs = job["runs"][:-1] + [run]
+        tooltags = count_tooltags(runs)
+        if not src.exists():
+            self.update(jid, state="failed", note=why or "no report was written", runs=runs, finished=now,
+                        tooltags=tooltags)
+            notify("Research failed", f"{job['question'][:120]}\n{why or 'no report was written'}", "critical")
+            log(f"{jid}: failed: {why or 'no report'}")
+            return
+        md_path, html_path = write_report(job, runs, src, ok, why, tooltags)
+        self.update(jid, state="finished" if ok else "failed", note="report ready" if ok else why, runs=runs,
+                    finished=now, report_md=str(md_path), report_html=str(html_path), tooltags=tooltags,
+                    min_avail_gb=round(self.min_avail or avail_gb(), 1))
+        notify(("Quick answer ready" if job.get("mode") == "quick" else "Research finished") if ok else "Research ended early",
+               f"{job['question'][:120]}\nReport: {md_path.name}")
+        log(f"{jid}: {'finished' if ok else 'failed with a partial report'}: {md_path}")
+
+
+def count_tooltags(runs: list[dict]) -> dict:
+    """Answers cut off (or broken) by tool-call text in prose, from strata-proxy's log, per kind."""
+    out: dict[str, int] = {}
+    if not rc.CALL_LOG.exists():
+        return out
+    spans = [(r.get("started", 0), r.get("ended") or time.time()) for r in runs]
+    with open(rc.CALL_LOG, encoding="utf-8") as f:
+        for line in f:
+            if '"tooltag"' not in line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            t = rec.get("t0") or 0
+            if any(a <= t <= b for a, b in spans):
+                k = (rec.get("tooltag") or {}).get("kind", "?")
+                out[k] = out.get(k, 0) + 1
+    return out
+
+
+def slugify(text: str, n: int = 50) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:n].strip("-") or "research"
+
+
+HTML_CSS = """body{font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;max-width:52rem;margin:2rem auto;padding:0 1rem;
+color:#1d1d1f;background:#fff}h1,h2,h3{line-height:1.25}h1{font-size:1.6rem}h2{margin-top:2rem;border-bottom:1px solid #ddd}
+table{border-collapse:collapse;margin:1rem 0;font-size:.92rem}th,td{border:1px solid #ccc;padding:.3rem .5rem;vertical-align:top}
+code,pre{background:#f4f4f4;border-radius:4px}pre{padding:.6rem;overflow:auto}a{color:#0b57d0;word-break:break-word}
+blockquote{border-left:3px solid #ccc;margin-left:0;padding-left:1rem;color:#444}.meta{color:#555;font-size:.9rem}
+@media (prefers-color-scheme:dark){body{background:#111;color:#e6e6e6}th,td{border-color:#444}code,pre{background:#222}a{color:#8ab4f8}h2{border-color:#333}}"""
+
+
+def write_report(job: dict, runs: list[dict], src: Path, ok: bool, why: str, tooltags: dict) -> tuple[Path, Path]:
+    import markdown  # LDR's venv
+
+    rc.REPORTS.mkdir(parents=True, exist_ok=True)
+    day = datetime.fromtimestamp(job.get("created", time.time())).strftime("%Y-%m-%d")
+    base = rc.REPORTS / f"{day}-{slugify(job['question'])}"
+    if base.with_suffix(".md").exists() and job.get("report_md") != str(base.with_suffix(".md")):
+        base = rc.REPORTS / f"{day}-{slugify(job['question'])}-{job['id'][-6:]}"
+    body = src.read_text(encoding="utf-8")
+    used = sum(r.get("used_s", 0.0) for r in runs[:-1]) + max(0.0, (runs[-1].get("ended", time.time()) - runs[-1]["started"])
+                                                            - (rc.paused_total() - runs[-1].get("paused_at_start", 0.0)))
+    wall = (runs[-1].get("ended") or time.time()) - runs[0]["started"]
+    asked = datetime.fromtimestamp(job['created']).strftime('%Y-%m-%d %H:%M')
+    if job.get("mode") == "quick":
+        head = [f"# {job['question']}", "",
+                f"*Quick answer on Strata (plain LDR quick summary), asked {asked}, finished "
+                f"{datetime.now().strftime('%Y-%m-%d %H:%M')}; took about {rc.fmt_minutes(used)} "
+                f"(wall clock {rc.fmt_minutes(wall)}, pauses not counted). For a full report, ask for deep research.*", ""]
+    else:
+        head = [f"# {job['question']}", "",
+                f"*Deep research on Strata (LDR {'deep profile'}), asked {asked}, "
+                f"finished {datetime.now().strftime('%Y-%m-%d %H:%M')}. Research budget {rc.fmt_minutes(float(job.get('budget_minutes', 0)) * 60)}; "
+                f"model time incl. report about {rc.fmt_minutes(used)} (wall clock {rc.fmt_minutes(wall)}, pauses not counted).*", ""]
+    if len(runs) > 1:
+        head.append(f"*Ran in {len(runs)} parts: it was interrupted and continued from the evidence it had saved.*\n")
+    if job.get("files"):
+        head.append("*Your files: " + ", ".join(Path(f).name for f in job["files"]) + "*\n")
+    if not ok:
+        head.append(f"> **This research ended early** ({why}). What follows is the report written from what it had.\n")
+    if tooltags:
+        head.append(f"*Answers cut by tool-call text in prose during this research: {sum(tooltags.values())} "
+                    f"({', '.join(f'{k} {v}' for k, v in tooltags.items())}).*\n")
+    # the deep report starts with its own title line; keep everything else
+    lines = body.splitlines()
+    if lines and lines[0].startswith("# "):
+        lines = lines[1:]
+    md = "\n".join(head) + "\n" + "\n".join(lines).lstrip("\n") + "\n"
+    md_path = base.with_suffix(".md")
+    md_path.write_text(md, encoding="utf-8")
+    html_body = markdown.markdown(md, extensions=["tables", "fenced_code", "sane_lists", "toc"])
+    title = job["question"][:120].replace("<", "&lt;")
+    html = (f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
+            f"content=\"width=device-width,initial-scale=1\"><title>{title}</title><style>{HTML_CSS}</style></head>"
+            f"<body>{html_body}</body></html>\n")
+    html_path = base.with_suffix(".html")
+    html_path.write_text(html, encoding="utf-8")
+    shutil.copy2(src, rc.JOBS / job["id"] / src.name)
+    return md_path, html_path
+
+
+if __name__ == "__main__":
+    Runner().loop()

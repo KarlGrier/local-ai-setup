@@ -1,0 +1,39 @@
+AMENDMENT 2026-11-07 (Karl; applies from now on, not to finished gates; recorded before the confirmation gap): per-workload prompt numbers exclude the chat-cache save and are taken on the engine clock; the overall screen rule stays on the client clock minus the save at -1 %; the save is judged as its own line (its two levels taken into account); INFO flag: a workload's outside-engine time worse in every pass
+CONFIRMATION GAP (work/r23/gap-confirm0211.sh): the v0.2.11 port's R3 / R4 prompt fail - B (x28h) vs P (P0211x-h), each also with --chat-cache 0; measurements only, P028x stays served, nothing switches
+(a) prefill, chat cache off: R3 Poff +0.20 % vs Boff (Boff 3,922.8, Poff 3,930.7 tok/s; 4 / 4 R3s; noise 5.49 %) -> PASS
+  (info) R3-extract5k client clock: Poff +0.22 % vs Boff (noise 5.89 %)
+  (info) R2-report54k client clock: Poff +0.03 % vs Boff (noise 1.78 %)
+  (info) outside-engine time: no workload of Poff worse than Boff in every pass
+  (info) R2 engine clock: Poff +0.03 % vs Boff
+(b) prefill, chat cache on (minus the save): R3 P -0.05 % vs B (B 3,966.4, P 3,964.5 tok/s; 8 / 8 R3s; noise 6.54 %) -> PASS
+  (info) R3-extract5k client clock minus the save: P -0.03 % vs B (noise 6.75 %)
+  (info) R2-report54k client clock minus the save: P +0.01 % vs B (noise 1.92 %)
+  (info) outside-engine time: no workload of P worse than B in every pass
+  (info) R2 engine clock minus the save: P +0.02 % vs B
+(c) the chat-cache save: P -2.2 % vs B (save index = each save / the stored median of its level, geometric mean per pass then over passes; 4 / 4 passes; noise 11.7 %) -> PASS
+  (info) save 185 MiB: no stored band, not judged (fewer than 2 saves an arm, or under 20 ms); B 11 ms (mean 11.0), P 11 ms (mean 11.0)
+  (info) save 186 MiB: stored band 9-16; B 11/11/11 ms (mean 11.0), P 11/11/11 ms (mean 11.0)
+  (info) save 1238 MiB: stored band 102-113 / 123-137; B 117/112/116/114/115/113/132/129 ms (fast 5, slow 3), P 134/132/135/129/135/129/132/131 ms (fast 0, slow 8); the level mix is not judged
+  (info) B: the 1238 MiB save's level per start: B1 slow/fast, B2 fast/fast, B3 fast/fast, B4 slow/slow (3 of 4 starts on one level)
+  (info) P: the 1238 MiB save's level per start: P1 slow/slow, P2 slow/slow, P3 slow/slow, P4 slow/slow (4 of 4 starts on one level)
+  (info) B: R3's client TTFT by save level: fast 1393 ms (n 5), slow 1426 ms (n 3)
+  (info) P: R3's client TTFT by save level: slow 1419 ms (n 8)
+  (info) B: the engine's minor page faults per start (sampled): B1 1,872,170, B2 1,796,954, B3 1,869,568, B4 1,869,572
+  (info) P: the engine's minor page faults per start (sampled): P1 1,707,581, P2 1,708,279, P3 1,708,312, P4 1,708,324
+  (info) Boff: the engine's minor page faults per start (sampled): Boff1 1,447,324, Boff2 1,440,324
+  (info) Poff: the engine's minor page faults per start (sampled): Poff1 1,462,877, Poff2 1,285,939
+(d) the stored gate (results/r23/port-0211/gap) re-judged under the amendment: PASS
+  speed screen [11-07 amendment]: prompt numbers exclude the chat-cache save (aggregate: client TTFT minus the save; per workload: the engine's prompt ms minus the save)
+  speed screen decode: P +1.34 % vs B (B 155.4, P 157.5; noise 2.8 %) -> PASS
+  speed screen prompt: P +0.70 % vs B (B 2,137.2, P 2,152.2; noise 1.3 %) -> PASS
+  per-workload no-loss (P vs B) [11-07 amendment: prompt = engine prompt ms minus the chat-cache save]: none of the 9 slower beyond its noise; (info) client clock minus the save, slower beyond its noise: R4-agent33k -0.29 % (noise 0.07 %); (info) outside-engine time worse in every pass - for review (INFO): R4-agent33k P +16.7 ms vs B (spread 1.5 ms)
+  chat-cache save [11-07 amendment]: P -0.2 % vs B (save index = each save / the stored median of its level, geometric mean per pass then over passes; 3 / 3 passes; noise 2.0 %) -> PASS
+  (info) save 133 MiB: stored band 2-5; B 3/3/4 ms (mean 3.3), P 3/3/3 ms (mean 3.0)
+  (info) save 151 MiB: stored band 5-8; B 6 ms (mean 6.0), P -
+  (info) save 152 MiB: stored band 5-8; B 6/6 ms (mean 6.0), P 6/6/5 ms (mean 5.7)
+  (info) save 186 MiB: stored band 9-16; B 10/10/10 ms (mean 10.0), P 10/10/10 ms (mean 10.0)
+  (info) save 578 MiB: stored band 45-81; B 48/48/49 ms (mean 48.3), P 48/49/50 ms (mean 49.0)
+  (info) save 614 MiB: stored band 50-90; B 54/54/54 ms (mean 54.0), P 55/55/54 ms (mean 54.7)
+  (info) save 1238 MiB: stored band 102-113 / 123-137; B 105/106/104 ms (fast 3, slow 0), P 125/126/126 ms (fast 0, slow 3); the level mix is not judged
+VERDICT: BASELINE PASS under the 11-07 amended rule (switch requirements in the port plan still apply)
+A PASS is not a switch: Karl's switch conditions (PORT.md "Required before v0.2.11 could replace P028x") still apply; P028x stays served.

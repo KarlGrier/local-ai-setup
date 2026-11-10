@@ -1,0 +1,118 @@
+===== v0.1.11 2026-09-27T16:05:33Z ['strata-windows-x64.zip']
+**Chat settings for all your apps.**
+
+- **"Use for other apps too" (new).** In the browser app, Chat → gear icon (Sampling) has a new switch at the bottom. Turn it on and press **Apply**, and coding agents like omp and other API clients get your Chat settings - thinking level, temperature, top-p, top-k, max tokens, seed and the experimental speed projection - for anything they don't set themselves, from their next request (no restart needed). What an app sends itself still wins. Turn the switch off to let apps use their own settings again. The settings are kept on the server between starts, and only Strata's own page can change them (and only with the API key, when you set one).
+- **Fixed:** in the Sampling drawer, the experimental speed projection switch was squeezed by its longer label and cut off at the edge.
+
+**Updating:** get the latest files (`git pull` or download the repo again) and start Strata as usual. The engine is unchanged since 0.1.10, so nothing is downloaded again.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+===== v0.1.10 2026-09-27T15:42:16Z ['Pagoda.mp4', 'strata-windows-x64.zip']
+**No more stuck servers after an engine crash, a clear warning when RAM is tight, and a new front page.**
+
+- **Fixed: answers stopping early and every later request failing (#27, thanks @ast321).** When the engine process died mid-answer - on Linux this is the system's out-of-memory killer, when the model's experts leave too little RAM for everything else - the server recorded the reply as "Max tokens", cut the stream, and then failed on every request after it. Now:
+  - the reply ends with a clear error ("the engine stopped unexpectedly"), and the Monitor shows it as an error;
+  - the next request starts the engine again by itself (a minute or two), instead of failing forever;
+  - the server window explains the likely cause (RAM) and how to check it on Linux (`sudo dmesg | grep -i -E 'killed process|out of memory'`);
+  - at start, the server warns when the model's experts leave less than ~6 GB of RAM for the system and your other programs.
+- **A new front page:** a video of Strata's model at work, the speed and "which model?" first (with the size of shard 1, the part that has to fit in your RAM), and a simpler "Something went wrong?" section, including what to do if the PC freezes at the first start.
+
+**Updating:** get the latest files (`git pull` or download the repo again), then run `START-HERE.bat` with the model window closed. It updates the engine to 0.1.10 by itself. On Linux, `./setup.sh` builds the engine from source as before.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata-windows-x64.zip` - `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`. `Pagoda.mp4` is the front page's demo video (49 s).
+===== v0.1.9 2026-09-27T14:59:18Z ['strata-windows-x64.zip']
+**No more stalls on a full GPU, access from other devices on your network, and an experimental option.**
+
+- **Fixed: requests could stall forever at large contexts.** The engine sized its expert cache before loading the output head (~0.5 GB), so the head used up the VRAM it meant to keep free. IQ3_S at 128K ended with 30 MiB free, Windows started paging GPU memory, and a request could hang at "reading the prompt" with the GPU at "100%" but low power. The head now loads first. The same 700 MiB reserve really stays free (about 500 MiB with everything loaded), and decode was not slower in our tests (Q2_0 at 32K: 78-79 tok/s vs 71.7 before). If free VRAM still ends below 256 MiB, the start-up line now says which `--vram-reserve-mib` to add.
+- **Use it from your phone or another PC (#26, thanks @XeonG).** `START-HERE.bat --setup --host 0.0.0.0 --api-key <secret>` (or `"host": "0.0.0.0"` and `"api_key"` in `strata-<model>.json`). The server window prints this PC's network address, warns if there is no API key, and on Windows shows how to allow it through the firewall.
+- **`--fit-max-tokens` (#24, thanks @pjgmobile).** Optional: a request whose `max_tokens` would run past the context gets a shorter answer instead of a 400 error (for agents that always ask for their full output cap). Off by default; turn it on with `"fit_max_tokens": true` in `strata-<model>.json`. A prompt that already fills the context is still refused.
+- **Experimental speed projection (EXPERIMENTAL, off by default).** A small control vector that setup can turn on for the original Qwen3.8-Flash-Next (it asks; the answer defaults to no). **It changes how the model answers:** the vector's own package describes it as a refusal-direction projection, so the model declines far fewer requests. It is not an engine speed-up: on the same text it costs 0.2-0.4% per token, and a chat's speed with it depends on what the model writes. When it is on, the web app's Sampling drawer (or `"experimental_speed_projection": false` in a request) switches it off per chat. Read `data/experimental-speed-projection/README.md` and the section in `docs/DETAILS.md` before turning it on.
+
+**Updating:** get the latest files (`git pull` or download the repo again), then run `START-HERE.bat` with the model window closed. It updates the engine to 0.1.9 by itself. To use the new options, run `START-HERE.bat --setup`. On Linux, `./setup.sh` builds the engine from source as before.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+===== v0.1.8 2026-09-27T10:26:14Z ['strata-windows-x64.zip']
+**A new browser app with a live Monitor, an optional 4-bit KV cache, and a clear answer on the expert cache.**
+
+- **The Strata app in the browser (#22, thanks @code-martin for the idea).** `http://127.0.0.1:8080` is now a proper app with three tabs:
+  - **Chat:** streaming answers, the model's thinking (folded away once it answers), Markdown with code copy buttons, pictures when images are on, sampling and thinking-level settings, export and new chat. Chats stay in your browser.
+  - **Monitor:** what the model is doing (reading the prompt, with progress, or writing at how many tokens/s); GPU load, VRAM, temperature, power and PCIe traffic; CPU, RAM and disk; the context in use; the last requests. Each has a minute of history.
+  - **About:** the model and engine settings, your PC, and the addresses for other apps.
+
+  Everything is served by the model's own server (no internet needed). The data behind the Monitor is also at `GET /metrics`. `http://127.0.0.1:8080/?q=your question` opens a new chat already asking.
+- **4-bit KV cache, optional (#21, thanks @code-martin).** `--kv q4_0` stores the long-context attention cache in 4 bits after a Hadamard rotation, which spreads out the outliers. It uses about half the RAM of the default 8-bit cache (0.83 vs 1.52 GiB at 128K) and is slightly faster at very long context, at a small quality cost (document perplexity +8% at 1K, +12% at 8K; 5/5 needles found). It works with KV streaming and the MTP drafter. The default stays 8-bit. `START-HERE.bat --setup` asks above 8K context.
+- **The expert-cache warning is gone (#23).** The start-up warning about the expert cache was left over from a bug fixed long ago. Measured on 2,557 tokens: the cache on and off predict the actual next token equally well (perplexity difference -0.005 +- 0.005 nats per token). The GPU and CPU round slightly differently, so their text can diverge after a while, but neither is less accurate. The engine now prints one accurate line instead.
+
+**Updating:** get the latest files (`git pull` or download the repo again), then run `START-HERE.bat` with the model window closed. It updates the engine by itself before starting. This version needs engine 0.1.8, and setup installs one new Python package (`psutil`, for the Monitor). On Linux, `./setup.sh` builds the engine from source as before.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+===== v0.1.7 2026-09-27T08:32:27Z ['strata-windows-x64.zip']
+**Faster code edits (prompt lookup), temperature and sampling that actually work, and three fixes.**
+
+- **Prompt lookup, on by default.** When the reply repeats text from the conversation (an agent rewriting a file, quoting code or a document), the engine now drafts up to 5 tokens from the earlier copy. It only does this where it has measured that it pays: code edits are 6-11% faster (e.g. 101 -> 112 tokens/s), and other text is unchanged. Drafts are checked by the model like the MTP's, so the output is the same. Turn it off with `--suffix-draft 0` in your config's `args`.
+- **Per-request sampling (#19, thanks @j-luwierski).** `temperature`, `top_p`, `top_k`, `min_p`, `seed`, `repetition_penalty`, `frequency_penalty` and `presence_penalty` from the request are honored. Before this, every request decoded greedily whatever the client sent. You can set defaults in an optional `sampling` block in your `strata-*.json`. Greedy requests (no temperature, or 0) are exactly as before, at the same speed. The same seed gives the same text. Image requests still decode greedily.
+- **Replies no longer stop at 1,024 tokens (#18, thanks @coolio986; fixes #17).** A missing, `0` or `-1` `max_tokens` now means "the rest of the context".
+- **Setup on a short path (#20).** Installing to a folder like `G:\Strata` crashed step 6 with `IndexError: 1`; fixed.
+- **Setup on too little RAM (#20).** Setup now says at step 1 when the PC has less RAM than the smallest model needs. All of the model's experts live in RAM (34-50 GB); the GPU holds a copy of the most-used ones, so a bigger GPU does not lower the RAM needed.
+
+**Updating:** get the latest files (`git pull` or download the repo again), then run `START-HERE.bat` with the model window closed. It updates the engine by itself before starting. This version's server needs engine 0.1.7, and setup takes care of that. On Linux, `./setup.sh` builds the engine from source as before.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+===== v0.1.6 2026-09-27T06:44:59Z ['strata-windows-x64.zip']
+**Fix for v0.1.5: the engine could stop at start with "mtp: state init failed" when KV streaming was on.**
+
+With KV streaming (64K+ context), the speculative draft layer also keeps a copy of its KV in RAM. That copy is set up after the experts have pinned as much RAM as Windows allows, and on some setups (for example Swift 1.5 at 262K) no pinned RAM was left, so the engine exited. Now the draft layer then simply keeps its KV in VRAM, as before v0.1.5. Everything else is the same as v0.1.5 (KV streaming: Q2_0 at 262K 50.9 -> 62.6 tokens/s; see the v0.1.5 notes).
+
+**Updating:** get the latest files (`git pull` or download the repo again), then run `START-HERE.bat` with the model window closed. It updates the engine by itself before starting. On Linux, `./setup.sh` builds the engine from source as before.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+===== v0.1.5 2026-09-27T06:39:59Z ['strata-windows-x64.zip']
+**KV streaming: faster long contexts.**
+
+At 64K context and more, the KV cache (the model's memory of the conversation) now lives in RAM. Only the part the attention is actually reading stays on the GPU. The VRAM this frees holds more experts, so decoding is faster:
+
+- **Q2_0 at 262K:** 50.9 -> 62.6 tokens/s. Experts in VRAM go from 1,589 to 3,872.
+- **Q2_0 at 128K:** about +6%.
+- **IQ3_S at 128K:** about +1% (its experts are bigger, so the freed VRAM holds fewer of them).
+
+Measured on an RTX 5070 12 GB, Ryzen 5 7600, 64 GB.
+
+- **It doesn't change what the model computes.** The attention reads exactly the same values; only where the KV lives changes. With the same experts on the GPU, the output is identical token for token. All needle tests pass (1K to 262K).
+- **It costs RAM:** ~13.7 KB per context token, so 1.7 GB at 128K and 3.4 GB at 262K. Setup only turns it on when that fits next to the model.
+- **Prompt reading:** about 1% slower at 262K.
+
+**Turning it on:** new installs get it automatically at 64K+ context. For an existing install, run `START-HERE.bat --setup` once and pick the same model and context; nothing is downloaded again. You can also add `--kv-resident 32768` to the `args` in your `strata-*.json`.
+
+Also in this engine: an opt-in suffix drafter (`--suffix-draft`). It proposes drafts when the reply repeats text from the context. It's off by default.
+
+**Updating:** get the latest files (`git pull` or download the repo again), then run `START-HERE.bat` with the model window closed. It updates the engine by itself before starting. On Linux, `./setup.sh` builds the engine from source as before.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.

@@ -1,0 +1,36 @@
+work/r10/tagcheck.sh "Phase A part 2"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v36a2m engine-v36a2m
+BDIR=build work/r10/build.sh strata-v36a3h engine-v36a3h
+.venv/bin/python work/r10/buildrec.py A2m configs/A2m1-tf-helper.json "A.2 measurement twin (v36-a2m = v36-a2 + the TF MEASUREMENT commits)"
+.venv/bin/python work/r10/buildrec.py A3h configs/A3h-1.json "A.3 counting build (v36-a3h = v36-a3 + the R10A MEASUREMENT line)"
+work/r10/tf.sh A2m1tf-helper configs/A2m1-tf-helper.json engine-v36a2m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r10/tf_compare9.py A2m1tf-helper=R11mtf3500-helper | tee results/r10/tf-A2-mode1.txt
+work/r10/with_server.sh NA21 configs/A2-1n.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label SA21 --temperature 1.0"
+work/r10/repeat3.sh rep-a21 configs/A2-1.json
+work/r10/with_server.sh A1c1 configs/A2h-1.json -- "work/r10/a1count.sh A1c1 20"
+.venv/bin/python work/r10/a1_counts.py A1c1 logs/engine-A2h-1.log > results/r10/a1-counts-mode1.md; grep -E '^\*\*' results/r10/a1-counts-mode1.md
+work/r10/with_server.sh A3c configs/A3h-1.json -- "work/r10/a1count.sh A3c 20"
+.venv/bin/python work/r10/a1_counts.py A3c logs/engine-A3h-1.log > results/r10/a1-counts-a3.md; grep -E '^\*\*' results/r10/a1-counts-a3.md; grep 'CUDA1 tier' logs/engine-A3h-1.log | tail -3
+work/r10/ldrscreen.sh A31o-a configs/A31-only.json
+work/r10/ldrscreen.sh A3on-a configs/A3-1.json
+work/r10/ldrscreen.sh A3on-b configs/A3-1.json
+work/r10/ldrscreen.sh A31o-b configs/A31-only.json
+.venv/bin/python work/r10/ldr_table.py fix=A31o-a,A31o-b fix+A3=A3on-a,A3on-b | tee results/r10/ab-A3-ldr.md
+work/r10/decscreen.sh A31od-a configs/A31-only.json
+work/r10/decscreen.sh A3ond-a configs/A3-1.json
+work/r10/decscreen.sh A3ond-b configs/A3-1.json
+work/r10/decscreen.sh A31od-b configs/A31-only.json
+.venv/bin/python work/r10/ab_table.py fix=A31od-a,A31od-b fix+A3=A3ond-a,A3ond-b | tee results/r10/ab-A3-decode.md
+for i in 1 2 3; do work/r10/with_server.sh repA3-$i configs/A3-1.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r10/repeat3s.py A3-1"; done; cat results/r10/repeat3s-A3-1.txt
+work/r10/with_server.sh Ag0-a configs/A2-0.json -- "work/r10/a1count.sh Ag0-a 30"
+work/r10/with_server.sh Ag1-a configs/A2-1.json -- "work/r10/a1count.sh Ag1-a 30"
+work/r10/with_server.sh Ag1-b configs/A2-1.json -- "work/r10/a1count.sh Ag1-b 30"
+work/r10/with_server.sh Ag0-b configs/A2-0.json -- "work/r10/a1count.sh Ag0-b 30"
+.venv/bin/python work/r10/ldr_table.py A2-0=Ag0-a-aged,Ag0-b-aged A2-1=Ag1-a-aged,Ag1-b-aged | tee results/r10/ab-A2-aged.md
+.venv/bin/python work/r10/ldr_table.py A2-0=Ag0-a-pool,Ag0-b-pool A2-1=Ag1-a-pool,Ag1-b-pool | tee results/r10/ab-A2-agingtraffic.md
+work/r10/tagcheck.sh "Phase A part 2 done"
+work/r10/basecheck.sh
+work/r10/phase_end.sh pA2 keep
+work/r10/hold.sh phaseA3

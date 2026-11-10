@@ -1,0 +1,2 @@
+work/r10/with_server.sh N36pf configs/V36-pfn.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label S36pf --temperature 1.0"
+work/r10/repeat3.sh rep-36pf configs/V36-pf.json

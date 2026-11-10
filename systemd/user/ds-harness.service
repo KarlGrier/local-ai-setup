@@ -1,0 +1,16 @@
+# DS Harness as a background service (Karl 11-06): not tied to a model, not inside a terminal.
+# Installed by copying to ~/.config/systemd/user/. No [Install] section on purpose: it never starts by itself, not even
+# after a reboot. The "DS Harness" icon starts it (configs/usability/bin/ds-harness open), "Stop DS Harness" stops it.
+[Unit]
+Description=DS Harness web UI on 127.0.0.1:3081 (~/.dsh-deepseek; both local models; started only by its icon)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+ExecStart=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/ds-harness serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+SuccessExitStatus=143

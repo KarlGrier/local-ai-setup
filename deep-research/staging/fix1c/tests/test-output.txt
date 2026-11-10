@@ -1,0 +1,102 @@
+  ok    33 lost right marks read from fix1b-compare.txt (33)
+== the map settle
+  ok    b-f1b-jan1024's recorded answers name src/core
+  ok    map used, nothing disputed (Strata v0.2.4 (the project's engine map: v0.2.4 entry))
+  ok    engine folders = the DeepSeek engine's (['src/dsv41', 'include/strata/dsv41'])
+  ok    src/core and src/program are the Qwen engine's at v0.2.4
+  ok    no Qwen folder left as shared (['strata_cli', 'strata_cli/launch', 'serve', 'strata_control', 'apps/host/server'])
+  ok    a project the map does not cover: unchanged
+  ok    a task naming no engine: unchanged
+  ok    a version below every map entry: unchanged
+== the 25 marks lost through the folder answer (b-f1b-jan1024)
+  ok    MULTI_GPU: sent, no disputed folder (was unsure)
+  ok    MULTI_GPU: Qwen-folder line
+  ok    STRATA_SPLIT_UNIFORM: sent, no disputed folder (was unsure)
+  ok    STRATA_SPLIT_UNIFORM: Qwen-folder line
+  ok    --pcie-frac: sent, no disputed folder (was unsure)
+  ok    --pcie-frac: Qwen-folder line
+  ok    --pcie: sent, no disputed folder (was unsure)
+  ok    --pcie: Qwen-folder line
+  ok    --host-core: sent, no disputed folder (was unsure)
+  ok    --host-core: Qwen-folder line
+  ok    --ple-io: sent, no disputed folder (was unsure)
+  ok    --ple-io: Qwen-folder line
+  ok    --ple-row-cache: sent, no disputed folder (was unsure)
+  ok    --ple-row-cache: Qwen-folder line
+  ok    STRATA_HOST_CORE: sent, no disputed folder (was unsure)
+  ok    STRATA_HOST_CORE: Qwen-folder line
+  ok    STRATA_IQ_MT_MIN: sent, no disputed folder (was unsure)
+  ok    STRATA_IQ_MT_MIN: Qwen-folder line
+  ok    --ple-inflight: sent, no disputed folder (was unsure)
+  ok    --ple-inflight: Qwen-folder line
+  ok    STRATA_IO_PREFETCH: sent, no disputed folder (was this-version)
+  ok    STRATA_IO_PREFETCH: Qwen-folder line
+  ok    STRATA_READ_AHEAD: sent, no disputed folder (was this-version)
+  ok    STRATA_READ_AHEAD: Qwen-folder line
+  ok    STRATA_DMA_BATCH: sent, no disputed folder (was this-version)
+  ok    STRATA_DMA_BATCH: Qwen-folder line
+  ok    STRATA_IO_PREFETCH_DEPTH: sent, no disputed folder (was this-version)
+  ok    STRATA_IO_PREFETCH_DEPTH: Qwen-folder line
+  ok    STRATA_IO_PF_THREADS: sent, no disputed folder (was unsure)
+  ok    STRATA_IO_PF_THREADS: Qwen-folder line
+  ok    STRATA_FILL_AHEAD: sent, no disputed folder (was unsure)
+  ok    STRATA_FILL_AHEAD: Qwen-folder line
+  ok    --pcie-mode: sent, no disputed folder (was unsure)
+  ok    --pcie-mode: Qwen-folder line
+  ok    STRATA_IO_PF_GATE: sent, no disputed folder (was this-version)
+  ok    STRATA_IO_PF_GATE: Qwen-folder line
+  ok    STRATA_LOOKAHEAD_K: sent, no disputed folder (was unsure)
+  ok    STRATA_LOOKAHEAD_K: Qwen-folder line
+  ok    --adapt-every: sent, no disputed folder (was unsure)
+  ok    --adapt-every: Qwen-folder line
+  ok    --adapt-swaps: sent, no disputed folder (was unsure)
+  ok    --adapt-swaps: Qwen-folder line
+  ok    --adapt-decay: sent, no disputed folder (was unsure)
+  ok    --adapt-decay: Qwen-folder line
+  ok    STRATA_PREFILL_HELP: sent, no disputed folder (was this-version)
+  ok    STRATA_PREFILL_HELP: Qwen-folder line
+  ok    STRATA_COLD_OVERLAP: sent, no disputed folder (was this-version)
+  ok    STRATA_COLD_OVERLAP: Qwen-folder line
+  ok    STRATA_PLE_AUTO_MMAP: sent, no disputed folder (was unsure)
+  ok    STRATA_PLE_AUTO_MMAP: Qwen-folder line
+  ok    25 folder-answer losses checked (25)
+== the 7 marks lost through 'attributed' (b-f1b-fixes)
+  ok    STRATA_ROUTE_TAIL_SKIP: not attributed in every sentence
+        STRATA_ROUTE_TAIL_SKIP (other-engine): back to described (same project)
+  ok    ROUTE_TAIL_SKIP: not attributed in every sentence
+        ROUTE_TAIL_SKIP (other-engine): back to described (same project)
+  ok    STRATA_PREFILL_CPU_SHARE: not attributed in every sentence
+        STRATA_PREFILL_CPU_SHARE (other-engine): back to described (same project)
+  ok    --moe-stream-io-threads: not attributed in every sentence
+        --moe-stream-io-threads (other-project): stays lost (another program: the model keeps its word)
+  ok    --cache-type-v: not attributed in every sentence
+        --cache-type-v (other-project): stays lost (another program: the model keeps its word)
+  ok    --lazy-mode: not attributed in every sentence
+        --lazy-mode (other-project): stays lost (another program: the model keeps its word)
+  ok    --speed: not attributed in every sentence
+        --speed (other-version): back to described (same project)
+  ok    4 of the 7 come back (4)
+  ok    a sentence naming llama.cpp stays attributed
+  ok    another release stays attributed
+  ok    the user's own version does not attribute
+== names every replay's model called attributed that Fix 1c turns back (new marks to judge)
+  flip  b-f1b-fixes: STRATA_ROUTE_TAIL_SKIP (other-engine)
+  flip  b-f1b-fixes: ROUTE_TAIL_SKIP (other-engine)
+  flip  b-f1b-fixes: --full-quality (other-version)
+  flip  b-f1b-fixes: --experts (other-engine)
+  flip  b-f1b-fixes: STRATA_PREFILL_CPU_SHARE (other-engine)
+  flip  b-f1b-fixes: --speed (other-version)
+  flip  b-f1b-p4s6o01-code: --prefetch (other-engine)
+  7 flips: 4 of the 7 lost right marks, 3 new to judge
+  ok    at most 5 new marks to judge (3)
+== a name the answer leaves out is asked once more
+  ok    --pcie-frac asked twice, one extra call (3 calls)
+== the 11 false marks Fix 1b cleared keep Fix 1b's launcher / server lines
+  ok    b-f1b-jan1024 gpu: launcher / server use kept
+  ok    b-f1b-jan1024 gpu_order: launcher / server use kept
+  ok    b-f1b-full --model: launcher / server use kept
+  ok    b-f1b-full --plan: launcher / server use kept
+  ok    b-f1b-full --tune: launcher / server use kept
+  ok    b-f1b-full --set: launcher / server use kept
+
+0 failure(s)

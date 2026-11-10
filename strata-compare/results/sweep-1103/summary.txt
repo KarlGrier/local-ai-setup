@@ -1,0 +1,398 @@
+=== 2026-11-03 06:40:00 UPGRADE-PRICING SWEEP (work/sweep/sweep-gap.sh; Karl 11-02)
+2026-11-03 06:40:00 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 3157940 (engine 3157954)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-03 06:40:33 port_gap4: gap open: test lock held (pid 3168084), 8080 stopped
+=== 2026-11-03 06:40:33 1 DeepSeek V4.1 Flash, the daily config
+swap: 0 swap-out episode(s) (a one-off push-out is logged only), 0.0 MB out, 0.0 MB in, engine VmSwap max 0 kB
+=== 2026-11-03 06:49:11 kcheck clean
+nvme0: no temperature samples between 06:40 and 06:49 (the logger started 22:18)
+=== 2026-11-03 06:49:11 done
+swap: 0 swap-out episode(s) (a one-off push-out is logged only), 0.0 MB out, 0.0 MB in, engine VmSwap max 0 kB
+=== 2026-11-03 06:58:13 kcheck clean
+nvme0: no temperature samples between 06:49 and 06:58 (the logger started 22:18)
+=== 2026-11-03 06:58:13 done
+swap: 0 swap-out episode(s) (a one-off push-out is logged only), 0.0 MB out, 0.0 MB in, engine VmSwap max 0 kB
+=== 2026-11-03 07:07:38 kcheck clean
+nvme0: no temperature samples between 06:58 and 07:08 (the logger started 22:18)
+=== 2026-11-03 07:07:38 done
+swap: 0 swap-out episode(s) (a one-off push-out is logged only), 0.0 MB out, 0.0 MB in, engine VmSwap max 0 kB
+=== 2026-11-03 07:16:14 kcheck clean
+nvme0: no temperature samples between 07:07 and 07:16 (the logger started 22:18)
+=== 2026-11-03 07:16:14 done
+swap: 0 swap-out episode(s) (a one-off push-out is logged only), 0.0 MB out, 0.0 MB in, engine VmSwap max 0 kB
+=== 2026-11-03 07:25:08 kcheck clean
+nvme0: no temperature samples between 07:16 and 07:25 (the logger started 22:18)
+=== 2026-11-03 07:25:08 done
+swap: 0 swap-out episode(s) (a one-off push-out is logged only), 0.0 MB out, 0.0 MB in, engine VmSwap max 0 kB
+=== 2026-11-03 07:34:02 kcheck clean
+nvme0: no temperature samples between 07:25 and 07:34 (the logger started 22:18)
+=== 2026-11-03 07:34:02 done
+=== 2026-11-03 07:34:02 2 the splice on the P028x engine
+=== 2026-11-03 07:35:02 cool-down: 60 s, drive 38 -> 37 C
+=== 2026-11-03 07:35:02 splice on-100 (on, --expert-cache auto)
+server ready (guard pid 3212961, server pid 3212978) load_time_s 27.583932258 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-on-100_20261103T073503.log
+engine pid 3212983: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+ds41 warmup r0: prompt 124 ttft 3.209 s, 384 tokens, 53.75 tok/s, length
+  disk 11.891 GB read, 0.023 GB written
+ds41 P4K r0: prompt 4072 ttft 3.525 s, 8 tokens, 51.38 tok/s, length
+  disk 25.329 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19873 ttft 9.781 s, 8 tokens, 31.72 tok/s, length
+  disk 62.754 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 112 ttft None s, 0 tokens, None tok/s, length
+  disk 6.936 GB read, 0.0 GB written
+Traceback (most recent call last):
+ConnectionResetError: [Errno 104] Connection reset by peer
+2026-11-03T07:36:05 srv-sweep-on-100 exit=0 61s min_MemAvailable=11.7GiB@58s min_5080_free=316MiB@40s max_tree_RSS=71.9GiB max_swap_used=0.00GiB min_4060Ti_free=377MiB GUARD-STOP at 57.8s (MemAvailable 11.7 GiB, 5080 free 316 MiB, swap +0.0 GiB)
+[strata] 2026-11-03 07:35:04 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache auto: 9.62 GiB free, 713 MiB reserved (+89 MiB for the draft head) -> 2142 slots
+strata generate: expert cache 2371 slots, 8.83 GiB of VRAM; policy is
+strata generate: CUDA1: 1893 additional experts, 7.06 GiB; results return through pinned host rows
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 2371 resident experts, decided on the device
+FileExpertSource: RAM budget 64.00 GiB: 17165 of the 75.72 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: allocating 64.00 GiB page-locked cache complement
+=== 2026-11-03 07:37:06 cool-down: 60 s, drive 37 -> 37 C
+=== 2026-11-03 07:37:06 splice on-75 (on, --expert-cache 1606)
+server ready (guard pid 3214970, server pid 3214987) load_time_s 24.513943752 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-on-75_20261103T073707.log
+engine pid 3214992: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+ds41 warmup r0: prompt 125 ttft 1.955 s, 384 tokens, 51.36 tok/s, length
+  disk 12.783 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4070 ttft 3.77 s, 8 tokens, 40.9 tok/s, length
+  disk 27.727 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19875 ttft 9.374 s, 8 tokens, 35.98 tok/s, length
+  disk 64.254 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 110 ttft None s, 0 tokens, None tok/s, length
+  disk 7.149 GB read, 0.0 GB written
+Traceback (most recent call last):
+ConnectionResetError: [Errno 104] Connection reset by peer
+2026-11-03T07:38:06 srv-sweep-on-75 exit=0 59s min_MemAvailable=11.8GiB@54s min_5080_free=2580MiB@36s max_tree_RSS=71.8GiB max_swap_used=0.00GiB min_4060Ti_free=379MiB GUARD-STOP at 53.7s (MemAvailable 11.8 GiB, 5080 free 2580 MiB, swap +0.0 GiB)
+[strata] 2026-11-03 07:37:08 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache 1778 slots, 6.62 GiB of VRAM; policy is
+strata generate: CUDA1: 1893 additional experts, 7.06 GiB; results return through pinned host rows
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 1778 resident experts, decided on the device
+FileExpertSource: RAM budget 64.00 GiB: 17165 of the 77.93 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: allocating 64.00 GiB page-locked cache complement
+FileExpertSource: 63.90 GiB really free for a 64.00 GiB page-locked complement; the model files' cached pages were released: 69.10 GiB free
+=== 2026-11-03 07:39:08 cool-down: 60 s, drive 37 -> 38 C
+=== 2026-11-03 07:39:08 splice on-50 (on, --expert-cache 1071)
+server ready (guard pid 3216865, server pid 3216880) load_time_s 23.495014336 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-on-50_20261103T073909.log
+engine pid 3216885: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+ds41 warmup r0: prompt 124 ttft 1.992 s, 384 tokens, 45.45 tok/s, length
+  disk 15.158 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4070 ttft 4.021 s, 8 tokens, 49.98 tok/s, length
+  disk 30.13 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19873 ttft 11.912 s, 8 tokens, 33.9 tok/s, length
+  disk 91.991 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 107 ttft None s, 0 tokens, None tok/s, length
+  disk 7.283 GB read, 0.0 GB written
+Traceback (most recent call last):
+ConnectionResetError: [Errno 104] Connection reset by peer
+2026-11-03T07:40:11 srv-sweep-on-50 exit=0 61s min_MemAvailable=11.8GiB@56s min_5080_free=4834MiB@36s max_tree_RSS=71.8GiB max_swap_used=0.00GiB min_4060Ti_free=379MiB GUARD-STOP at 56.5s (MemAvailable 11.8 GiB, 5080 free 4834 MiB, swap +0.0 GiB)
+[strata] 2026-11-03 07:39:10 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache 1186 slots, 4.42 GiB of VRAM; policy is
+strata generate: CUDA1: 1893 additional experts, 7.06 GiB; results return through pinned host rows
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 1186 resident experts, decided on the device
+FileExpertSource: RAM budget 64.00 GiB: 17165 of the 80.14 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: allocating 64.00 GiB page-locked cache complement
+FileExpertSource: 65.93 GiB really free for a 64.00 GiB page-locked complement; the model files' cached pages were released: 71.05 GiB free
+=== 2026-11-03 07:41:12 cool-down: 60 s, drive 37 -> 37 C
+=== 2026-11-03 07:41:12 splice off-100 (off, --expert-cache auto)
+server ready (guard pid 3218721, server pid 3218738) load_time_s 21.461206793 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-off-100_20261103T074113.log
+engine pid 3218763: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+ds41 warmup r0: prompt 124 ttft 1.534 s, 384 tokens, 47.37 tok/s, length
+  disk 10.529 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4073 ttft 3.669 s, 8 tokens, 30.33 tok/s, length
+  disk 25.575 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19873 ttft 9.906 s, 8 tokens, 37.12 tok/s, length
+  disk 62.93 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 112 ttft 1.135 s, 1024 tokens, 39.5 tok/s, length
+  disk 72.906 GB read, 0.0 GB written
+ds41 W1-think r0: prompt 111 ttft 1.093 s, 3072 tokens, 36.17 tok/s, length
+  disk 242.814 GB read, 0.0 GB written
+ds41 W2-code r0: prompt 124 ttft 1.251 s, 3072 tokens, 33.59 tok/s, length
+  disk 259.553 GB read, 0.0 GB written
+ds41 W3-research r0: prompt 26730 ttft None s, 0 tokens, None tok/s, length
+  disk 62.65 GB read, 0.0 GB written
+2026-11-03T07:45:50 srv-sweep-off-100 exit=0 277s min_MemAvailable=12.0GiB@271s min_5080_free=312MiB@53s max_tree_RSS=72.0GiB max_swap_used=0.00GiB min_4060Ti_free=7875MiB GUARD-STOP at 271.9s (MemAvailable 12.0 GiB, 5080 free 312 MiB, swap +0.0 GiB)
+[strata] 2026-11-03 07:41:14 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache auto: 9.62 GiB free, 713 MiB reserved (+89 MiB for the draft head) -> 2142 slots
+strata generate: expert cache 2371 slots, 8.83 GiB of VRAM; policy is
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 2371 resident experts, decided on the device
+FileExpertSource: RAM budget 64.00 GiB: 17164 of the 82.78 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: the prompt path's lend region: 0 of its 1779 slots keep their experts in RAM too (0.00 GiB of the budget's remaining 0.00 GiB)
+FileExpertSource: allocating 64.00 GiB page-locked cache complement
+=== 2026-11-03 07:46:52 cool-down: 60 s, drive 38 -> 37 C
+=== 2026-11-03 07:46:52 splice off-75 (off, --expert-cache 1606)
+server ready (guard pid 3221816, server pid 3221831) load_time_s 21.458114311 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-off-75_20261103T074653.log
+engine pid 3221836: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+ds41 warmup r0: prompt 125 ttft 1.545 s, 384 tokens, 40.29 tok/s, length
+  disk 14.872 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4070 ttft 3.791 s, 8 tokens, 29.68 tok/s, length
+  disk 27.907 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19872 ttft 9.572 s, 8 tokens, 34.61 tok/s, length
+  disk 64.392 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 112 ttft 1.196 s, 1024 tokens, 31.67 tok/s, length
+  disk 101.886 GB read, 0.0 GB written
+ds41 W1-think r0: prompt 112 ttft 1.145 s, 3072 tokens, 31.82 tok/s, length
+  disk 310.519 GB read, 0.0 GB written
+ds41 W2-code r0: prompt 124 ttft 1.229 s, 3072 tokens, 29.39 tok/s, length
+  disk 275.872 GB read, 0.0 GB written
+ds41 W3-research r0: prompt 26728 ttft 10.458 s, 2048 tokens, 28.74 tok/s, length
+  disk 284.153 GB read, 0.0 GB written
+[strata] 2026-11-03 07:46:54 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache 1778 slots, 6.62 GiB of VRAM; policy is
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 1778 resident experts, decided on the device
+FileExpertSource: RAM budget 64.00 GiB: 17163 of the 84.99 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: the prompt path's lend region: 0 of its 1504 slots keep their experts in RAM too (0.00 GiB of the budget's remaining 0.00 GiB)
+FileExpertSource: allocating 64.00 GiB page-locked cache complement
+FileExpertSource: copied cache complement through layer 8/48 (15.93 GiB, 2 s)
+=== 2026-11-03 07:54:48 cool-down: 60 s, drive 37 -> 37 C
+=== 2026-11-03 07:54:48 splice off-50 (off, --expert-cache 1071)
+server ready (guard pid 3225882, server pid 3225899) load_time_s 20.447417412 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-off-50_20261103T075449.log
+engine pid 3225904: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+ds41 warmup r0: prompt 124 ttft 1.594 s, 384 tokens, 36.27 tok/s, length
+  disk 19.932 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4072 ttft 4.058 s, 8 tokens, 27.2 tok/s, length
+  disk 30.429 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19873 ttft 12.027 s, 8 tokens, 21.18 tok/s, length
+  disk 92.221 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 110 ttft 1.329 s, 1024 tokens, 23.7 tok/s, length
+  disk 152.668 GB read, 0.0 GB written
+ds41 W1-think r0: prompt 108 ttft 1.203 s, 3072 tokens, 24.49 tok/s, length
+  disk 414.576 GB read, 0.0 GB written
+ds41 W2-code r0: prompt 124 ttft 1.269 s, 3072 tokens, 28.92 tok/s, length
+  disk 272.909 GB read, 0.0 GB written
+ds41 W3-research r0: prompt 26728 ttft None s, 0 tokens, None tok/s, length
+  disk 109.359 GB read, 0.0 GB written
+2026-11-03T08:00:48 srv-sweep-off-50 exit=0 359s min_MemAvailable=11.7GiB@351s min_5080_free=4834MiB@35s max_tree_RSS=71.8GiB max_swap_used=0.00GiB min_4060Ti_free=7875MiB GUARD-STOP at 351.2s (MemAvailable 11.7 GiB, 5080 free 4834 MiB, swap +0.0 GiB)
+[strata] 2026-11-03 07:54:50 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache 1186 slots, 4.42 GiB of VRAM; policy is
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 1186 resident experts, decided on the device
+FileExpertSource: RAM budget 64.00 GiB: 17163 of the 87.20 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: the prompt path's lend region: 0 of its 1002 slots keep their experts in RAM too (0.00 GiB of the budget's remaining 0.00 GiB)
+FileExpertSource: allocating 64.00 GiB page-locked cache complement
+FileExpertSource: copied cache complement through layer 8/48 (15.88 GiB, 2 s)
+# Upgrade-pricing sweep (11-03): speed against the experts held in VRAM, 1 pass each
+
+## DeepSeek V4.1 Flash, the daily config (15,360 experts)
+
+| arm | experts in VRAM | RAM store | on the GPU (VRAM or RAM over PCIe) | CPU lane from RAM | SSD (upper bound) | SSD GB / token | decode | P4K | P20K | P20K SSD GB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| on-v10 | 1,308 | 6,363 | 89.8 % | 6.9 % | 3.3 % | 0.067 | 28.8 | 342 | 701 | 115.08 |
+| on-v075 | 971 | 6,363 | 88.1 % | 8.3 % | 3.6 % | 0.075 | 27.1 | 335 | 689 | 118.13 |
+| on-v05 | 635 | 6,363 | 86.1 % | 10.1 % | 3.8 % | 0.078 | 25.7 | 328 | 676 | 122.69 |
+| off-v10 | 711 | 6,363 | 86.6 % | 9.9 % | 3.5 % | 0.073 | 28.2 | 438 | 714 | 64.11 |
+| off-v075 | 521 | 6,363 | 85.3 % | 11.2 % | 3.5 % | 0.072 | 27.4 | 434 | 701 | 65.54 |
+| off-v05 | 335 | 6,363 | 83.4 % | 12.7 % | 3.8 % | 0.079 | 25.4 | 431 | 725 | 66.96 |
+
+## Round 15's splice on the P028x engine (24,576 experts, Q5 ~4.0 MB each)
+
+| arm | slots 5080 + 4060 Ti | 5080 cache | PCIe / 4060 Ti | RAM | SSD | SSD GB / token | decode | P4K | P20K | P20K SSD GB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| on-100 | 2371 + 1893 | - | - | - | - | - | - | 1,155 | 2,032 | 62.75 |
+| on-75 | 1778 + 1893 | - | - | - | - | - | - | 1,080 | 2,120 | 64.25 |
+| on-50 | 1186 + 1893 | - | - | - | - | - | - | 1,012 | 1,668 | 91.99 |
+| off-100 | 2371 + 0 | 60.4 % | 9.1 % | 26.8 % | 3.7 % | 0.092 | 34.9 | 1,110 | 2,006 | 62.93 |
+| off-75 | 1778 + 0 | 50.3 % | 11.5 % | 33.9 % | 4.3 % | 0.106 | 30.0 | 1,074 | 2,076 | 64.39 |
+| off-50 | 1186 + 0 | 44.6 % | 12.6 % | 37.5 % | 5.2 % | 0.130 | 26.7 | 1,003 | 1,652 | 92.22 |
+=== 2026-11-03 08:00:49 P028x back on 8080 (port_gap4.sh end)
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-03 08:01:06 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-03 08:01:06 sweep gap done (80 min with 8080 down)
+=== 2026-11-03 08:30:00 UPGRADE-PRICING SWEEP, THE SPLICE AT 58 GiB (work/sweep/sweep-splice58.sh)
+2026-11-03 08:30:00 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 3229812 (engine 3229826)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-03 08:30:33 port_gap4: gap open: test lock held (pid 3240576), 8080 stopped
+=== 2026-11-03 08:30:33 2 the splice on the P028x engine
+=== 2026-11-03 08:31:33 cool-down: 60 s, drive 35 -> 35 C
+=== 2026-11-03 08:31:33 splice on-100 (on, --expert-cache auto)
+server ready (guard pid 3241625, server pid 3241647) load_time_s 25.543293970 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-on-100_20261103T083135.log
+engine pid 3241802: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+ds41 warmup r0: prompt 126 ttft 2.021 s, 384 tokens, 47.66 tok/s, length
+  disk 16.861 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4071 ttft 4.017 s, 8 tokens, 42.47 tok/s, length
+  disk 31.944 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19874 ttft 10.742 s, 8 tokens, 40.18 tok/s, length
+  disk 75.773 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 111 ttft 1.409 s, 1024 tokens, 39.28 tok/s, length
+  disk 82.119 GB read, 0.0 GB written
+ds41 W1-think r0: prompt 111 ttft 1.378 s, 3072 tokens, 38.46 tok/s, length
+  disk 262.526 GB read, 0.0 GB written
+ds41 W2-code r0: prompt 126 ttft 1.702 s, 3072 tokens, 35.99 tok/s, length
+  disk 249.775 GB read, 0.0 GB written
+ds41 W3-research r0: prompt 26730 ttft 11.078 s, 2048 tokens, 36.94 tok/s, length
+  disk 235.569 GB read, 0.0 GB written
+[strata] 2026-11-03 08:31:35 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache auto: 9.62 GiB free, 713 MiB reserved (+89 MiB for the draft head) -> 2142 slots
+strata generate: expert cache 2371 slots, 8.83 GiB of VRAM; policy is
+strata generate: CUDA1: 1893 additional experts, 7.06 GiB; results return through pinned host rows
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 2371 resident experts, decided on the device
+FileExpertSource: RAM budget 58.00 GiB: 15555 of the 75.72 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: allocating 58.00 GiB page-locked cache complement
+=== 2026-11-03 08:38:36 cool-down: 60 s, drive 37 -> 37 C
+=== 2026-11-03 08:38:36 splice on-75 (on, --expert-cache 1606)
+server ready (guard pid 3247566, server pid 3247583) load_time_s 22.486883314 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-on-75_20261103T083837.log
+engine pid 3247588: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+ds41 warmup r0: prompt 124 ttft 2.282 s, 384 tokens, 37.89 tok/s, length
+  disk 20.649 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4070 ttft 4.434 s, 8 tokens, 25.29 tok/s, length
+  disk 34.239 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19875 ttft 10.201 s, 8 tokens, 41.96 tok/s, length
+  disk 77.162 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 109 ttft 1.493 s, 1024 tokens, 37.94 tok/s, length
+  disk 85.774 GB read, 0.0 GB written
+ds41 W1-think r0: prompt 108 ttft 1.471 s, 3072 tokens, 33.76 tok/s, length
+  disk 280.301 GB read, 0.0 GB written
+ds41 W2-code r0: prompt 124 ttft 1.71 s, 3072 tokens, 32.49 tok/s, length
+  disk 263.605 GB read, 0.0 GB written
+ds41 W3-research r0: prompt 26726 ttft 10.803 s, 2048 tokens, 33.15 tok/s, length
+  disk 265.718 GB read, 0.0 GB written
+[strata] 2026-11-03 08:38:38 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache 1778 slots, 6.62 GiB of VRAM; policy is
+strata generate: CUDA1: 1893 additional experts, 7.06 GiB; results return through pinned host rows
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 1778 resident experts, decided on the device
+FileExpertSource: RAM budget 58.00 GiB: 15554 of the 77.93 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: allocating 58.00 GiB page-locked cache complement
+FileExpertSource: 57.73 GiB really free for a 58.00 GiB page-locked complement; the model files' cached pages were released: 62.82 GiB free
+=== 2026-11-03 08:46:07 cool-down: 61 s, drive 37 -> 37 C
+=== 2026-11-03 08:46:07 splice on-50 (on, --expert-cache 1071)
+server ready (guard pid 3252898, server pid 3252913) load_time_s 22.477462597 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-on-50_20261103T084607.log
+engine pid 3252918: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+ds41 warmup r0: prompt 125 ttft 1.877 s, 384 tokens, 35.62 tok/s, length
+  disk 24.518 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4072 ttft 4.579 s, 8 tokens, 34.65 tok/s, length
+  disk 36.729 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19875 ttft 13.34 s, 8 tokens, 39.49 tok/s, length
+  disk 111.429 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 109 ttft 1.581 s, 1024 tokens, 29.61 tok/s, length
+  disk 121.897 GB read, 0.0 GB written
+ds41 W1-think r0: prompt 110 ttft 1.539 s, 3072 tokens, 25.86 tok/s, length
+  disk 424.757 GB read, 0.0 GB written
+ds41 W2-code r0: prompt 125 ttft 1.665 s, 3072 tokens, 27.7 tok/s, length
+  disk 342.348 GB read, 0.0 GB written
+ds41 W3-research r0: prompt 26726 ttft 17.563 s, 2048 tokens, 30.38 tok/s, length
+  disk 331.853 GB read, 0.0 GB written
+[strata] 2026-11-03 08:46:08 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache 1186 slots, 4.42 GiB of VRAM; policy is
+strata generate: CUDA1: 1893 additional experts, 7.06 GiB; results return through pinned host rows
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 1186 resident experts, decided on the device
+FileExpertSource: RAM budget 58.00 GiB: 15554 of the 80.14 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: allocating 58.00 GiB page-locked cache complement
+FileExpertSource: 59.49 GiB really free for a 58.00 GiB page-locked complement; the model files' cached pages were released: 64.55 GiB free
+=== 2026-11-03 08:54:44 cool-down: 60 s, drive 38 -> 38 C
+=== 2026-11-03 08:54:44 splice off-100 (off, --expert-cache auto)
+server ready (guard pid 3259828, server pid 3259844) load_time_s 20.453416139 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-off-100_20261103T085445.log
+engine pid 3259849: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+ds41 warmup r0: prompt 126 ttft 1.384 s, 384 tokens, 39.49 tok/s, length
+  disk 19.215 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4073 ttft 4.139 s, 8 tokens, 21.81 tok/s, length
+  disk 32.179 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19873 ttft 10.851 s, 8 tokens, 34.98 tok/s, length
+  disk 75.953 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 111 ttft 1.259 s, 1024 tokens, 30.42 tok/s, length
+  disk 119.283 GB read, 0.0 GB written
+ds41 W1-think r0: prompt 112 ttft 1.2 s, 3072 tokens, 26.76 tok/s, length
+  disk 411.316 GB read, 0.0 GB written
+ds41 W2-code r0: prompt 125 ttft 1.436 s, 3072 tokens, 26.84 tok/s, length
+  disk 401.829 GB read, 0.0 GB written
+ds41 W3-research r0: prompt 26729 ttft 11.339 s, 2048 tokens, 23.68 tok/s, length
+  disk 384.402 GB read, 0.0 GB written
+[strata] 2026-11-03 08:54:46 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache auto: 9.62 GiB free, 713 MiB reserved (+89 MiB for the draft head) -> 2142 slots
+strata generate: expert cache 2371 slots, 8.83 GiB of VRAM; policy is
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 2371 resident experts, decided on the device
+FileExpertSource: RAM budget 58.00 GiB: 15553 of the 82.78 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: the prompt path's lend region: 0 of its 1779 slots keep their experts in RAM too (0.00 GiB of the budget's remaining 0.00 GiB)
+FileExpertSource: allocating 58.00 GiB page-locked cache complement
+=== 2026-11-03 09:03:27 cool-down: 60 s, drive 38 -> 37 C
+=== 2026-11-03 09:03:27 splice off-75 (off, --expert-cache 1606)
+server ready (guard pid 3267123, server pid 3267138) load_time_s 19.430107564 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-off-75_20261103T090328.log
+engine pid 3267143: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+ds41 warmup r0: prompt 125 ttft 1.433 s, 384 tokens, 37.88 tok/s, length
+  disk 20.582 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4072 ttft 4.424 s, 8 tokens, 41.15 tok/s, length
+  disk 34.533 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19873 ttft 10.5 s, 8 tokens, 36.07 tok/s, length
+  disk 77.421 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 111 ttft 1.36 s, 1024 tokens, 21.79 tok/s, length
+  disk 185.317 GB read, 0.0 GB written
+ds41 W1-think r0: prompt 111 ttft 1.331 s, 3072 tokens, 24.22 tok/s, length
+  disk 490.389 GB read, 0.0 GB written
+ds41 W2-code r0: prompt 124 ttft 1.433 s, 3072 tokens, 25.3 tok/s, length
+  disk 379.882 GB read, 0.0 GB written
+ds41 W3-research r0: prompt 26728 ttft 11.249 s, 2048 tokens, 22.75 tok/s, length
+  disk 412.732 GB read, 0.0 GB written
+[strata] 2026-11-03 09:03:29 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache 1778 slots, 6.62 GiB of VRAM; policy is
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 1778 resident experts, decided on the device
+FileExpertSource: RAM budget 58.00 GiB: 15552 of the 84.99 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: the prompt path's lend region: 0 of its 1504 slots keep their experts in RAM too (0.00 GiB of the budget's remaining 0.00 GiB)
+FileExpertSource: allocating 58.00 GiB page-locked cache complement
+FileExpertSource: 61.21 GiB really free for a 58.00 GiB page-locked complement; the model files' cached pages were released: 66.20 GiB free
+=== 2026-11-03 09:12:45 cool-down: 61 s, drive 37 -> 37 C
+=== 2026-11-03 09:12:45 splice off-50 (off, --expert-cache 1071)
+server ready (guard pid 3271657, server pid 3271672) load_time_s 19.462530879 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_sweep-off-50_20261103T091245.log
+engine pid 3271677: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+ds41 warmup r0: prompt 125 ttft 1.55 s, 384 tokens, 35.0 tok/s, length
+  disk 24.75 GB read, 0.0 GB written
+ds41 P4K r0: prompt 4072 ttft 4.686 s, 8 tokens, 42.87 tok/s, length
+  disk 36.925 GB read, 0.0 GB written
+ds41 P20K r0: prompt 19874 ttft 17.429 s, 8 tokens, 30.49 tok/s, length
+  disk 111.595 GB read, 0.0 GB written
+ds41 warmup-decode r0: prompt 109 ttft 1.392 s, 1024 tokens, 22.57 tok/s, length
+  disk 172.417 GB read, 0.0 GB written
+ds41 W1-think r0: prompt 109 ttft 1.368 s, 3072 tokens, 21.07 tok/s, length
+  disk 541.571 GB read, 0.0 GB written
+ds41 W2-code r0: prompt 124 ttft 1.457 s, 3072 tokens, 20.79 tok/s, length
+  disk 519.353 GB read, 0.0 GB written
+ds41 W3-research r0: prompt 26728 ttft 17.519 s, 2048 tokens, 19.6 tok/s, length
+  disk 526.363 GB read, 0.0 GB written
+[strata] 2026-11-03 09:12:46 engine started: /home/USER/ai-speed-testing/strata-compare/engine-r22p028x/strata --serve --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/sweep-splice/pack -
+strata generate: expert cache 1186 slots, 4.42 GiB of VRAM; policy is
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: token graph hit path: 1186 resident experts, decided on the device
+FileExpertSource: RAM budget 58.00 GiB: 15551 of the 87.20 GiB of experts the GPU cache does not hold, by profile rank; the rest are read from the files
+FileExpertSource: the prompt path's lend region: 0 of its 1002 slots keep their experts in RAM too (0.00 GiB of the budget's remaining 0.00 GiB)
+FileExpertSource: allocating 58.00 GiB page-locked cache complement
+FileExpertSource: 61.51 GiB really free for a 58.00 GiB page-locked complement; the model files' cached pages were released: 66.62 GiB free
+# Upgrade-pricing sweep (11-03): speed against the experts held in VRAM, 1 pass each
+
+## DeepSeek V4.1 Flash, the daily config (15,360 experts)
+
+| arm | experts in VRAM | RAM store | on the GPU (VRAM or RAM over PCIe) | CPU lane from RAM | SSD (upper bound) | SSD GB / token | decode | P4K | P20K | P20K SSD GB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| on-v10 | 1,308 | 6,363 | 89.8 % | 6.9 % | 3.3 % | 0.067 | 28.8 | 342 | 701 | 115.08 |
+| on-v075 | 971 | 6,363 | 88.1 % | 8.3 % | 3.6 % | 0.075 | 27.1 | 335 | 689 | 118.13 |
+| on-v05 | 635 | 6,363 | 86.1 % | 10.1 % | 3.8 % | 0.078 | 25.7 | 328 | 676 | 122.69 |
+| off-v10 | 711 | 6,363 | 86.6 % | 9.9 % | 3.5 % | 0.073 | 28.2 | 438 | 714 | 64.11 |
+| off-v075 | 521 | 6,363 | 85.3 % | 11.2 % | 3.5 % | 0.072 | 27.4 | 434 | 701 | 65.54 |
+| off-v05 | 335 | 6,363 | 83.4 % | 12.7 % | 3.8 % | 0.079 | 25.4 | 431 | 725 | 66.96 |
+
+## Round 15's splice on the P028x engine (24,576 experts, Q5 ~4.0 MB each)
+
+| arm | slots 5080 + 4060 Ti | 5080 cache | PCIe / 4060 Ti | RAM | SSD | SSD GB / token | decode | P4K | P20K | P20K SSD GB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| on-100 | 2371 + 1893 | 53.3 % | 18.9 % | 24.0 % | 3.8 % | 0.091 | 37.1 (3 of 3) | 1,013 | 1,850 | 75.77 |
+| on-75 | 1778 + 1893 | 48.1 % | 20.7 % | 27.2 % | 4.0 % | 0.099 | 33.1 (3 of 3) | 918 | 1,948 | 77.16 |
+| on-50 | 1186 + 1893 | 40.5 % | 22.3 % | 31.7 % | 5.5 % | 0.134 | 28.0 (3 of 3) | 889 | 1,490 | 111.43 |
+| off-100 | 2371 + 0 | 56.4 % | 9.4 % | 28.2 % | 6.0 % | 0.146 | 25.8 (3 of 3) | 984 | 1,832 | 75.95 |
+| off-75 | 1778 + 0 | 50.8 % | 10.8 % | 32.0 % | 6.4 % | 0.157 | 24.1 (3 of 3) | 920 | 1,893 | 77.42 |
+| off-50 | 1186 + 0 | 41.8 % | 12.6 % | 37.5 % | 8.1 % | 0.194 | 20.5 (3 of 3) | 869 | 1,140 | 111.59 |
+=== 2026-11-03 09:22:15 P028x back on 8080 (port_gap4.sh end)
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-03 09:22:31 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-03 09:22:31 sweep gap done (51 min with 8080 down)

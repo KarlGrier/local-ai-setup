@@ -1,0 +1,213 @@
+=== v0.1.30 2026-09-30T17:50:57Z main
+**Short prompts up to 28% faster (the same answers), multi-GPU and AMD RDNA4 improvements, a server that can give the GPU back, and several opt-in features.**
+
+**Faster short prompts.** Prompts of 1K to 4K tokens read all experts from the stream from 1,024-token chunks
+(0.1.29: 2,048): +17-28% prompt speed on this RTX 5070, with the same output (suggested in the issues).
+`STRATA_PREFILL_STREAM_MIN` overrides the threshold.
+
+**Multi-GPU (#216, @gopinath87607).** In a layer split:
+- Each card now keeps only its own layers' session state, which saved 0.93 GiB on a later card in the author's
+  4-GPU test.
+- Each card lends the prompt path the tail of its own expert cache, instead of every card after the first
+  holding back 1 GiB for the whole session. `--prefill auto` can then pick larger chunks (8,192 tokens instead of
+  2,048 there).
+- The Monitor's expert cache counts every card (it showed only the first).
+- Snapshots and checkpoints follow the split: a card saves and restores only its own layers.
+
+Single-GPU runs are unchanged (byte-identical).
+
+**AMD RDNA4 (#178, @doplxyz).** The RX 9070 / 9070 XT and the Radeon AI PRO R9700 (gfx1201) are supported beside
+the RX 7900 series: setup picks ROCm and the settings per card, and the engine checks at startup that it was built
+for the card it runs on. Validated on doplxyz's machine with both cards. The live server tests pass on each.
+Two AMD cards also run as one layer split from a hand-written config (setup installs one AMD card). It gives
+exactly the output of one card when the experts sit in the same place; see `docs/AMD_HIP.md`.
+
+**The server can give the GPU back (#208, @bytethecookie).**
+- `--idle-unload 600` unloads the model after 600 s without requests; the next request loads it again.
+- `POST /unload` and `POST /load` do it on demand.
+- `--min-free-vram-mib N` loads only when that much VRAM is free (else 503), and `--before-load "cmd"` runs a
+  command first (e.g. one that unloads another server's model).
+
+**Low-RAM mode, resident variant.** When the experts don't fit the RAM but the ones the GPU doesn't hold do,
+setup now copies exactly those into RAM at start (`--resident-experts`) instead of reading them from the file.
+The same output. On a cold file cache the prompt went from 150 to 1,197 tok/s and answers were 26% faster.
+
+**Opt-in and experimental (off unless you turn them on):**
+- **Contexts past the trained 262K (#84, @j-luwierski):** `--rope-scaling yarn|linear` and `--rope-scale F`,
+  or setup's `--context` past 262144. Experimental: at 320K, facts planted at 300K were found at 10%, 50% and
+  90% depth. See `docs/DETAILS.md` for the measured quality.
+- **Several conversations kept at once (#189, @jeremiahritchey):** `--conversation-cache-mib 8192
+  --conversation-cache-slots 4` parks up to four conversations in RAM, so switching back doesn't re-read the
+  prompt. Not yet with a layer split. With the option off, the engine is byte-identical to 0.1.29.
+- **Greedy output independent of drafting (#152, reported by @clapbr):** `STRATA_IQ_MT_MIN=1` in the config's
+  `env` makes the IQ models' CPU experts round the same whatever the verify window held. Costs 1-3% decode on
+  IQ3_S (AVX-512); the default is unchanged.
+- **Coupled draft sampling:** `STRATA_SPEC_COUPLED=1` samples drafts and the verifier from one random stream.
+  No clear gain in our tests, so it stays off.
+- **Docker (#96, @djmaze):** `docker build -t strata .` builds the engine in the image. The server is PID 1 and
+  stops cleanly on SIGTERM; KV, GPUs and low-RAM mode are set with environment variables. See the README.
+- **Pascal cards (#124, @ruibeikaa):** the engine builds and runs on compute capability 6.0 (P100) with exact
+  fallbacks for `__dp4a` and `__nanosleep`. Not in the ready-made engine; compile it yourself. Not tested here
+  (no Pascal card).
+- **Shared expert arena (#129, @rhgo1749):** Linux: `--shared-expert-arena FILE` in `/dev/shm` lets several
+  engines on one machine share the RAM copy of the experts.
+
+**Checked before the release:**
+- Byte-identical to 0.1.29 with a fixed cache on all four quants on this PC (Q2_0, IQ3_XXS, IQ3_S, the Coder),
+  including the prompt path's internal state, with the same decode speed.
+- Real use at a 64K context on all five models (Q2_0, IQ2_XS, IQ3_XXS, IQ3_S, the Coder), through the server:
+  - a fact found in a 57,566-token document;
+  - the follow-up turn reusing the whole prompt;
+  - a tool call;
+  - a cancelled long prompt followed by a new request;
+  - a sampled answer.
+
+  None of them restarted the engine or ran low on VRAM. Prompt speed and free VRAM were the same as 0.1.29.
+- The conversation cache (#189): with it off, the same output as 0.1.29 up to 128K; with it on, the reuse,
+  memory-pressure and admission tests pass.
+- Rope scaling (#84): the parity tests, and needles at 300K in a 320K context.
+- The server's tests (80) and the CPU expert parity test (0 failures; with `STRATA_IQ_MT_MIN=1` no row differs between
+  one token and a group).
+- Linux (WSL, RTX 5070): Q2_0 byte-identical to 0.1.29 with a fixed cache (10/10), and the default settings pass.
+- AMD (RX 9070 XT and R9700): the HIP build with its tests (45 of 47; the 2 others need a model fixture or an
+  AVX-512 CPU), the live server test on each card, and the two-card layer split.
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` (Linux:
+`./setup.sh`). Setup installs engine 0.1.30.
+
+The ready-made Strata engine for Windows (RTX 20 / 30 / 40 / 50: sm_75, sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler
+or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+
+=== v0.1.29 2026-09-30T12:18:09Z main
+**Sampled answers up to 40% faster (the same text), faster prompt kernels, correctness fixes, and several contributions.**
+
+**Sampled answers (#197, @gputier).** With a temperature above 0 (most chat apps), each token's top-k selection now
+runs split across the whole GPU, and the rest of the sampling runs on one warp. It picks exactly the same tokens:
+with the same seed, the output is identical to 0.1.28 (checked on 12 runs across 3 sampling settings, and by
+`sampler_parity` against the old kernel). On an RTX 5070:
+- Q2_0: +4% with top-k 20, +15-20% with top-k 40, +38-42% with top-k 64.
+- The Coder: +4% to +26% on the same settings.
+- Greedy answers (temperature 0) are unchanged.
+
+**Faster kernels, the same bits:**
+- The QSA block scores read each key block once for all of a verify window's queries (#187, @q8atnight).
+- The GDN recurrence of the prompt path loads the next token's inputs while the current one computes (#188,
+  @q8atnight).
+- AVX2 CPUs prefetch the expert rows ahead, as the AVX-512 kernels already did (#207, @pipeob0).
+
+**Correctness (#154, @gputier):**
+- A NaN stays a NaN when converted to bf16, as in ggml. It used to become -0 or infinity and hide the error.
+- The q8 split GEMV kernel reaches its barrier before a warp without rows returns.
+- A KV-streaming block that could not be made resident is masked instead of read from before its pool.
+- The verify window's tables are guarded at their size.
+
+**Also:**
+- Windows: the engine, the image encoder and MCP servers now end with the server, however it ends (closing the
+  window, Task Manager) (#181, @Apposite245).
+- The dashboard shows the prompt speed beside the answer speed (#163, @hendrikp).
+- `--ple-io ram` keeps the PLE table locked in RAM on Linux (#202, @q8atnight).
+- WSL2 with 3 GPUs: an opt-in for the driver's ~1 GiB pinned budget, and the token embedding falls back to VRAM when
+  pinning fails (#158, @MrRoza).
+- Setup: the 3-bit models' 262K context is counted against the RAM instead of a fixed 90 GB, so a PC with ~84 GB
+  keeps 262K (#134, @architectds).
+- `STRATA_PREFILL_RING=8` selects routed-only staging for large chunks (#225, @rluisr).
+- CLI `generate` zeroes the session state before the prompt for every pack (#167, @samuelishida).
+- A CUDA fault in the prompt path now ends the engine at once instead of after the 60 s watchdog (#224).
+- The build warns when RTX 50 code is compiled with CUDA older than 13.0 (#220, #224).
+- The pack tool leaves no partial pack behind when it stops (#172).
+- A bitwise test of the verify window's multi-token GEMV contract (#148, @enkynakamura).
+
+**Checked before the release:**
+- Byte-identical to 0.1.28 with a fixed cache on all four quants on this PC (Q2_0, IQ3_XXS, IQ3_S, the Coder),
+  including the prompt path's internal state.
+- Real use at a 64K context on all five models (Q2_0, IQ2_XS, IQ3_XXS, IQ3_S, the Coder), through the server:
+  - a fact found in a 58,700-token document;
+  - the follow-up turn reusing the whole prompt;
+  - a tool call;
+  - a cancelled long prompt followed by a new request;
+  - a sampled answer.
+
+  None of them restarted the engine or ran low on VRAM.
+- The parity tests (sampler in all three modes, bf16, element-wise, s_gemv, the new multi-token test) and the
+  server's tests (71).
+- Builds and runs the same on Linux.
+- AMD: not tested again for this release (our AMD test PC was not reachable).
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` (Linux:
+`./setup.sh`). Setup installs engine 0.1.29.
+
+The ready-made Strata engine for Windows (RTX 20 / 30 / 40 / 50: sm_75, sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler
+or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+
+=== v0.1.28 2026-09-30T09:45:28Z main
+**Fixes: VRAM left free again after 0.1.27's larger draft head, a cancelled request no longer kills the next one, and the API key protects every endpoint.**
+
+**VRAM (#199, #201, #217).** The expert cache takes the free VRAM minus a reserve (700 MiB) that keeps the GPU from
+paging. The draft layer's head is allocated after the cache, and 0.1.27's larger head (with Chinese, Japanese and
+Korean) came out of that reserve: on a 16 GB card with images, 156 MiB were left, and requests could stall. The cache
+now reserves the draft head as well, so the reserve is kept. Auto-sized caches hold a few percent fewer experts than
+in 0.1.27.
+- New: `START-HERE.bat --setup --draft-vocab en` keeps the English/code draft subset from before 0.1.27: ~110 MiB less
+  VRAM and English answers 1-2% faster, but Chinese, Japanese and Korean answers get almost no drafts.
+- When no VRAM is left for the expert cache at all, the engine now says what to lower instead of a bare "verify:"
+  error (#174).
+
+**Cancelled requests (#183).** A request cancelled while its prompt was being read (a client that disconnects, a
+timeout) left an error behind, and the next long prompt then ended the engine, which the server had to reload. Fixed
+by @praveshkhatana (#205); thanks to @demon851113 for the root cause and the validation (#194).
+
+**Security.**
+- `/status` showed the end of the answer being written without asking for the API key. It needs the key now, and it
+  no longer keeps the answer's end after the request (#212).
+- The key is compared in constant time, and an explicitly empty key (`--api-key ""` or an empty `STRATA_API_KEY`)
+  stops the server instead of silently switching authentication off (#213).
+- `--host` and `--api-key` given when starting an installed model were ignored. They are now saved for that model
+  (#179).
+
+**Tool calls (#210).** A tool call whose arguments contain `</parameter>` or `</tool_call>` (for example a file that
+documents the chat format) was cut off at that text. A call now ends only at its own closing tags.
+
+**Setup and server:**
+- When the engine exits, the server shows its last log line and exit code. Before, it always blamed the RAM (#215).
+- RTX 50 cards: a compiled engine needs CUDA 13.0. An engine built with 12.8 crashed in the prompt path on Linux
+  (#220).
+- Windows: llama.cpp's web UI is not unpacked. Its long paths broke setup in deep folders like
+  `Downloads\Strata-main\Strata-main` (#206).
+- Swift 1.5 Q2_0 is hidden for now: its files split one layer across the two shards, which the pack tool cannot
+  prepare yet (#171). Swift IQ2_XS has a similar speed.
+- `--data-dir` also moves the files of the data folder used before and of a nested `Strata-data` folder (#198).
+- Model files copied in by hand are recognized when they are whole, instead of being downloaded again (#173).
+- The expert cache on WDDM keeps ~4 GiB more on a 32 GB card, Ctrl+C stops the server on Windows, and a client that
+  hangs up no longer prints a stack trace (#153, @borexola).
+- CUDA older than 12.3 builds again (#209, @giostrives).
+
+**Checked before the release:**
+- Byte-identical to 0.1.27 with a fixed cache on all four quants on this PC (Q2_0, IQ3_XXS, IQ3_S, the Coder),
+  including the prompt path's internal state.
+- The no-repeat and sanity checks with the default settings, and needle tests at 8K, 16K and 32K.
+- A cancelled long prompt followed by the same prompt and a short one: the engine stays up.
+- The server's tests (68, including the new ones for /status, the key and tool-call values).
+- Builds and runs the same on Linux.
+- On this PC's Q2_0 setup, 379 MiB of VRAM are left free with everything loaded (0.1.27: 210 MiB, below the stall
+  line).
+- AMD: not tested again for this release (our AMD test PC was not reachable). The changes there are small shared
+  C++ edits.
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` (Linux:
+`./setup.sh`). Setup installs engine 0.1.28.
+
+The ready-made Strata engine for Windows (RTX 20 / 30 / 40 / 50: sm_75, sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler
+or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+

@@ -1,0 +1,79 @@
+STEPS-adaptfetch.txt - the sampled part of the ADAPT_FETCH gap (written 2026-11-09 at the desk; a step list, NOT a
+driver: no gap script exists for it and nothing here was run). Harness: work/r23/sampled-qwen/ (sq.py, sq_stat.py,
+sq_client.py, spec-adaptfetch.json). It plugs into the r23 gap pattern (gap-basalt-speed.sh srvrun / gap-decpath.sh
+decarm): one fresh test server per arm through bringup/lib/with_server.sh on 127.0.0.1:8081, its env checked before it
+answers, a kernel check after each start, children with 8>&- 9>&- and stdin from /dev/null, engines found by PID or
+/proc/PID/exe only.
+
+Names below: SC=/home/USER/ai-speed-testing/strata-compare, Q=$SC/work/r23/sampled-qwen, P="$SC/.venv/bin/python -I -B",
+O = the run folder (e.g. $SC/results/r23/adaptfetch/gap-sampled), FR = work/r23/basalt_fix_rules.py (its `br envcheck`).
+
+0  BEFORE THE GAP (8080 up; CPU only; a refusal = nothing touched)
+   a. Fill spec-adaptfetch.json (a copy for the run): X1 / X2 "top.exe" = the fetch build's strata and "exe_sha12" = its
+      sha256's first 12 hex; the VF read-back patterns once E3's serve text exists (verify.fetchverify.mismatch_re /
+      summary_re; the defaults are upstream v0.2.13's CLI lines); E4's per-request counter if wanted
+      (exercise.fetch1/fetch2.counter). derive refuses while exe_sha12 says FILL-IN.
+   b. nice -n 19 $P $Q/sq.py selftest            -> last line SELFTEST OK         (~2 min, synthetic)
+      nice -n 19 $P $Q/sq_client.py selftest     -> CLIENT SELFTEST OK
+      nice -n 19 $P $Q/sq.py selftest-real       -> SELFTEST-REAL OK: the real tokenizer + template render C-conv in 38
+                                                    ids and C-prose in 19 (as P028x counted them), R1 = P028x stripped =
+                                                    x28h + STRATA_HC_UPMIX=1, the scorer derives
+   c. $P $Q/sq.py derive <spec copy> O           -> O/cfg/{R1,R2,X1,X2,VF,scorer}.json, O/spec.json, O/derive.json
+   d. $P $Q/sq.py rule O/spec.json > O/rule.txt  (before any engine start; decide refuses a changed rule)
+   e. Outside this test, from the fetch build's own gate: its SHA256 / SOURCE, and exact7 "STRATA_ADAPT_FETCH unset =
+      P028x bitwise" (the desk study's claim; R1 runs P028x's own engine, so this test does not separate the build from
+      the switch).
+   f. The usual refusals: tmp/gpu-test.lock free, no other gap (tmp/port-gap.lockpid), nothing on 8081, no model server
+      but 8080's P028x, kwatch running, a clean kernel check.
+
+1  OPEN: work/r22/port_gap4.sh begin "ADAPT_FETCH sampled test ..." (the research queue held, the test lock, 8080 down);
+   wait until no engine process is left and MemAvailable >= 40 GB; kcheck.
+
+2  VF FIRST (the read-back start; fail fast): one fresh server, as srvrun does:
+     gpu_clear; off=$(stat -c %s O/logs/engine-VF.log 2>/dev/null || echo 0)
+     with_server.sh sq-VF O/cfg/VF.json -- "$P $FR br envcheck <VF exe> O/cfg/VF.json --gate env_VF --gates G &&
+       $P $Q/sq.py envcheck O VF && SQ_SPEC=O/spec.json SQ_ARM=VF SQ_LABEL=sq-VF SQ_ELOG_BASE=$off SQ_BUDGET_S=300
+       $P $Q/sq_client.py http://127.0.0.1:8081 O/VF"   8>&- 9>&- < /dev/null
+     fatalchk on the engine-log slice; kcheck
+   then $P $Q/sq.py verify O VF:  exit 1 (a read-back mismatch) -> both candidates are FAIL overall whatever the sampled
+   test gives: skip 3-5, go to 6 (decide still writes the decision) and 7.  exit 0 / 2 -> go on.
+
+3  THE SERVED ARMS, each the same form with its SQ_ARM / label, in this order: R1 (P028x test form, K 8 = 32 requests),
+   X1 (STRATA_ADAPT_FETCH=1, K 8), X2 (=2, K 8), R2 (R1's config again, K 4 = 16 requests; last, so the noise twin
+   brackets the candidates in time). Each starts only if its time + the scorer's + the close fit before the cap; each:
+   gpu_clear (no foreign GPU user), the two env checks, the client, fatalchk, kcheck. The client copies the start's
+   server log (O/<arm>/server.out) and engine log (O/<arm>/engine.out) into the arm folder at its end.
+
+4  IDS (CPU, < 1 min): $P $Q/sq.py ids O R1 X1 X2 R2
+   (each arm's prompts rendered with its own server tree and tokenizer; O/prompt-ids.json must be the same for every
+   arm; every sample's raw ids = completion_tokens, its prompt length = prompt_tokens, no taint line)
+
+5  THE SCORER (one CLI engine for every arm; the gap-decpath decarm form):
+     ( $P $SC/bringup/lib/guard.py sq-score -- $P $Q/sq.py score O R1 X1 X2 R2 --max-min 25 > O/score-run.txt 2>&1;
+       echo $? > O/score.rc ) 8>&- 9>&- < /dev/null &
+     jp=$!; watchdog $jp 35 sq-score &   $P $Q/sq.py envwatch $jp O --kill ;  wait $jp; kcheck
+   (x28h under quant_quality.py's FIXED / FIXED_ENV with --spec 2, STRATA_LOGPOS + TOPK 64, --short-read / --max-context
+   from the plan; the runner also checks its own child's env and arguments before the first GEN line)
+
+6  DECIDE (CPU): $P $Q/sq.py decide O -> O/decision.txt / decision.json
+   exit 0 both candidates PASS overall, 1 a FAIL, 2 NOT DECIDED. Nothing switches: a PASS is a proposal to Karl.
+
+7  CLOSE: port_gap4.sh end (P028x back on 8080), kcheck. A kernel-check failure at any step leaves the gap OPEN (8080
+   down) for Karl, as in every r23 gap.
+
+TIME WITH 8080 DOWN (estimates; planning speed 100 tok/s served decode at T 1.0 thinking off - P028x gave 129-140
+tok/s at T 0.6 on Basalt's decode fixtures 11-09 - and the decode-path scorer's 68-74 tok/s of gap-decpath's dec arm)
+   open (port_gap4.sh begin, engines gone)                                   ~2 min
+   VF: start ~0.7 + 8 requests (VERIFY + CHECKRES are slow; 3x assumed)       ~3 min
+   R1, X1, X2: start ~0.7 (srv.sh load 15.4 s, evict, monitor, stop) +
+     32 requests x ~5.6 s (512 tokens + prompt + the chat-cache park)         ~3.7 min each = ~11 min
+   R2: 16 requests                                                           ~2.2 min
+   ids                                                                       ~0.5 min
+   scorer: ~15 s start + 112 samples x ~584 positions = ~65,400 at ~70 tok/s ~16 min
+   decide                                                                    < 0.5 min
+   close (port_gap4.sh end)                                                  ~3 min
+   TOTAL                                                                     ~38 min (cap it at ~55)
+   The K 4 variant (R1 / X1 / X2 at 16 requests): served ~9.4 min, scorer ~9 min -> ~27 min.
+   A VF read-back FAIL in step 2 ends the sampled part early: ~10 min.
+
+PER ARM (for the "fits" checks): a K 8 served arm ~3.7 min, its scoring ~4.5 min; a K 4 arm ~2.2 / ~2.3 min.

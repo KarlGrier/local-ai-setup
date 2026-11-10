@@ -1,0 +1,130 @@
+2026-10-20 03:08:37 port_gap: hold set; waiting for the running research run to finish
+run-strata: stopping pid 886119 (engine 886124)
+run-strata: stopped
+run-strata: SearXNG stopped
+2026-10-20 03:09:10 port_gap: gap open: test lock held (pid 990930), 8080 stopped
+=== 2026-10-20 03:09:10 1 build
+v0.2.1 + 26 commits (branch r22-port021 a8a5ee601fd717558c6e4a430edc12f590d2fc30), tree ece7e0ff15e6379e21b307f33d192a82a96dc15d
+c9fe314316c44ad9f18b4694ab9462ccf6736d03dae84b86859947fe7342202e  engine-r22p021/strata
+=== 2026-10-20 03:10:47 2 quality
+r21p-e7-x-math   out e15fdb30 (r22p-e7 e15fdb30) =  ms/round 30.48  prompt ms 561
+r21p-e7-s-math   out 945dea63 (r22p-e7 945dea63) =  ms/round 28.44  prompt ms 459
+r21p-e7-x-code   out 2b1139b9 (r22p-e7 2b1139b9) =  ms/round 23.73  prompt ms 462
+r21p-e7-s-code   out 39a152be (r22p-e7 39a152be) =  ms/round 20.37  prompt ms 456
+r21p-e7-x-p2000  out 3e219376 (r22p-e7 3e219376) =  ms/round 24.86  prompt ms 1035
+r21p-e7-x-32k    out 651f56c8 (r22p-e7 651f56c8) =  ms/round 24.01  prompt ms 7630
+r21p-e7-x-112k   out a393ca0a (r22p-e7 a393ca0a) =  ms/round 25.45  prompt ms 26940
+exact7 r21p-e7: 7/7 identical to r22p-e7
+r21p2-e7-x-math   out e15fdb30 (r21p-e7 e15fdb30) =  ms/round 30.19  prompt ms 517
+r21p2-e7-s-math   out 945dea63 (r21p-e7 945dea63) =  ms/round 28.72  prompt ms 489
+r21p2-e7-x-code   out 2b1139b9 (r21p-e7 2b1139b9) =  ms/round 23.92  prompt ms 461
+r21p2-e7-s-code   out 39a152be (r21p-e7 39a152be) =  ms/round 20.35  prompt ms 508
+r21p2-e7-x-p2000  out 3e219376 (r21p-e7 3e219376) =  ms/round 24.71  prompt ms 1043
+r21p2-e7-x-32k    out 651f56c8 (r21p-e7 651f56c8) =  ms/round 23.96  prompt ms 7590
+r21p2-e7-x-112k   out a393ca0a (r21p-e7 a393ca0a) =  ms/round 25.68  prompt ms 26948
+exact7 r21p2-e7: 7/7 identical to r21p-e7
+c18-e7:  expert cache 4510 slots, 8.60 GiB of VRAM; policy is
+r22p-e7:  expert cache 4551 slots, 8.68 GiB of VRAM; policy is
+r21p-e7:  expert cache 4551 slots, 8.68 GiB of VRAM; policy is
+[N-r21p] 32k r0: ttft 7.7 s, total 12 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 32k r1: ttft 7.5 s, total 12 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 32k r2: ttft 7.5 s, total 11 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 32k r3: ttft 7.5 s, total 12 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 64k r0: ttft 15.1 s, total 19 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 64k r1: ttft 15.2 s, total 19 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 64k r2: ttft 15.2 s, total 20 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 64k r3: ttft 15.2 s, total 19 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 120k r0: ttft 29.5 s, total 34 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 120k r1: ttft 29.6 s, total 32 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 120k r2: ttft 29.5 s, total 33 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21p] 120k r3: ttft 29.5 s, total 33 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+server ready (guard pid 1006509, server pid 1006524) load_time_s 14.349275469 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_FAIL-r21p_20261020T032220.log
+PASS  stop120k: chat A turn 1  — 1.6 s
+PASS  stop120k: 120K paste: the connection closed at 20 s (Stop)  — closed at 20.1 s, request returned at 20.1 s
+PASS  stop120k: server idle again after the cancel  — 3.0 s after the close
+PASS  stop120k: engine: the prompt read stopped (cancelled), no ERR  — ['strata serve: prompt 122881 tokens = 0 reused + 98304 of 122881 read in 22949 ms (4283.6 tok/s), 0 generated in 0 ms (0.0 tok/s), drafts accepted 0 of 0, 6 checkpoints (cancelled)', 'strata serve: KV streaming: 100.00% of 0 block reads hit VRAM, 0.0 MiB read from RAM', 'strata serve: CUDA1: 0 expert entries, 0 active layer launches, 0.0 MiB returned (0.0 MiB with full rows) in this request; host 0 ms staging+launching, 0 ms waiting for it in this request']
+PASS  stop120k: next request answers normally  — ttft 0.67 s, text '144'
+PASS  stop120k: back to chat A: resumed from the chat cache  — ttft 0.31 s; strata serve: prompt 5703 tokens = 5629 reused + 74 read in 281 ms (263.6 tok/s), 64 generated in 486 ms (131.8 tok/s), drafts accepted 36 of 62, 2 checkpoints
+PASS  stop120k: same engine process throughout  — 1006527 -> 1006527
+2026-10-20T03:23:35 srv-FAIL-r21p exit=0 75s min_MemAvailable=32.8GiB@43s min_5080_free=495MiB@43s max_tree_RSS=53.4GiB max_swap_used=0.09GiB min_4060Ti_free=1285MiB ok
+=== 2026-10-20T03:23:36-05:00 FAIL-r21p done
+followup r21p plain: 14 of 14 follow-ups resumed, 0 re-read the answer
+followup r21p think: 4 of 5 follow-ups resumed, 1 re-read the answer
+stoptest r21p: FAILURES
+PASS stream=False run=0 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=True error= content='I will now use the <tool_call> format to search.'
+FAIL stream=False run=1 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=False error= content='I will now use the web_search tool to look up information.'
+PASS stream=False run=2 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=True error= content='I will now use the <tool_call> format to search.'
+PASS stream=True run=0 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=True error= content='I will use the web_search tool to look up information relevant to this request.\n\nI will no'
+FAIL stream=True run=1 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=False error= content='I will now use the web_search format to search.'
+PASS stream=True run=2 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2,000 m altitude"}')] tag in content=True error= content='I will now use the <tool_call> format to search.'
+r21p copy: 20/20 exact copies
+r21p forged: 0/30 followed the planted instruction
+r21p plain: 0/30 followed the planted instruction
+repeat3 rep-r21p: outputs ['430bf6cb', '430bf6cb', '430bf6cb'] -> 3/3 identical
+=== 2026-10-20 03:27:10 3 chat cache
+PASS greedy: A was restored from the chat cache
+PASS greedy: resumed output = fresh output (17 chars)
+PASS greedy: the session's STATE_HASH after it = fresh
+PASS greedy: strata_checkpoint=false gives the same output
+PASS sampled seed 7: A was restored from the chat cache
+PASS sampled seed 7: resumed output = fresh output (17 chars)
+PASS sampled seed 7: the session's STATE_HASH after it = fresh
+PASS sampled seed 7: strata_checkpoint=false gives the same output
+PASS drop: R (research) dropped
+PASS drop: A (untagged) still parked and restored after the drop
+PASS drop: R is read from scratch afterwards (not restored)
+ALL PASS
+=== 2026-10-20 03:28:14 4 speed: decode screen and full screen A B B A (A = C*18t, B = 0.2.1 port)
+dec arm c18t-a: 2026-10-20T03:30:29 srv-r22-g3-D-c18t-a exit=0 134s min_MemAvailable=34.9GiB@97s min_5080_free=487MiB@70s max_tree_RSS=51.3GiB max_swap_used=0.09GiB min_4060Ti_free=1285M
+dec arm r21p-a: 2026-10-20T03:32:46 srv-r22-g3-D-r21p-a exit=0 134s min_MemAvailable=34.9GiB@96s min_5080_free=487MiB@36s max_tree_RSS=51.4GiB max_swap_used=0.09GiB min_4060Ti_free=1285M
+dec arm r21p-b: 2026-10-20T03:35:04 srv-r22-g3-D-r21p-b exit=0 135s min_MemAvailable=34.8GiB@103s min_5080_free=487MiB@57s max_tree_RSS=51.4GiB max_swap_used=0.09GiB min_4060Ti_free=1285
+dec arm c18t-b: 2026-10-20T03:37:19 srv-r22-g3-D-c18t-b exit=0 132s min_MemAvailable=34.9GiB@101s min_5080_free=487MiB@69s max_tree_RSS=51.3GiB max_swap_used=0.09GiB min_4060Ti_free=1285
+| decode (tok/s) | 154.6 / 156.9 → **155.7** | 152.2 / 154.0 → **153.1** | -1.7 % |
+| ms per verify round | 17.90 / 18.04 → **17.97** | 19.60 / 19.73 → **19.67** | +9.5 % |
+| tokens per round | 2.768 / 2.829 → **2.798** | 2.983 / 3.039 → **3.011** | +7.6 % |
+| long reasoning math (tok/s) | 163.2 / 162.6 → **162.9** | 164.8 / 155.7 → **160.2** | -1.6 % |
+| long reasoning code (tok/s) | 155.0 / 159.8 → **157.4** | 154.7 / 157.8 → **156.3** | -0.7 % |
+| TTFT 32K (s) | 7.71 / 7.71 → **7.71** | 7.64 / 7.64 → **7.64** | -0.9 % |
+full arm c18t-a: 2026-10-20T03:43:48 srv-r22-g3-F-c18t-a exit=0 386s min_MemAvailable=27.6GiB@297s min_5080_free=471MiB@99s max_tree_RSS=58.6GiB max_swap_used=0.09GiB min_4060Ti_free=1285
+full arm r21p-a: 2026-10-20T03:50:19 srv-r22-g3-F-r21p-a exit=0 389s min_MemAvailable=27.6GiB@353s min_5080_free=469MiB@282s max_tree_RSS=58.6GiB max_swap_used=0.09GiB min_4060Ti_free=128
+full arm r21p-b: 2026-10-20T03:56:53 srv-r22-g3-F-r21p-b exit=0 391s min_MemAvailable=27.5GiB@360s min_5080_free=469MiB@285s max_tree_RSS=58.7GiB max_swap_used=0.09GiB min_4060Ti_free=128
+full arm c18t-b: 2026-10-20T04:03:29 srv-r22-g3-F-c18t-b exit=0 392s min_MemAvailable=27.6GiB@346s min_5080_free=471MiB@211s max_tree_RSS=58.6GiB max_swap_used=0.09GiB min_4060Ti_free=128
+| decode (tok/s) | 158.0 / 153.8 → **155.9** | 154.6 / 150.8 → **152.7** | -2.0 % |
+| ms per verify round | 18.11 / 17.91 → **18.01** | 19.33 / 19.17 → **19.25** | +6.9 % |
+| tokens per round | 2.860 / 2.754 → **2.807** | 2.988 / 2.891 → **2.939** | +4.7 % |
+| long reasoning math (tok/s) | 160.8 / 160.5 → **160.6** | 160.1 / 160.2 → **160.1** | -0.3 % |
+| long reasoning code (tok/s) | 164.1 / 151.6 → **157.9** | 158.0 / 150.9 → **154.4** | -2.2 % |
+| TTFT 32K (s) | 7.74 / 7.74 → **7.74** | 7.68 / 7.69 → **7.69** | -0.7 % |
+| TTFT 64K (s) | 15.41 / 15.42 → **15.41** | 15.29 / 15.29 → **15.29** | -0.8 % |
+| TTFT 120K (s) | 29.77 / 29.77 → **29.77** | 29.56 / 29.57 → **29.56** | -0.7 % |
+=== 2026-10-20 04:03:30 5 pictures
+4829c210f71d9e2ce2c74fce413784efa16b279434673e652389bdf333d4c9e9  engine-r22p021/strata-vision
+11 replies -> results/r22/gap3/pictures/identity-pin-off.json
+11 replies -> results/r22/gap3/pictures/identity-pin-on.json
+logs/engine-r22p021RTpin.log:  expert cache 4551 slots, 8.68 GiB of VRAM; policy is
+logs/engine-r22p021RTpin-vision.log:  expert cache 4551 slots, 8.68 GiB of VRAM; policy is
+SAME greedy-0   313 / 313 chars
+SAME greedy-1   701 / 701 chars
+SAME greedy-2   448 / 448 chars
+SAME greedy-3   66 / 66 chars
+SAME greedy-4   1166 / 1166 chars
+SAME greedy-5   718 / 718 chars
+SAME seeded-0   435 / 435 chars
+SAME seeded-1   676 / 676 chars
+SAME seeded-4   1245 / 1245 chars
+SAME long-4k    396 / 396 chars
+SAME long-20k   337 / 337 chars
+identity: 11/11 replies identical with the picture reader loaded
+1 after start: reader processes [961] (MiB RSS), MemAvailable 35.10 GiB
+2 first picture: 3.6 s to the first answer token, 6.1 s in all; reader [1115] MiB, MemAvailable 34.23 GiB
+3 idle: reader STILL RUNNING after 120 s without a picture; MemAvailable 34.20 GiB
+4 picture after the pause: 3.3 s to the first answer token, 6.0 s in all; reader [1115] MiB
+=== 2026-10-20 04:09:18 6 unit tests
+serve/test_*.py rc 0: Ran 895 tests in 299.925s  OK (skipped=18) 
+tests built: Total Tests: 148
+ctest rc 8: 95% tests passed, 8 tests failed out of 148
+	118 - ggml_tq_overlay (Failed);	138 - native_hadamard_test (Failed);	139 - tq_cpu_parity (Failed);	140 - tq_cpu_parity_avx2 (Failed);	141 - expert_parity (Failed);	142 - pool_test (Failed);	146 - isa_guard_check (Failed);	 81 - ple_parity (Failed);
+=== 2026-10-20 04:19:35 gap 3 done - switching back
+strata: Loading the model for port gap end (usually under a minute).
+2026-10-20 04:19:52 port_gap: switched back to C*18t (e428a826c5fb), policy off, queue released
+=== 2026-10-20 04:19:52 end

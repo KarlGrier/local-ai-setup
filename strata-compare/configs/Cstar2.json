@@ -1,0 +1,60 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-cstar/strata",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0111/packs/iq3_s",
+  "--native",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+  "--ple-gguf",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0111/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "8192",
+  "--spec",
+  "4",
+  "--spec-min-p",
+  "0.5",
+  "--mtp",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0111/mtp/rt",
+  "--max-context",
+  "131072",
+  "--kv",
+  "int8",
+  "--kv-resident",
+  "32768",
+  "--pcie-frac",
+  "0",
+  "--pool-workers",
+  "15",
+  "--side-stash",
+  "4096",
+  "--ple-inflight",
+  "128",
+  "--vram-reserve-mib",
+  "800"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v0111",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/strata-v0111/packs/iq3_s/tokenizer",
+ "model_name": "strata-qwen3.8-flash-next-iq3s",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-Cstar2.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8081,
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "host": "127.0.0.1",
+ "_comment": "C*2 (round 2): the C* engine (engine-cstar, unchanged: Strata v0.1.11 + patches 0001/0002) with C*'s flags plus --prefill 8192 (prompt reading -13 %), 64 n-gram I/O threads (env STRATA_PLE_IO_THREADS=64, --ple-inflight 128; -1.2 %), and --vram-reserve-mib 800 (keeps >=300 MiB VRAM free with the desktop and Chrome open). Model id names the engine. KV int8 + streaming, 131072 ctx, MTP spec 4 / min-p 0.5, prompt lookup and xhigh unchanged; speed projection off. Sampling defaults = the user's settings (0.6/0.95/20/0.05); requests that set their own win. See REPORT.md \"Round 2\".",
+ "env": {
+  "STRATA_PLE_IO_THREADS": "64",
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX5080"
+ }
+}

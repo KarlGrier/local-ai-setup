@@ -1,0 +1,3 @@
+6b01642acbf89611a28aa957c61c15174dd318d6f9b7a327a8132af08d7bbf33  /home/USER/ai/deep-research/tools/ldr-client.py
+2e17567662b21e2fb5ad239891ce14c44df3f0129f42808562c3349e34b3af72  /home/USER/ai/deep-research/tools/bench2.py
+e849f11cff0449bff6da5a8fbaaf4c9077789772a35a13c7750b50122a3462bd  /home/USER/ai/deep-research/tools/bench2-queue.sh

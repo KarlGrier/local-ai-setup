@@ -1,0 +1,12 @@
+[Unit]
+Description=Kernel-log watcher (strata-compare bringup/lib/kwatch.sh): at the first kernel error it stops Strata and the test queue
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /home/USER/ai-speed-testing/strata-compare/bringup/lib/kwatch.sh
+WorkingDirectory=/home/USER/ai-speed-testing/strata-compare
+# after a stop it exits on purpose: the error must be looked at (tmp/r19/KERNEL_ERROR) before it watches again
+Restart=no
+
+[Install]
+WantedBy=default.target

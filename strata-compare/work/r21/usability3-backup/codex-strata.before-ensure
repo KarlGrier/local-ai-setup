@@ -1,0 +1,10 @@
+#!/bin/bash
+# codex-strata - Codex CLI 0.162.1 on Strata (127.0.0.1:8080), offline otherwise, its own settings folder.
+#   cd ~/myproject && codex-strata            (interactive)
+#   codex-strata exec "fix the failing test"  (one task, then exit)
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+source "$HERE/offline-env.sh"
+export CODEX_HOME="${CODEX_HOME_STRATA:-$HOME/.codex-strata}"
+mkdir -p "$CODEX_HOME"
+[ -e "$CODEX_HOME/config.toml" ] || cp "$HERE/../codex/config.toml" "$CODEX_HOME/config.toml"   # a copy: Codex writes project trust into it
+exec "$HOME/.local/opt/codex-0.162.1/bin/codex" "$@"

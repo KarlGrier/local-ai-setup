@@ -1,0 +1,521 @@
+=== 2026-11-09 07:42:49 start attempt: work/r23/gap-basalt-speed.sh (pre-gap checks)
+=== 2026-11-09 07:42:49   (info) the research queue (deep-research-bench.service) is inactive; port_gap4.sh begin waits for a running question, an active Jan job and a chat on 8080
+=== 2026-11-09 07:42:50   basalt_speed_rules selftest: 0 failure(s)
+=== 2026-11-09 07:42:50   PRE OK: gap fix passed BUILD and BASELINE; priced on the fix build: B A T U C (A EXACT, T ROUNDING-LEVEL, U EXACT, C ROUNDING-LEVEL A,T,U,K,KP @ 22528)
+CONFIG CHECK OK: A, B, Bc, C, Cc, P, PU, T, Tc, U = P0210x-h (fix build) / x28h (P028x) + their switches only
+rules frozen: /home/USER/ai-speed-testing/strata-compare/results/r23/basalt-prompt/gap-speed/rules.txt sha 220bec8b6781
+=== 2026-11-09 07:42:50 BASALT SPEED GAP (work/r23/gap-basalt-speed.sh): on engine-r23basalt-fix 0cb2a597cb14: B A T U C (C = A,T,U,K,KP + FIRST_CHUNK at auto:32768, gated chunk 22528); on P028x: P, PU (after its exactness); deadline 150 min - measurements only, P028x stays served, nothing switches
+2026-11-09 07:42:50 port_gap4: hold set; waiting for the running research run to finish
+2026-11-09 07:43:35 port_gap4: a chat is being answered on 8080, or a request just finished - the gap waits for it
+2026-11-09 07:45:05 port_gap4: no chat being answered any more - going on
+2026-11-09 07:45:05 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 3661744 (engine 3661855)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-09 07:46:24 port_gap4: gap open: test lock held (pid 3664428), 8080 stopped
+=== 2026-11-09 07:46:24 8080 down: engines left: none MemAvailable 85 GB
+=== 2026-11-09 07:46:24 2 PU's exactness on P028x: exact7 P vs the stored x28h-e7a, exact7 PU vs this gap's P; long40 PU40 vs gap 16's stored x28h
+=== 2026-11-09 07:46:24 exact7 r23sp11090742-P (P.json against x28h-e7a, pin 2500)
+engine pid 3665141: 27 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3665491: 27 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3665833: 27 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3666179: 27 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3666525: 27 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3666799: 27 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3667095: 27 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+r23sp11090742-P-x-math   out 6b251415 (x28h-e7a 6b251415) =  ms/round 32.84  prompt ms 499
+r23sp11090742-P-s-math   out 8c25c022 (x28h-e7a 8c25c022) =  ms/round 32.39  prompt ms 503
+r23sp11090742-P-x-code   out 3585ad6f (x28h-e7a 3585ad6f) =  ms/round 24.92  prompt ms 497
+r23sp11090742-P-s-code   out 2fe9fd9e (x28h-e7a 2fe9fd9e) =  ms/round 23.61  prompt ms 499
+r23sp11090742-P-x-p2000  out 3e219376 (x28h-e7a 3e219376) =  ms/round 37.15  prompt ms 1100
+r23sp11090742-P-x-32k    out 651f56c8 (x28h-e7a 651f56c8) =  ms/round 39.55  prompt ms 7539
+r23sp11090742-P-x-112k   out a393ca0a (x28h-e7a a393ca0a) =  ms/round 32.22  prompt ms 25656
+exact7 r23sp11090742-P: 7/7 identical to x28h-e7a
+exact7-slots r23sp11090742-P: 3238+3300 slots (5080 + 4060 Ti); x28h-e7a: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 27 env keys as configured, STRATA_ROUTE_TAIL_SKIP=0, no other STRATA_*, harness args as expected
+exact7 r23sp11090742-P: 7/7, slots MATCHED -> PASS
+=== 2026-11-09 07:49:41 exact7 r23sp11090742-PU (PU.json against r23sp11090742-P, pin 2500)
+engine pid 3667451: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3667804: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3668148: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3668495: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3668842: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3668993: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 3669295: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+r23sp11090742-PU-x-math   out 6b251415 (r23sp11090742-P 6b251415) =  ms/round 33.13  prompt ms 513
+r23sp11090742-PU-s-math   out 8c25c022 (r23sp11090742-P 8c25c022) =  ms/round 32.19  prompt ms 505
+r23sp11090742-PU-x-code   out 3585ad6f (r23sp11090742-P 3585ad6f) =  ms/round 24.83  prompt ms 536
+r23sp11090742-PU-s-code   out 2fe9fd9e (r23sp11090742-P 2fe9fd9e) =  ms/round 23.59  prompt ms 499
+r23sp11090742-PU-x-p2000  out 3e219376 (r23sp11090742-P 3e219376) =  ms/round 37.48  prompt ms 1106
+r23sp11090742-PU-x-32k    out 651f56c8 (r23sp11090742-P 651f56c8) =  ms/round 39.13  prompt ms 7236
+r23sp11090742-PU-x-112k   out a393ca0a (r23sp11090742-P a393ca0a) =  ms/round 32.58  prompt ms 24562
+exact7 r23sp11090742-PU: 7/7 identical to r23sp11090742-P
+exact7-slots r23sp11090742-PU: 3238+3300 slots (5080 + 4060 Ti); r23sp11090742-P: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 28 env keys as configured, STRATA_ROUTE_TAIL_SKIP=0, no other STRATA_*, harness args as expected
+exact7 r23sp11090742-PU: 7/7, slots MATCHED -> PASS
+=== 2026-11-09 07:52:56 pf_yardstick long40 PU40 (PU.json)
+engine pid 3669630: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 1 --pcie-frac 0 --adapt-every 100000 --suffix-draft 0 --prompt-cache 0 --prefill auto --kv fp16 --kv-resident None -> ENV OK
+pfy PU40: 40 prompts, 40 logit rows
+pfy PU40:   strata: prompt experts: v2 kernels for IQ3_XXS gate/up (17 of 48 layers), IQ4_NL down (39 of 48 layers) (STRATA_PREFILL_V2=1, adapted from Basalt)
+pfy PU40: 2026-11-09T08:01:31 pfysp-PU40 exit=0 514s min_MemAvailable=37.2GiB@486s min_5080_free=7355MiB@506s max_tree_RSS=48.7GiB max_swap_used=2.88GiB min_4060Ti_free=1179MiB ok
+ENV CHECK OK: 1 engine start(s) (pfy), 29 env keys as configured, STRATA_ROUTE_TAIL_SKIP=0, no other STRATA_*, harness args as expected
+PU40 vs x28h: 0 of 40 first-token logit files differ -> IDENTICAL
+PU on P028x: EXACT: exact7 PU vs this gap's P PASS (exact7 r23sp11090742-PU: 7/7, slots MATCHED); long40 PU40 vs gap 16's stored x28h long40 PASS (PU40 vs x28h: 0 of 40 first-token logit files differ)
+EXACT
+=== 2026-11-09 08:01:31 PU (P028x + STRATA_HC_UPMIX=1): EXACT - its speed arms run
+=== 2026-11-09 08:01:31 3 B1 Basalt's cold pp16k / pp64k, a fresh engine per measurement, 3 passes: B A T U C P PU / PU P C U T A B / B A T U C P PU
+=== 2026-11-09 08:01:32 server r23sp-bpB-pp16k-1 (B.json)
+server ready (guard pid 3674085, server pid 3674100) load_time_s 15.365624914 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpB-pp16k-1_20261109T080133.log
+engine pid 3674118: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-B-pp16k-1 pass 1 pp16k: 16676 tokens, 3751.9 tok/s engine
+=== 2026-11-09 08:02:28 server r23sp-bpB-pp64k-1 (B.json)
+server ready (guard pid 3675153, server pid 3675168) load_time_s 15.371819745 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpB-pp64k-1_20261109T080229.log
+engine pid 3675186: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-B-pp64k-1 pass 1 pp64k: 66617 tokens, 4378.8 tok/s engine
+=== 2026-11-09 08:03:34 server r23sp-bpA-pp16k-1 (A.json)
+server ready (guard pid 3676580, server pid 3676595) load_time_s 15.373064570 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpA-pp16k-1_20261109T080335.log
+engine pid 3676613: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-A-pp16k-1 pass 1 pp16k: 16676 tokens, 3852.9 tok/s engine
+=== 2026-11-09 08:04:30 server r23sp-bpA-pp64k-1 (A.json)
+server ready (guard pid 3677650, server pid 3677665) load_time_s 15.376867594 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpA-pp64k-1_20261109T080431.log
+engine pid 3677683: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-A-pp64k-1 pass 1 pp64k: 66617 tokens, 4395.0 tok/s engine
+=== 2026-11-09 08:05:36 server r23sp-bpT-pp16k-1 (T.json)
+server ready (guard pid 3679089, server pid 3679104) load_time_s 15.364168598 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpT-pp16k-1_20261109T080537.log
+engine pid 3679122: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-T-pp16k-1 pass 1 pp16k: 16676 tokens, 4082.4 tok/s engine
+=== 2026-11-09 08:06:32 server r23sp-bpT-pp64k-1 (T.json)
+server ready (guard pid 3680258, server pid 3680273) load_time_s 15.363637053 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpT-pp64k-1_20261109T080633.log
+engine pid 3680291: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-T-pp64k-1 pass 1 pp64k: 66617 tokens, 4483.2 tok/s engine
+=== 2026-11-09 08:07:38 server r23sp-bpU-pp16k-1 (U.json)
+server ready (guard pid 3681541, server pid 3681556) load_time_s 15.370528199 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpU-pp16k-1_20261109T080739.log
+engine pid 3681574: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-U-pp16k-1 pass 1 pp16k: 16676 tokens, 3969.3 tok/s engine
+=== 2026-11-09 08:08:34 server r23sp-bpU-pp64k-1 (U.json)
+server ready (guard pid 3682890, server pid 3682905) load_time_s 15.372947367 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpU-pp64k-1_20261109T080835.log
+engine pid 3682923: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-U-pp64k-1 pass 1 pp64k: 66617 tokens, 4562.6 tok/s engine
+=== 2026-11-09 08:09:40 server r23sp-bpC-pp16k-1 (C.json)
+server ready (guard pid 3684237, server pid 3684252) load_time_s 15.373078047 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpC-pp16k-1_20261109T080941.log
+engine pid 3684270: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+r23sp-C-pp16k-1 pass 1 pp16k: 16676 tokens, 4479.5 tok/s engine
+r23sp-bpC-pp16k-1.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 08:10:36 server r23sp-bpC-pp64k-1 (C.json)
+server ready (guard pid 3685471, server pid 3685486) load_time_s 15.374342450 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpC-pp64k-1_20261109T081037.log
+engine pid 3685504: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+r23sp-C-pp64k-1 pass 1 pp64k: 66617 tokens, 4768.3 tok/s engine
+r23sp-bpC-pp64k-1.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 08:11:42 server r23sp-bpP-pp16k-1 (P.json)
+server ready (guard pid 3686819, server pid 3686834) load_time_s 14.352758493 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpP-pp16k-1_20261109T081143.log
+engine pid 3686839: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-P-pp16k-1 pass 1 pp16k: 16676 tokens, 3849.8 tok/s engine
+=== 2026-11-09 08:12:38 server r23sp-bpP-pp64k-1 (P.json)
+server ready (guard pid 3688043, server pid 3688058) load_time_s 14.349856957 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpP-pp64k-1_20261109T081240.log
+engine pid 3688063: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-P-pp64k-1 pass 1 pp64k: 66617 tokens, 4362.9 tok/s engine
+=== 2026-11-09 08:13:45 server r23sp-bpPU-pp16k-1 (PU.json)
+server ready (guard pid 3689351, server pid 3689366) load_time_s 14.348315792 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpPU-pp16k-1_20261109T081346.log
+engine pid 3689371: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-PU-pp16k-1 pass 1 pp16k: 16676 tokens, 3972.9 tok/s engine
+=== 2026-11-09 08:14:41 server r23sp-bpPU-pp64k-1 (PU.json)
+server ready (guard pid 3690548, server pid 3690563) load_time_s 14.336640800 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpPU-pp64k-1_20261109T081442.log
+engine pid 3690568: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-PU-pp64k-1 pass 1 pp64k: 66617 tokens, 4570.0 tok/s engine
+=== 2026-11-09 08:15:47 server r23sp-bpPU-pp16k-2 (PU.json)
+server ready (guard pid 3691898, server pid 3691913) load_time_s 14.337470140 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpPU-pp16k-2_20261109T081548.log
+engine pid 3691918: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-PU-pp16k-2 pass 2 pp16k: 16676 tokens, 3977.9 tok/s engine
+=== 2026-11-09 08:16:43 server r23sp-bpPU-pp64k-2 (PU.json)
+server ready (guard pid 3693095, server pid 3693110) load_time_s 14.347506859 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpPU-pp64k-2_20261109T081644.log
+engine pid 3693115: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-PU-pp64k-2 pass 2 pp64k: 66617 tokens, 4564.8 tok/s engine
+=== 2026-11-09 08:17:49 server r23sp-bpP-pp16k-2 (P.json)
+server ready (guard pid 3694430, server pid 3694445) load_time_s 14.346951453 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpP-pp16k-2_20261109T081750.log
+engine pid 3694450: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-P-pp16k-2 pass 2 pp16k: 16676 tokens, 3851.4 tok/s engine
+=== 2026-11-09 08:18:45 server r23sp-bpP-pp64k-2 (P.json)
+server ready (guard pid 3695647, server pid 3695662) load_time_s 14.341264154 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpP-pp64k-2_20261109T081846.log
+engine pid 3695667: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-P-pp64k-2 pass 2 pp64k: 66617 tokens, 4382.8 tok/s engine
+=== 2026-11-09 08:19:51 server r23sp-bpC-pp16k-2 (C.json)
+server ready (guard pid 3696938, server pid 3696953) load_time_s 15.372630952 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpC-pp16k-2_20261109T081952.log
+engine pid 3696971: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+r23sp-C-pp16k-2 pass 2 pp16k: 16676 tokens, 4446.7 tok/s engine
+r23sp-bpC-pp16k-2.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 08:20:47 server r23sp-bpC-pp64k-2 (C.json)
+server ready (guard pid 3698125, server pid 3698140) load_time_s 15.369276597 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpC-pp64k-2_20261109T082048.log
+engine pid 3698159: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+r23sp-C-pp64k-2 pass 2 pp64k: 66617 tokens, 4768.6 tok/s engine
+r23sp-bpC-pp64k-2.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 08:21:53 server r23sp-bpU-pp16k-2 (U.json)
+server ready (guard pid 3699415, server pid 3699430) load_time_s 15.368212315 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpU-pp16k-2_20261109T082155.log
+engine pid 3699448: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-U-pp16k-2 pass 2 pp16k: 16676 tokens, 3931.6 tok/s engine
+=== 2026-11-09 08:22:49 server r23sp-bpU-pp64k-2 (U.json)
+server ready (guard pid 3700642, server pid 3700657) load_time_s 15.362953809 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpU-pp64k-2_20261109T082251.log
+engine pid 3700675: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-U-pp64k-2 pass 2 pp64k: 66617 tokens, 4565.7 tok/s engine
+=== 2026-11-09 08:23:56 server r23sp-bpT-pp16k-2 (T.json)
+server ready (guard pid 3701948, server pid 3701964) load_time_s 15.377308217 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpT-pp16k-2_20261109T082357.log
+engine pid 3701982: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-T-pp16k-2 pass 2 pp16k: 16676 tokens, 4087.0 tok/s engine
+=== 2026-11-09 08:24:52 server r23sp-bpT-pp64k-2 (T.json)
+server ready (guard pid 3703131, server pid 3703146) load_time_s 15.365591173 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpT-pp64k-2_20261109T082453.log
+engine pid 3703164: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-T-pp64k-2 pass 2 pp64k: 66617 tokens, 4482.7 tok/s engine
+=== 2026-11-09 08:25:58 server r23sp-bpA-pp16k-2 (A.json)
+server ready (guard pid 3704391, server pid 3704406) load_time_s 15.359521313 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpA-pp16k-2_20261109T082559.log
+engine pid 3704424: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-A-pp16k-2 pass 2 pp16k: 16676 tokens, 3854.1 tok/s engine
+=== 2026-11-09 08:26:54 server r23sp-bpA-pp64k-2 (A.json)
+server ready (guard pid 3705618, server pid 3705633) load_time_s 15.365601743 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpA-pp64k-2_20261109T082655.log
+engine pid 3705651: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-A-pp64k-2 pass 2 pp64k: 66617 tokens, 4398.1 tok/s engine
+=== 2026-11-09 08:28:00 server r23sp-bpB-pp16k-2 (B.json)
+server ready (guard pid 3706923, server pid 3706938) load_time_s 15.365352701 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpB-pp16k-2_20261109T082801.log
+engine pid 3706956: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-B-pp16k-2 pass 2 pp16k: 16676 tokens, 3843.6 tok/s engine
+=== 2026-11-09 08:28:56 server r23sp-bpB-pp64k-2 (B.json)
+server ready (guard pid 3708156, server pid 3708171) load_time_s 15.357703155 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpB-pp64k-2_20261109T082857.log
+engine pid 3708189: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-B-pp64k-2 pass 2 pp64k: 66617 tokens, 4381.7 tok/s engine
+=== 2026-11-09 08:30:02 server r23sp-bpB-pp16k-3 (B.json)
+server ready (guard pid 3709470, server pid 3709485) load_time_s 15.361462332 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpB-pp16k-3_20261109T083003.log
+engine pid 3709503: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-B-pp16k-3 pass 3 pp16k: 16676 tokens, 3840.1 tok/s engine
+=== 2026-11-09 08:30:58 server r23sp-bpB-pp64k-3 (B.json)
+server ready (guard pid 3710728, server pid 3710743) load_time_s 15.364983313 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpB-pp64k-3_20261109T083059.log
+engine pid 3710761: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-B-pp64k-3 pass 3 pp64k: 66617 tokens, 4384.5 tok/s engine
+=== 2026-11-09 08:32:04 server r23sp-bpA-pp16k-3 (A.json)
+server ready (guard pid 3712038, server pid 3712053) load_time_s 15.370979725 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpA-pp16k-3_20261109T083205.log
+engine pid 3712071: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-A-pp16k-3 pass 3 pp16k: 16676 tokens, 3864.7 tok/s engine
+=== 2026-11-09 08:33:00 server r23sp-bpA-pp64k-3 (A.json)
+server ready (guard pid 3713260, server pid 3713275) load_time_s 15.363222675 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpA-pp64k-3_20261109T083301.log
+engine pid 3713300: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-A-pp64k-3 pass 3 pp64k: 66617 tokens, 4400.1 tok/s engine
+=== 2026-11-09 08:34:06 server r23sp-bpT-pp16k-3 (T.json)
+server ready (guard pid 3714572, server pid 3714587) load_time_s 15.367581406 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpT-pp16k-3_20261109T083407.log
+engine pid 3714605: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-T-pp16k-3 pass 3 pp16k: 16676 tokens, 4083.5 tok/s engine
+=== 2026-11-09 08:35:02 server r23sp-bpT-pp64k-3 (T.json)
+server ready (guard pid 3715756, server pid 3715771) load_time_s 15.373343982 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpT-pp64k-3_20261109T083503.log
+engine pid 3715789: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-T-pp64k-3 pass 3 pp64k: 66617 tokens, 4483.5 tok/s engine
+=== 2026-11-09 08:36:08 server r23sp-bpU-pp16k-3 (U.json)
+server ready (guard pid 3717016, server pid 3717033) load_time_s 15.372129096 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpU-pp16k-3_20261109T083610.log
+engine pid 3717191: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-U-pp16k-3 pass 3 pp16k: 16676 tokens, 3972.9 tok/s engine
+=== 2026-11-09 08:37:05 server r23sp-bpU-pp64k-3 (U.json)
+server ready (guard pid 3718240, server pid 3718255) load_time_s 15.367724492 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpU-pp64k-3_20261109T083706.log
+engine pid 3718273: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-U-pp64k-3 pass 3 pp64k: 66617 tokens, 4565.7 tok/s engine
+=== 2026-11-09 08:38:11 server r23sp-bpC-pp16k-3 (C.json)
+server ready (guard pid 3719687, server pid 3719702) load_time_s 15.371433537 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpC-pp16k-3_20261109T083812.log
+engine pid 3719720: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+r23sp-C-pp16k-3 pass 3 pp16k: 16676 tokens, 4454.9 tok/s engine
+r23sp-bpC-pp16k-3.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 08:39:07 server r23sp-bpC-pp64k-3 (C.json)
+server ready (guard pid 3720726, server pid 3720741) load_time_s 15.377543414 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpC-pp64k-3_20261109T083908.log
+engine pid 3720761: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+r23sp-C-pp64k-3 pass 3 pp64k: 66617 tokens, 4741.2 tok/s engine
+r23sp-bpC-pp64k-3.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 08:40:13 server r23sp-bpP-pp16k-3 (P.json)
+server ready (guard pid 3722134, server pid 3722149) load_time_s 14.352189796 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpP-pp16k-3_20261109T084014.log
+engine pid 3722154: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-P-pp16k-3 pass 3 pp16k: 16676 tokens, 3847.1 tok/s engine
+=== 2026-11-09 08:41:09 server r23sp-bpP-pp64k-3 (P.json)
+server ready (guard pid 3723210, server pid 3723225) load_time_s 14.341701341 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpP-pp64k-3_20261109T084110.log
+engine pid 3723230: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-P-pp64k-3 pass 3 pp64k: 66617 tokens, 4365.6 tok/s engine
+=== 2026-11-09 08:42:15 server r23sp-bpPU-pp16k-3 (PU.json)
+server ready (guard pid 3724637, server pid 3724652) load_time_s 14.338661933 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpPU-pp16k-3_20261109T084216.log
+engine pid 3724657: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-PU-pp16k-3 pass 3 pp16k: 16676 tokens, 3976.4 tok/s engine
+=== 2026-11-09 08:43:11 server r23sp-bpPU-pp64k-3 (PU.json)
+server ready (guard pid 3725853, server pid 3725868) load_time_s 14.342372999 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpPU-pp64k-3_20261109T084312.log
+engine pid 3725873: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-PU-pp64k-3 pass 3 pp64k: 66617 tokens, 4565.3 tok/s engine
+=== 2026-11-09 08:44:17 4 B2 Basalt's decode fixtures (conv, struct, prose), 1 pass: B C P PU
+=== 2026-11-09 08:44:17 server r23sp-bpB-decode-1 (B.json)
+server ready (guard pid 3727164, server pid 3727180) load_time_s 15.376611855 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpB-decode-1_20261109T084418.log
+engine pid 3727198: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-B-decode-1 pass 1 conv: 991 tokens (stop), 150.9 tok/s decode
+r23sp-B-decode-1 pass 1 struct: 7230 tokens (stop), 230.0 tok/s decode
+r23sp-B-decode-1 pass 1 prose: 1124 tokens (stop), 136.7 tok/s decode
+=== 2026-11-09 08:45:54 server r23sp-bpC-decode-1 (C.json)
+server ready (guard pid 3729374, server pid 3729389) load_time_s 15.373996049 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpC-decode-1_20261109T084556.log
+engine pid 3729407: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+r23sp-C-decode-1 pass 1 conv: 1082 tokens (stop), 146.1 tok/s decode
+r23sp-C-decode-1 pass 1 struct: 7230 tokens (stop), 223.7 tok/s decode
+r23sp-C-decode-1 pass 1 prose: 1094 tokens (stop), 131.1 tok/s decode
+r23sp-bpC-decode-1.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 08:47:37 server r23sp-bpP-decode-1 (P.json)
+server ready (guard pid 3731827, server pid 3731842) load_time_s 14.341982010 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpP-decode-1_20261109T084738.log
+engine pid 3731847: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-P-decode-1 pass 1 conv: 1052 tokens (stop), 140.1 tok/s decode
+r23sp-P-decode-1 pass 1 struct: 7230 tokens (stop), 225.3 tok/s decode
+r23sp-P-decode-1 pass 1 prose: 1048 tokens (stop), 129.1 tok/s decode
+=== 2026-11-09 08:49:19 server r23sp-bpPU-decode-1 (PU.json)
+server ready (guard pid 3734171, server pid 3734186) load_time_s 14.360011216 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-bpPU-decode-1_20261109T084920.log
+engine pid 3734191: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23sp-PU-decode-1 pass 1 conv: 1103 tokens (stop), 148.7 tok/s decode
+r23sp-PU-decode-1 pass 1 struct: 7230 tokens (stop), 232.2 tok/s decode
+r23sp-PU-decode-1 pass 1 prose: 926 tokens (stop), 128.1 tok/s decode
+=== 2026-11-09 08:50:56 5 B3 the 9-workload screen, 3 passes in turned order (B C P PU / PU P C B / P B PU C) over: B C P PU
+=== 2026-11-09 08:50:56 server r23sp-B1 (B.json)
+server ready (guard pid 3736325, server pid 3736340) load_time_s 15.366136717 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-B1_20261109T085057.log
+engine pid 3736358: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+B1n W1-think r0: prompt 109 ttft 0.304 s, 3072 tokens, 162.63 tok/s, length
+B1n W2-code r0: prompt 124 ttft 0.318 s, 3072 tokens, 157.54 tok/s, length
+B1n W3-research r0: prompt 26729 ttft 6.019 s, 2048 tokens, 155.77 tok/s, length
+B1a A-edit r0: prompt 2678 ttft 1.014 s, 543 tokens, 133.6 tok/s, tool_calls
+B1a B-write r0: prompt 1369 ttft 0.835 s, 1020 tokens, 174.11 tok/s, tool_calls
+B1r R1-verify20k r0: prompt 24239 ttft 5.529 s, 3715 tokens, 152.74 tok/s, stop
+B1r R2-report54k r0: prompt 54069 ttft 12.014 s, 2766 tokens, 144.84 tok/s, stop
+B1r R3-extract5k r0: prompt 5012 ttft 1.442 s, 1140 tokens, 180.94 tok/s, stop
+B1r R4-agent33k r0: prompt 33417 ttft 7.826 s, 339 tokens, 141.95 tok/s, tool_calls
+=== 2026-11-09 08:54:30 server r23sp-C1 (C.json)
+server ready (guard pid 3741082, server pid 3741097) load_time_s 15.366501392 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-C1_20261109T085432.log
+engine pid 3741122: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+C1n W1-think r0: prompt 111 ttft 0.29 s, 3072 tokens, 190.23 tok/s, length
+C1n W2-code r0: prompt 126 ttft 0.307 s, 3072 tokens, 170.54 tok/s, length
+C1n W3-research r0: prompt 26729 ttft 5.798 s, 2048 tokens, 164.45 tok/s, length
+C1a A-edit r0: prompt 2677 ttft 0.954 s, 333 tokens, 117.7 tok/s, tool_calls
+C1a B-write r0: prompt 1371 ttft 0.828 s, 1569 tokens, 170.0 tok/s, tool_calls
+C1r R1-verify20k r0: prompt 24239 ttft 5.261 s, 3875 tokens, 153.31 tok/s, stop
+C1r R2-report54k r0: prompt 54071 ttft 11.157 s, 3369 tokens, 151.88 tok/s, stop
+C1r R3-extract5k r0: prompt 5011 ttft 1.264 s, 1054 tokens, 173.38 tok/s, stop
+C1r R4-agent33k r0: prompt 33416 ttft 7.045 s, 414 tokens, 133.45 tok/s, tool_calls
+r23sp-C1.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 08:58:05 server r23sp-P1 (P.json)
+server ready (guard pid 3745751, server pid 3745766) load_time_s 15.353195306 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-P1_20261109T085806.log
+engine pid 3745771: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+P1n W1-think r0: prompt 109 ttft 0.293 s, 3072 tokens, 190.28 tok/s, length
+P1n W2-code r0: prompt 123 ttft 0.309 s, 3072 tokens, 164.17 tok/s, length
+P1n W3-research r0: prompt 26727 ttft 6.024 s, 2048 tokens, 163.15 tok/s, length
+P1a A-edit r0: prompt 2678 ttft 1.016 s, 844 tokens, 142.86 tok/s, tool_calls
+P1a B-write r0: prompt 1372 ttft 0.848 s, 1334 tokens, 197.91 tok/s, tool_calls
+P1r R1-verify20k r0: prompt 24240 ttft 5.531 s, 3865 tokens, 154.84 tok/s, stop
+P1r R2-report54k r0: prompt 54070 ttft 12.015 s, 3149 tokens, 145.59 tok/s, stop
+P1r R3-extract5k r0: prompt 5010 ttft 1.438 s, 934 tokens, 177.38 tok/s, stop
+P1r R4-agent33k r0: prompt 33416 ttft 7.832 s, 320 tokens, 128.35 tok/s, tool_calls
+=== 2026-11-09 09:01:39 server r23sp-PU1 (PU.json)
+server ready (guard pid 3750507, server pid 3750522) load_time_s 15.366294955 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-PU1_20261109T090141.log
+engine pid 3750527: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+PU1n W1-think r0: prompt 110 ttft 0.296 s, 3072 tokens, 200.59 tok/s, length
+PU1n W2-code r0: prompt 123 ttft 0.313 s, 3072 tokens, 150.8 tok/s, length
+PU1n W3-research r0: prompt 26726 ttft 5.795 s, 2048 tokens, 164.52 tok/s, length
+PU1a A-edit r0: prompt 2677 ttft 1.012 s, 172 tokens, 123.69 tok/s, tool_calls
+PU1a B-write r0: prompt 1370 ttft 0.842 s, 1777 tokens, 162.12 tok/s, tool_calls
+PU1r R1-verify20k r0: prompt 24237 ttft 5.323 s, 3821 tokens, 149.4 tok/s, stop
+PU1r R2-report54k r0: prompt 54071 ttft 11.512 s, 2681 tokens, 153.42 tok/s, stop
+PU1r R3-extract5k r0: prompt 5010 ttft 1.375 s, 820 tokens, 174.59 tok/s, stop
+PU1r R4-agent33k r0: prompt 33415 ttft 7.526 s, 271 tokens, 136.49 tok/s, tool_calls
+=== 2026-11-09 09:05:10 server r23sp-PU2 (PU.json)
+server ready (guard pid 3755174, server pid 3755189) load_time_s 14.352271640 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-PU2_20261109T090511.log
+engine pid 3755194: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+PU2n W1-think r0: prompt 112 ttft 0.303 s, 3072 tokens, 161.41 tok/s, length
+PU2n W2-code r0: prompt 122 ttft 0.315 s, 3072 tokens, 165.06 tok/s, length
+PU2n W3-research r0: prompt 26730 ttft 5.793 s, 2048 tokens, 156.77 tok/s, length
+PU2a A-edit r0: prompt 2679 ttft 1.018 s, 475 tokens, 136.25 tok/s, tool_calls
+PU2a B-write r0: prompt 1370 ttft 0.828 s, 1814 tokens, 169.25 tok/s, tool_calls
+PU2r R1-verify20k r0: prompt 24238 ttft 5.328 s, 3613 tokens, 156.38 tok/s, stop
+PU2r R2-report54k r0: prompt 54071 ttft 11.517 s, 4096 tokens, 156.67 tok/s, length
+PU2r R3-extract5k r0: prompt 5012 ttft 1.39 s, 1006 tokens, 173.1 tok/s, stop
+PU2r R4-agent33k r0: prompt 33417 ttft 7.54 s, 278 tokens, 127.21 tok/s, tool_calls
+=== 2026-11-09 09:08:49 server r23sp-P2 (P.json)
+server ready (guard pid 3760059, server pid 3760216) load_time_s 14.339395554 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-P2_20261109T090850.log
+engine pid 3760221: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+P2n W1-think r0: prompt 111 ttft 0.301 s, 3072 tokens, 171.35 tok/s, length
+P2n W2-code r0: prompt 125 ttft 0.324 s, 3072 tokens, 151.97 tok/s, length
+P2n W3-research r0: prompt 26728 ttft 6.041 s, 2048 tokens, 168.02 tok/s, length
+P2a A-edit r0: prompt 2678 ttft 1.013 s, 491 tokens, 131.32 tok/s, tool_calls
+P2a B-write r0: prompt 1368 ttft 0.831 s, 1687 tokens, 171.29 tok/s, tool_calls
+P2r R1-verify20k r0: prompt 24240 ttft 5.539 s, 3542 tokens, 150.06 tok/s, stop
+P2r R2-report54k r0: prompt 54068 ttft 12.016 s, 3626 tokens, 152.26 tok/s, stop
+P2r R3-extract5k r0: prompt 5011 ttft 1.443 s, 1472 tokens, 178.8 tok/s, stop
+P2r R4-agent33k r0: prompt 33415 ttft 7.832 s, 482 tokens, 136.99 tok/s, tool_calls
+=== 2026-11-09 09:12:34 server r23sp-C2 (C.json)
+server ready (guard pid 3765118, server pid 3765137) load_time_s 15.371744074 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-C2_20261109T091235.log
+engine pid 3765155: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+C2n W1-think r0: prompt 112 ttft 0.295 s, 3072 tokens, 165.02 tok/s, length
+C2n W2-code r0: prompt 123 ttft 0.314 s, 3072 tokens, 157.48 tok/s, length
+C2n W3-research r0: prompt 26728 ttft 5.793 s, 2048 tokens, 161.71 tok/s, length
+C2a A-edit r0: prompt 2679 ttft 0.953 s, 301 tokens, 119.59 tok/s, tool_calls
+C2a B-write r0: prompt 1369 ttft 0.829 s, 3523 tokens, 155.41 tok/s, tool_calls
+C2r R1-verify20k r0: prompt 24241 ttft 5.273 s, 3674 tokens, 154.97 tok/s, stop
+C2r R2-report54k r0: prompt 54070 ttft 11.151 s, 2451 tokens, 146.08 tok/s, stop
+C2r R3-extract5k r0: prompt 5013 ttft 1.267 s, 1326 tokens, 179.16 tok/s, stop
+C2r R4-agent33k r0: prompt 33418 ttft 7.053 s, 252 tokens, 125.96 tok/s, tool_calls
+r23sp-C2.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 09:16:19 server r23sp-B2 (B.json)
+server ready (guard pid 3770097, server pid 3770112) load_time_s 15.366855098 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-B2_20261109T091620.log
+engine pid 3770150: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+B2n W1-think r0: prompt 111 ttft 0.299 s, 3072 tokens, 169.3 tok/s, length
+B2n W2-code r0: prompt 125 ttft 0.328 s, 3072 tokens, 150.94 tok/s, length
+B2n W3-research r0: prompt 26728 ttft 6.033 s, 2048 tokens, 158.4 tok/s, length
+B2a A-edit r0: prompt 2676 ttft 1.016 s, 172 tokens, 130.5 tok/s, tool_calls
+B2a B-write r0: prompt 1369 ttft 0.85 s, 2309 tokens, 155.83 tok/s, tool_calls
+B2r R1-verify20k r0: prompt 24241 ttft 5.528 s, 3669 tokens, 152.48 tok/s, stop
+B2r R2-report54k r0: prompt 54071 ttft 12.015 s, 3724 tokens, 151.27 tok/s, stop
+B2r R3-extract5k r0: prompt 5012 ttft 1.435 s, 1386 tokens, 184.23 tok/s, stop
+B2r R4-agent33k r0: prompt 33417 ttft 7.84 s, 224 tokens, 132.37 tok/s, tool_calls
+=== 2026-11-09 09:20:03 server r23sp-P3 (P.json)
+server ready (guard pid 3775230, server pid 3775245) load_time_s 14.353155146 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-P3_20261109T092004.log
+engine pid 3775254: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+P3n W1-think r0: prompt 108 ttft 0.304 s, 3072 tokens, 193.3 tok/s, length
+P3n W2-code r0: prompt 124 ttft 0.31 s, 3072 tokens, 158.83 tok/s, length
+P3n W3-research r0: prompt 26728 ttft 6.03 s, 2048 tokens, 161.46 tok/s, length
+P3a A-edit r0: prompt 2677 ttft 1.018 s, 266 tokens, 136.26 tok/s, tool_calls
+P3a B-write r0: prompt 1369 ttft 0.849 s, 3407 tokens, 155.41 tok/s, tool_calls
+P3r R1-verify20k r0: prompt 24241 ttft 5.533 s, 3868 tokens, 155.83 tok/s, stop
+P3r R2-report54k r0: prompt 54071 ttft 12.012 s, 3001 tokens, 146.74 tok/s, stop
+P3r R3-extract5k r0: prompt 5013 ttft 1.419 s, 1437 tokens, 185.4 tok/s, stop
+P3r R4-agent33k r0: prompt 33413 ttft 7.833 s, 284 tokens, 126.67 tok/s, tool_calls
+=== 2026-11-09 09:23:48 server r23sp-B3 (B.json)
+server ready (guard pid 3780173, server pid 3780189) load_time_s 15.366918651 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-B3_20261109T092349.log
+engine pid 3780208: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+B3n W1-think r0: prompt 110 ttft 0.303 s, 3072 tokens, 168.19 tok/s, length
+B3n W2-code r0: prompt 126 ttft 0.325 s, 3072 tokens, 160.0 tok/s, length
+B3n W3-research r0: prompt 26727 ttft 6.036 s, 2048 tokens, 165.01 tok/s, length
+B3a A-edit r0: prompt 2679 ttft 1.025 s, 172 tokens, 118.2 tok/s, tool_calls
+B3a B-write r0: prompt 1371 ttft 0.852 s, 3245 tokens, 159.32 tok/s, tool_calls
+B3r R1-verify20k r0: prompt 24239 ttft 5.53 s, 3823 tokens, 158.75 tok/s, stop
+B3r R2-report54k r0: prompt 54070 ttft 12.022 s, 3357 tokens, 154.55 tok/s, stop
+B3r R3-extract5k r0: prompt 5013 ttft 1.419 s, 1083 tokens, 156.33 tok/s, stop
+B3r R4-agent33k r0: prompt 33417 ttft 7.835 s, 356 tokens, 134.4 tok/s, tool_calls
+=== 2026-11-09 09:27:38 server r23sp-PU3 (PU.json)
+server ready (guard pid 3785353, server pid 3785368) load_time_s 14.354614492 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-PU3_20261109T092739.log
+engine pid 3785373: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+PU3n W1-think r0: prompt 111 ttft 0.293 s, 3072 tokens, 188.53 tok/s, length
+PU3n W2-code r0: prompt 125 ttft 0.319 s, 3072 tokens, 161.35 tok/s, length
+PU3n W3-research r0: prompt 26726 ttft 5.831 s, 2048 tokens, 157.03 tok/s, length
+PU3a A-edit r0: prompt 2679 ttft 1.016 s, 177 tokens, 125.39 tok/s, tool_calls
+PU3a B-write r0: prompt 1371 ttft 0.844 s, 2373 tokens, 155.88 tok/s, tool_calls
+PU3r R1-verify20k r0: prompt 24241 ttft 5.321 s, 3551 tokens, 151.01 tok/s, stop
+PU3r R2-report54k r0: prompt 54071 ttft 11.527 s, 3274 tokens, 148.39 tok/s, stop
+PU3r R3-extract5k r0: prompt 5011 ttft 1.395 s, 1297 tokens, 175.07 tok/s, stop
+PU3r R4-agent33k r0: prompt 33417 ttft 7.532 s, 297 tokens, 132.12 tok/s, tool_calls
+=== 2026-11-09 09:31:17 server r23sp-C3 (C.json)
+server ready (guard pid 3790224, server pid 3790239) load_time_s 15.364659311 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-C3_20261109T093118.log
+engine pid 3790257: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+C3n W1-think r0: prompt 110 ttft 0.286 s, 3072 tokens, 167.89 tok/s, length
+C3n W2-code r0: prompt 123 ttft 0.3 s, 3072 tokens, 148.57 tok/s, length
+C3n W3-research r0: prompt 26727 ttft 5.793 s, 2048 tokens, 157.09 tok/s, length
+C3a A-edit r0: prompt 2677 ttft 0.953 s, 392 tokens, 126.62 tok/s, tool_calls
+C3a B-write r0: prompt 1371 ttft 0.817 s, 1036 tokens, 188.48 tok/s, tool_calls
+C3r R1-verify20k r0: prompt 24238 ttft 5.258 s, 3875 tokens, 155.9 tok/s, stop
+C3r R2-report54k r0: prompt 54071 ttft 11.134 s, 3910 tokens, 155.21 tok/s, stop
+C3r R3-extract5k r0: prompt 5011 ttft 1.259 s, 1173 tokens, 185.69 tok/s, stop
+C3r R4-agent33k r0: prompt 33415 ttft 7.048 s, 293 tokens, 132.54 tok/s, tool_calls
+r23sp-C3.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+=== 2026-11-09 09:34:52 6 B4 the chat-cache trade (#693): B, T, C with STRATA_TRACE=1; request 2 shares ~16,500 tokens with request 1 (reported)
+=== 2026-11-09 09:34:52 server r23sp-chatB (Bc.json)
+server ready (guard pid 3795020, server pid 3795035) load_time_s 15.370722930 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-chatB_20261109T093453.log
+engine pid 3795053: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+request 1: 16676 tokens; request 2: 16527 tokens, 16500 shared with request 1
+r23sp-chatB request 1: 16676 prompt tokens, read 16676 in 4336.3 ms (cached 0)
+r23sp-chatB request 2: 16527 prompt tokens, read 143 in 381.0 ms (cached 16384)
+r23sp-chatB request 3: 16734 prompt tokens, read 350 in 524.3 ms (cached 16384)
+=== 2026-11-09 09:35:48 server r23sp-chatT (Tc.json)
+server ready (guard pid 3796326, server pid 3796342) load_time_s 15.369727715 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-chatT_20261109T093549.log
+engine pid 3796360: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+request 1: 16676 tokens; request 2: 16527 tokens, 16500 shared with request 1
+r23sp-chatT request 1: 16676 prompt tokens, read 16676 in 4081.6 ms (cached 0)
+r23sp-chatT request 2: 16527 prompt tokens, read 16527 in 3949.6 ms (cached 0)
+r23sp-chatT request 3: 16728 prompt tokens, read 59 in 308.0 ms (cached 16669)
+=== 2026-11-09 09:36:49 server r23sp-chatC (Cc.json)
+server ready (guard pid 3797591, server pid 3797606) load_time_s 15.367046355 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sp-chatC_20261109T093650.log
+engine pid 3797624: 49 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:32768
+ENV CHECK OK
+request 1: 16676 tokens; request 2: 16527 tokens, 16500 shared with request 1
+r23sp-chatC request 1: 16676 prompt tokens, read 16676 in 3735.3 ms (cached 0)
+r23sp-chatC request 2: 16527 prompt tokens, read 16527 in 3395.9 ms (cached 0)
+r23sp-chatC request 3: 16726 prompt tokens, read 16726 in 3650.7 ms (cached 0)
+r23sp-chatC.englog: prompt chunk 22528 tokens, a 512-slot ring; borrows 4122 slots (7.85 GiB) (want 22528) -> PASS
+B: request 2 (16527 tokens, 16500 shared) read 143 in 381.0 ms; request 3 (16734 tokens) read 350 in 524.3 ms; checkpoints saved at 16384, 16669, 16520, 16727
+T: request 2 (16527 tokens, 16500 shared) read 16527 in 3949.6 ms; request 3 (16728 tokens) read 59 in 308.0 ms; checkpoints saved at 16669, 16384, 16520, 16721
+C: request 2 (16527 tokens, 16500 shared) read 16527 in 3395.9 ms; request 3 (16726 tokens) read 16726 in 3650.7 ms; checkpoints saved at 16669, 16520, 16669, 16719
+NOT as the plan expected - see the lines
+5080 free >= 300 MiB and MemAvailable >= 12 GiB throughout: srv-r23sp-bpC-pp16k-1 483 MiB / 34.3 GiB, srv-r23sp-bpC-pp64k-1 503 MiB / 34.1 GiB, srv-r23sp-bpC-pp16k-2 477 MiB / 34.4 GiB, srv-r23sp-bpC-pp64k-2 503 MiB / 34.1 GiB, srv-r23sp-bpC-pp16k-3 477 MiB / 34.4 GiB, srv-r23sp-bpC-pp64k-3 503 MiB / 34.1 GiB, srv-r23sp-bpC-decode-1 441 MiB / 34.3 GiB, srv-r23sp-C1 437 MiB / 33.9 GiB, srv-r23sp-C2 441 MiB / 33.9 GiB, srv-r23sp-C3 441 MiB / 33.6 GiB, srv-r23sp-chatC 467 MiB / 33.9 GiB
+SPEED GAP for backlog H (work/r23/gap-basalt-speed.sh; rules work/r23/basalt_speed_rules.py, frozen 220bec8b6781): B1 / B2 / B3 of Basalt gap b with its thresholds, under the 11-07 measurement amendment
+SPEED CANDIDATES FOR BACKLOG H: T (STRATA_PF_TAIL_SPLIT=1) (pp16k +7.1 % vs B; vs P028x GAIN OVER P028x); U (STRATA_HC_UPMIX=1, fix build) (pp16k +3.8 %, pp64k +4.2 % vs B; vs P028x GAIN OVER P028x); U on P028x (P028x + STRATA_HC_UPMIX=1) (pp16k +3.3 %, pp64k +4.5 % vs P; B3 vs P (reported) PASS)
+fix build engine-r23basalt-fix 0cb2a597cb14: A EXACT, T ROUNDING-LEVEL, U EXACT (gap a), C ROUNDING-LEVEL (C_PARTS A,T,U,K,KP, chunk 22528, served as auto:32768); P028x f4c4f654fb24
+PU EXACTNESS on P028x: EXACT: exact7 PU vs this gap's P PASS (exact7 r23sp11090742-PU: 7/7, slots MATCHED); long40 PU40 vs gap 16's stored x28h long40 PASS (PU40 vs x28h: 0 of 40 first-token logit files differ)
+PRICE A NO GAIN (EXACT; vs B): B1 pp16k*: 3,857.2 vs B 3,811.9 tok/s (+1.2 %; noise 2.4 %; 3/3 passes); pp64k: 4,397.7 vs B 4,381.7 tok/s (+0.4 %; noise 0.1 %; 3/3 passes); vs P028x NOT ABOVE P028x: B1 pp16k*: 3,857.2 vs P 3,849.4 tok/s (+0.2 %; noise 0.3 %; 3/3 passes); pp64k: 4,397.7 vs P 4,370.4 tok/s (+0.6 %; noise 0.5 %; 3/3 passes)
+PRICE T CANDIDATE (ROUNDING-LEVEL; vs B): B1 pp16k*: 4,084.3 vs B 3,811.9 tok/s (+7.1 %; noise 2.4 %; 3/3 passes) above +max(noise, 1 %); pp64k: 4,483.1 vs B 4,381.7 tok/s (+2.3 %; noise 0.1 %; 3/3 passes) above +max(noise, 1 %); vs P028x GAIN OVER P028x: B1 pp16k*: 4,084.3 vs P 3,849.4 tok/s (+6.1 %; noise 0.1 %; 3/3 passes) above +max(noise, 1 %); pp64k: 4,483.1 vs P 4,370.4 tok/s (+2.6 %; noise 0.5 %; 3/3 passes) above +max(noise, 1 %)
+PRICE U CANDIDATE (EXACT; vs B): B1 pp16k*: 3,957.9 vs B 3,811.9 tok/s (+3.8 %; noise 2.4 %; 3/3 passes) above +max(noise, 1 %); pp64k*: 4,564.7 vs B 4,381.7 tok/s (+4.2 %; noise 0.1 %; 3/3 passes) above +max(noise, 1 %); vs P028x GAIN OVER P028x: B1 pp16k*: 3,957.9 vs P 3,849.4 tok/s (+2.8 %; noise 1.1 %; 3/3 passes) above +max(noise, 1 %); pp64k*: 4,564.7 vs P 4,370.4 tok/s (+4.4 %; noise 0.5 %; 3/3 passes) above +max(noise, 1 %)
+PRICE C NOT DECIDED (ROUNDING-LEVEL; vs B): B1 pp16k: 4,460.4 vs B 3,811.9 tok/s (+17.0 %; noise 2.4 %; 3/3 passes) above +max(noise, 1 %); pp64k*: 4,759.4 vs B 4,381.7 tok/s (+8.6 %; noise 0.6 %; 3/3 passes) above +max(noise, 1 %); B2 decode FAIL: conv -3.2 % (noise 4.9 %); struct -2.7 % (noise 0.5 %); prose -4.1 % (noise 4.4 %); B3 NOT DECIDED: screen prompt geomean +4.82 % vs B (not below; client clock minus the save), decode +0.72 %; per-workload no-loss [11-07 amendment: prompt = engine prompt ms minus the chat-cache save]: none of the 9 slower beyond its noise; (info) client clock minus the save: no workload slower beyond its noise; (info) outside-engine time worse in every pass - for review (INFO): A-edit C +0.7 ms vs B (spread 0.5 ms), R3-extract5k C +1.3 ms vs B (spread 0.5 ms); chat-cache save [11-07 amendment]: NOT DECIDED - C 0 / B 3 passes with judged saves (2 needed); vram/mem in every C start PASS; vs P028x GAIN OVER P028x: B1 pp16k: 4,460.4 vs P 3,849.4 tok/s (+15.9 %; noise 0.7 %; 3/3 passes) above +max(noise, 1 %); pp64k*: 4,759.4 vs P 4,370.4 tok/s (+8.9 %; noise 0.6 %; 3/3 passes) above +max(noise, 1 %); (reported) B3 vs P NOT DECIDED: screen prompt geomean +4.48 % vs P (not below; client clock minus the save), decode -2.15 %; per-workload no-loss [11-07 amendment: prompt = engine prompt ms minus the chat-cache save] FAILS: A-edit decode -11.3 % (noise 8.8 %); (info) client clock minus the save: no workload slower beyond its noise; (info) outside-engine time worse in every pass - for review (INFO): W1-think C +0.7 ms vs P (spread 0.5 ms), R3-extract5k C +0.7 ms vs P (spread 0.5 ms); chat-cache save [11-07 amendment]: NOT DECIDED - C 0 / P 3 passes with judged saves (2 needed); (info) B2 decode vs P PASS: conv +4.3 % (noise 6.9 %); struct -0.7 % (noise 2.3 %); prose +1.5 % (noise 6.3 %)
+PRICE PU CANDIDATE (exactness on P028x EXACT; vs P): B1 pp16k*: 3,975.7 vs P 3,849.4 tok/s (+3.3 %; noise 0.1 %; 3/3 passes) above +max(noise, 1 %); pp64k*: 4,566.7 vs P 4,370.4 tok/s (+4.5 %; noise 0.5 %; 3/3 passes) above +max(noise, 1 %); (reported) B2 decode vs P PASS: conv +6.1 % (noise 6.9 %); struct +3.1 % (noise 2.3 %); prose -0.8 % (noise 6.3 %); (reported) B3 vs P PASS: screen prompt geomean +2.41 % vs P (not below; client clock minus the save), decode -1.89 %; per-workload no-loss [11-07 amendment: prompt = engine prompt ms minus the chat-cache save]: none of the 9 slower beyond its noise; (info) client clock minus the save: no workload slower beyond its noise; (info) outside-engine time worse in every pass - for review (INFO): W1-think PU +0.7 ms vs P (spread 0.5 ms); chat-cache save [11-07 amendment]: PU +0.9 % vs P (save index = each save / the stored median of its level, geometric mean per pass then over passes; 3 / 3 passes; noise 3.1 %) -> PASS
+INFO B (engine-r23basalt-fix, no switch) vs P028x: B1 pp16k: 3,811.9 vs P 3,849.4 tok/s (-1.0 %; noise 2.4 %; 3/3 passes); pp64k: 4,381.7 vs P 4,370.4 tok/s (+0.3 %; noise 0.5 %; 3/3 passes); B3 FAIL: screen prompt geomean -0.32 % vs P (BELOW; client clock minus the save), decode -2.85 %; per-workload no-loss [11-07 amendment: prompt = engine prompt ms minus the chat-cache save] FAILS: R1-verify20k prompt -0.2 % (noise 0.1 %); (info) client clock minus the save: no workload slower beyond its noise; (info) outside-engine time worse in every pass - for review (INFO): W1-think B +1.3 ms vs P (spread 0.5 ms); chat-cache save [11-07 amendment]: B -0.9 % vs P (save index = each save / the stored median of its level, geometric mean per pass then over passes; 3 / 3 passes; noise 2.1 %) -> PASS
+B4 chat-cache trade (reported, Karl decides): B: request 2 (16527 tokens, 16500 shared) read 143 in 381.0 ms; request 3 (16734 tokens) read 350 in 524.3 ms; checkpoints saved at 16384, 16669, 16520, 16727 | T: request 2 (16527 tokens, 16500 shared) read 16527 in 3949.6 ms; request 3 (16728 tokens) read 59 in 308.0 ms; checkpoints saved at 16669, 16384, 16520, 16721 | C: request 2 (16527 tokens, 16500 shared) read 16527 in 3395.9 ms; request 3 (16726 tokens) read 16726 in 3650.7 ms; checkpoints saved at 16669, 16520, 16669, 16719 | NOT as the plan expected - see the lines
+NOTHING SWITCHES: P028x stays served. A CANDIDATE joins backlog H; adopting it is Karl's call at the next config change (after item 7 and Phase 5, his 5 switch conditions; A, T, C also need the port-base steps of section H).
+=== 2026-11-09 09:37:55 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-09 09:38:00 port_gap4: memory back: MemAvailable 86 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-09 09:38:15 port_gap4: no swap-out while P028x started
+2026-11-09 09:38:15 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-09 09:38:15 Basalt speed gap done (111 min with 8080 down)

@@ -1,0 +1,156 @@
+# v0.2.13 groundwork (Karl 11-09) - desk and CPU only, through nogap-run; nothing replaces P028x
+
+Karl 11-09: "v0.2.13 added Qwen4 groundwork. Desk and CPU work only, through nogap-run; nothing replaces P028x. ...
+Don't interrupt this morning's post-Phase-5 gaps for any of this."
+
+v0.2.13 = d2f096475: 212 commits after v0.2.12 and 813 files. The Qwen4 parts (compiled geometry, intake tool,
+vendored ggml, the #5327 arena change) are all new in v0.2.13. A stock worktree is at **strata-v0213stock**
+(detached, clean). The intake tool runs from it, never from our patched tree.
+
+## 1. Qwen4 watch: upstream's intake verdict in the alert (DONE 11-09 07:22, tested 07:43)
+
+- **The hook: work/qwen4-kit/intake_hook.py.** The HF watch (dayone.py, backup `dayone.py.before-intake`) calls it
+  when it alerts on a Qwen4 repo with GGUF files. It runs `tools/qwen4_intake.py --hf REPO --rev SHA` (header-only
+  range reads, no download) through work/r23/nogap-run.sh.
+- **The alert:** the body starts with the verdict, e.g. `intake case B: n_embd 3072, n_head 32, ...`, cut to 72
+  characters so it survives alert-push's 180-character limit. The NOTES line carries the full text: each set's case,
+  every shape field with what the kernels were built for, up to 3 blockers, and the warnings.
+- **No gap open:** the intake runs inline, in that alert.
+- **A gap open:** the alert goes out at once, saying "intake after the open gap (2nd alert)". A transient user unit
+  then runs the intake through nogap-run and sends a second alert, "Qwen4 intake verdict".
+- **Not read:** a gated or private repo (no login, nothing worked around), and a repo without GGUF files.
+- **Bug fixed on the way:** alert-push drops every word with a slash, so `unsloth/Qwen4-...` never reached the phone.
+  The alert now writes `unsloth Qwen4-...`.
+- **Tests (results/r23/port-0213/intake/light.log):**
+  - upstream's tools/test_qwen4_intake.py: 32 tests, OK (1 skipped: the live-HF class);
+  - intake_hook selftest: 19 / 19, including the runner through the real nogap-run and the gap-open path;
+  - a synthetic dry poll of the real watcher: the gap-open path and the inline path both give the right alert text;
+  - our files:
+
+| input | verdict |
+|---|---|
+| ISTA IQ3_S (local, 2 shards) | case A, runs now on cuda, hip, sycl, metal |
+| UD-IQ3_XXS, UD-IQ2_XS (v3.1 header stubs) | case A |
+| UD-Q2_K_XL, UD-IQ3_XXS (pre-v3.1 header stubs) | case A |
+| MTP drafters (stubs) | "a separate MTP drafter file, not a model" |
+| DeepSeek UD-Q8_K_XL (local, 9 shards) | case C: architecture deepseek41 is strata-dsv41; tokenizer pre 'joyai-llm' |
+| unsloth/Qwen3.8-Flash-Next-GGUF UD-IQ3_XXS folder, **--hf** at d96201194f10 | case A (headers 2.1 s) |
+
+  The unsloth Flash-Next GGUFs themselves were deleted earlier (11-06), so their saved header stubs stood in. The
+  `--hf` run shows the real watcher path works.
+
+## 2. Shape readiness of our patches
+
+Desk audit of the 29 commits (v0.2.11..r23-port0211), by a read-only helper: results/r23/port-0213/SHAPES-AUDIT.md
+(12 findings, plus 4 places where upstream's own constant now comes from the geometry). The per-shape outcomes are
+worked out by hand; the builds below confirm them.
+
+| finding | our patch | Flash-Next value assumed | q4_mid / q4_big | q4_deep |
+|---|---|---|---|---|
+| F1 | 18 GR_FORK (fused_gr.cu:2823) | DG 4 x DS 20 tiling of n_embd x hc, static_assert at file scope | **build break**, even with the switch off | ok |
+| F2 | 18/19 GR_FORK scratch | kGrForkScratchFloats = 26,368 (by hand) | out of bounds once F1 is generalised (needs 37,792 / 67,008) | ok |
+| F3 | 18 gr_up_fork | hc_lr steps | ok | ok |
+| F4 | 20 patch guard | checks n_embd / hc / hc_lr | ok, but cannot see F1 | ok |
+| F5 | 23 PREFILL_V2 (moe_fused_iq.hpp:63) | kV2Embd 2560, kV2FF 640 vs v0.2.13's geometry-derived K | **build break** (CUDA) | ok |
+| F6-F8 | 23 PREFILL_V2 (moe_fused_iq.cu:1309, 1544, 1561) | NFB 1280/2560, H row stride 10 x AB, down stride x 2560 | **wrong results** if only F5 is relaxed | ok |
+| F9 | 20 patch_guard_test | test cases at 16 q-heads per KV head and n_embd 3072 | test fails (they are the compiled shape there) | ok |
+| F10-F12 | 20, 1, 24 | qsa_interval; side stash cells x 144; vocab bound | ok | ok |
+
+q4_deep (Flash-Next at 64 layers) is clean in all 29: no patch of ours pins the layer count.
+
+### Proposed fixes (read the compiled geometry; Flash-Next code unchanged)
+
+- **F5-F8, PREFILL_V2 (generalise, recommended):**
+  - kV2Embd = kCompiledGeometry.n_embd, kV2FF = kCompiledGeometry.n_ff;
+  - NFB = GU ? 2 * n_ff : n_embd;
+  - H row stride = n_expert_used x AB;
+  - down row stride x n_embd.
+  This is the same set of literals upstream replaced in its own kernels in b273c8006. Check: the default build's SASS
+  identical to the unfixed port's for these kernels.
+- **F1/F2/F4, GR_FORK (Karl's choice; see "Decisions"):**
+  - (a) **Flash-Next only for day one (recommended):** the fork's tiling and its static_assert under
+    `if constexpr (fork_tiling_fits(kCompiledGeometry))`. At another shape the fork is compiled out, and the guard
+    refuses STRATA_GR_FORK=1 with a plain line, so upstream's read runs.
+  - (b) **Generalise:** DS = ceil(n_embd x hc / (DG x 128)) with the padding rows masked, and the scratch computed from
+    the geometry and rounded to 256 (Flash-Next keeps 20 x 4 and 26,368). Bits against upstream's read and speed at q4
+    shapes are untested, so (b) needs the shape gap's parity and speed rows.
+- **F9:** the guard test takes its "wrong shape" values as compiled + 1 / x 2, so they never equal the compiled shape.
+- **F11:** the side stash's q4_0 bytes `cells * 144` (head_dim 256's q4_0 row) becomes
+  `cells * kv_q4_bytes_per_head(head_dim)`. geometry_checks pins head_dim = 256, so it is cosmetic today.
+- **F12:** `static_assert(kCompiledGeometry.n_vocab <= 262144)` beside the sampler's bound, or the guard as it is if the
+  load check does not enforce n_vocab (open).
+- **Test only:** our v2 block in prefill_fused_iq_test against upstream's new `--edge` cases: `std::min(20, E - 1)` and
+  `ZERO >= 0`, as upstream does.
+
+The served config turns every one of our switches on (SPEC_EXACT, ROUTER_Q8K, GR_FORK, COST_GATE, DRAFT_CUM,
+PREFILL_V2). So on a new-shape day-one engine, (a) means GR_FORK falls back to upstream's read: correct, but slower
+on the hyper-connection read until (b) is tested.
+
+## 3. Port notes for v0.2.13
+
+- **GDN_TC / CONVL2: our values stay the same.**
+  - `apply_gdn_defaults_cuda(true)` (generate.cpp:3886) sets STRATA_GDN_TC=1 and STRATA_GDN_CONVL2=2 on every Linux CUDA
+    start, before the engine reads them. It does **not** look at STRATA_DEFAULTS=026, so the 026 pin does not stop it.
+  - A value the user set wins (arch_defaults.cpp:233, =0 included). Our port configs (P0211x, P0211x-h) pin both to 0
+    explicitly. P028x has no pins, but runs a v0.2.8 engine without the default.
+  - **So the v0.2.13 port config must keep the explicit =0 pins**: the 026 pin alone would leave them on.
+- **HC_Q8: our values stay the same.**
+  - The engine now turns STRATA_HC_Q8 on by default on CUDA when the GGUF carries the hyper-connection projections as
+    Q8_0 (generate.cpp:4439, `gguf_carries_q8_hc`).
+  - Our ISTA IQ3_S carries all 192 (blk.*.hc_{attn,ffn}_{down,up}) as **BF16** (header read 11-09), so it stays off.
+  - A UD config on v0.2.13 would get it on, which is a rounding-level change. Pin STRATA_HC_Q8=0 in any UD config
+    until gated.
+- **The parallel stack (new in v0.2.13):** `apply_parallel_defaults_cuda` acts only with 2 or more batch slots. Ours run
+  1 (no --batch), so nothing changes.
+- **STRATA_MANIFEST cannot confirm all three.** At v0.2.13 it records HC_Q8 (path "dense"/"hc_q8") but not GDN_TC or
+  CONVL2. Proposed: a 2-line diagnostic in our port (`M.path("prefill", "gdn-tc" / "gdn-convl2", ...)`, written only
+  with STRATA_MANIFEST set, output-neutral). The confirmation itself (one manifest per arm start) needs an engine
+  start, so it goes into the shape gap below.
+- **Retired switches:** STRATA_GR_Q32_PL (64fac3177), STRATA_DF2_GATE and STRATA_DF2_ROW_MS (e62f3c1ff) are in none of
+  our configs, launchers or scripts.
+  - GR_Q32_PL was upstream's own arm, in fused_gr.cu at v0.2.11, beside our GR_FORK hunks. Expect a context conflict
+    there.
+- **ggml move:** none of our 29 patches touches ggml sources. v0.2.13 builds from third_party/strata-ggml by default,
+  so our build script drops -DSTRATA_GGML_DIR. Our 4 CMake hunks move:
+  - patch_guard.cpp -> cmake/strata_gpu_engine.cmake:289;
+  - patch_guard_test -> strata_gpu_engine.cmake:1048;
+  - prefill_fused_v2_test -> cmake/backends/cuda.cmake:285;
+  - cost_gate_test / draft_cum_test -> cmake/backends/cpu.cmake.
+  Our `experts_native` v2 dispatch hunk must be redone by hand (b273c8006 rewrote its context).
+- **#5327, STRATA_ARENA_FILE_CACHE (recommend pinning =0 in the port config):**
+  - v0.2.11: an expert-arena shortfall (MemAvailable below the arena after the 20 s wait) reads the experts from the
+    file.
+  - v0.2.13 on Linux: if free pages + droppable file cache + free huge pages cover it, it loads the arena anyway
+    (warning on stdout too), evicting the cache as it reads.
+  - Normal starts are unchanged.
+  - Here the shortfall case is an 8080 start beside something still exiting, or a gap start. Loading anyway can leave
+    MemAvailable near zero, under our 12 GB guard floor (the guard then stops the engine) or into swap. The file read
+    is slower but keeps the floor.
+  - Pinning =0 keeps v0.2.11's behaviour, as the port rule does for new defaults. Adopting it would be a gate decision.
+
+## Karl's decisions (11-09) - FIXED for the port
+
+> "1. GR_FORK: (a). Flash-Next only on day one, compiled out at other shapes so upstream's read runs. Generalise later,
+> once the real Qwen4 shape is known, if its measured gain on Flash-Next makes it worth it. Yes to generalising
+> PREFILL_V2 the way upstream fixed its kernels.
+> 2. Pin STRATA_ARENA_FILE_CACHE=0 in the port config: yes."
+
+So the port carries:
+- GR_FORK option (a), the fork compiled out at other shapes, with the guard refusing it;
+- PREFILL_V2 generalised (F5-F8, as b273c8006);
+- F9 / F11 / F12 as proposed;
+- STRATA_ARENA_FILE_CACHE=0 and the explicit GDN_TC / CONVL2 =0 pins in configs/P0213x.json (made from P0211x.json);
+- the 2-line STRATA_MANIFEST diagnostic for GDN_TC / CONVL2.
+
+## Decisions asked (11-09, answered above)
+
+1. GR_FORK at new shapes: (a) Flash-Next only for day one (recommended), or (b) generalise now and test it in the
+   shape gap.
+2. STRATA_ARENA_FILE_CACHE=0 in the v0.2.13 port config (recommended), or adopt #5327's load-anyway.
+
+## Still to do (after the post-Phase-5 chain, under nogap-run)
+
+- The branch r23-port0213 (v0.2.13 + the 29 from r23-port0211, cherry-picked in order).
+- Builds: work/r23/build-port0213.sh `engine`, then `geo q4_mid`, `geo q4_big`, `geo q4_deep` (ninja -k 0; the error
+  list per shape in results/r23/port-0213/geo-<shape>.txt).
+- The shape gap plan (not queued).

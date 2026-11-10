@@ -1,0 +1,118 @@
+# DeepSeek C, next steps after Phase 5: C2 / C3 / C4, the sampled-distribution test, then a daily proposal (plan, 11-07)
+
+Karl 11-07:
+- "DeepSeek C: yes, plan the next steps. Desk now: design the sampled-distribution test for C2 and write the drafter
+  proposal. After Phase 5: run the test in a DeepSeek gap. If it passes, propose C2 as the new DeepSeek daily config, and
+  update the 'Switch to DeepSeek' launcher to match."
+- "In the post-Phase-5 DeepSeek gap, add C3 and C4 arms (3 and 4 drafts) beside C2, and run the sampled-distribution test
+  on whichever ends up recommended." "Desk work only until Phase 5 is done."
+
+**Status: desk only.** No configs, scripts or engines were changed or run for this plan. The inputs are:
+- results/ds41/gate-1107-1152-ctie/report.md
+- results/ds41/DRAFTER-PROPOSAL-1107.md (acceptance, the drafter, the C3/C4 estimate)
+- results/ds41/C-SAMPLED-TEST-PLAN.md (the test's design)
+
+## 1. What a daily switch needs (Karl's 11-03 rule for B, applied to C)
+
+Karl 11-03 for B: "the KL check under his rule AND the long-prompt memory arms AND his OK". C changes the trunk's
+placement the same way B does (layers 0-39 + head on the 5080, the rest on the CPU lane, instead of A's 8/32 split), and
+it adds drafting. So before **proposing** C-N as daily it needs:
+
+1. **The sampled-distribution test: PASS** (Karl 11-03 and 11-07).
+2. **C's trunk KL check vs A under Karl's 11-04 rule: PASS.** This means teacher-forced scoring with C's placement
+   (drafting plays no part in scoring), inside the noise band of A's placement variants Aa / Ab. A, Aa and Ab are reused
+   from 11-04 (same build, config and snapshot), so this is one new scoring run. **Never run for C:** the report's KL
+   sections cover B only.
+3. **C's long-prompt memory arm (CL): PASS**, by the AL/BL rule:
+   - L64 and L97 both answered, with no guard, soft stop or swap failure;
+   - lowest MemAvailable >= 14 GB with everything up.
+
+   **Never run for C.** It matters because C has a second visible card, which turns off the one-GPU layer-major prompt
+   path that made BL fail at 97K (13.7 GB). C's long prompts take another path, untested here.
+4. Karl's OK.
+
+Items 2 and 3 were not in Karl's 11-07 message. They are listed because his 11-03 rule asked them of B, the same trunk
+placement. **Karl's call whether they apply to C**; the plan includes them.
+
+## 2. Gaps (each under the 90-minute cap with 8080 down; after Phase 5's queue has finished; P028x back after each)
+
+Everything does not fit one gap: speed arms ~20 min each, the test <= 30 min, CL ~7 min, the KL scoring ~6 min. So:
+
+**Gap D1 - speed + memory + KL (~80 min down)**
+- C2, C3, C4: gate.sh's speed step as on 11-07. Configs = C2's 11-07 config with `--dspark-block 3` / `4`; nothing else
+  changes. Each arm: 3 passes of W1-W3 + P4K + P20K, a fresh copy of the profile snapshot. C2 is re-run here, so all
+  three come from one gap.
+- CL: the long-prompt arm on C2's config (the draft count doesn't change the prompt path; if C3 or C4 wins, its extra
+  verify buffers are a few MB, checked from the start lines).
+- C's KL scoring (item 2) with C0's placement.
+- **The recommended N, fixed now** (compare.py's keep rule, no new rule):
+  - start at C2;
+  - C3 replaces it only if C3's decode beats C2's by >= 3 % beyond the noise, with P4K and P20K not lower beyond noise
+    (>= 5 %);
+  - then C4 against the arm kept so far, by the same rule.
+  - Ties go to fewer drafts.
+- Expected (DRAFTER-PROPOSAL-1107.md section 4, estimates only): C3 ~+4 %, C4 ~+6 % over C2. C2's own spread was
+  3.9 %, so C2 may well stay.
+
+**Gap D2 - the sampled-distribution test on the recommended N (<= 30 min down + open / close)**
+- As designed in results/ds41/C-SAMPLED-TEST-PLAN.md. The rule is fixed before D1 runs.
+- If time is left (>= 15 min before the cap): the optional acceptance probe (DRAFTER-PROPOSAL-1107.md section 5, ~7 min).
+
+## 3. If everything passes
+
+- **Proposal to Karl, no switch on my own:** C-N as the new DeepSeek daily config.
+  - It would be a new configs/DS41-daily.json from the gated arm's config, with a backup DS41-daily.json.before-cN.
+  - Daily settings stay as they are: 128K context, effort 50, slot keep cap 16, the 68 GB store, slot RAM cap.
+- **The "Switch to DeepSeek" launcher** (configs/usability/bin/deepseek-session.sh) reads configs/DS41-daily.json:
+  - Its start checks (model id, engine sha, placement and memory lines) would be updated to C-N's: drafter loaded, 384
+    drafter experts on the 4060 Ti, trunk on the 5080.
+  - Its tests are re-run with the real files and real permissions (test_deepseek_session.sh), after Karl's OK and
+    outside a gap.
+- If a check fails: A stays daily; the failing check and its numbers go to Karl.
+
+## 4. Karl's decisions (11-07)
+
+> "DeepSeek C: the D1/D2 plan is approved. D1: C2, C3 and C4, plus the KL check and the long-prompt memory arms. Yes,
+> both are daily conditions for C, the same as for B. D2: the sampled-distribution test on the winner, plus the 7-minute
+> 1017-drafter probe. Don't build the 1017 Q2_K drafter unless the probe shows clearly better acceptance than the current
+> one. The winner is picked by the existing >=3%-beyond-noise rule." Timing: "Desk now; gaps and the guard install after
+> Phase 5's queue."
+
+What this changes in the plan:
+- Section 1: items 2 (C's KL vs A under the 11-04 noise band) and 3 (CL) **are** daily conditions for C.
+- Section 2: the probe is part of D2 always, not "if time is left". D2 = the sampled test on the winner + the probe.
+- "Clearly better" uses DRAFTER-PROPOSAL-1107.md section 5's fixed rule: the probe's position-1 keep rate at least 2
+  points above C2's in the same placement (W1-W3). Otherwise the 1017 requant idea is closed.
+- Scripts for D1 / D2: written at the desk before Phase 5 ends, from gate.sh's machinery. None runs or is queued before
+  Phase 5's queue has finished.
+
+## 5. The sampled-distribution test's design (helper, 11-07; results/ds41/C-SAMPLED-TEST-PLAN.md, work/ds41/gate/sampled/)
+
+- **The engine's scheme is exact in exact arithmetic.** Claude checked strata-v026 src/dsv41/vendor/sampler.cu:480-505:
+  - a draft is kept with probability min(1, p(d)/q(d));
+  - a rejection draws from max(0, p - q), renormalised;
+  - `--dspark-conf` and DSPARK_CUM only set how many drafts are verified.
+- **A seeded identity test cannot work.** The accept and residual draws use their own Philox streams (seed ^ key), so
+  seeded C0 and C-N part at the first drafted row even with exact arithmetic.
+- **Test:** three served arms answer 16 requests each (512 tokens, thinking off), then each is scored once on A's config:
+  - R1 = C0;
+  - X = the D1 winner;
+  - R2 = C0 at --vram-experts 0.98, run only if stage 1 does not pass.
+  - Time: ~22 min, ~31 worst case.
+- **Pass rule:**
+  - The statistic: a 3-df Mahalanobis distance on top-1 rate, rank-2 rate and log p, each against what the scorer
+    predicts per token.
+  - PASS iff X's distance to C0 is <= max(11.34 (the 99th percentile of pure sampling noise), R2's distance), and the
+    test has 80 % power for a 2-point top-1 shift.
+  - Selftest (synthetic only, 22/22): a correct drafter falsely fails 1 in 200; the textbook speculative-sampling bug
+    is caught 30/30.
+  - Shifts under ~1.5-2 points are not reliably caught.
+- **For Karl to decide before D2:**
+  1. The noise floor in the band. His literal 11-04 form (inside the reference pair's distance) would fail a correct
+     drafter about half the time with sampled outputs.
+  2. The power floor (2 points), the 4,000-token minimum and the sample minimums.
+  3. R2 as a single Aa-style variant, run only when needed.
+  4. Which scorer.
+  5. Coverage: thinking off and short prompts only.
+  6. COOL_MIN=10 for these arms, and the ~31-min worst case.
+- The helper used `cd` once in a read-only command (against the rules); nothing changed because of it.

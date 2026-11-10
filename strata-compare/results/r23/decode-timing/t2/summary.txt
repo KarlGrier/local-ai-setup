@@ -1,0 +1,14 @@
+=== 2026-11-05 00:10:03 two-card timing arm T2dv (x28h-t2dv.json)
+server ready (guard pid 818038, server pid 818053) load_time_s 14.333417381 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23-T2dv_20261105T001004.log
+engine pid 818058: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+T2dvn W1-think r0: prompt 108 ttft 0.29 s, 3072 tokens, 163.97 tok/s, length
+T2dvn W2-code r0: prompt 126 ttft 0.323 s, 3072 tokens, 157.5 tok/s, length
+T2dvn W3-research r0: prompt 26727 ttft 6.035 s, 2048 tokens, 163.89 tok/s, length
+T2dva A-edit r0: prompt 2678 ttft 1.017 s, 307 tokens, 133.58 tok/s, tool_calls
+T2dva B-write r0: prompt 1370 ttft 0.85 s, 1536 tokens, 159.81 tok/s, tool_calls
+T2dvr R1-verify20k r0: prompt 24237 ttft 5.532 s, 3942 tokens, 153.59 tok/s, stop
+T2dvr R2-report54k r0: prompt 54070 ttft 12.014 s, 3462 tokens, 155.02 tok/s, stop
+T2dvr R3-extract5k r0: prompt 5012 ttft 1.446 s, 1191 tokens, 164.88 tok/s, stop
+T2dvr R4-agent33k r0: prompt 33418 ttft 7.837 s, 370 tokens, 129.56 tok/s, tool_calls
+=== 2026-11-05 00:13:41 T2dv: 11 requests, 5208 windows: 23.17 ms/window = GPU-reach 9.60 + host 10.41 (plan 0.64, CPU 9.67) + draft 2.35 + tail 0.77; T 4.55, 3.64 tok/w
+=== 2026-11-05 00:13:41 two-card timing pass done (dv); reports in /home/USER/ai-speed-testing/strata-compare/results/r23/decode-timing/t2/report-*.txt

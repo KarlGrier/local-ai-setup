@@ -1,0 +1,71 @@
+GAP 19 - a diagnostic on STOCK v0.2.10 (engine-v0210stock, ffa80d731) beside our port (engine-r22p0210, gap 17). Nothing switches.
+  config check: PASS the stock arms differ from s0210-h exactly as the port's arms from P0210x-h; s0210-h = stock, 14 pins, none of ours
+  stock engine: PASS engine-v0210stock c8fe72abe45a = stock v0.2.10 (ffa80d73133ea5c548aefe57889a16e8085a938f, detached worktree strata-v0210stock), none  [19 11-04 10:01]
+
+KL (pf_yardstick long40 against gap 8's ref; rounding references unfused / cpushare; gap 17's rule and bounds)
+  kernel_rule2 bounds: top-1 >= 34 prompts, KL mean <= 0.401361, KL p90 <= 0.365952, rows KL > 1 <= 4
+  kernel_rule3 bounds: KL mean <= 0.401361, KL p90 <= 0.402547, rows KL > 1 <= 4, changed top-1 <= 5.5, NLL above ref's (4.1273) <= 0.0860
+  arm                            build    KL mean       p90  KL>1  top-1    chg      NLL (vs ref)  kl2   kl3  
+  both GDN paths off             stock   0.132306  0.096319     1  37/40      3  4.2453 (+0.1180)  PASS  FAIL 
+  both GDN paths off             port    0.085689  0.193319     0  35/40      5  4.1034 (-0.0239)  PASS  PASS 
+  GDN stack (TC=1 + CONVL2=2)    stock   0.507746  0.966734     4  35/40      5  3.9398 (-0.1875)  FAIL  FAIL 
+  GDN stack (TC=1 + CONVL2=2)    port    0.575080  1.101426     5  35/40      5  3.8475 (-0.2798)  FAIL  FAIL 
+  GDN_TC alone (TC=1, CONVL2=0)  stock   0.667806  0.733096     4  33/40      7  4.3035 (+0.1762)  FAIL  FAIL 
+  GDN_TC alone (TC=1, CONVL2=0)  port    0.859140  1.133460     5  33/40      7  3.9716 (-0.1557)  FAIL  FAIL 
+  GDN_CONVL2 alone (TC=0, CONVL2=2) stock  (not run)
+  GDN_CONVL2 alone (TC=0, CONVL2=2) port    0.485822  0.295464     3  36/40      4  3.9052 (-0.2222)  FAIL  FAIL 
+  (the port's rows, rescored in this gap from gap 17's dirs: p210 = gap 17, p210gdn = gap 17, p210gdntc = gap 17, p210gdncv = gap 17)
+  same build, ON against OFF (INFO):
+    GDN stack (TC=1 + CONVL2=2)    stock  KL mean 0.648253  p90 1.031009  KL>1 4  changed top-1 4/40  NLL -0.3055
+    GDN stack (TC=1 + CONVL2=2)    port   KL mean 0.545174  p90 1.120731  KL>1 5  changed top-1 7/40  NLL -0.2558
+    GDN_TC alone (TC=1, CONVL2=0)  stock  KL mean 0.560787  p90 0.552924  KL>1 2  changed top-1 7/40  NLL +0.0582
+    GDN_TC alone (TC=1, CONVL2=0)  port   KL mean 0.664972  p90 1.082354  KL>1 5  changed top-1 6/40  NLL -0.1317
+    GDN_CONVL2 alone (TC=0, CONVL2=2) port   KL mean 0.499685  p90 0.276066  KL>1 2  changed top-1 8/40  NLL -0.1982
+  bitwise (INFO; logit files identical of 40):
+    stock s210 = port p210: 0 of 40
+    stock s210gdn = port p210gdn: 0 of 40
+    stock s210gdntc = port p210gdntc: 0 of 40
+
+exact7 at pin 2500 (--adapt-swaps 0 --suffix-draft 0): PF_HC_REGION on vs off
+  stock: g19-s210hcr vs g19-s210: 3/7 identical, slots MATCHED (3238+3300)
+  item     same   borrow off/on  CPU experts off/on (share)  resident off/on  chunk off/on
+  x-math   DIFF       260 / 252           3510 / 3514 (0.4)      1615 / 1627     256 / 256
+  s-math   DIFF       260 / 252           3510 / 3514 (0.4)      1615 / 1627     256 / 256
+  x-code   DIFF       260 / 252           3447 / 3456 (0.4)      1986 / 1986     256 / 256
+  s-code   DIFF       260 / 252           3447 / 3456 (0.4)      1986 / 1986     256 / 256
+  x-p2000  =        1201 / 1139                 0 / 0 (0.0)      2037 / 2099   2048 / 2048
+  x-32k    =        2909 / 2706                 0 / 0 (0.0)       987 / 1064 14336 / 16384
+  x-112k   =        2909 / 2706                 0 / 0 (0.0)      2632 / 3724 14336 / 16384
+    -> PLACEMENT: the differing items are exactly the prompts that ran with the CPU share and whose CPU-expert count moved with the smaller loan; the items without the share are identical (even where the chunk moved)
+  port (gap 17, e7_hcr FAIL exact7 g17-hcr: 3/7, slots MATCHED): g17-hcr vs g17-p210a: 3/7 identical, slots MATCHED (3238+3300)
+  item     same   borrow off/on  CPU experts off/on (share)  resident off/on  chunk off/on
+  x-math   DIFF       260 / 252           3510 / 3514 (0.4)      1615 / 1627     256 / 256
+  s-math   DIFF       260 / 252           3510 / 3514 (0.4)      1615 / 1627     256 / 256
+  x-code   DIFF       260 / 252           3447 / 3456 (0.4)      1986 / 1986     256 / 256
+  s-code   DIFF       260 / 252           3447 / 3456 (0.4)      1986 / 1986     256 / 256
+  x-p2000  =        1201 / 1139                 0 / 0 (0.0)      2037 / 2099   2048 / 2048
+  x-32k    =        2909 / 2706                 0 / 0 (0.0)       987 / 1064 14336 / 16384
+  x-112k   =        2909 / 2706                 0 / 0 (0.0)      2632 / 3724 14336 / 16384
+    -> PLACEMENT: the differing items are exactly the prompts that ran with the CPU share and whose CPU-expert count moved with the smaller loan; the items without the share are identical (even where the chunk moved)
+  stock OFF this gap vs gap 17's g17-s210 (the cross-gap repeat, INFO): 7/7, slots MATCHED
+  stock with STRATA_PREFILL_CPU_SHARE=0 (G19_HCR_SHARE0): g19-s210hcrz vs g19-s210z: 7/7 identical, slots MATCHED (3238+3300)
+  item     same   borrow off/on  CPU experts off/on (share)  resident off/on  chunk off/on
+  x-math   =          260 / 252                 0 / 0 (0.0)      1619 / 1624     256 / 256
+  s-math   =          260 / 252                 0 / 0 (0.0)      1619 / 1624     256 / 256
+  x-code   =          260 / 252                 0 / 0 (0.0)      1984 / 1989     256 / 256
+  s-code   =          260 / 252                 0 / 0 (0.0)      1984 / 1989     256 / 256
+  x-p2000  =        1157 / 1094                 0 / 0 (0.0)      2081 / 2144   2048 / 2048
+  x-32k    =        2909 / 2706                 0 / 0 (0.0)       987 / 1064 14336 / 16384
+  x-112k   =        2909 / 2706                 0 / 0 (0.0)      2632 / 3724 14336 / 16384
+
+VERDICTS (UPSTREAM = stock fails the same gate the port failed; OURS = stock passes where the port failed; UNCLEAR otherwise)
+(0) GDN stack (TC=1 + CONVL2=2): UNCLEAR - stock with both GDN paths OFF fails the rule itself (kl2_s210 PASS, kl3_s210 FAIL; the port's off arm passed): no clean base
+     stock KL mean 0.508 p90 0.967 KL>1 4 NLL -0.188 [mean, p90] / port 0.575 / 1.101 / 5 / -0.280 [mean, p90, KL>1 rows]; stock ON = port ON bit for bit on 0 of 40
+(0t) GDN_TC alone (TC=1, CONVL2=0): UNCLEAR - stock with both GDN paths OFF fails the rule itself (kl2_s210 PASS, kl3_s210 FAIL; the port's off arm passed): no clean base
+     stock KL mean 0.668 p90 0.733 KL>1 4 NLL +0.176 [top-1, mean, p90] / port 0.859 / 1.133 / 5 / -0.156 [top-1, mean, p90, KL>1 rows]; stock ON = port ON bit for bit on 0 of 40
+(0v) GDN_CONVL2 alone (TC=0, CONVL2=2): NOT RUN (optional; the deadline did not allow it)
+(3) PF_HC_REGION=1: UPSTREAM - stock HC on = off only 3/7 at MATCHED slots, as the port's 3/7 (the same items as the port's)
+     mechanism (stock): PLACEMENT: the differing items are exactly the prompts that ran with the CPU share and whose CPU-expert count moved with the smaller loan; the items without the share are identical (even where the chunk moved)
+     with the prompt CPU share off: 7/7 MATCHED - the HC region keeps the bits once the share is off: upstream's 'same bits' holds for the kernels; the smaller loan moves prompt experts between the CPU and the GPU
+
+Nothing switches (P028x stays served until item 7 is done). OURS -> the candidates are in results/r22/gap19/PATCH-OVERLAP.md; UPSTREAM -> it goes on the upstream list (Karl decides what is posted).

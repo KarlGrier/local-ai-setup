@@ -1,0 +1,35 @@
+[90007] Title: Niko1221/Strata@v0.2.4: src/core/expert_cache.cpp lines 1-30 (source code)
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/core/expert_cache.cpp#L1-L30
+[OTHER ENGINE: this file is part of Strata's Qwen engine at v0.2.4; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them]
+
+1: // src/core/expert_cache.cpp - R4's slot storage and residency table.  Read the header first.
+2: #include "strata/core/expert_cache.hpp"
+3: 
+4: // #533's segmented cache uses CUDA's virtual memory management (cuMem*): not on HIP, neither the RDNA backend nor
+5: // the gfx906 compat build (PR #638), which compiles this file as HIP without STRATA_USE_HIP
+6: #if defined(STRATA_USE_HIP) || defined(STRATA_HIP_GFX906) || defined(STRATA_GPU_METAL)
+7: #define STRATA_EC_NO_VMM 1
+8: #endif
+9: 
+10: #include <thread>
+11: #include <mutex>
+12: #include <cuda_runtime.h>
+13: #if !defined(STRATA_EC_NO_VMM)
+14: #include <cuda.h>   // #533: the virtual memory management types (the functions come through the runtime's entry points)
+15: #endif
+16: 
+17: #include <algorithm>
+18: #include <atomic>
+19: #include <cstdio>
+20: #include <filesystem>
+21: #include <cstdlib>
+22: #include <utility>
+23: #include <cstring>
+24: 
+25: namespace strata::core {
+26: 
+27: // See the header.  NVIDIA's DGX Spark Porting Guide (section 5.5, "Memory reporting on UMA systems") recommends the same:
+28: // not to rely on cudaMemGetInfo alone but to count the memory the OS can reclaim.  Swap is not counted here (unlike
+29: // NVIDIA's reference snippet): an expert cache that pushes the system into swap would be far slower than a smaller one.
+30: size_t device_free_bytes() {
+(src/core/expert_cache.cpp has 807 lines.)

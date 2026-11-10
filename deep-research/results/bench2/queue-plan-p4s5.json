@@ -1,0 +1,4 @@
+[
+ {"set": "screen", "profile": "deep", "ids": ["o02"], "effort": "medium", "verify_effort": "xhigh", "label": "p4s5", "items": ["setup", "critic", "tried", "notyet"]},
+ {"set": "hard-screen", "profile": "deep", "ids": ["h02", "h04", "h05", "h06", "h08"], "needs": "FROZEN-hard.txt", "effort": "medium", "verify_effort": "xhigh", "label": "p4s5", "items": ["setup", "critic", "tried", "notyet"]}
+]

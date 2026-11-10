@@ -1,0 +1,9 @@
+[Unit]
+Description=Hourly read-only check of Project Maya PR #453 (GSQ-RCO loading); alerts when it lands (strata-compare work/ds41/maya_pr_watch.sh)
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /home/USER/ai-speed-testing/strata-compare/work/ds41/maya_pr_watch.sh
+
+[Install]
+WantedBy=default.target

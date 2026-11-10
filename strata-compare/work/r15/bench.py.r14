@@ -1,0 +1,191 @@
+"""strata-compare benchmark runner. Every configuration gets the same frozen prompts (prompts/*.json) through the same
+streaming OpenAI client; only `--extra` (request fields) and `--model` differ.
+
+    bench.py --config A --base http://127.0.0.1:8080 --model signal-next speed
+    bench.py --config C0 --base http://127.0.0.1:8081 --model x multiturn --side
+    scenarios: warmup, speed, multiturn [--side], longreason, correctness, quality
+
+Records -> results/runs.jsonl (one line per request; text trimmed), full texts -> results/outputs/<config>/...
+"""
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+import sys
+import time
+import uuid
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from client import stream_chat  # noqa: E402
+from common import PROMPTS, RESULTS, append_jsonl, meminfo, now_iso  # noqa: E402
+import re  # noqa: E402
+
+ENGINE_RE = re.compile(r"strata serve: prompt (\d+) tokens = (\d+) reused \+ (\d+) read in ([\d.]+) ms \(([\d.]+) tok/s\), "
+                       r"(\d+) generated in ([\d.]+) ms \(([\d.]+) tok/s\), drafts accepted (\d+) of (\d+), (\d+) checkpoints")
+KV_RE = re.compile(r"KV streaming: ([\d.]+)% of (\d+) block reads hit VRAM")
+
+
+def engine_stats(text: str) -> dict | None:
+    """The Strata engine's own per-request line (stderr -> the strata log)."""
+    m = None
+    for m in ENGINE_RE.finditer(text):
+        pass
+    if not m:
+        return None
+    g = m.groups()
+    d = {"prompt": int(g[0]), "reused": int(g[1]), "read": int(g[2]), "prompt_ms": float(g[3]), "prompt_tps": float(g[4]),
+         "generated": int(g[5]), "decode_ms": float(g[6]), "decode_tps": float(g[7]), "drafts_accepted": int(g[8]),
+         "drafts_offered": int(g[9]), "checkpoints": int(g[10])}
+    k = None
+    for k in KV_RE.finditer(text):
+        pass
+    if k:
+        d["kv_hit_pct_cum"] = float(k.group(1))
+    return d
+
+RUNS = RESULTS / "runs.jsonl"
+
+
+def load(name):
+    return json.loads((PROMPTS / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def gpu_used_mib() -> int:
+    import subprocess
+    try:
+        return int(subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                                  capture_output=True, text=True, timeout=10).stdout.split()[0])
+    except Exception:
+        return -1
+
+
+class Runner:
+    def __init__(self, a):
+        self.a = a
+        self.extra = json.loads(a.extra) if a.extra else {}
+        self.session = a.session or time.strftime("%Y%m%dT%H%M%S")
+
+    def call(self, scenario, item, rep, messages, max_tokens, keep_pieces=False, save_text=False, note=None):
+        body = {"model": self.a.model, "messages": messages, "max_tokens": max_tokens, **self.extra}
+        started = now_iso()
+        elog = Path(self.a.engine_log) if self.a.engine_log else None
+        off = elog.stat().st_size if elog and elog.exists() else 0
+        r = stream_chat(self.a.base, body, keep_pieces=keep_pieces)
+        if elog:
+            time.sleep(0.3)                               # the engine prints its line right after DONE
+            with open(elog, "rb") as f:
+                f.seek(off)
+                es = engine_stats(f.read().decode("utf-8", "replace"))
+            if es:
+                r["engine"] = es
+        m = meminfo()
+        rec = {"config": self.a.config, "session": self.session, "scenario": scenario, "item": item, "rep": rep,
+               "started": started, "max_tokens": max_tokens, "extra": self.extra,
+               "memavail_mib_after": m["MemAvailable"] // 1024, "gpu_used_mib_after": gpu_used_mib()}
+        if note:
+            rec["note"] = note
+        full = {k: r.get(k) for k in ("reasoning", "content", "pieces") if k in r}
+        slim = {k: v for k, v in r.items() if k not in ("reasoning", "content", "pieces")}
+        slim["reasoning_chars"], slim["content_chars"] = len(r.get("reasoning", "")), len(r.get("content", ""))
+        slim["content_head"] = (r.get("content") or "")[:200]
+        rec.update(slim)
+        if save_text or keep_pieces:
+            out = RESULTS / "outputs" / self.a.config / f"{scenario}_{item}_r{rep}_{self.session}.json"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps({**rec, **full}, ensure_ascii=False, indent=1), encoding="utf-8")
+            rec["output_file"] = str(out.relative_to(RESULTS.parent))
+        append_jsonl(RUNS, rec)
+        ttft = rec.get("ttft_s")
+        print(f"[{self.a.config}] {scenario} {item} r{rep}: prompt {rec.get('prompt_tokens')} ttft "
+              f"{ttft if ttft is None else round(ttft, 2)} s, gen {rec.get('completion_tokens')} @ "
+              f"{round(rec.get('decode_tps') or 0, 2)} tok/s, total {round(rec['t_total_s'], 1)} s, "
+              f"finish {rec.get('finish_reason')}{' ERROR ' + rec['error'] if rec.get('error') else ''}"
+              f"{(' | engine reused ' + str(rec['engine']['reused']) + ' read ' + str(rec['engine']['read']) + ' drafts ' + str(rec['engine']['drafts_accepted']) + '/' + str(rec['engine']['drafts_offered'])) if rec.get('engine') else ''}"
+              f"{' SWAP' if rec.get('swap_out_pages') or rec.get('swap_in_pages') else ''}", flush=True)
+        return rec
+
+    # ---------------------------------------------------------------- scenarios
+    def warmup(self):
+        p = load("speed")[0]
+        assert p["size"] == "1k" and p["rep"] == 0
+        self.call("warmup", "1k", 0, p["messages"], 128, note="discarded")
+
+    def speed(self):
+        sizes = self.a.sizes.split(",") if self.a.sizes else None
+        reps = {int(x) for x in self.a.reps.split(",")} if self.a.reps else None
+        for p in load("speed"):
+            if p["size"] == "1k" and p["rep"] == 0:
+                continue                                   # the warm-up prompt
+            if sizes and p["size"] not in sizes:
+                continue
+            if reps is not None and p["rep"] not in reps:
+                continue
+            self.call("speed", p["size"], p["rep"], p["messages"], self.a.max_tokens or 768)
+
+    def multiturn(self):
+        mt = load("multiturn")
+        side = load("side_requests")
+        tag = self.a.mt_tag or f"mt-{uuid.uuid4().hex[:6]}"
+        scen = "multiturn_side" if self.a.side else "multiturn"
+        hist = []
+        for k, t in enumerate(mt["turns"]):
+            if self.a.turns and k >= self.a.turns:
+                break
+            hist.append({"role": "user", "content": t["user"].replace("[Chat mt-7f3a]", f"[Chat {tag}]")})
+            self.call(scen, f"turn{k + 1}", 0, copy.deepcopy(hist), self.a.max_tokens or 128, note=tag,
+                      save_text=bool(self.a.mt_tag))
+            hist.append({"role": "assistant", "content": t["assistant"]})
+            if self.a.side and k + 1 < len(mt["turns"]):
+                self.call(scen, f"side{k + 1}", 0, side[k]["messages"], 200, note=tag)
+
+    def longreason(self):
+        ids = self.a.items.split(",") if self.a.items else None
+        for p in load("longreason"):
+            if ids and p["id"] not in ids:
+                continue
+            self.call("longreason", p["id"], self.a.rep, p["messages"], self.a.max_tokens or 32768,
+                      keep_pieces=True, save_text=True)
+
+    def correctness(self):
+        for p in load("correctness"):
+            self.call("correctness", p["id"], self.a.rep, p["messages"], self.a.max_tokens or 768, save_text=True)
+
+    def edit(self):
+        """code edit with thinking off (the reply repeats the input: what prompt lookup is for); 2 reps"""
+        for p in load("edit"):
+            for r in (0, 1):
+                self.call("edit", p["id"], r, p["messages"], self.a.max_tokens or 3000, save_text=True)
+
+    def quality(self):
+        ids = self.a.items.split(",") if self.a.items else None
+        for p in load("quality"):
+            if ids and p["id"] not in ids:
+                continue
+            self.call("quality", p["id"], self.a.rep, p["messages"], self.a.max_tokens or 32768, save_text=True)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("scenario", choices=["warmup", "speed", "multiturn", "longreason", "correctness", "quality", "edit"])
+    ap.add_argument("--config", required=True)
+    ap.add_argument("--base", required=True)
+    ap.add_argument("--model", default="model")
+    ap.add_argument("--extra", default="", help="JSON merged into every request body")
+    ap.add_argument("--session", default="")
+    ap.add_argument("--side", action="store_true")
+    ap.add_argument("--sizes", default="")
+    ap.add_argument("--reps", default="")
+    ap.add_argument("--items", default="")
+    ap.add_argument("--rep", type=int, default=0)
+    ap.add_argument("--turns", type=int, default=0)
+    ap.add_argument("--mt-tag", default="", help="fixed chat tag (same prompts across runs) and save the turn texts")
+    ap.add_argument("--max-tokens", type=int, default=0)
+    ap.add_argument("--engine-log", default="", help="Strata log file: attach the engine's per-request stats")
+    a = ap.parse_args()
+    getattr(Runner(a), a.scenario)()
+
+
+if __name__ == "__main__":
+    main()

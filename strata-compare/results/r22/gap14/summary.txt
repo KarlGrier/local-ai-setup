@@ -1,0 +1,114 @@
+2026-10-29 20:29:49 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 2521537 (engine 2521557)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-10-29 20:30:22 port_gap4: gap open: test lock held (pid 2809285), 8080 stopped
+=== 2026-10-29 20:30:22 1 KL: pf_yardstick long40 on r27h-nov2 / -nofork / -noboth vs gap 8's references
+pfy r27h-nov2: 40 prompts, 40 logit rows
+pfy r27h-nov2: 2026-10-29T20:38:58 pfy14-nov2 exit=0 516s min_MemAvailable=36.7GiB@498s min_5080_free=7359MiB@16s max_tree_RSS=48.7GiB max_swap_used=1.48GiB min_4060Ti_free=1179MiB ok
+pfy r27h-nofork: 40 prompts, 40 logit rows
+pfy r27h-nofork:   strata: prompt experts: v2 kernels for IQ3_XXS gate/up (17 of 48 layers), IQ4_NL down (39 of 48 layers) (STRATA_PREFILL_V2=1, adapted from Basalt)
+pfy r27h-nofork: 2026-10-29T20:47:34 pfy14-nofork exit=0 515s min_MemAvailable=36.8GiB@507s min_5080_free=7357MiB@507s max_tree_RSS=48.7GiB max_swap_used=1.48GiB min_4060Ti_free=1179MiB ok
+pfy r27h-noboth: 40 prompts, 40 logit rows
+pfy r27h-noboth: 2026-10-29T20:56:10 pfy14-noboth exit=0 515s min_MemAvailable=36.8GiB@507s min_5080_free=7359MiB@16s max_tree_RSS=48.7GiB max_swap_used=1.48GiB min_4060Ti_free=1179MiB ok
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap14/pfy - bounds: top-1 >= 34 prompts, KL mean <= 0.401361, KL p90 <= 0.365952, rows KL > 1 <= 4
+unfused    top-1 35/40  KL mean 0.161958  p90 0.365952  rows > 1: 3  (max 2.4641, not judged)
+cpushare   top-1 35/40  KL mean 0.364874  p90 0.215046  rows > 1: 3  (max 9.7615, not judged)
+r27h       top-1 33/40  KL mean 0.585266  p90 0.890278  rows > 1: 3  (max 10.2197, not judged)  -> FAIL (top-1, mean, p90)
+r27h-nov2  top-1 35/40  KL mean 0.085689  p90 0.193319  rows > 1: 0  (max 0.9993, not judged)  -> PASS
+r27h-nofork top-1 36/40  KL mean 0.262136  p90 0.565773  rows > 1: 2  (max 5.7227, not judged)  -> FAIL (p90)
+r27h-noboth top-1 37/40  KL mean 0.132306  p90 0.096319  rows > 1: 1  (max 4.1526, not judged)  -> PASS
+=== 2026-10-29 20:56:10 2 check (2): each variant's speculation-off twin arm, arith-j3 T 0.6, 4,000, vs its own probabilities
+server ready (guard pid 2814594, server pid 2814609) load_time_s 14.336588747 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g14-sp-nnov2_20261029T205611.log
+=== 2026-10-29 21:30:26   start lines hnospec-nov2: exact 0, v2 0, fork 0
+=== 2026-10-29 21:30:27   check (2) speculation off, nov2: p 0.002 | | arith-j3 T=0.6 | 4000 | 3834 (0.947) | '=': 2025 vs 2118.6, ' ': 1809 vs 1715.4 | 9.24 (1) | 0.002 | 0 |
+server ready (guard pid 2826317, server pid 2826332) load_time_s 14.336472865 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g14-sp-nnofork_20261029T213028.log
+=== 2026-10-29 22:05:30   start lines hnospec-nofork: exact 0, v2 1, fork 0
+=== 2026-10-29 22:05:30   check (2) speculation off, nofork: p 0.512 | | arith-j3 T=0.6 | 4000 | 3822 (0.947) | '=': 1989 vs 2009.2, ' ': 1833 vs 1812.8 | 0.43 (1) | 0.512 | 0 |
+server ready (guard pid 2837924, server pid 2837939) load_time_s 18.416315420 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g14-sp-nnoboth_20261029T220531.log
+=== 2026-10-29 22:40:35   start lines hnospec-noboth: exact 0, v2 0, fork 0
+=== 2026-10-29 22:40:36   check (2) speculation off, noboth: p 0.515 | | arith-j3 T=0.6 | 4000 | 3846 (0.947) | '=': 2042 vs 2021.8, ' ': 1804 vs 1824.2 | 0.42 (1) | 0.515 | 0 |
+=== 2026-10-29 22:40:36 3 variants passing KL + check (2) (speculation off):noboth
+server ready (guard pid 2849625, server pid 2849640) load_time_s 14.346837898 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g14-sp-enoboth_20261029T224037.log
+=== 2026-10-29 23:11:10   start lines ess-noboth: exact 1, v2 0, fork 0
+=== 2026-10-29 23:11:10   check (2) speculative path, noboth: p 0.736
+  check (1), noboth: g14-ess-noboth vs g14-hnospec-noboth: -0.8 points, z -0.70, two-sided p 0.485 - PASS (no difference shown)
+=== 2026-10-29 23:11:10 5 speed: r27h (H) vsnoboth, 2 passes in turned order
+=== 2026-10-29 23:11:10 arm H pass 1 (r27h.json)
+server ready (guard pid 2859827, server pid 2859842) load_time_s 14.339165892 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g14-H1_20261029T231111.log
+H1n W1-think r0: prompt 112 ttft 0.338 s, 3072 tokens, 188.85 tok/s, length
+H1n W2-code r0: prompt 123 ttft 0.355 s, 3072 tokens, 155.71 tok/s, length
+H1n W3-research r0: prompt 26729 ttft 6.051 s, 2048 tokens, 152.7 tok/s, length
+H1a A-edit r0: prompt 2677 ttft 1.134 s, 769 tokens, 138.33 tok/s, tool_calls
+H1a B-write r0: prompt 1372 ttft 0.893 s, 2461 tokens, 155.88 tok/s, tool_calls
+H1r R1-verify20k r0: prompt 24238 ttft 5.55 s, 3595 tokens, 155.21 tok/s, stop
+H1r R2-report54k r0: prompt 54068 ttft 12.076 s, 3540 tokens, 150.89 tok/s, stop
+H1r R3-extract5k r0: prompt 5010 ttft 1.61 s, 840 tokens, 169.66 tok/s, stop
+H1r R4-agent33k r0: prompt 33414 ttft 7.843 s, 345 tokens, 145.93 tok/s, tool_calls
+=== 2026-10-29 23:14:52 arm noboth pass 1 (r27h-noboth.json)
+server ready (guard pid 2862129, server pid 2862144) load_time_s 14.343996676 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g14-noboth1_20261029T231453.log
+noboth1n W1-think r0: prompt 110 ttft 0.361 s, 3072 tokens, 161.86 tok/s, length
+noboth1n W2-code r0: prompt 123 ttft 0.365 s, 3072 tokens, 152.75 tok/s, length
+noboth1n W3-research r0: prompt 26730 ttft 6.344 s, 2048 tokens, 157.53 tok/s, length
+noboth1a A-edit r0: prompt 2677 ttft 1.157 s, 195 tokens, 122.15 tok/s, tool_calls
+noboth1a B-write r0: prompt 1371 ttft 0.929 s, 2455 tokens, 155.56 tok/s, tool_calls
+noboth1r R1-verify20k r0: prompt 24241 ttft 5.804 s, 3884 tokens, 146.88 tok/s, stop
+noboth1r R2-report54k r0: prompt 54070 ttft 12.667 s, 2900 tokens, 148.69 tok/s, stop
+noboth1r R3-extract5k r0: prompt 5011 ttft 1.727 s, 1205 tokens, 168.52 tok/s, stop
+noboth1r R4-agent33k r0: prompt 33416 ttft 8.219 s, 348 tokens, 131.31 tok/s, tool_calls
+=== 2026-10-29 23:18:36 arm noboth pass 2 (r27h-noboth.json)
+server ready (guard pid 2864465, server pid 2864480) load_time_s 14.321621780 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g14-noboth2_20261029T231837.log
+noboth2n W1-think r0: prompt 112 ttft 0.337 s, 3072 tokens, 178.83 tok/s, length
+noboth2n W2-code r0: prompt 125 ttft 0.395 s, 3072 tokens, 162.44 tok/s, length
+noboth2n W3-research r0: prompt 26727 ttft 6.334 s, 2048 tokens, 151.48 tok/s, length
+noboth2a A-edit r0: prompt 2675 ttft 1.153 s, 330 tokens, 114.47 tok/s, tool_calls
+noboth2a B-write r0: prompt 1371 ttft 0.908 s, 2177 tokens, 153.94 tok/s, tool_calls
+noboth2r R1-verify20k r0: prompt 24238 ttft 5.807 s, 3689 tokens, 147.07 tok/s, stop
+noboth2r R2-report54k r0: prompt 54070 ttft 12.692 s, 3771 tokens, 148.39 tok/s, stop
+noboth2r R3-extract5k r0: prompt 5012 ttft 1.706 s, 1116 tokens, 170.47 tok/s, stop
+noboth2r R4-agent33k r0: prompt 33411 ttft 8.206 s, 295 tokens, 134.57 tok/s, tool_calls
+=== 2026-10-29 23:22:21 arm H pass 2 (r27h.json)
+server ready (guard pid 2866713, server pid 2866728) load_time_s 14.338468456 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g14-H2_20261029T232222.log
+H2n W1-think r0: prompt 112 ttft 0.368 s, 3072 tokens, 169.95 tok/s, length
+H2n W2-code r0: prompt 124 ttft 0.368 s, 3072 tokens, 151.02 tok/s, length
+H2n W3-research r0: prompt 26728 ttft 6.043 s, 2048 tokens, 162.94 tok/s, length
+H2a A-edit r0: prompt 2677 ttft 1.147 s, 586 tokens, 129.75 tok/s, tool_calls
+H2a B-write r0: prompt 1369 ttft 0.904 s, 993 tokens, 185.68 tok/s, tool_calls
+H2r R1-verify20k r0: prompt 24237 ttft 5.541 s, 3654 tokens, 153.04 tok/s, stop
+H2r R2-report54k r0: prompt 54070 ttft 12.077 s, 3746 tokens, 150.74 tok/s, stop
+H2r R3-extract5k r0: prompt 5012 ttft 1.611 s, 1013 tokens, 174.65 tok/s, stop
+H2r R4-agent33k r0: prompt 33417 ttft 7.847 s, 429 tokens, 126.96 tok/s, tool_calls
+| noboth2a | B-write | 1 | 2177 | 153.9 | 153.9 | 1523/2235 (68%) | 84.5 | 1509.2 | tool_calls | 3.40 |
+| H1r | R1-verify20k | 1 | 3595 | 155.2 | 154.7 | 2524/3267 (77%) | 81.3 | 4367.2 | stop | 3.09 |
+| H1r | R2-report54k | 1 | 3540 | 150.9 | 150.8 | 2522/3554 (71%) | 76.8 | 4477.4 | stop | 3.48 |
+| H1r | R3-extract5k | 1 | 840 | 169.7 | 169.3 | 660/846 (78%) | 81.3 | 3112.4 | stop | 4.70 |
+| H1r | R4-agent33k | 1 | 345 | 145.9 | 145.5 | 261/345 (76%) | 78.4 | 4260.6 | tool_calls | 3.88 |
+| H2r | R1-verify20k | 1 | 3654 | 153.0 | 152.9 | 2538/3343 (76%) | 82.0 | 4373.9 | stop | 3.03 |
+| H2r | R2-report54k | 1 | 3746 | 150.7 | 150.4 | 2664/3805 (70%) | 77.2 | 4477.3 | stop | 3.50 |
+| H2r | R3-extract5k | 1 | 1013 | 174.7 | 174.3 | 799/995 (80%) | 81.4 | 3111.6 | stop | 4.65 |
+| H2r | R4-agent33k | 1 | 429 | 127.0 | 125.4 | 292/477 (61%) | 79.2 | 4258.8 | tool_calls | 3.36 |
+| noboth1r | R1-verify20k | 1 | 3884 | 146.9 | 146.5 | 2707/3583 (76%) | 81.6 | 4176.8 | stop | 3.08 |
+| noboth1r | R2-report54k | 1 | 2900 | 148.7 | 148.6 | 2099/2904 (72%) | 74.9 | 4268.5 | stop | 3.61 |
+| noboth1r | R3-extract5k | 1 | 1205 | 168.5 | 168.3 | 941/1174 (80%) | 80.7 | 2901.3 | stop | 4.45 |
+| noboth1r | R4-agent33k | 1 | 348 | 131.3 | 131.0 | 254/364 (70%) | 80.3 | 4065.5 | tool_calls | 3.87 |
+| noboth2r | R1-verify20k | 1 | 3689 | 147.1 | 146.9 | 2562/3384 (76%) | 81.1 | 4173.9 | stop | 3.04 |
+| noboth2r | R2-report54k | 1 | 3771 | 148.4 | 148.3 | 2770/3844 (72%) | 77.0 | 4260.1 | stop | 3.82 |
+| noboth2r | R3-extract5k | 1 | 1116 | 170.5 | 170.2 | 873/1087 (80%) | 80.7 | 2938.2 | stop | 4.47 |
+| noboth2r | R4-agent33k | 1 | 295 | 134.6 | 134.1 | 220/297 (74%) | 81.2 | 4071.4 | tool_calls | 3.91 |
+
+- H1n: experts in VRAM at start: 4585 slots / 8.75 GiB
+- H2n: experts in VRAM at start: 4585 slots / 8.75 GiB
+- noboth1n: experts in VRAM at start: 4585 slots / 8.75 GiB
+- noboth2n: experts in VRAM at start: 4585 slots / 8.75 GiB
+- H1a: experts in VRAM at start: 4585 slots / 8.75 GiB
+- H2a: experts in VRAM at start: 4585 slots / 8.75 GiB
+- noboth1a: experts in VRAM at start: 4585 slots / 8.75 GiB
+- noboth2a: experts in VRAM at start: 4585 slots / 8.75 GiB
+- H1r: experts in VRAM at start: 4585 slots / 8.75 GiB
+- H2r: experts in VRAM at start: 4585 slots / 8.75 GiB
+- noboth1r: experts in VRAM at start: 4585 slots / 8.75 GiB
+- noboth2r: experts in VRAM at start: 4585 slots / 8.75 GiB
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-10-29 23:26:15 port_gap4: served build back (7b38796237f5), policy on, queue released
+=== 2026-10-29 23:26:15 kcheck clean
+=== 2026-10-29 23:26:15 gap 14 done after 175 min - Karl's rule: a variant switches only with KL PASS and every p >= 0.05 on both checks

@@ -1,0 +1,123 @@
+# Qwen4 day one: checks, then a short LDR re-check (add-ons on vs off)
+
+Written 10-29, before any Qwen4 release. Nothing here has been run, and none of it states a Qwen4 fact. The profile
+skeleton is `staging/c3/profiles/qwen4-flash.env`: every value is unmeasured, with Flash-Next's value as the
+placeholder. GPU h come from the bench2 stage timings on Flash-Next:
+- open question: 163-174 min wall at 120 min research or 171 min whole-run;
+- checkable: 25-32 min off, 34-50 min on.
+
+**Before the release (code only):**
+- C3 installed (`staging/c3/install.sh`, when nothing is live).
+- bench2.py checks `run/ldr.modelprofile` against the plan (C3 README, open item 6).
+- bench2.py knows a `p5-harder` set, if Phase 5 has not added one.
+
+**Start:** day one begins at a clean point of whatever queue is running (`tmp/bench2.hold`); no run is stopped for it.
+Flash-Next's config stays switch-model.sh's default and the rollback. Jan jobs go first: before one runs, 8080 goes
+back to Flash-Next.
+
+## Step 0: before any LDR run (~2.2 GPU h; any failure means no LDR runs, report to Karl)
+
+| # | check | pass | GPU h |
+|---|---|---|---|
+| 0a | **Strata support. Tell Karl at once.** Check the release, CUDA vs other platforms, and RAM-resident experts. If tagwatch paused for the release, review it as usual: accept only within the 10-28 rule, else Karl decides. | Qwen4 Flash runs on CUDA with experts in RAM | 0 |
+| 0b | Model files: a quant that fits 24 GB VRAM + 96 GB RAM with MemAvailable >= 12 GB at the served context; disk room; sha256. Do this before anything is timed. Also check whether Strata runs Unsloth's Dynamic 3.1 GGUF in the size that fits 96 GB (Karl 10-30): Unsloth usually posts first, and Strata refuses some UD types (UD-IQ3_XXS and UD-Q2_K_XL on Qwen3.8). | files verified; the UD 3.1 answer noted | 0 |
+| 0c | The profile header's list, on the stock release build (new `configs/Q4-day1.json`, holding tmp/gpu-test.lock): served context, tokenizer hashes vs `deep/tokenizer`, template overheads, effort names + thinking tokens per level, thinking ends inside max_tokens, tool calls come back structured through the proxy, decode/prompt tok/s, MTP/drafter. | every value filled in; status stays `draft` | ~1 |
+| 0d | Sampling: the Q4 config's `sampling` is 1.0 / 0.95 / 20 / 0.05; Strata's and both arms' LDR start lines show it. If the model card differs, ask Karl. | start lines match | 0 |
+| 0e | Smoke: c25 (screen, not re-used below) on both arms at the real budgets (47 / 30 min). | rc 0 on both. Each add-on ran or is in the time plan's skipped note. No context-400 retries, ladder drops or `<tool_call` in prose. Kernel log clean. MemAvailable >= 12 GB. Profile = qwen4-flash. | ~1.2 |
+
+## The re-check: two arms on the same build
+
+**The two arms:**
+- **On** = p4s7's items: setup, critic, code, fixes, read, claims (`LDR_DEEP_FIX=all,read,claims`). Budget 171 / 47
+  min whole-run (Fix 6).
+- **Off** = the deep profile with no items. Budget 120 / 30 min of research, then the report. This is the matched
+  research time of every stage 3.
+- Both arms:
+  - report effort medium, citation check xhigh;
+  - `LDR_MODEL_PROFILE=qwen4-flash LDR_ALLOW_DRAFT_PROFILE=1`;
+  - SearXNG only, no paid search.
+
+**How it runs:**
+- Plan `queue-plan-q4d1.json`, labels q4on / q4off.
+- Run `run-ldr.sh stop` first, because the queue does not restart LDR for a profile change.
+- Both arms of a question run back to back, alternating which goes first (ABBA), so web drift hits both.
+
+| order | questions | why | GPU h |
+|---|---|---|---|
+| 1 | o02 | Add-ons won most on Flash-Next (5.0 -> 10.0 of 12, p4base vs p4s6, one round). Tests setup + item 5 (dated prices). | ~5.7 |
+| 2 | o01 | Setup, code tool, version check (6.0 -> 8.5 of 10). | ~5.7 |
+| 3 | If Phase 5 has started: the four harder ones (p5c1b, p5c2, p5c5, p5c6). If not: h02 + h05 as regression canaries only. | Screen and hard checkables do not separate setups (pristine LDR got 15/15 and 10/10; every arm got 5/5). Until Phase 5, the harder four stay unseen. | ~4.8 / ~2.4 |
+| 4 | o03, only if Karl's first look is >= 6 h away | The control: add-ons did not help here on Flash-Next (11.5 -> 10.5). | ~5.7 |
+
+**Totals:** core ~16 GPU h (~18.4 h if Phase 5 has started), with step 0 included. ~22-24 h with o03. Time held for
+chats and Jan jobs comes on top. Each pair is graded when it ends, so Karl's first look sees every finished pair.
+
+**Time limits:**
+- Each run has bench2's hard stop: on 291 / 137 min, off 240 / 120 min (open / checkable).
+- An on-arm run longer than its budget + 10 % is noted. Fix 6 still uses Flash-Next's seconds (deep/checks.py EST).
+
+**Rules, both arms:**
+- bench.lock, with children started `8>&- 9>&-`.
+- Nothing CPU-heavy while a run is timed.
+- MemAvailable floor 12 GB, never lowered. If Qwen4 cannot keep it, stop and tell Karl.
+- Kernel-log check after every run. Page-allocation failure only: drop the run and go on. Anything else: stop.
+- Swap rule: engine VmSwap > 0, or a >= 4 MB swap streak, fails the run.
+
+## Grading
+
+- **Open questions:**
+  - `blind-open.py`, BLIND_OUT=`blind-q4d1`, BLIND_DROP="Setup check,Check these,Version check,Arithmetic
+    check,Consistency check", inline marks stripped.
+  - **One fresh grader per question, both arms in ONE round**, against my-research/ with the real hardware. The grader
+    brief carries the run date.
+  - Grades go to grades.jsonl before the key is opened: points and wrong claims per report.
+- **Optional anchor, no GPU:** Flash-Next's saved p4s7 report as a third blind report in the same round, on o01 and o03
+  only (o02's prices are dated). This is the only fair Qwen4 vs Flash-Next view; grades from earlier rounds are not
+  compared.
+- **The harder four:** the Answer-section rule, blind (correct / wrong commitment / hedged / non-answer). Canaries:
+  `bench2.py grade` plus wall time.
+- **After the grades:** check the check sections' flags by hand (right or false).
+
+## Decision
+
+- **Keep the add-ons** (on becomes Qwen4's default for the next stage) when all of these hold:
+  - the smoke is clean;
+  - on >= off on the open total, and no question is lower by more than 1 point;
+  - wrong claims are not higher by more than 2 in total;
+  - no checkable flips from correct to not correct;
+  - every on-arm run ends within budget + 10 %.
+- **Re-tune first** (no more arms until it is fixed) on any of these:
+  - an add-on fails on Qwen4: fix it and run the smoke again;
+  - on is lower on the open total, or lower by >= 2 on one question;
+  - Fix 6 runs over or cuts checks: re-measure EST on Qwen4;
+  - repeated context-400s, compaction loops or ladder drops: re-check the profile's sizes and efforts.
+- **Anything in between:** stop and ask Karl.
+
+## Not on day one
+
+- Porting our Strata series to Qwen4, or its exactness / KL / distribution gates. Day one uses the stock build only.
+- The code-tool question (240 min, ~10 GPU h a pair).
+- The holdout (Phase 5's 25 + o04-o06).
+- Re-tuning sizes (C3c), efforts, workers or Fix 6's EST.
+- Quant comparisons.
+- Item 7 paid search, item 8, API arms.
+- Moving Jan's runner, the on-demand launcher or 8080's default to Qwen4.
+- Marking the profile `measured`.
+- Anything on GitHub without Karl's typed OK.
+
+## For later (Karl 10-30, backlog note)
+
+- DeepSeek-V4.1-Flash quant: Unsloth's UD-IQ1_M (the 10-28 re-upload) beat our ISTA IQ2_XXS at the same size (Abyss KL
+  0.199 vs 0.315; Unsloth's 6-benchmark average ~85.5 vs ~83.7). Only matters if DeepSeek stays in use after Qwen4.
+
+## Quant choice (Karl 11-03, backlog note - no work now)
+
+- **Rule:** start with the **largest quant whose experts fit in RAM + VRAM** (about **72 GiB of experts today**: 96 GB
+  RAM with the 12 GB floor, the engine and the chat cache, plus the 5080's and the 4060 Ti's expert slots), so nothing
+  streams from the SSD. Then: check that Strata runs it; measure its quality - KL against whatever reference is published,
+  plus our graded set; measure its speed. **Karl's target: 40-60 tok/s decode.**
+- **Only if that quant's quality is not good enough:** compare the IQ3-class quants, and price the upgrade options from
+  strata-compare/results/sweep-1103/UPGRADE-ESTIMATE.md (the 5060 Ti + 4060 Ti layout, or 192 GB of RAM at its realistic
+  5200-5600 MT/s). Section 8 there has a first model guess for a 240-300B / 12-13B-active Qwen4 Flash (IQ2-class
+  experts 64-81 GiB fit at the small end today, ~47-103 tok/s; IQ3_XXS / IQ3_S need the SSD tier, ~13-53 / ~9-29 tok/s
+  today) - guesses on guesses, to be replaced by the real model's numbers.

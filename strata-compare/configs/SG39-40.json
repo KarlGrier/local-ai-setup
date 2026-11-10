@@ -1,0 +1,61 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-v39f6k/strata",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/work/r11/signal/packs/ap-q4_k_xl",
+  "--native",
+  "/home/USER/.cache/huggingface/hub/models--agentionai--Signal-3.8-Flash-Next-GGUF/snapshots/eba565bea194b899480ebd8a8ab63d537917004b/AP-Q4_K_XL/Signal-3.8-Flash-Next-AP-Q4_K_XL.gguf",
+  "--resident-budget-gib",
+  "40",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0131/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "auto",
+  "--spec",
+  "4",
+  "--spec-min-p",
+  "0.5",
+  "--mtp",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt",
+  "--max-context",
+  "32768",
+  "--kv",
+  "int8",
+  "--vram-reserve-mib",
+  "1000"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v39-f6k",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/work/r11/signal/packs/ap-q4_k_xl/tokenizer",
+ "model_name": "signal-3.8-flash-next-ap-q4_k_xl",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-SG39-40.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8081,
+ "host": "127.0.0.1",
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "server": "/home/USER/ai-speed-testing/strata-compare/strata-v39-f6k/serve/server.py",
+ "env": {
+  "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX5080",
+  "STRATA_IO_THREADS": "64",
+  "CUDA_MODULE_LOADING": "LAZY",
+  "STRATA_SPEC_EXACT": "1",
+  "STRATA_GR_V3": "1",
+  "STRATA_ADAPT_LAND": "2",
+  "STRATA_ROUTER_Q8K": "1",
+  "STRATA_GR_FORK": "1",
+  "STRATA_QSA_SPLIT_ATTN": "1",
+  "STRATA_MMVQ_IL": "1"
+ },
+ "_comment": "round 11 F: Signal AP-Q4_K_XL on 0.1.39 + fixes + the Phase B changes + the Q6_K embedding dequantizer (K-quant build), RAM budget 40 GiB, 32K, the 5080 alone; no Signal-specific tuning",
+ "fallback": null
+}

@@ -1,0 +1,230 @@
+"""The user's setup profile and the setup check (phase 4 item 1, stage 2; the user, 2026-10-21).
+
+With LDR_DEEP_SETUP_PROFILE=<user-setup.md> the lead agent's system prompt and the report writer's outline, section and
+opening prompts carry the facts of the user's own computer (as stage 1's "with" replays did: tools/level-replay.py
+setup_block / add_setup_to_report_prompts), and after the citation check a setup check reads the report against those
+facts. It is the safety net for the lead agent, which still ignores the profile sometimes (o02 E1): each statement
+that contradicts the facts gets the fix right after it, marked as the setup check's, and a short "Setup check" section
+lists them. Nothing is deleted or rewritten. Without the variable nothing here runs.
+
+Fix 5 (LDR_DEEP_FIX=baseline, 10-27): the same check also judges every recommendation against the user's current
+settings (the task's or the setup facts': a value already set is not a gain - "already-set") and every gain against
+the user's measured numbers, like with like ("baseline": prompt speed with prompt speed, decode with decode, the same
+context and model). With Fix 2 (inline) or any fix on, quotes are found by checks.Locator (bold, code marks, citations
+and capitals no longer make a quote "not found word for word").
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+from pathlib import Path
+
+SETUP_INTRO = ("The user's own computer and setup, as the user gave them (facts, not search results). Where the task "
+               "concerns the user's machine, judge what fits, runs or helps on it from these facts. Do not contradict "
+               "them, do not restate them differently, and do not assume another model or size of a component.")
+REPORT_NOTE = ("Statements about the user's own machine must agree with <user_setup>; where the evidence was gathered "
+               "for another machine (another card, slot or memory size), say so instead of carrying it over.")
+
+SETUPCHECK_PROMPT = """You are the claim-verification step of a research system. Below are the facts of the user's \
+own computer, as the user gave them, and a research report written for this user. Find every statement in the report \
+about the user's own machine or setup: its components and which model or size each is, memory sizes, slots and PCIe \
+links, bandwidths, and what fits, runs or helps on it (including limits and budgets the report derives from them). \
+Judge each one against the facts:
+- "contradicts": it conflicts with the facts, or with what follows directly from them (for example, a card in a slot \
+that runs at x4 gets x4 at most, whatever the card supports). Give the corrected statement.
+- "consistent": the facts support it.
+- "unsupported": the facts neither confirm nor contradict it. That is not an error.
+General statements about other machines are not about the user's setup; leave them out.{only}
+
+<user_setup>
+{setup}
+</user_setup>
+
+<report>
+{report}
+</report>
+
+Reply with JSON only: {{"claims": [{{"quote": "<the statement, copied exactly from the report>", "verdict": \
+"contradicts|consistent|unsupported", "why": "<one sentence>", "fix": "<the corrected statement, or empty>"}}]}}"""
+BASELINE_RULES = """
+The task may describe the setup it is about - a version, settings, measured numbers - and that can be another state \
+than the setup facts (an earlier version, an older measurement). Where the task describes it, judge against the \
+task: a statement that agrees with the task's description is consistent even where the setup facts differ, and is \
+never "corrected" to the setup facts; use the setup facts for what the task does not describe. When the task is \
+about another version or state than the setup facts describe, use the setup facts only for the hardware (components, \
+memory, slots, links), not for software settings, versions or measured speeds.
+Also judge every RECOMMENDATION in the report (a setting, flag, build option or change it advises) and every GAIN it \
+claims, against the user's current settings and measured numbers - as the task states them (the task's own numbers \
+come first) or else as the facts state them:
+- "already-set": the user already runs it (the same value, or the default already does it on this setup), so it is \
+not a gain; say what the user already has in "fix".
+- "baseline": a gain or speed compared with the user's numbers must compare like with like - prompt speed with prompt \
+speed, decode with decode, the same context length and model; when it does not, give the right comparison in "fix".
+"""
+TASK_BLOCK = """
+<task>
+{task}
+</task>
+"""
+FLAGGED_ONLY = (" List ONLY the statements whose verdict is \"contradicts\" or \"unsupported\"; leave every consistent "
+                "one out, so the list stays short.")
+
+
+def profile_path() -> str | None:
+    p = os.environ.get("LDR_DEEP_SETUP_PROFILE", "").strip()
+    return p if p and Path(p).is_file() else None
+
+
+def _baseline_on() -> bool:
+    from .checks import fix_on
+    return fix_on("baseline")
+
+
+def prompt(only: str, facts: str, body: str, task: str = "") -> str:
+    """The setup-check prompt; with Fix 5 its recommendation / gain rules and the task (the user's current settings
+    and measured numbers are often in the task itself)."""
+    p = SETUPCHECK_PROMPT
+    if _baseline_on():
+        p = (p.replace("General statements about other machines", BASELINE_RULES.strip() + "\nGeneral statements about other machines", 1)
+             .replace("\"contradicts|consistent|unsupported\"", "\"contradicts|already-set|baseline|consistent|unsupported\"", 1)
+             .replace("<user_setup>", TASK_BLOCK.strip().replace("{", "{{").replace("}", "}}").replace("{{task}}", "{task}") + "\n\n<user_setup>", 1))
+        only = only.replace('"contradicts" or "unsupported"', '"contradicts", "already-set", "baseline" or "unsupported"')
+        return p.format(only=only, setup=facts, report=body, task=task)
+    return p.format(only=only, setup=facts, report=body)
+
+
+def setup_facts(path: str) -> str:
+    """The facts of user-setup.md: from its first bullet on (the header and intro are for people)."""
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    return "\n".join(lines[next(i for i, ln in enumerate(lines) if ln.startswith("- ")):]).strip()
+
+
+# 10-28 (A8 (2), Karl: "when the question states its own setup, check recommendations against that rather than the
+# current profile; use the profile only for what the question doesn't say"): a task that names a program version the
+# profile does not have is about another state - the lead, the report writer and the setup check then get the profile's
+# hardware only (the 10-27 combined rerun's report took today's DeepSeek version, settings and speeds for the 10-24 one)
+TASK_VERSION_RE = re.compile(r"\b(v\d+\.\d+(?:\.\d+)*)\b|\bversion\s+(\d+\.\d+(?:\.\d+)*)", re.I)
+HARDWARE_RE = re.compile(r"^- (CPU|RAM|Memory|GPU|Motherboard|Mainboard|Total VRAM|VRAM|Storage|SSD|NVMe|Disk|OS|"
+                         r"Operating system|Network|PSU|Power|Cooling)\b", re.I)
+OTHER_STATE_NOTE = ("- (The task is about another version or state of the software than the user runs today: its own "
+                    "versions, settings and measured numbers are the ones that count. Only the hardware above is from "
+                    "the user's current setup.)")
+
+
+def _versions(text: str) -> set[str]:
+    return {(a or b).lower().lstrip("v") for a, b in TASK_VERSION_RE.findall(text or "")}
+
+
+def other_state(task: str, facts: str) -> bool:
+    """The task names a program version that the setup facts do not (Fix 5 only)."""
+    tv = _versions(task)
+    return bool(tv) and _baseline_on() and bool(tv - _versions(facts))
+
+
+def hardware_only(facts: str) -> str:
+    """The top-level hardware bullets of the setup facts, with their continuation lines."""
+    out, keep = [], False
+    for line in facts.splitlines():
+        if line.startswith("- "):
+            keep = bool(HARDWARE_RE.match(line))
+        if keep:
+            out.append(line)
+    return "\n".join(out)
+
+
+def facts_for(path: str, task: str = "") -> str:
+    facts = setup_facts(path)
+    if task and other_state(task, facts):
+        return hardware_only(facts) + "\n" + OTHER_STATE_NOTE
+    return facts
+
+
+def setup_block(path: str, task: str = "") -> str:
+    return "<user_setup>\n" + SETUP_INTRO + "\n" + facts_for(path, task) + "\n</user_setup>"
+
+
+def with_setup(prompt: str, path: str, task: str = "") -> str:
+    """A report prompt (a str.format template) with the setup block and note right after </task>."""
+    block = setup_block(path, task).replace("{", "{{").replace("}", "}}")
+    assert "</task>" in prompt
+    return prompt.replace("</task>", "</task>\n\n" + block + "\n" + REPORT_NOTE, 1)
+
+
+def _claims(text: str) -> list | None:
+    m = re.search(r"(?s)\{.*\}", text or "")
+    try:
+        return json.loads(m.group(0))["claims"] if m else None
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def check(llm, body: str, path: str, task: str = "", retry_ok=lambda: True) -> dict:
+    """llm(prompt) -> (text, finish). The full list first; on finish=length or no JSON the flagged-only list (when
+    retry_ok() - Fix 6 skips it when the run's time is up)."""
+    facts = facts_for(path, task)
+    text, finish = llm(prompt("", facts, body, task))
+    claims, mode = _claims(text), "full"
+    if claims is None and finish == "length" and not retry_ok():
+        # phase 4 fixes (10-27): no time for the flagged-only retry - keep the complete claims of the cut reply
+        from .checks import salvage_list
+        claims, mode = salvage_list(text, "claims"), "salvaged"
+    if (finish == "length" or claims is None) and retry_ok():
+        text, finish = llm(prompt(FLAGGED_ONLY, facts, body, task))
+        claims, mode = _claims(text), "flagged-only"
+    return {"mode": mode, "finish": finish, "claims": claims, "raw": None if claims is not None else (text or "")[:4000]}
+
+
+def annotate(body: str, result: dict) -> tuple[str, str]:
+    """(body with each contradicted statement followed by the fix, the "Setup check" section). Statements whose quote
+    is not found word for word are listed in the section only."""
+    flag = ("contradicts", "already-set", "baseline") if _baseline_on() else ("contradicts",)
+    bad = [c for c in (result.get("claims") or []) if c.get("verdict") in flag and (c.get("quote") or "").strip()]
+    if result.get("claims") is None:
+        return body, "## Setup check\n\nThe setup check did not complete; statements about your computer were not checked."
+    if not bad:
+        return body, ""
+    from .checks import Locator, clean_mark, fixes_on, insertion_point
+
+    lines = ["## Setup check", "",
+             f"{len(bad)} statement{'s' if len(bad) != 1 else ''} about your computer disagree{'s' if len(bad) == 1 else ''} "
+             "with your setup profile (the fix is also shown right after each one above):", ""]
+    if fixes_on():
+        # the phase 4 fixes (10-27): quotes found by the Locator, verdict-specific marks, no brackets inside a mark
+        lines[2] = (f"{len(bad)} statement{'s' if len(bad) != 1 else ''} about your computer or your current settings "
+                    f"need{'s' if len(bad) == 1 else ''} a correction (shown right after each one above):")
+        kind = {"already-set": "already set: ", "baseline": "compare like with like: "}
+        loc, at = Locator(body), []
+        for c in bad:
+            q = c["quote"].strip()
+            fix = (c.get("fix") or c.get("why") or "").strip()
+            pre = kind.get(c.get("verdict"), "")
+            mk = (f" **[Setup check: {clean_mark(pre + fix)}]**" if fix or pre else
+                  " **[Setup check: this disagrees with your setup profile]**")
+            span = loc.find(q)
+            if span is not None:
+                at.append((insertion_point(body, span[1]), mk))
+            where = "" if span is not None else " (not found in the report)"
+            lines.append(f"- \"{q[:300]}\"{where} -> {pre}{fix}")
+        for p, mk in sorted(set(at), key=lambda x: -x[0]):
+            body = body[:p] + mk + body[p:]
+        return body, "\n".join(lines)
+    for c in bad:
+        q = c["quote"].strip()
+        fix = (c.get("fix") or c.get("why") or "").strip()
+        mark = f" **[Setup check: {fix}]**" if fix else " **[Setup check: this disagrees with your setup profile]**"
+        at = body.find(q)
+        if at >= 0:
+            # after the end of the sentence that holds the quote (a quote may stop mid-sentence), before its citations
+            m = re.compile(r"[.!?](?=\s|$)|\n").search(body, at + len(q))
+            end = m.start() if m else len(body)
+            while end > at + len(q) and body[end - 1] == "]" and "[" in body[at + len(q):end]:
+                end = body.rfind("[", at + len(q), end)
+                while end > at + len(q) and body[end - 1] == " ":
+                    end -= 1
+            body = body[:end] + mark + body[end:]
+            where = ""
+        else:
+            where = " (not found word for word in the report)"
+        lines.append(f"- \"{q[:300]}\"{where} -> {fix}")
+    return body, "\n".join(lines)

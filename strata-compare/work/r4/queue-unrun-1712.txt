@@ -1,0 +1,6 @@
+work/r4/ltf.sh L9 9f70b2c
+work/r4/tf.sh R4tf-gr configs/R4-gr.json engine-r4gr/strata-tf long28k long40k long96k long112k
+work/r4/tf.sh R4tf-c3 configs/R4-c3.json engine-r3c3/strata-tf long28k long40k long96k long112k
+TEXTS="long28k long40k long96k long112k" work/r4/ltf.sh L6 6fcaa16
+TEXTS="long28k long40k long96k long112k" work/r4/ltf.sh L6ub2k 6fcaa16 --ubatch-size 2048 --batch-size 2048
+work/r4/with_llama.sh N-L6 -- '.venv/bin/python work/r4/needle.py ask --base http://127.0.0.1:8081 --label N-L6'

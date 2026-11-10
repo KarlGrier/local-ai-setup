@@ -1,0 +1,37 @@
+diff --git a/src/kernels/cuda/iq_kernels.cu b/src/kernels/cuda/iq_kernels.cu
+index 98a43e50..f820a5ea 100644
+--- a/src/kernels/cuda/iq_kernels.cu
++++ b/src/kernels/cuda/iq_kernels.cu
+@@ -1389,11 +1389,11 @@ __global__ void __launch_bounds__(GUS_WARPS * 32) native_gus_kernel(const unsign
+                 amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+                 sum += __shfl_xor_sync(0xffffffffu, sum, o);
+             }
+-            const float d = q8_1_finite(amax / 127.0f);   // #606 / #838, as q8_1_store: finite blocks bit for bit
+-            const int8_t q = q8_1_quant(xi, d, amax);
++            const float d = amax / 127.0f;
++            const int8_t q = amax == 0.0f ? 0 : roundf(xi / d);
+             block_q8_1* y = hq + (size_t) e * hb + c;
+             y->qs[lane] = q;
+-            if (lane == 0) y->ds = q8_1_ds(d, sum);
++            if (lane == 0) y->ds = make_half2(d, sum);
+         }
+         __syncthreads();
+     }
+diff --git a/src/kernels/cuda/native_mmvq.cu b/src/kernels/cuda/native_mmvq.cu
+index 1123da22..c5c4d30d 100644
+--- a/src/kernels/cuda/native_mmvq.cu
++++ b/src/kernels/cuda/native_mmvq.cu
+@@ -165,10 +165,10 @@ __global__ void native_swiglu_quantize_q8_1_kernel(const float* __restrict__ gat
+     const float xi = __fmul_rn(__fdividef(gi, __fadd_rn(1.0f, __expf(-gi))), up[i]);
+     const float amax = warp_max(fabsf(xi));
+     const float sum = warp_sum(xi);
+-    const float d = q8_1_finite(amax / 127.0f);   // #606, as native_quantize_q8_1_kernel: finite blocks bit for bit
+-    const int8_t q = q8_1_quant(xi, d, amax);
++    const float d = amax / 127.0f;
++    const int8_t q = amax == 0.0f ? 0 : roundf(xi / d);
+     y[i / Q8K].qs[i % Q8K] = q;
+-    if (i % Q8K == 0) y[i / Q8K].ds = q8_1_ds(d, sum);
++    if (i % Q8K == 0) y[i / Q8K].ds = make_half2(d, sum);
+ }
+ 
+ // Exact pinned vec_dot_q5_K_q8_1_impl_vmmq expression and integer dot order.

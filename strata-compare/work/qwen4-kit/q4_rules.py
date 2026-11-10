@@ -1,0 +1,1286 @@
+#!/usr/bin/env python3
+# AMENDMENT 2026-11-07 (Karl) - it applies from now on, not to finished gates; recorded before the confirmation gap
+# (work/r23/gap-confirm0211.sh). Karl, 11-07, on results/r23/port-0211/HUNT-1107.md:
+#   "Measurement rule: yes, as a dated amendment applying from now on. Per-workload prompt numbers exclude the
+#   chat-cache save. Time the save as its own line in every screen, and judge it separately against its own noise,
+#   taking its two-speed pattern into account, so a real regression in saving still shows."
+#   "Prompt clock: engine clock for the per-workload prompt numbers, as you recommend. The overall screen rule stays on
+#   the client clock minus the save, at -1%. Add one INFO flag, not a fail: if a workload's outside-engine time is worse
+#   in all 3 passes by more than its own spread, flag it for review, so a server-side slowdown hitting one workload
+#   can't hide under the overall rule. Record the amendment as dated before the confirmation gap."
+# The rule as implemented (work/r22/g17_rules.py, section "11-07 park amendment"):
+#   - Per-workload prompt numbers exclude the chat-cache save and are taken on the engine clock: prompt tokens / (the
+#     engine's prompt ms - the `chat cache: parked ... in N ms` line logged just before that request). They feed Karl
+#     11-03's no-loss rule (wl_noloss) and g16's "no workload more than 3 % below".
+#   - The overall screen rule (g16's geometric mean, -1 %) stays on the client clock minus the save: prompt tokens /
+#     (TTFT - save).
+#   - The save is judged as its own "chat-cache save" line (save_rule), against its own noise and with its two levels
+#     taken into account. The level mix is INFO.
+#   - The outside-engine INFO flag (outside_flags). It is INFO and never changes a verdict.
+#     - A workload's outside-engine time per request = client TTFT - the engine's prompt ms. The save is inside the
+#       engine figure, so it cancels.
+#     - Its spread = the larger of the two arms' half-ranges over their passes.
+#     - Flag: every pass of the arm is above the base's mean by more than that spread -> "outside-engine time worse in
+#       every pass - for review (INFO)".
+# A gate that started before 2026-11-07 14:00 keeps the rules it ran under; so does screen data without engine logs.
+# Here: the screen numbers and the per-workload no-loss line (with the INFO flag) come from g17's screen_passes /
+# wl_noloss. speeddecide (ARM against BASE) also takes the save line: a FAIL is a loss, NOT DECIDED leaves it
+# undecided. A new model's save sizes have no stored band, so they are compared with the base arm's median only.
+"""q4_rules.py - the Qwen4 day-one kit's rules and the helpers its GENERATED gap drivers call (work/qwen4-kit/dayone.py
+writes the drivers; Karl 11-05: "generate the exactness smoke test, KL-vs-reference and speed-screen drivers").
+WRITTEN 11-05, BEFORE ANY QWEN4 RELEASE AND BEFORE ANY RUN. NOTHING SWITCHES: P028x stays served whatever this says;
+every verdict below is a measurement for Karl, and the use of a new model or quant is his call.
+
+The rules are the series' rules, carried over unchanged where they exist (cited), parameterised where day one needs it:
+  exactness   gap-ud31.sh / ud31_rules.py EXACTNESS (repeatability; new weights cannot be bit-identical to P028x)
+  quality     ud31_rules.py QUALITY (11-05): the KL RULES AGAINST A NAMED LOCAL REFERENCE R AT THE TEXT LEVEL; text NLL
+              is INFO only with whole-text uncertainty (the many-positions NLL bound was REVOKED 11-05:
+              results/r23/nll-many/gap/ADOPTED-BOUND.REVOKED.json, results/r23/nll-many/recompute/REPORT.md)
+  speed       g17_rules.py wl_noloss (Karl 11-03), the 9-workload screen; Karl's 40-60 tok/s decode target (INFO)
+
+EXACTNESS (gap-<name>-exact.sh; arm X = the day-one file in its day-one config)
+  pre-gap    predl (every shard here, size = the pinned tree's, a SHA256SUMS line = the pinned LFS oid, no .part/.bad);
+             cfgcheck (the config is the one dayone.py wrote: sha256 recorded in the params file; explicit integer
+             --expert-cache and --expert-cache-device1; port 8081; no --vision, no fallback, no P028x log); the lossless
+             config check (bringup/patchtest.sh lossless, CFG / TREE); the pack finished (native_experts.txt + index.txt)
+  dl_sha     inside the gap, before anything reads them: every shard re-hashed against the pinned oid (pages dropped)
+  smoke      bringup/lib/run.sh NAME-smoke CFG math 256: rc 0 and a decode line -> PASS (the engine loads the file and
+             generates); lossless_log = patchtest.sh lossless with ELOG = the smoke's engine stderr ("log clean")
+  e7_X1      exact7 at the params' pin (bringup/lib/exact7.sh: 7 items, --adapt-swaps 0 --suffix-draft 0): the first run;
+             same-model swap mode only: against P028x's x28h-e7a, INFO (N/7 identical expected low); else no reference
+  e7_X2      exact7 again against X1: 7/7 identical + slots MATCHED + 7/7 item outputs -> PASS, else FAIL
+  env_e7X1, env_e7X2   each exact7 engine's environment = the config's exactly, no other STRATA_*, tail skip 0, the
+             config's GPU count, --expert-cache = the pin, --adapt-swaps 0, --suffix-draft 0 (`envcli --mode e7`)
+  slots_e7   INFO: the logged "expert cache N slots" / "CUDA1: N additional experts" against the slot model's prediction
+  -> REPEATABLE = all PASS; NOT REPEATABLE = e7_X2 FAIL; CHECK FAILED (names) = e7_X2 PASS but another check FAIL;
+     VOID = an env gate FAIL; NOT RUN = no e7_X2
+
+QUALITY (gap-<name>-kl.sh) - A QUANT MEASUREMENT / COMPARISON, NOT A LOSSLESS GATE
+  arms       R = the NAMED local reference (a larger quant of the same model, or the --kl-ref-config Karl names; quality
+             only); X, Y ... = the day-one candidates (one, or every file of a tie under Karl's rule); same-model swap
+             mode adds P = configs/x28h.json (the served file, P028x without vision) as the base
+  data       DUMP mode (same tokenizer and Flash-Next's head shapes: score.py's offline head applies): score.py run
+             --set long11 --rows all:8 per arm, validate_<arm> (ud31_rules.py validate, each arm's own head; mean KL <=
+             0.05, each <= 0.5), head_<base> (score.py validate = the per-arm head), ud31_rules.py compare -> rows.tsv.
+             PFY mode (any other model): pf_yardstick long40 (day1.py pfy PROMPT_DIR: the re-tokenized prompts; the
+             engine's own head, full-vocabulary logits after each of the 40 cuts) -> `pfyrows` -> rows.tsv. Either way the
+             texts are deduplicated as the recompute did (pp32k, tf-long96k, pp8k dropped): the 8 distinct texts, the
+             text is the unit. An arm counts only with its run_ and env_ gates PASS (+ validate_ in dump mode).
+  memory     (Karl 11-05, verbatim: "as recommended, but keep the wait-for-memory check, and abort cleanly rather than
+             swap") R's --resident-budget-gib = the RAM tier minus 5 GiB (52 on Flash-Next, as ud31-R.json); the rest of
+             its experts stream from the SSD. Every quality arm: (1) mem_<arm> `memwait` BEFORE it starts - after the
+             gap's own wait for 8080's memory - MemAvailable >= its need (experts held in RAM + the 12 GiB floor + 6 GiB
+             for the engine's other host memory) within 120 s, else it is not started: run_<arm> FAIL "aborted: memory
+             (not started)"; (2) memw_<arm> `memwatch` WHILE it runs, every second: MemAvailable < the floor + 1 GiB, any
+             engine process with VmSwap > 0, or the system's swap-ins + swap-outs growing by >= 1,024 pages (4 MiB, the
+             swap rule's streak) since the arm started -> its engine processes are stopped BY PID (TERM, KILL after
+             15 s), "aborted: memory (<why>)" is written, run_<arm> FAIL. It acts before the guard's 12 GiB floor, so the
+             arm ends cleanly instead of swapping; an aborted R = QUALITY NOT JUDGED.
+  metrics    the KL rules' four per text and arm (kernel_rule2/3): mean KL(R || X), p90, rows with KL > 1, changed
+             top-1 against R's top-1 (full vocabulary)
+  pairs      (a tie, or X against P in swap mode) ud31_rules.py text_level_kl unchanged: per text X vs B worse if
+             X_t > 1.10 x B_t (+ 1 for the two counts), better if B_t > 1.10 x X_t (+ 1), else inside; both below the floor
+             (mean / p90 0.01 nats, counts 5) = inside. Per metric over the 8 texts: WORSE if worse on >= 6 and better on
+             <= 1; BETTER the mirror image; else INSIDE THE MARGIN. X WORSE THAN B if any metric WORSE; BETTER THAN B if
+             the mean is BETTER and no metric WORSE; else INSIDE THE MARGIN (ABOVE / AT OR BELOW B by the pooled mean).
+  ties       Karl's rule cannot choose between equal expert bytes: QUALITY DECIDES. With two tied files the pair
+             verdict decides (BETTER wins; INSIDE THE MARGIN = "no quality difference found": then Karl decides, the
+             --prefer setting is the documented fallback); with more, every pair is reported and a file wins only if it
+             is BETTER THAN every other one.
+  one file   no verdict: the four metrics pooled and per text, with the WHOLE-TEXT bootstrap 95 % CI of the pooled mean
+             (texts resampled, 10,000 replicates, seed 20261104; and the 2,048-token-block figure beside it, labelled
+             "not used for the verdict; understates"), the publisher's KLD beside (its own data and reference: not
+             comparable, recorded only). Karl's rule: "only if that quant's quality is not good enough" do the IQ3-class
+             comparisons and the upgrade pricing start - that judgement is his, with the graded set.
+  pack tag   a file whose Q8_0 hyper-connections the pack rounded to BF16 (--compat-bf16) carries ud31's tag on every
+             quality line: "includes pack rounding (the prompt path reads its Q8_0 HC projections as BF16 from the pack)".
+             Karl's frozen pack-rounding rule (11-05) carried over: when such a file LOSES a tie (another file BETTER THAN
+             it), the loss is RECORDED AS "INCLUDES PACK ROUNDING", not as a verdict on the file; a decode-path follow-up
+             (work/r23/gap-ud31-dec.sh's method) separates the two. Only a win escapes it.
+  text NLL   INFO only: per arm and text the mean NLL of the text's own next token; d = pooled mean(NLL_X - NLL_B) with
+             its whole-text se / CI and the 2,048-block se / CI beside it (labelled). No verdict. (PFY mode: the 36-ish cut
+             positions only - fewer positions, the same whole-text treatment.)
+  QUALITY NOT JUDGED: no R, no rows.tsv, an arm's gates not PASS, fewer than 5 texts.
+
+SPEED (gap-<name>-speed.sh; Q = the day-one config, P = configs/x28h.json, the same build day one has: P028x's engine
+for P, the release's stock engine for Q)
+  the 9-workload screen (work/r22/abarm.sh: W1-W3, agent x2, research4 x4; a warm-up first), 3 passes in turned order
+  (P Q / Q P / P Q), a fresh test server each (with_server.sh; env checked: g17_rules.py envcheck --ngpu N)
+  NO LOSS = g17_rules.py wl_noloss (Karl 11-03), Q against P: for every workload, decode AND prompt tok/s each, Q's pass
+          mean >= P's pass mean x (1 - the larger of the two arms' pass-to-pass spreads there); one workload slower
+          beyond its noise -> LOSS (listed); fewer than 2 passes of a workload -> NOT DECIDED. For a new model this
+          compares two models: a LOSS says "slower than today's service here", not "a bug".
+  VOID    an env_scr / fatal_scr gate of either arm FAIL (or start_P FAIL)
+  target  INFO: Q's screen decode geomean (and each workload's decode) against Karl's 40-60 tok/s: BELOW / IN / ABOVE
+  INFO    the screen geomeans (decode, prompt) Q vs P, per workload; the 5080 + 4060 Ti slots logged at start against
+          the slot model's prediction; start lines (swap mode: g17 startlines base; a new model: `startcheck`, the
+          unwanted lines only - our series' switches are off in a stock config, so their lines are absent by design)
+
+U-vs-ISTA (11-05e, Karl's item 1: "automatically queue the U-vs-ISTA comparison when the other appears. The v3.1 result
+decides which one becomes the default once both exist."; gap-<name>-uvi-kl.sh + gap-<name>-uvi-speed.sh, written by
+dayone.py plan / watch, never queued by it)
+  quality  the QUALITY rules above, unchanged: two new files = X1 (the first one out) and X2 (the other) against R, the
+           pair verdict (kldecide --tie: BETTER wins; INSIDE THE MARGIN = no quality difference found); a new file
+           against the served one = X against P (x28h) and R, gap-ud31.sh's design
+  speed    the SPEED rules above both ways: B (the later file) against A (the first) and A against B, wl_noloss each
+           (decision-BvA / decision-AvB); the target INFO per arm
+  record   `uvidecide` -> decision-uvi.txt: the two halves' results and THE DEFAULT (Karl 11-06: "Unsloth is the
+           stopgap until ISTA lands, and then the comparison decides"): (1) Unsloth VETOED by its v3.1 exactness
+           (VETO below) -> the ISTA arm; (2) this comparison's quality verdict favours an arm -> that arm; (3) its
+           quality half not run -> A, the first one out, stays; (4) no quality difference -> the v3.1 result as the
+           tie-break (dayone.py v31_default: UNSLOTH / ISTA), then Karl's size rule, then Karl decides. Speed is
+           reported, never decides. NOTHING SWITCHES either way.
+
+VETO (Karl 11-06, verbatim: "Unsloth first-out: a failed v3.1 exactness result vetoes it, unless the failure goes away
+with STRATA_HC_Q8 off and that config passes. In that case, day one uses Unsloth with the switch off. Speed and quality
+don't veto: Unsloth is the stopgap until ISTA lands, and then the comparison decides.")
+  read     the v3.1 gap's EXACTNESS verdict for U only (ud31_rules.py decide: decision.json exactness.U and decision.txt's
+           '  U: <verdict>.' line, which must agree); the decode-path follow-up (dec/decision.*) is quality, not read
+  states   REPEATABLE -> AS IS; NOT REPEATABLE / CHECK FAILED -> work/qwen4-kit/hcoff/gap-ud31-hcoff.sh decides (the
+           v3.1 U config with STRATA_HC_Q8=0, exact7 twice, the switch checked off in the engine log): REPEATABLE ->
+           HC_Q8 OFF (day one's Unsloth config sets STRATA_HC_Q8=0; cfgcheck requires it), anything else or not run ->
+           VETOED (no Unsloth plan, no download); VOID / NOT RUN / no file / a disagreement -> NOT DECIDED (no veto)
+  hcoffneed  the HC_Q8-off step refuses (exit 1) unless U's v3.1 exactness failed
+
+DENSE Q4 SPLIT (Karl 11-06: "Dense 27B: yes, Q3 on the 5080 alone as the plan. Add a Q4 split across both cards as a
+day-one quality comparison.") - on the pinned llama.cpp, NOT Strata (Strata runs no dense family; strata-split needs one
+compute capability on every card): QUALITY ONLY, NO SPEED CLAIM
+  arms     R = the largest quant (layers past the cards' room on the CPU), Q3 = the plan's file on the 5080 alone, Q4 =
+           the largest Q4-class quant across both cards (a layer split, the 4060 Ti first); -fa on, q8_0 K/V on all
+  data     the kit's 8 distinct texts (pf_yardstick long40's files decoded with Flash-Next's tokenizer; llama.cpp
+           tokenizes them itself), -c = min(32768, length / 2), the second half of one chunk scored; llama-perplexity
+           --kl-divergence-base (R) / --kl-divergence (Q3, Q4); memwait / memwatch / watchdog on each run
+  rule     per text mean KLD, 90 % KLD, changed top-1 (100 - 'Same top p', x the scored positions): Q4 against Q3 by
+           ud31_rules.py's own side() / metric_verdict(); Q4 WORSE if any metric WORSE, BETTER if the mean BETTER and none
+           WORSE, else INSIDE THE MARGIN; 'KL > 1 rows' is not in llama.cpp's output; < 5 texts: NOT JUDGED
+  lcppcheck  refuses until llama-perplexity is built from the pinned source for sm_89 + sm_120 and names the architecture
+
+DENSE (11-05e, Karl's item 4: a dense Qwen4-27B; dayone.py dense writes the exactness + speed drivers in their dense form)
+  densecheck  before the gap: the release tree's family table (include/strata/artifact/model_family.hpp) must list the
+           file's architecture as a family that is not qwen4exp / qwen35moe (those two paths are compiled for MoE
+           shapes); else REFUSED (exit 1, nothing touched): today every tree refuses 'qwen35' (the dense 27B's)
+  cfgcheck (dense params) no --expert-cache / --expert-cache-device1 rule; placement A = one CUDA device, no
+           --layer-split; placement B = two devices, --layer-split K as planned and --trim-stage-weights; --max-context
+           >= the params' min_ctx; the rest as above (sha, port 8081, no vision / fallback, tail skip 0)
+  exact7   exact7.sh's built-in --expert-cache ${PIN_CACHE} is 0 (no experts); the rest of EXACTNESS unchanged
+  speed    SPEED unchanged (Q = the dense config, P = x28h); the slots INFO lines are dropped
+
+Every decision file ends "NOTHING SWITCHES".
+
+Subcommands (most take --gate NAME --gates FILE):
+  predl DIR TREE --paths P,.. | rehash DIR TREE --paths P,.. | cfgcheck CONFIG PARAMS | envcli EXE CONFIG --job PID
+  --mode e7|pfy [--pin N] [--ngpu N] [--kill] | slots LOG --main N [--helper N] | startcheck LOG [SERVERLOG..] |
+  smoke OUTFILE ERRFILE | memwait --need-gib N [--max-s 120] | memwatch JOB --names "..." --out F | pfyrows ROOT --ref R --arms X,Y --prompt-dir D [--sets long40,long80b] --out ROWS |
+  kldecide ROWS --ref R --cands X,Y [--base P] [--tie] [--tag-pack X,..] [--published TEXT] --out DIR |
+  speeddecide OUTDIR --arm Q --base P [--target 40,60] [--tag T] | exactdecide OUTDIR --arm X |
+  densecheck PARAMS | uvidecide --params PRM --speed OUTDIR --out DIR | hcoffneed [--ud31 D] | lcppcheck PARAMS |
+  lcppdecide PARAMS --dir D --out D | rules --out F | selftest [--dir D]
+Python: .venv/bin/python -I -B (numpy). Imports ud31_rules.py / g17_rules.py / decode_rules.py / day1.py read-only.
+"""
+from __future__ import annotations
+
+import sys
+
+sys.dont_write_bytecode = True   # the modules it loads live in work/r22, work/r23, work/qwen4-kit: no __pycache__ there
+
+import argparse  # noqa: E402
+import hashlib  # noqa: E402
+import importlib.util  # noqa: E402
+import json  # noqa: E402
+import math  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+import signal  # noqa: E402
+import statistics as st  # noqa: E402
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+for _k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_k, "1")
+import numpy as np  # noqa: E402
+
+WS = Path("/home/USER/ai-speed-testing/strata-compare")
+KIT = WS / "work/qwen4-kit"
+UD31 = WS / "work/r23/ud31_rules.py"
+G17 = WS / "work/r22/g17_rules.py"
+DECR = WS / "work/r23/decode_rules.py"
+PFY = WS / "work/r22/pf_yardstick.py"
+VERSION = "q4_rules.py 2026-11-05"
+NOTE_SWITCH = "NOTHING SWITCHES: P028x stays served; any use of the new file is Karl's call."
+PACK_TAG = "includes pack rounding (the prompt path reads its Q8_0 HC projections as BF16 from the pack)"
+UNWANTED = ["short of GPU memory", "fatal GPU error", "no VRAM for the", "became non-finite", "the engine had stopped",
+            "STRATA_ROUTE_TAIL_SKIP=1 is ON", "adaptive tier asynchronous", "CPU share is ON by default",
+            "residency-biased routing is on by default", "chosen by the residency policy"]
+MIN_TEXTS = 5
+_MODS: dict = {}
+
+
+def load(name, path):
+    if name not in _MODS:
+        spec = importlib.util.spec_from_file_location(name, path)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        _MODS[name] = m
+    return _MODS[name]
+
+
+def ud31():
+    return load("ud31_rules", UD31)
+
+
+def gate(a, status, detail):
+    if getattr(a, "gates", None) and getattr(a, "gate", None):
+        with open(a.gates, "a") as f:
+            f.write(f"{a.gate} {status} {detail} [q4 {time.strftime('%m-%d %H:%M')}]\n")
+
+
+def read_gates(p):
+    g = {}
+    p = Path(p)
+    for line in p.read_text().splitlines() if p.exists() else []:
+        k, _, rest = line.partition(" ")
+        s, _, det = rest.partition(" ")
+        g[k] = (s, det)
+    return g
+
+
+def pins_of(tree):
+    return {e["path"]: (int(e["size"]), e["lfs"]["oid"]) for e in json.loads(Path(tree).read_text())
+            if e.get("type") == "file" and e.get("lfs")}
+
+
+def argval(args, flag):
+    v = [args[i + 1] for i, x in enumerate(args[:-1]) if x == flag]
+    return v[-1] if v else None
+
+
+# ------------------------------------------------------------------------------------------------ files
+def cmd_predl(a):
+    pins, d, bad, ok = pins_of(a.tree), Path(a.dir), [], 0
+    sums = {}
+    sp = d / "SHA256SUMS"
+    for ln in sp.read_text().splitlines() if sp.exists() else []:
+        if ln.strip():
+            h, _, n = ln.strip().partition("  ")
+            sums[n] = h
+    for p in a.paths.split(","):
+        size, oid = pins[p]
+        f = d / Path(p).name
+        if not f.exists():
+            bad.append(f"{f.name} missing")
+        elif f.stat().st_size != size:
+            bad.append(f"{f.name} {f.stat().st_size:,} B != pinned {size:,}")
+        elif sums.get(f.name) != oid:
+            bad.append(f"{f.name}: no SHA256SUMS line with the pinned oid {oid[:12]}")
+        else:
+            ok += 1
+        for x in (".part", ".bad"):
+            if Path(str(f) + x).exists():
+                bad.append(f"{f.name}{x} present")
+    line = f"{ok} of {len(a.paths.split(','))} files here, pinned size + SHA256SUMS line" + (f"; {'; '.join(bad)}" if bad else "")
+    print(("PASS " if not bad else "FAIL ") + line)
+    gate(a, "PASS" if not bad else "FAIL", line[:300])
+    return 0 if not bad else 1
+
+
+def sha_dropping(path, chunk=16 << 20):
+    h, n = hashlib.sha256(), 0
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        while True:
+            b = os.read(fd, chunk)
+            if not b:
+                break
+            h.update(b)
+            n += len(b)
+            if n % (256 << 20) < chunk:
+                os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+    finally:
+        os.close(fd)
+    return h.hexdigest()
+
+
+def cmd_rehash(a):
+    pins, d, bad, t0 = pins_of(a.tree), Path(a.dir), [], time.time()
+    for p in a.paths.split(","):
+        size, oid = pins[p]
+        f = d / Path(p).name
+        got = sha_dropping(f) if f.exists() else None
+        if got != oid:
+            bad.append(f"{f.name}: {got and got[:12]} != {oid[:12]}")
+    line = f"{len(a.paths.split(','))} files re-hashed in {time.time() - t0:.0f} s" + (f"; MISMATCH {'; '.join(bad)}" if bad else
+                                                                                     ": every sha256 = the pinned oid")
+    print(("PASS " if not bad else "FAIL ") + line)
+    gate(a, "PASS" if not bad else "FAIL", line[:300])
+    return 0 if not bad else 1
+
+
+def file_sha(p):
+    return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+
+
+def cmd_cfgcheck(a):
+    prm = json.loads(Path(a.params).read_text())
+    cfg_p = Path(a.config)
+    cfg = json.loads(cfg_p.read_text())
+    args, env, bad = cfg.get("args", []), cfg.get("env", {}), []
+    want_sha = (prm.get("config_sha256") or {}).get(str(cfg_p))
+    if want_sha and file_sha(cfg_p) != want_sha:
+        bad.append(f"{cfg_p.name} changed since dayone.py wrote it (sha {file_sha(cfg_p)[:12]} != {want_sha[:12]})")
+    dn = prm.get("dense")
+    if dn:   # 11-05e item 4: no experts; the placement's flags as planned
+        ndev = len([x for x in (env.get("CUDA_VISIBLE_DEVICES") or "").split(",") if x])
+        for flag in ("--expert-cache", "--expert-cache-device1"):
+            if flag in args:
+                bad.append(f"{flag} in a dense config")
+        if dn.get("placement") == "A" and (ndev != 1 or "--layer-split" in args):
+            bad.append(f"placement A wants the 5080 alone: {ndev} device(s), --layer-split {argval(args, '--layer-split')}")
+        if dn.get("placement") == "B" and (ndev != 2 or argval(args, "--layer-split") != str(dn.get("layer_split"))
+                                           or "--trim-stage-weights" not in args):
+            bad.append(f"placement B wants 2 devices + --layer-split {dn.get('layer_split')} + --trim-stage-weights: {ndev} device(s), "
+                       f"--layer-split {argval(args, '--layer-split')}, trim {'--trim-stage-weights' in args}")
+        mc = argval(args, "--max-context")
+        if not (mc or "").isdigit() or int(mc) < int(dn.get("min_ctx") or 0):
+            bad.append(f"--max-context {mc} < the plan's minimum {dn.get('min_ctx')}")
+    for flag in () if (a.quality_only or dn) else (() if prm.get("expert_cache_auto_ok") else ("--expert-cache",)) + (("--expert-cache-device1",) if prm.get("slots", {}).get("helper") else ()):
+        v = argval(args, flag)
+        if v is None or not v.isdigit():
+            bad.append(f"{flag} {v} (want an explicit count)")
+    if a.quality_only and not want_sha:
+        bad.append(f"{cfg_p.name}: no recorded sha256 in the params (a reference config dayone.py did not write)")
+    if "--vision" in args or cfg.get("vision"):
+        bad.append("--vision / a vision block (a test config runs without the picture helper)")
+    if cfg.get("fallback"):
+        bad.append(f"fallback {cfg['fallback']} (a failed check must stop the test)")
+    if cfg.get("port") != 8081:
+        bad.append(f"port {cfg.get('port')} (test port 8081)")
+    if "engine-P028x" in str(cfg.get("log", "")):
+        bad.append("the served instance's log")
+    if env.get("STRATA_ROUTE_TAIL_SKIP") != "0":
+        bad.append(f"STRATA_ROUTE_TAIL_SKIP={env.get('STRATA_ROUTE_TAIL_SKIP', 'unset')}")
+    if not Path(cfg.get("exe", "")).exists():
+        bad.append(f"exe {cfg.get('exe')} does not exist")
+    sw = prm.get("hc_q8_switch") or ("on" if prm.get("hc_q8") else None)
+    if sw == "on" and not a.quality_only and env.get("STRATA_HC_Q8") != "1":
+        bad.append("STRATA_HC_Q8 not 1 (the file stores Q8_0 hyper-connections: the 11-05 decision)")
+    if sw == "off" and env.get("STRATA_HC_Q8") not in (None, "0"):
+        bad.append(f"STRATA_HC_Q8={env.get('STRATA_HC_Q8')} but the plan says off (Karl 11-06: the exactness veto's escape)")
+    line = (f"{cfg_p.name}: --expert-cache {argval(args, '--expert-cache')}, --expert-cache-device1 "
+            f"{argval(args, '--expert-cache-device1')}, tail skip {env.get('STRATA_ROUTE_TAIL_SKIP')}, HC_Q8 "
+            f"{env.get('STRATA_HC_Q8', 'unset')}" + (f"; {'; '.join(bad)}" if bad else "; as written"))
+    print(("PASS " if not bad else "FAIL ") + line)
+    gate(a, "PASS" if not bad else "FAIL", line[:300])
+    return 0 if not bad else 1
+
+
+# ------------------------------------------------------------------------------------------------ engines
+def cmd_envcli(a):
+    """decode_rules.py envcli with the pin as a parameter (its e7 mode has --expert-cache 2500 built in)."""
+    D = load("decode_rules", DECR)
+    cfg = json.loads(Path(a.config).read_text())
+    if a.mode == "pfy":
+        want, allowed, args_want = D.env_want(cfg, "pfy", a.set)
+    else:
+        want, allowed = dict(cfg.get("env", {})), {"STRATA_MON_GPU"}
+        args_want = {"--expert-cache": str(a.pin), "--adapt-swaps": "0", "--suffix-draft": "0"}
+        for kv in a.set or []:
+            k, _, v = kv.partition("=")
+            want[k] = v
+    exe = os.path.realpath(a.exe)
+    seen, t_end = {}, time.time() + a.max_s
+    while time.time() < t_end:
+        done = not D.alive(a.job)
+        for pid in sorted(D.proc_tree(a.job) | {a.job}):
+            if pid in seen:
+                continue
+            try:
+                if os.readlink(f"/proc/{pid}/exe") != exe:
+                    continue
+                env = dict(x.split("=", 1) for x in Path(f"/proc/{pid}/environ").read_bytes().decode("utf-8", "replace")
+                           .split("\0") if "=" in x)
+                argv = Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace").split("\0")
+            except OSError:
+                continue
+            bad = D.env_bad(env, argv, want, allowed, args_want, a.ngpu, "pfy" if a.mode == "pfy" else "e7")
+            seen[pid] = bad
+            killed = ""
+            if bad and a.kill:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed = "; STOPPED (by pid) before it measures"
+                except OSError:
+                    killed = "; could not stop it"
+            print(f"engine pid {pid}: {len(want)} env keys, " + " ".join(f"{k} {D.last_val(argv, k)}" for k in args_want)
+                  + (f" -> ENV MISMATCH {', '.join(bad)}{killed}" if bad else " -> ENV OK"), flush=True)
+        if done:
+            break
+        time.sleep(0.3)
+    bad_all = [b for v in seen.values() for b in v]
+    if not seen:
+        line = f"no engine {exe} started in job {a.job}"
+    elif bad_all:
+        line = f"{sum(1 for v in seen.values() if v)} of {len(seen)} engine start(s) not as configured: " + "; ".join(sorted(set(bad_all)))
+    else:
+        line = f"{len(seen)} engine start(s) ({a.mode}, {a.ngpu} GPU(s)), {len(want)} env keys as configured, no other STRATA_*"
+    ok = bool(seen) and not bad_all
+    print(("ENV CHECK OK: " if ok else "ENV CHECK FAILED - the arm is void: ") + line, flush=True)
+    gate(a, "PASS" if ok else "FAIL", line[:400])
+    return 0 if ok else 1
+
+
+def logged_slots(text):
+    m = re.findall(r"expert cache (\d+) slots", text)
+    h = re.findall(r"CUDA1: (\d+) additional experts", text)
+    return (int(m[-1]) if m else None), (int(h[-1]) if h else None)
+
+
+def cmd_slots(a):
+    t = "".join(Path(f).read_text(errors="replace") for f in a.logs if Path(f).exists())
+    m, h = logged_slots(t)
+
+    def cmp(got, want, what):
+        if want is None:
+            return f"{what} {got}"
+        if got is None:
+            return f"{what}: no line (predicted {want:,})"
+        return f"{what} {got:,} (predicted {want:,}, {100 * (got / want - 1):+.1f} %)" if want else f"{what} {got:,}"
+    line = cmp(m, a.main, "5080 slots") + "; " + cmp(h, a.helper, "4060 Ti experts")
+    print("INFO " + line)
+    gate(a, "INFO", line)
+    return 0
+
+
+def cmd_startcheck(a):
+    t = "".join(Path(f).read_text(errors="replace") for f in [a.startlog] + list(a.serverlog or []) if Path(f).exists())
+    found = [x for x in UNWANTED if x in t]
+    m, h = logged_slots(t)
+    line = (f"{len(UNWANTED) - len(found)}/{len(UNWANTED)} unwanted lines absent" + (f"; UNWANTED: {'; '.join(found)}" if found else "")
+            + f"; slots 5080 {m}, 4060 Ti {h}")
+    ok = bool(t) and not found
+    print(line + (" -> PASS" if ok else " -> FAIL"))
+    gate(a, "PASS" if ok else "FAIL", line if t else "no start log")
+    return 0
+
+
+def cmd_smoke(a):
+    out = Path(a.out).read_text(errors="replace") if Path(a.out).exists() else ""
+    err = Path(a.err).read_text(errors="replace") if Path(a.err).exists() else ""
+    dec = [ln for ln in out.splitlines() if ln.startswith("decode")]
+    toks = re.search(r"^output\s*:\s*(.*)$", out, re.M)
+    n = len(toks.group(1).split()) if toks else 0
+    fatal = [x for x in ("fatal GPU error", "became non-finite", "short of GPU memory") if x in err]
+    ok = bool(dec) and n > 0 and not fatal
+    line = (f"{n} output tokens; {dec[0][:120] if dec else 'no decode line'}" + (f"; {', '.join(fatal)}" if fatal else ""))
+    print(("PASS " if ok else "FAIL ") + line)
+    gate(a, "PASS" if ok else "FAIL", line[:300])
+    return 0 if ok else 1
+
+
+# ------------------------------------------------------------------------------------------------ memory (Karl 11-05)
+def meminfo():
+    m = {}
+    for ln in Path("/proc/meminfo").read_text().splitlines():
+        k, _, v = ln.partition(":")
+        m[k] = int(v.split()[0]) * 1024
+    return m
+
+
+def swap_pages():
+    v = dict(ln.split() for ln in Path("/proc/vmstat").read_text().splitlines() if ln.startswith(("pswpin ", "pswpout ")))
+    return int(v.get("pswpin", 0)) + int(v.get("pswpout", 0))
+
+
+def vmswap_kb(pid):
+    try:
+        for ln in Path(f"/proc/{pid}/status").read_text().splitlines():
+            if ln.startswith("VmSwap:"):
+                return int(ln.split()[1])
+    except OSError:
+        pass
+    return 0
+
+
+def cmd_memwait(a):
+    t0, s0 = time.time(), swap_pages()
+    while True:
+        av = meminfo()["MemAvailable"] / 2 ** 30
+        if av >= a.need_gib:
+            line = f"MemAvailable {av:.1f} GiB >= the arm's need {a.need_gib:.1f} GiB after {time.time() - t0:.0f} s"
+            print("PASS " + line)
+            gate(a, "PASS", line)
+            return 0
+        if time.time() - t0 >= a.max_s:
+            line = (f"aborted: memory (not started): MemAvailable {av:.1f} GiB < the arm's need {a.need_gib:.1f} GiB after "
+                    f"{a.max_s:.0f} s (swap pages +{swap_pages() - s0})")
+            print("FAIL " + line)
+            gate(a, "FAIL", line)
+            return 1
+        time.sleep(2)
+
+
+def cmd_memwatch(a):
+    """stop the job's engine processes (by PID) before anything swaps; writes OUT only on an abort"""
+    D = load("decode_rules", DECR)
+    names = set(a.names.split())
+    s0, floor, mn = swap_pages(), (a.floor_gib + a.margin_gib) * 2 ** 30, float("inf")
+    while D.alive(a.job):
+        av = meminfo()["MemAvailable"]
+        mn = min(mn, av)
+        pids = []
+        for p in sorted(D.proc_tree(a.job) | {a.job}):
+            try:
+                if Path(f"/proc/{p}/comm").read_text().strip() in names:
+                    pids.append(p)
+            except OSError:
+                pass
+        why = []
+        if av < floor:
+            why.append(f"MemAvailable {av / 2 ** 30:.1f} GiB < the floor {a.floor_gib:g} + {a.margin_gib:g} GiB")
+        sw = [(p, vmswap_kb(p)) for p in pids]
+        why += [f"engine pid {p} VmSwap {k} kB" for p, k in sw if k > 0]
+        g = swap_pages() - s0
+        if g >= a.swap_pages:
+            why.append(f"swap-ins + swap-outs +{g} pages since the arm started (>= {a.swap_pages})")
+        if why:
+            for p in pids:
+                try:
+                    os.kill(p, signal.SIGTERM)
+                except OSError:
+                    pass
+            t1 = time.time()
+            while any(D.alive(p) for p in pids) and time.time() - t1 < 15:
+                time.sleep(0.5)
+            for p in pids:
+                if D.alive(p):
+                    try:
+                        os.kill(p, signal.SIGKILL)
+                    except OSError:
+                        pass
+            line = f"aborted: memory ({'; '.join(why)}) - engine pid(s) {pids or 'none found'} stopped by PID"
+            Path(a.out).write_text(line + "\n")
+            print("FAIL " + line, flush=True)
+            gate(a, "FAIL", line[:300])
+            return 1
+        time.sleep(a.every)
+    line = (f"no memory risk seen: min MemAvailable {mn / 2 ** 30:.1f} GiB, swap pages +{swap_pages() - s0}, no engine "
+            "VmSwap")
+    print("PASS " + line)
+    gate(a, "PASS", line)
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ quality
+LONG_SETS = ("long40", "long80b")
+
+
+def pfy_requests(prompt_dir, sets):
+    """(text stem, cut length, next token or None) in pf_yardstick's order for each set, ids from PROMPT_DIR"""
+    py = load("pf_yardstick", PFY)
+    out = []
+    for s in sets:
+        for f, cuts in (py.LONG40 if s == "long40" else py.LONG80B):
+            ids = [int(x) for x in (Path(prompt_dir) / f).read_text().replace("\n", ",").split(",") if x.strip()]
+            for n in cuts:
+                cut = min(n, len(ids)) if n else len(ids)
+                out.append((f.split(".")[0], cut, ids[cut] if cut < len(ids) else None))
+    return out
+
+
+def logp_file(p):
+    x = np.fromfile(p, dtype=np.float32).astype(np.float64)
+    x -= x.max()
+    return x - np.log(np.exp(x).sum())
+
+
+def cmd_pfyrows(a):
+    root, arms = Path(a.root), a.arms.split(",")
+    sets = a.sets.split(",")
+    # one pf_yardstick run dir per arm and set (ARM, or ARM-<set> with several sets); a set's first.<i> files are
+    # numbered from 0 inside its own dir, in pf_yardstick's request order
+    flat = [(si, i, r) for si, s in enumerate(sets) for i, r in enumerate(pfy_requests(a.prompt_dir, [s]))]
+    dirs = {x: [root / (x if len(sets) == 1 else f"{x}-{s}") for s in sets] for x in [a.ref] + arms}
+    for x, ds in dirs.items():
+        for si, d in enumerate(ds):
+            idx = d / "index.json"
+            if not idx.exists():
+                raise SystemExit(f"{d}: no index.json (arm {x} did not finish)")
+            got = [r["tokens"] for r in json.loads(idx.read_text())["requests"]]
+            want = [c for sj, i, (t, c, nx) in flat if sj == si]
+            if got != want:
+                raise SystemExit(f"{d}: request lengths {got[:5]}... differ from the cuts on {a.prompt_dir} {want[:5]}...")
+    hdr = ["text", "pos"] + [f"nll_{x}" for x in [a.ref] + arms] + [f"{h}_{x}" for x in arms for h in ("kl", "flip")]
+    n = 0
+    with open(a.out, "w") as fo:
+        fo.write("\t".join(hdr) + "\n")
+        for si, i, (t, cut, nx) in flat:
+            if cut <= 1000:
+                continue
+            lp = {x: logp_file(dirs[x][si] / f"first.{i}") for x in [a.ref] + arms}
+            pr = np.exp(lp[a.ref])
+            row = [f"{t}-{cut}", str(cut)] + [f"{-lp[x][nx]:.6f}" if nx is not None else "nan" for x in [a.ref] + arms]
+            for x in arms:
+                row += [f"{float((pr * (lp[a.ref] - lp[x])).sum()):.6g}", f"{float(lp[a.ref].argmax() != lp[x].argmax()):.0f}"]
+            fo.write("\t".join(row) + "\n")
+            n += 1
+    line = f"{n} rows (long prompts > 1,000 tokens) from {len(flat)} requests of {'+'.join(sets)}, arms {','.join([a.ref] + arms)} -> {a.out}"
+    print(line)
+    gate(a, "PASS" if n else "FAIL", line[:300])
+    return 0 if n else 1
+
+
+def rows_D(path):
+    U = ud31()
+    D = U.read_rows_tsv(path)
+    return D
+
+
+def sub_D(D, mask):
+    E = {"text": D["text"][mask], "pos": D["pos"][mask], "dropped": D["dropped"],
+         "cols": {k: v[mask] for k, v in D["cols"].items()}}
+    E["texts"] = list(dict.fromkeys(E["text"].tolist()))
+    return E
+
+
+def pooled_metrics(D, x):
+    U = ud31()
+    k, f = D["cols"][f"kl_{x}"], D["cols"][f"flip_{x}"]
+    out = U.kl_metrics(k, f)
+    out["per_text"] = {t: U.kl_metrics(k[D["text"] == t], f[D["text"] == t]) for t in D["texts"]}
+    out["mean_unc"] = U.uncertainty(D["text"], D["pos"], {"k": k}, lambda m: m["k"], U.DEFAULTS)
+    return out
+
+
+def tie_winner(pairs, cands):
+    """a file wins only if it is BETTER THAN every other tied file"""
+    for x in cands:
+        if all(pairs.get((x, y), {}).get("verdict", "").startswith("BETTER") for y in cands if y != x):
+            return x
+    return None
+
+
+def cmd_kldecide(a):
+    U = ud31()
+    D = rows_D(a.rows)
+    cands = a.cands.split(",")
+    tags = set((a.tag_pack or "").split(",")) - {""}
+    tg = lambda x: f" [{PACK_TAG}]" if x in tags else ""  # noqa: E731
+    out, js = [], {"version": VERSION, "rows": a.rows, "ref": a.ref, "cands": cands, "base": a.base, "texts": D["texts"],
+                   "dropped": D["dropped"], "published": a.published}
+    w = out.append
+    w(f"QUALITY (q4_rules.py kldecide, {VERSION}): the KL rules against R = {a.ref} at the text level (11-05); text NLL INFO")
+    w(f"  rows {a.rows}: {len(D['text'])} positions in {len(D['texts'])} distinct texts ({', '.join(D['texts'])}); dropped as "
+      f"duplicates: {', '.join(D['dropped']) or 'none'}")
+    if len(D["texts"]) < MIN_TEXTS:
+        w(f"=> QUALITY NOT JUDGED: {len(D['texts'])} texts (< {MIN_TEXTS})")
+        js["verdict"] = "NOT JUDGED"
+        return finish(a, out, js)
+    js["pooled"] = {}
+    for x in cands + ([a.base] if a.base else []):
+        if f"kl_{x}" not in D["cols"]:
+            w(f"  {x}: no KL column - not measured")
+            continue
+        m = pooled_metrics(D, x)
+        js["pooled"][x] = m
+        w(f"  {x}: KL(R || {x}) mean {m['mean']:.5f}, p90 {m['p90']:.5f}, rows > 1: {m['high']}, changed top-1 {m['flips']} of "
+          f"{m['n']}{tg(x)}")
+        w("    " + U.fmt_unc(m["mean_unc"], 5, "pooled mean ", sign=False))
+        w("    per text mean: " + ", ".join(f"{t} {v['mean']:.4f}" for t, v in m["per_text"].items()))
+    if a.published:
+        w(f"  published (the publisher's own data and reference; recorded, not comparable): {a.published}")
+    pairs = {}
+    order = [(x, a.base) for x in cands] if a.base else []
+    order += [(x, y) for i, x in enumerate(cands) for y in cands[i + 1:]]
+    order += [(y, x) for i, x in enumerate(cands) for y in cands[i + 1:]]
+    for x, b in order:
+        if f"kl_{x}" not in D["cols"] or f"kl_{b}" not in D["cols"]:
+            continue
+        tl = U.text_level_kl(D, x, b, U.DEFAULTS)
+        pairs[(x, b)] = tl
+        w(f"  {x} vs {b}: {tl['verdict']}{tg(x)}")
+        out.extend(U.kl_lines(tl, x, b))
+    js["pairs"] = {f"{x}|{b}": {"verdict": v["verdict"], "worse_metrics": v["worse_metrics"], "metrics": v["metrics"],
+                                "ratio": v["ratio"]} for (x, b), v in pairs.items()}
+    # text NLL, INFO only (rows with the text's next token)
+    fin = np.ones(len(D["text"]), dtype=bool)
+    for c, v in D["cols"].items():
+        if c.startswith("nll_"):
+            fin &= np.isfinite(v)
+    Dn = sub_D(D, fin)
+    base_n = a.base or a.ref
+    js["nll_info"] = {}
+    for x in cands:
+        if f"nll_{x}" in Dn["cols"] and f"nll_{base_n}" in Dn["cols"] and len(Dn["text"]):
+            ni = U.nll_info(Dn, x, base_n, U.DEFAULTS)
+            js["nll_info"][x] = {"vs": base_n, "d": ni["d"], "per_text": ni["per_text"]}
+            w(f"  text NLL (INFO, {len(Dn['text'])} positions): " + U.fmt_unc(ni["d"], 4, f"d({x} - {base_n}) ")
+              + f"{tg(x)}")
+    # the verdict line
+    if len(cands) == 1 and not a.base:
+        v = f"MEASURED (one file, no verdict): {cands[0]} mean KL(R || {cands[0]}) {js['pooled'][cands[0]]['mean']:.5f}" \
+            + tg(cands[0])
+    elif len(cands) == 1 and a.base and not getattr(a, "tie", False):
+        v = f"{cands[0]} {pairs[(cands[0], a.base)]['verdict']}" + tg(cands[0]) if (cands[0], a.base) in pairs else "NOT JUDGED"
+    else:
+        ties = cands + ([a.base] if a.base else [])
+        allp = dict(pairs)
+        if a.base:
+            for x in cands:
+                if (x, a.base) in pairs and (a.base, x) not in allp:
+                    tl = U.text_level_kl(D, a.base, x, U.DEFAULTS)
+                    allp[(a.base, x)] = tl
+        win = tie_winner(allp, ties)
+        v = (f"TIE DECIDED BY QUALITY: {win} is BETTER THAN every other tied file" + tg(win)) if win else \
+            "TIE NOT DECIDED BY QUALITY (no file BETTER THAN every other): Karl decides; --prefer is the documented fallback"
+        lost = [x for x in ties if x in tags and x != win]
+        if win and lost:   # Karl's frozen pack-rounding rule (11-05, ud31_rules.py): a tagged file's loss is not a verdict
+            v += (f"; {', '.join(lost)} RECORDED AS INCLUDES PACK ROUNDING (the pack-rounding rule: its loss may be the "
+                  "pack's BF16 rounding of its Q8_0 HC projections on the prompt path, not the file - a decode-path "
+                  "follow-up as work/r23/gap-ud31-dec.sh separates the two)")
+    js["verdict"] = v
+    w(f"=> {v}")
+    return finish(a, out, js)
+
+
+def finish(a, out, js):
+    out.append(NOTE_SWITCH)
+    txt = "\n".join(out) + "\n"
+    od = Path(a.out)
+    od.mkdir(parents=True, exist_ok=True)
+    (od / "decision-kl.txt").write_text(txt)
+    (od / "decision-kl.json").write_text(json.dumps(js, indent=1, default=lambda o: float(o) if isinstance(o, np.floating) else str(o)))
+    print(txt, end="")
+    gate(a, "INFO", js.get("verdict", "")[:300])
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ speed
+def cmd_speeddecide(a):
+    G = load("g17_rules", G17)
+    o = Path(a.outdir)
+    g = read_gates(o / "gates.txt")
+    out = []
+    w = out.append
+    w(f"SPEED (q4_rules.py speeddecide, {VERSION}): the 9-workload screen, {a.arm} against {a.base}")
+    void = [f"{k} {s}" for k, (s, _) in g.items() if re.match(rf"(env_scr|fatal_scr)({a.arm}|{a.base})\d", k) and s != "PASS"]
+    if g.get(f"start_{a.base}", ("PASS",))[0] not in ("PASS", "INFO"):
+        void.append(f"start_{a.base} {g[f'start_{a.base}'][0]}")
+    nl, nl_line = G.wl_noloss(o, a.arm, ref=a.base)
+    px, pb = G.screen_passes(o, a.arm), G.screen_passes(o, a.base)
+    if px and pb:
+        dx, db = G.gm([v[0] for v in px.values()]), G.gm([v[0] for v in pb.values()])
+        qx, qb = G.gm([v[1] for v in px.values()]), G.gm([v[1] for v in pb.values()])
+        w(f"  screen geomeans ({len(px)} / {len(pb)} complete passes): decode {dx:.1f} vs {db:.1f} tok/s ({100 * (dx / db - 1):+.1f} %), "
+          f"prompt {qx:,.0f} vs {qb:,.0f} tok/s ({100 * (qx / qb - 1):+.1f} %)")
+        lo, hi = (float(x) for x in a.target.split(","))
+        side = "BELOW" if dx < lo else "ABOVE" if dx > hi else "IN"
+        w(f"  Karl's target {lo:g}-{hi:g} tok/s decode: {a.arm}'s screen decode geomean {dx:.1f} -> {side} the target (INFO)")
+        per = {}
+        for k in (1, 2, 3):
+            rows = G.screen_rows(o, a.arm, k)
+            for wl in G.WL9:
+                if rows.get(wl, {}).get("decode_tps"):
+                    per.setdefault(wl, []).append(rows[wl]["decode_tps"])
+        w("  per workload decode (mean of passes): " + ", ".join(f"{wl} {st.mean(v):.1f}" for wl, v in per.items()))
+        verdict_t = side
+    else:
+        w("  no complete pass of one of the arms: no geomeans")
+        verdict_t = "NOT MEASURED"
+    if g.get("slots"):
+        w(f"  slots: {g['slots'][1]}")
+    sv, sl = G.save_rule(o, a.arm, a.base)   # 11-07 amendment: (None, []) for a gate before it
+    for x in sl:
+        w("  " + x)
+    if void:
+        v = "VOID (" + "; ".join(void) + ")"
+    elif nl is None:
+        v = "NOT DECIDED (" + nl_line + ")"
+    elif nl and sv == "NOT DECIDED":
+        v = f"NOT DECIDED (the chat-cache save: {sl[0]})"
+    else:
+        v = ("NO LOSS" if nl and sv != "FAIL" else "LOSS") + f" against {a.base} ({nl_line}" + (
+            "; the chat-cache save FAILS" if sv == "FAIL" else "") + ")"
+    w(f"=> SPEED: {v}; target: {verdict_t}")
+    out.append(NOTE_SWITCH)
+    txt = "\n".join(out) + "\n"
+    stem = f"decision-{a.tag}" if getattr(a, "tag", None) else "decision"   # 11-05e: two directions in one folder
+    (o / f"{stem}.txt").write_text(txt)
+    (o / f"{stem}.json").write_text(json.dumps({"verdict": v, "target": verdict_t, "void": void, "noloss": nl,
+                                                "noloss_line": nl_line, "arm": a.arm, "base": a.base}, indent=1))
+    print(txt, end="")
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ dense (11-05e item 4)
+def cmd_densecheck(a):
+    """the release tree (params dense.tree) runs the file's architecture: its family table lists it, and it is not one of
+    the two MoE paths (qwen4exp: Flash-Next's compiled shape; qwen35moe: Qwen3.6-35B-A3B's own path)"""
+    prm = json.loads(Path(a.params).read_text())
+    dn = prm.get("dense") or {}
+    arch, tree = dn.get("arch"), Path(dn.get("tree") or "")
+    mf = tree / "include/strata/artifact/model_family.hpp"
+    txt = mf.read_text(errors="replace") if mf.exists() else ""
+    fams = re.findall(r'if \(arch == "([^"]+)"\)', txt)
+    m = re.search(r"inline ModelFamily model_family_from_arch", txt)
+    cite = f"{tree.name}/include/strata/artifact/model_family.hpp:{txt.count(chr(10), 0, m.start()) + 1}" if m else str(mf)
+    ok = bool(arch) and arch in fams and arch not in ("qwen4exp", "qwen35moe")
+    line = (f"'{arch}' is in {cite}'s family table ({', '.join(fams)}): a release that runs it - read its dense path before the "
+            ".ready file" if ok else f"REFUSED: {tree.name} does not run '{arch}' ({cite} lists {', '.join(fams) or 'nothing'}; "
+            "qwen4exp / qwen35moe are MoE paths) - the dense drivers wait for a release that adds it")
+    print(("PASS " if ok else "FAIL ") + line)
+    gate(a, "PASS" if ok else "FAIL", line[:300])
+    return 0 if ok else 1
+
+
+# ------------------------------------------------------------------------------------------------ 11-06: the veto, the Q4 split
+def cmd_hcoffneed(a):
+    """gap-ud31-hcoff.sh runs only when U's v3.1 exactness FAILED (NOT REPEATABLE / CHECK FAILED in the v3.1 gap's
+    decision.json, its EXACTNESS line in decision.txt agreeing): Karl 11-06's escape from the veto"""
+    ud = Path(a.ud31) if a.ud31 else WS / "results/r23/ud31"
+    dj, dt = ud / "decision.json", ud / "decision.txt"
+    if not dj.exists():
+        line, ok = f"not needed yet: no v3.1 decision ({dj}: work/r23/gap-ud31.sh has not run)", False
+    else:
+        v = (json.loads(dj.read_text()).get("exactness") or {}).get("U") or ""
+        m = re.search(r"^  U: (REPEATABLE|NOT REPEATABLE|CHECK FAILED|VOID|NOT RUN)", dt.read_text(errors="replace"), re.M) \
+            if dt.exists() else None
+        if not m or not v.startswith(m.group(1)):
+            line, ok = f"decision.json (U {v!r}) and decision.txt ({m.group(1) if m else 'no U line'}) disagree - Karl looks", False
+        elif v.startswith(("NOT REPEATABLE", "CHECK FAILED")):
+            line, ok = f"U's v3.1 exactness {v[:120]}: the HC_Q8-off check is wanted (Karl 11-06)", True
+        else:
+            line, ok = f"not needed: U's v3.1 exactness is {v[:120]}", False
+    print(("PASS " if ok else "FAIL ") + line)
+    gate(a, "PASS" if ok else "FAIL", line[:300])
+    return 0 if ok else 1
+
+
+def cmd_lcppcheck(a):
+    """before the Q4-split gap: the pinned llama.cpp's llama-perplexity is built (from lq.lcpp_src, for sm_89 AND sm_120),
+    its source names the file's architecture, the texts are there"""
+    prm = json.loads(Path(a.params).read_text())
+    lq = prm["lq"]
+    bad = []
+    if not os.access(lq["lcpp"], os.X_OK):
+        bad.append(f"{lq['lcpp']} not built (dayone.py's build commands, under nogap-run.sh, after Karl's go)")
+    cc = Path(lq["lcpp_build"]) / "CMakeCache.txt"
+    if cc.exists():
+        t = cc.read_text(errors="replace")
+        archs = (re.search(r"^CMAKE_CUDA_ARCHITECTURES:\w+=(.*)$", t, re.M) or [None, ""])[1]
+        home = (re.search(r"^CMAKE_HOME_DIRECTORY:\w+=(.*)$", t, re.M) or [None, ""])[1]
+        if not {"89", "120"} <= set(re.findall(r"\d+", archs)):
+            bad.append(f"built for {archs!r}: both cards need sm_89 and sm_120")
+        if Path(home).resolve() != Path(lq["lcpp_src"]).resolve():
+            bad.append(f"built from {home}, not the pinned {lq['lcpp_src']}")
+    else:
+        bad.append(f"no {cc}")
+    src = (Path(lq["lcpp_src"]) / "src/llama-arch.cpp").read_text(errors="replace")
+    if f'"{lq["arch"]}"' not in src:
+        bad.append(f"the pinned llama.cpp does not name architecture {lq['arch']!r}")
+    tx = Path(prm["lq"].get("texts_dir") or "")
+    line = (f"llama-perplexity {lq['lcpp']} (sm_89 + sm_120, pinned source), architecture {lq['arch']}, {len(lq['texts'])} texts"
+            + (f"; REFUSED: {'; '.join(bad)}" if bad else ": ready (QUALITY ONLY - no speed claim)"))
+    print(("PASS " if not bad else "FAIL ") + line)
+    gate(a, "PASS" if not bad else "FAIL", line[:300])
+    return 0 if not bad else 1
+
+
+LCPP_RE = {"mean": re.compile(r"^Mean\s+KLD:\s+([0-9.]+)", re.M), "p90": re.compile(r"^90\.0%\s+KLD:\s+([0-9.]+)", re.M),
+           "p99": re.compile(r"^99\.0%\s+KLD:\s+([0-9.]+)", re.M), "same": re.compile(r"^Same top p:\s+([0-9.]+)", re.M)}
+
+
+def lcpp_metrics(path, scored):
+    t = Path(path).read_text(errors="replace") if Path(path).exists() else ""
+    got = {k: float(m.group(1)) for k, r in LCPP_RE.items() for m in [r.search(t)] if m}
+    if not {"mean", "p90", "same"} <= set(got):
+        return None
+    got["flips"] = round((1 - got["same"] / 100) * scored)
+    return got
+
+
+def cmd_lcppdecide(a):
+    """the Q4 split against Q3 (the plan), both against R, per text from llama-perplexity's own KL output: mean KLD, 90 %
+    KLD, changed top-1 (from 'Same top p' x the scored positions) - each text judged by ud31_rules.py's side() and each
+    metric by its metric_verdict() (KL_TOL 1.10, 6 of 8, the floors); 'KL > 1 rows' is not in llama.cpp's output and is
+    left out. QUALITY ONLY: llama.cpp is not Strata, so no speed claim. NOTHING SWITCHES: Q3 on the 5080 stays the plan."""
+    prm = json.loads(Path(a.params).read_text())
+    lq = prm["lq"]
+    U = ud31()
+    g = read_gates(a.gates) if a.gates else {}
+    ok_t = lambda t: all(g.get(f"run_{x}_{t}", ("PASS" if not a.gates else "MISSING",))[0] == "PASS" for x in ("R", "Q3", "Q4"))  # noqa: E731
+    per = {}
+    for t in lq["texts"]:
+        if not ok_t(t):
+            continue
+        q3, q4 = (lcpp_metrics(Path(a.dir) / f"{x}-{t}.txt", lq["scored"][t]) for x in ("Q3", "Q4"))
+        if q3 and q4:
+            per[t] = {"Q3": q3, "Q4": q4}
+    L = [f"DENSE Q4 SPLIT vs Q3 (q4_rules.py lcppdecide, {VERSION}) on llama.cpp - QUALITY ONLY, no speed claim: Q4 = "
+         f"{lq['arms']['Q4']['label']} across both cards, Q3 = {lq['arms']['Q3']['label']} on the 5080 alone (the plan), "
+         f"R = {lq['arms']['R']['label']}"]
+    js = {"texts": list(per), "per_text": per}
+    if len(per) < MIN_TEXTS:
+        v = f"NOT JUDGED ({len(per)} text(s) with all three arms clean, < {MIN_TEXTS})"
+    else:
+        mets = {}
+        for mt in ("mean", "p90", "flips"):
+            sides = {t: U.side(per[t]["Q4"][mt], per[t]["Q3"][mt], mt) for t in per}
+            mets[mt] = {"verdict": U.metric_verdict(list(sides.values())), "sides": sides}
+            L.append(f"  {mt}: {mets[mt]['verdict']} (" + ", ".join(f"{t} {per[t]['Q4'][mt]:.4g}/{per[t]['Q3'][mt]:.4g} {s_}"
+                                                                     for t, s_ in sides.items()) + ")")
+        worse = [m for m in mets if mets[m]["verdict"] == "WORSE"]
+        pooled = (sum(per[t]["Q4"]["mean"] for t in per) / len(per), sum(per[t]["Q3"]["mean"] for t in per) / len(per))
+        v = ("Q4 SPLIT WORSE THAN Q3 (" + ", ".join(worse) + ")" if worse else "Q4 SPLIT BETTER THAN Q3" if mets["mean"]["verdict"] == "BETTER"
+             else f"INSIDE THE MARGIN, Q4 {'ABOVE' if pooled[0] > pooled[1] else 'AT OR BELOW'} Q3")
+        js["metrics"], js["pooled_mean"] = mets, pooled
+        L.append(f"  pooled mean KLD over the texts: Q4 {pooled[0]:.5f}, Q3 {pooled[1]:.5f} (INFO); 'KL > 1 rows' is not in "
+                 "llama.cpp's output")
+    js["verdict"] = v
+    L.append(f"=> {v} - a day-one quality measurement; Q3 on the 5080 alone stays the plan (Karl 11-06); llama.cpp is not Strata: "
+             "no speed claim")
+    L.append(NOTE_SWITCH)
+    od = Path(a.out)
+    od.mkdir(parents=True, exist_ok=True)
+    (od / "decision-q4split.txt").write_text("\n".join(L) + "\n")
+    (od / "decision-q4split.json").write_text(json.dumps(js, indent=1) + "\n")
+    print("\n".join(L))
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ U-vs-ISTA (11-05e item 1)
+def kl_winner(q, ab):
+    """(the arm the KL half favours, a note): two new files - kldecide --tie's 'TIE DECIDED BY QUALITY: X1|X2 ...'; a new
+    file against the served one - 'X BETTER|WORSE THAN P ...' (a WORSE that carries the pack-rounding tag is a record,
+    not a verdict: Karl's frozen rule, carried over)"""
+    m = re.match(r"TIE DECIDED BY QUALITY: (X1|X2)\b", q)
+    if m:
+        return {"X1": "A", "X2": "B"}[m.group(1)], None
+    m = re.match(r"X (BETTER|WORSE) THAN P\b", q)
+    if m:
+        new = "A" if not ab["served"]["A"] else "B"
+        old = "B" if new == "A" else "A"
+        if m.group(1) == "WORSE" and "pack rounding" in q:
+            return None, "the new file's KL loss against P includes pack rounding: RECORDED, not a verdict (the frozen rule)"
+        return (new if m.group(1) == "BETTER" else old), None
+    return None, None
+
+
+def cmd_uvidecide(a):
+    """the comparison's record: the KL half (its decision-kl.json, when it ran), the speed half both ways, and THE DEFAULT
+    by the v3.1 result (dayone.py v31_default, re-read now). NOTHING SWITCHES."""
+    prm = json.loads(Path(a.params).read_text())
+    ab = prm["ab"]
+    o = Path(a.speed)
+    L = [f"U-vs-ISTA (q4_rules.py uvidecide, {VERSION}): A = {ab['label']['A']} ({ab['publisher']['A']}, out first) vs "
+         f"B = {ab['label']['B']} ({ab['publisher']['B']})"]
+    js = {"A": ab["label"]["A"], "B": ab["label"]["B"]}
+    kp = Path(ab["kl_results"]) / "decision-kl.json"
+    kl = json.loads(kp.read_text()) if kp.exists() else None
+    js["quality"] = (kl or {}).get("verdict", "NOT RUN")
+    L.append(f"QUALITY (the KL rules against R, {kp.parent}): {js['quality'][:300]}")
+    for tag in ("BvA", "AvB"):
+        p = o / f"decision-{tag}.json"
+        d = json.loads(p.read_text()) if p.exists() else {}
+        js[f"speed_{tag}"] = d.get("verdict", "NOT RUN")
+        L.append(f"SPEED {tag[0]} against {tag[2]} (no-loss rule): {js[f'speed_{tag}']}; target {d.get('target', '-')}")
+    q = js["quality"]
+    winner, wnote = kl_winner(q, ab)
+    js["quality_favours"] = winner
+    if wnote:
+        L.append(f"  {wnote}")
+    D = load("dayone", KIT / "dayone.py")
+    ux = D.u_exact_state()
+    v = D.v31_default()
+    pub_arm = {ab["publisher"][k]: k for k in ("A", "B")}
+    veto = pub_arm.get("unsloth") if ux["state"] == "VETOED" else None
+    ea, eb = (ab.get("experts_gib") or {}).get("A") or 0, (ab.get("experts_gib") or {}).get("B") or 0
+    if veto:   # Karl 11-06: a failed v3.1 exactness result vetoes Unsloth
+        arm = "B" if veto == "A" else "A"
+        dline = f"Unsloth VETOED ({ux['why'][:200]}): {arm}"
+    elif winner:   # "Unsloth is the stopgap until ISTA lands, and then the comparison decides"
+        arm = winner
+        dline = f"THE COMPARISON DECIDES (Karl 11-06): its quality verdict favours {arm}"
+    elif q == "NOT RUN":
+        arm = "A"
+        dline = "the comparison's quality half has not run: A, the first one out (the stopgap), stays"
+    else:   # no quality difference in the comparison: the v3.1 result as the tie-break, then Karl's size rule
+        tb = {"UNSLOTH": pub_arm.get("unsloth"), "ISTA": pub_arm.get("ista")}.get(v["state"])
+        if tb:
+            arm, dline = tb, f"no quality difference in the comparison; the v3.1 result as the tie-break: {v['state']} ({v['why'][:160]}) -> {tb}"
+        elif abs(ea - eb) > 0.10:
+            arm = "A" if ea > eb else "B"
+            dline = f"no quality difference, the v3.1 result {v['state']}: Karl's size rule -> {arm} ({max(ea, eb):.2f} vs {min(ea, eb):.2f} GiB)"
+        else:
+            arm, dline = None, f"no quality difference, the v3.1 result {v['state']}, equal expert bytes: Karl decides"
+    if ux["state"] == "HC_Q8 OFF" and arm == pub_arm.get("unsloth"):
+        dline += " - Unsloth with STRATA_HC_Q8=0 (its config as planned)"
+    js["default"] = {"arm": arm, "state": "VETO" if veto else "COMPARISON" if winner else "PENDING" if q == "NOT RUN" else "TIE-BREAK",
+                     "why": dline, "unsloth_exactness": ux["state"], "v31": v["state"], "flags": v.get("flags")}
+    js["publisher"] = ab["publisher"]
+    L.append(f"DEFAULT (Karl 11-06): {dline}")
+    if winner and v["state"] in ("UNSLOTH", "ISTA") and pub_arm.get(v["state"].lower()) != winner and not veto:
+        L.append(f"INFO: the v3.1 result ({v['state']}) points the other way; the comparison decides (Karl 11-06)")
+    if v.get("flags"):
+        L.append("FLAGS (the v3.1 gap): " + "; ".join(v["flags"]))
+    L.append(f"=> U-vs-ISTA: default {arm or 'not decided'}; quality {q[:80]}; speed B vs A {js['speed_BvA']}, A vs B {js['speed_AvB']}")
+    L.append(NOTE_SWITCH)
+    od = Path(a.out)
+    od.mkdir(parents=True, exist_ok=True)
+    (od / "decision-uvi.txt").write_text("\n".join(L) + "\n")
+    (od / "decision-uvi.json").write_text(json.dumps(js, indent=1, default=str) + "\n")
+    print("\n".join(L))
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ exactness
+def cmd_exactdecide(a):
+    o = Path(a.outdir)
+    g = read_gates(o / "gates.txt")
+    x = a.arm
+    s = lambda k: g.get(k, ("MISSING", ""))[0]  # noqa: E731
+    env_bad = [k for k in g if k.startswith("env_e7") and s(k) != "PASS"]
+    others = [k for k in ("dl_sha", "cfg", "lossless_cfg", "lossless_log", "smoke", "predl", "hcq8_off", "need")
+              if k in g and s(k) not in ("PASS", "INFO")]
+    if env_bad:
+        v = "VOID (" + ", ".join(f"{k} {s(k)}" for k in env_bad) + ")"
+    elif s(f"e7_{x}2") == "MISSING":
+        v = "NOT RUN (no second exact7)"
+    elif s(f"e7_{x}2") != "PASS":
+        v = f"NOT REPEATABLE ({g[f'e7_{x}2'][1][:160]})"
+    elif others:
+        v = "CHECK FAILED (" + ", ".join(f"{k} {s(k)}" for k in others) + ")"
+    else:
+        v = "REPEATABLE"
+    lines = [f"EXACTNESS (q4_rules.py exactdecide, {VERSION}): {x}"]
+    lines += [f"  {k} {st_} {det[:200]}" for k, (st_, det) in g.items()]
+    lines.append(f"=> EXACTNESS: {v}")
+    lines.append(NOTE_SWITCH)
+    txt = "\n".join(lines) + "\n"
+    (o / "decision.txt").write_text(txt)
+    (o / "decision.json").write_text(json.dumps({"verdict": v}, indent=1))
+    print(txt, end="")
+    return 0
+
+
+def cmd_rules(a):
+    Path(a.out).write_text(__doc__)
+    print(f"rules text ({len(__doc__)} chars) -> {a.out}")
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ selftest
+def cmd_selftest(a):
+    d = Path(a.dir)
+    d.mkdir(parents=True, exist_ok=True)
+    fails = []
+
+    def chk(name, cond, info=""):
+        print(f"{'ok  ' if cond else 'FAIL'} {name}" + (f"  ({info})" if info and not cond else ""))
+        if not cond:
+            fails.append(name)
+    rng = np.random.default_rng(20261105)
+    texts = ["32k", "tf-long28k", "tf-long40k", "tf-long64k", "tf-long112k", "pp4k", "ldrsyn20k", "rep9k", "pp32k"]
+    rows = []
+    for t in texts:
+        for p in range(1024, 1024 + 8 * 60, 8):
+            base = rng.gamma(2.0, 0.03)
+            rows.append((t, p, base))
+    # X = 0.7 x Y on every text -> X BETTER THAN Y; Z = Y -> INSIDE; W = 1.3 x Y -> WORSE
+    f = d / "rows.tsv"
+    with open(f, "w") as fo:
+        fo.write("text\tpos\tnll_R\tnll_X\tnll_Y\tnll_Z\tnll_W\tkl_X\tflip_X\tkl_Y\tflip_Y\tkl_Z\tflip_Z\tkl_W\tflip_W\n")
+        for t, p, b in rows:
+            fo.write("\t".join([f"{t}-32768", str(p)] + [f"{2.0 + b:.6f}"] * 5 + [f"{0.7 * b:.6g}", "0", f"{b:.6g}", "0", f"{b:.6g}", "0",
+                                                                       f"{1.3 * b:.6g}", "0"]) + "\n")
+    ns = argparse.Namespace(rows=str(f), ref="R", cands="X,Y", base=None, tag_pack="X", published="test 0.01",
+                            out=str(d / "kl-xy"), gate=None, gates=None, tie=False)
+    cmd_kldecide(ns)
+    j = json.loads((d / "kl-xy/decision-kl.json").read_text())
+    chk("kldecide: X = 0.7 x Y on 8 texts (pp32k dropped) -> X BETTER THAN Y, the tie decided for X",
+        j["pairs"]["X|Y"]["verdict"] == "BETTER THAN Y" and j["verdict"].startswith("TIE DECIDED BY QUALITY: X")
+        and j["dropped"] == ["pp32k"], j.get("verdict"))
+    ns.cands, ns.out = "Y,Z", str(d / "kl-yz")
+    cmd_kldecide(ns)
+    j = json.loads((d / "kl-yz/decision-kl.json").read_text())
+    chk("kldecide: Z = Y -> INSIDE THE MARGIN, the tie not decided", j["pairs"]["Y|Z"]["verdict"].startswith("INSIDE THE MARGIN")
+        and j["verdict"].startswith("TIE NOT DECIDED"), j.get("verdict"))
+    ns.cands, ns.base, ns.out = "W", "Y", str(d / "kl-wy")
+    cmd_kldecide(ns)
+    j = json.loads((d / "kl-wy/decision-kl.json").read_text())
+    chk("kldecide: W = 1.3 x base Y -> WORSE THAN Y", j["verdict"].startswith("W WORSE THAN Y"), j.get("verdict"))
+    ns.cands, ns.base, ns.out, ns.tie = "X", "Y", str(d / "kl-xy-tie"), True
+    cmd_kldecide(ns)
+    j = json.loads((d / "kl-xy-tie/decision-kl.json").read_text())
+    chk("kldecide --tie with the base (the served file in the tie): X BETTER THAN Y -> decided for X",
+        j["verdict"].startswith("TIE DECIDED BY QUALITY: X"), j.get("verdict"))
+    ns.tie, ns.tag_pack = True, "Y"
+    ns.out = str(d / "kl-xy-tie-tag")
+    ns.cands, ns.base = "Y", "X"
+    cmd_kldecide(ns)
+    j = json.loads((d / "kl-xy-tie-tag/decision-kl.json").read_text())
+    chk("kldecide --tie: the tagged file loses -> RECORDED AS INCLUDES PACK ROUNDING (Karl's frozen rule)",
+        "Y RECORDED AS INCLUDES PACK ROUNDING" in j["verdict"] and j["verdict"].startswith("TIE DECIDED BY QUALITY: X"),
+        j.get("verdict"))
+    ns.tie, ns.tag_pack = False, "X"
+    ns.cands, ns.base, ns.out = "X", None, str(d / "kl-x")
+    cmd_kldecide(ns)
+    j = json.loads((d / "kl-x/decision-kl.json").read_text())
+    chk("kldecide: one file -> MEASURED, no verdict; whole-text CI present",
+        j["verdict"].startswith("MEASURED") and j["pooled"]["X"]["mean_unc"]["text"]["blocks"] == 8, j.get("verdict"))
+    # pfyrows on synthetic pf_yardstick dirs (vocab 50, long40's layout over synthetic prompt files)
+    py = load("pf_yardstick", PFY)
+    pdir = d / "prompts"
+    pdir.mkdir(exist_ok=True)
+    for fname, cuts in py.LONG40:
+        n = max(c for c in cuts if c) + 50
+        (pdir / fname).write_text(",".join(str(int(v)) for v in rng.integers(0, 50, n)))
+    reqs = pfy_requests(pdir, ["long40"])
+    for arm, scale in (("R", 0.0), ("X", 0.2), ("Y", 0.4)):
+        ad = d / "pfy" / arm
+        ad.mkdir(parents=True, exist_ok=True)
+        for i, (t, c, nx) in enumerate(reqs):
+            r0 = np.random.default_rng(i).normal(0, 1, 50).astype(np.float32)
+            (r0 + scale * np.random.default_rng(1000 + i).normal(0, 1, 50).astype(np.float32)).tofile(ad / f"first.{i}")
+        (ad / "index.json").write_text(json.dumps({"requests": [{"tokens": c, "name": f"{t}-{c}"} for t, c, _ in reqs]}))
+    ns2 = argparse.Namespace(root=str(d / "pfy"), ref="R", arms="X,Y", prompt_dir=str(pdir), sets="long40",
+                             out=str(d / "pfy-rows.tsv"), gate=None, gates=None)
+    cmd_pfyrows(ns2)
+    D = rows_D(d / "pfy-rows.tsv")
+    chk("pfyrows: 40 cuts -> rows for the long ones of the 8 texts; KL(R||X) < KL(R||Y)",
+        len(D["texts"]) == 8 and D["cols"]["kl_X"].mean() < D["cols"]["kl_Y"].mean() and len(D["text"]) == 40,
+        f"{len(D['text'])} rows, {D['texts']}")
+    ns.rows, ns.cands, ns.base, ns.out, ns.tag_pack = str(d / "pfy-rows.tsv"), "X,Y", None, str(d / "kl-pfy"), ""
+    cmd_kldecide(ns)
+    j = json.loads((d / "kl-pfy/decision-kl.json").read_text())
+    chk("kldecide on pfy rows: X (half the noise) BETTER THAN Y", j["pairs"]["X|Y"]["verdict"] == "BETTER THAN Y", j.get("verdict"))
+    # speeddecide on synthetic screen rows (g17's file layout: speed/<arm><pass><n|a|r>.jsonl)
+    G = load("g17_rules", G17)
+    so = d / "speed-test"
+    (so / "speed").mkdir(parents=True, exist_ok=True)
+    (so / "gates.txt").write_text("")
+    wls = {"n": G.WL9[:3], "a": G.WL9[3:5], "r": G.WL9[5:]}
+    for arm, f_ in (("P", 1.0), ("Q", 0.5)):
+        for k in (1, 2, 3):
+            for s_, ws in wls.items():
+                with open(so / "speed" / f"{arm}{k}{s_}.jsonl", "w") as fo:
+                    for wl in ws:
+                        fo.write(json.dumps({"id": wl, "decode_tps": 150 * f_ * (1 + 0.005 * k), "prompt_tps": 3000 * f_}) + "\n")
+    cmd_speeddecide(argparse.Namespace(outdir=str(so), arm="Q", base="P", target="40,60"))
+    j = json.loads((so / "decision.json").read_text())
+    chk("speeddecide: Q at half P's speed -> LOSS, decode ~75 tok/s ABOVE the 40-60 target",
+        j["verdict"].startswith("LOSS") and j["target"] == "ABOVE", j)
+    # memwait / memwatch: thresholds made impossible or trivial; the "engine" is our own sleep child, stopped by PID
+    import subprocess
+    r0 = cmd_memwait(argparse.Namespace(need_gib=1.0, max_s=5, gate=None, gates=None))
+    r1 = cmd_memwait(argparse.Namespace(need_gib=1e6, max_s=1, gate=None, gates=None))
+    chk("memwait: 1 GiB needed -> starts (0); 1e6 GiB -> not started, 'aborted: memory (not started)' (1)", r0 == 0 and r1 == 1)
+    job = subprocess.Popen(["sleep", "60"])
+    ab = d / "mem.aborted"
+    ab.unlink(missing_ok=True)
+    rc = cmd_memwatch(argparse.Namespace(job=job.pid, names="sleep", floor_gib=1e6, margin_gib=1.0, swap_pages=1024,
+                                         every=0.2, out=str(ab), gate=None, gates=None))
+    try:
+        job.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        job.kill()
+    chk("memwatch: MemAvailable under the floor -> the engine stopped by PID, 'aborted: memory' written",
+        rc == 1 and ab.exists() and "aborted: memory" in ab.read_text() and job.returncode is not None)
+    job = subprocess.Popen(["sleep", "1"])
+    ab.unlink(missing_ok=True)
+    rc = cmd_memwatch(argparse.Namespace(job=job.pid, names="sleep", floor_gib=0.0, margin_gib=0.0, swap_pages=10 ** 9,
+                                         every=0.2, out=str(ab), gate=None, gates=None))
+    job.wait()
+    chk("memwatch: no risk -> PASS, nothing written, the job ends on its own", rc == 0 and not ab.exists())
+    print(f"selftest: {len(fails)} failure(s)" + (f": {fails}" if fails else ""))
+    return 1 if fails else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+
+    def sub(name, *pos):
+        p = sp.add_parser(name)
+        for x in pos:
+            p.add_argument(x)
+        p.add_argument("--gate")
+        p.add_argument("--gates")
+        return p
+    p = sub("predl", "dir", "tree")
+    p.add_argument("--paths", required=True)
+    p = sub("rehash", "dir", "tree")
+    p.add_argument("--paths", required=True)
+    p = sub("cfgcheck", "config", "params")
+    p.add_argument("--quality-only", action="store_true", help="a KL reference: the sha and the structure, no slot rule")
+    p = sub("envcli", "exe", "config")
+    p.add_argument("--job", type=int, required=True)
+    p.add_argument("--mode", choices=["e7", "pfy"], default="e7")
+    p.add_argument("--pin", type=int, default=2500)
+    p.add_argument("--ngpu", type=int, default=2)
+    p.add_argument("--set", action="append")
+    p.add_argument("--kill", action="store_true")
+    p.add_argument("--max-s", type=float, default=7200)
+    p = sub("slots")
+    p.add_argument("logs", nargs="+")
+    p.add_argument("--main", type=int)
+    p.add_argument("--helper", type=int)
+    p = sub("startcheck", "startlog")
+    p.add_argument("serverlog", nargs="*")
+    sub("smoke", "out", "err")
+    p = sub("pfyrows", "root")
+    p.add_argument("--ref", required=True)
+    p.add_argument("--arms", required=True)
+    p.add_argument("--prompt-dir", required=True)
+    p.add_argument("--sets", default="long40")
+    p.add_argument("--out", required=True)
+    p = sub("kldecide", "rows")
+    p.add_argument("--ref", required=True)
+    p.add_argument("--cands", required=True)
+    p.add_argument("--base")
+    p.add_argument("--tag-pack")
+    p.add_argument("--published")
+    p.add_argument("--tie", action="store_true", help="the candidates (and --base) tie under Karl's rule: quality decides")
+    p.add_argument("--out", required=True)
+    p = sub("memwait")
+    p.add_argument("--need-gib", type=float, required=True)
+    p.add_argument("--max-s", type=float, default=120)
+    p = sub("memwatch")
+    p.add_argument("job", type=int)
+    p.add_argument("--names", required=True, help="engine process names (exact), space-separated")
+    p.add_argument("--floor-gib", type=float, default=12.0)
+    p.add_argument("--margin-gib", type=float, default=1.0)
+    p.add_argument("--swap-pages", type=int, default=1024)
+    p.add_argument("--every", type=float, default=1.0)
+    p.add_argument("--out", required=True)
+    p = sp.add_parser("speeddecide")
+    p.add_argument("outdir")
+    p.add_argument("--arm", required=True)
+    p.add_argument("--base", required=True)
+    p.add_argument("--target", default="40,60")
+    p.add_argument("--tag", help="decision-TAG.txt / .json instead of decision.txt (11-05e: both directions)")
+    sub("densecheck", "params")
+    p = sub("hcoffneed")
+    p.add_argument("--ud31", help="the v3.1 decision folder (default results/r23/ud31)")
+    sub("lcppcheck", "params")
+    p = sub("lcppdecide", "params")
+    p.add_argument("--dir", required=True)
+    p.add_argument("--out", required=True)
+    p = sp.add_parser("uvidecide")
+    p.add_argument("--params", required=True)
+    p.add_argument("--speed", required=True)
+    p.add_argument("--out", required=True)
+    p = sp.add_parser("exactdecide")
+    p.add_argument("outdir")
+    p.add_argument("--arm", required=True)
+    sp.add_parser("rules").add_argument("--out", required=True)
+    sp.add_parser("selftest").add_argument("--dir", default=str(KIT / "scratch-d/q4-selftest"))
+    a = ap.parse_args()
+    return {"predl": cmd_predl, "rehash": cmd_rehash, "cfgcheck": cmd_cfgcheck, "envcli": cmd_envcli, "slots": cmd_slots,
+            "startcheck": cmd_startcheck, "smoke": cmd_smoke, "pfyrows": cmd_pfyrows, "kldecide": cmd_kldecide,
+            "speeddecide": cmd_speeddecide, "memwait": cmd_memwait, "memwatch": cmd_memwatch, "exactdecide": cmd_exactdecide, "rules": cmd_rules,
+            "selftest": cmd_selftest, "densecheck": cmd_densecheck, "uvidecide": cmd_uvidecide, "hcoffneed": cmd_hcoffneed,
+            "lcppcheck": cmd_lcppcheck, "lcppdecide": cmd_lcppdecide}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

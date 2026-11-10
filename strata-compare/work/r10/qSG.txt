@@ -1,0 +1,5 @@
+work/r10/tagcheck.sh "Signal AP-Q4_K_XL (your addition)"
+work/r10/sgpack.sh
+work/r10/sgbudget.sh
+work/r10/sgtest.sh
+work/r10/tagcheck.sh "Signal done"

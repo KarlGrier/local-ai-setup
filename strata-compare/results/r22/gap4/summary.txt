@@ -1,0 +1,44 @@
+2026-10-20 11:45:34 port_gap: hold set; waiting for the running research run to finish
+run-strata: stopping pid 1090157 (engine 1090162)
+run-strata: stopped
+run-strata: SearXNG stopped
+2026-10-20 11:46:08 port_gap: gap open: test lock held (pid 1233037), 8080 stopped
+=== 2026-10-20 11:46:08 step 1: A = C*18t, B = 0.2.1 answer_room off, C = B + RTX 50 defaults off
+arm a1: 2026-10-20T11:48:25 srv-r22-g4-a1 exit=0 135s min_MemAvailable=34.3GiB@97s min_5080_free=487MiB@70s max_tree_RSS=51.3GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm b1: 2026-10-20T11:50:42 srv-r22-g4-b1 exit=0 134s min_MemAvailable=34.2GiB@97s min_5080_free=487MiB@70s max_tree_RSS=51.4GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm c1: 2026-10-20T11:53:00 srv-r22-g4-c1 exit=0 136s min_MemAvailable=34.2GiB@99s min_5080_free=487MiB@71s max_tree_RSS=51.4GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm c2: 2026-10-20T11:55:18 srv-r22-g4-c2 exit=0 135s min_MemAvailable=34.0GiB@110s min_5080_free=487MiB@70s max_tree_RSS=51.4GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm b2: 2026-10-20T11:57:34 srv-r22-g4-b2 exit=0 134s min_MemAvailable=34.1GiB@100s min_5080_free=487MiB@70s max_tree_RSS=51.4GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm a2: 2026-10-20T11:59:52 srv-r22-g4-a2 exit=0 135s min_MemAvailable=34.3GiB@98s min_5080_free=487MiB@63s max_tree_RSS=51.3GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm a3: 2026-10-20T12:02:10 srv-r22-g4-a3 exit=0 135s min_MemAvailable=34.2GiB@104s min_5080_free=487MiB@71s max_tree_RSS=51.3GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm b3: 2026-10-20T12:04:27 srv-r22-g4-b3 exit=0 135s min_MemAvailable=34.1GiB@43s min_5080_free=487MiB@70s max_tree_RSS=51.4GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm c3: 2026-10-20T12:06:44 srv-r22-g4-c3 exit=0 134s min_MemAvailable=34.1GiB@97s min_5080_free=487MiB@70s max_tree_RSS=51.4GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm c4: 2026-10-20T12:09:02 srv-r22-g4-c4 exit=0 135s min_MemAvailable=34.2GiB@97s min_5080_free=487MiB@60s max_tree_RSS=51.4GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm b4: 2026-10-20T12:11:20 srv-r22-g4-b4 exit=0 135s min_MemAvailable=34.2GiB@97s min_5080_free=487MiB@18s max_tree_RSS=51.4GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+arm a4: 2026-10-20T12:13:36 srv-r22-g4-a4 exit=0 133s min_MemAvailable=34.4GiB@102s min_5080_free=487MiB@69s max_tree_RSS=51.3GiB max_swap_used=0.08GiB min_4060Ti_free=1285MiB ok
+-- AvsB
+| metric | C18T: r22-g4-a1 / r22-g4-a2 / r22-g4-a3 / r22-g4-a4 → mean | P021AR0: r22-g4-b1 / r22-g4-b2 / r22-g4-b3 / r22-g4-b4 → mean | B vs A |
+| decode (tok/s) | 153.4 / 150.2 / 153.2 / 156.1 → **153.2** | 153.5 / 154.6 / 155.6 / 154.6 → **154.6** | +0.9 % |
+| ms per verify round | 17.97 / 18.04 / 18.16 / 18.16 → **18.08** | 18.39 / 17.94 / 17.78 / 18.01 → **18.03** | -0.3 % |
+| tokens per round | 2.758 / 2.710 / 2.781 / 2.836 → **2.771** | 2.822 / 2.773 / 2.767 / 2.784 → **2.787** | +0.6 % |
+| acceptance | 0.717 / 0.699 / 0.712 / 0.732 → **0.715** | 0.729 / 0.712 / 0.729 / 0.721 → **0.723** | +1.1 % |
+| long reasoning math (tok/s) | 164.8 / 157.6 / 160.2 / 161.0 → **160.9** | 161.0 / 163.6 / 160.7 / 167.2 → **163.1** | +1.4 % |
+| long reasoning code (tok/s) | 151.2 / 147.9 / 152.9 / 161.2 → **153.3** | 154.9 / 153.6 / 159.3 / 151.2 → **154.7** | +0.9 % |
+| TTFT 32K (s) | 7.70 / 7.70 / 7.70 / 7.70 → **7.70** | 7.64 / 7.64 / 7.64 / 7.67 → **7.65** | -0.7 % |
+| all requests, total time (s) | 84.3 / 84.4 / 84.4 / 82.1 → **83.8** | 83.4 / 83.1 / 83.7 / 83.9 → **83.5** | -0.3 % |
+-- BvsC
+| metric | P021AR0: r22-g4-b1 / r22-g4-b2 / r22-g4-b3 / r22-g4-b4 → mean | RTX50OFF: r22-g4-c1 / r22-g4-c2 / r22-g4-c3 / r22-g4-c4 → mean | B vs A |
+| decode (tok/s) | 153.5 / 154.6 / 155.6 / 154.6 → **154.6** | 153.0 / 153.8 / 153.8 / 155.0 → **153.9** | -0.5 % |
+| ms per verify round | 18.39 / 17.94 / 17.78 / 18.01 → **18.03** | 18.06 / 18.28 / 18.25 / 18.20 → **18.20** | +0.9 % |
+| tokens per round | 2.822 / 2.773 / 2.767 / 2.784 → **2.787** | 2.763 / 2.810 / 2.807 / 2.820 → **2.800** | +0.5 % |
+| acceptance | 0.729 / 0.712 / 0.729 / 0.721 → **0.723** | 0.713 / 0.719 / 0.727 / 0.731 → **0.723** | -0.0 % |
+| long reasoning math (tok/s) | 161.0 / 163.6 / 160.7 / 167.2 → **163.1** | 157.7 / 161.8 / 161.0 / 160.7 → **160.3** | -1.7 % |
+| long reasoning code (tok/s) | 154.9 / 153.6 / 159.3 / 151.2 → **154.7** | 155.8 / 155.7 / 155.2 / 158.3 → **156.3** | +1.0 % |
+| TTFT 32K (s) | 7.64 / 7.64 / 7.64 / 7.67 → **7.65** | 7.64 / 7.64 / 7.64 / 7.65 → **7.64** | -0.1 % |
+| all requests, total time (s) | 83.4 / 83.1 / 83.7 / 83.9 → **83.5** | 84.6 / 84.2 / 83.2 / 83.5 → **83.9** | +0.4 % |
+=== 2026-10-20 12:13:37 C vs B decode: -0.5 %
+=== 2026-10-20 12:13:37 step 2 skipped (C vs B under 1 %, or under 15 min left)
+=== 2026-10-20 12:13:37 gap 4 done after 28 min - switching back
+strata: Loading the model for port gap end (usually under a minute).
+2026-10-20 12:13:52 port_gap: switched back to C*18t (e428a826c5fb), policy off, queue released
+=== 2026-10-20 12:13:52 end

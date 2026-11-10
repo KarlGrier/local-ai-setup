@@ -1,0 +1,10 @@
+2026-10-23 20:04:22 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 430740 (engine 430773)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-10-23 20:04:55 port_gap4: gap open: test lock held (pid 487822), 8080 stopped
+TOOLCALL P021m: 24 responses, 21 with a valid call, 3 truncated at max_tokens, 0 malformed, 0 leaks, 0 errors
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-10-23 20:08:53 port_gap4: served build back (7b38796237f5), policy on, queue released
+=== 2026-10-23 20:08:53 kcheck clean
+=== 2026-10-23 20:08:53 gap 11 done after 3 min

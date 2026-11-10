@@ -1,0 +1,62 @@
+work/r11/tagcheck.sh "Phase G start"; work/r11/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r11/build-cstar13.sh v39-final
+BDIR=build work/r11/build.sh strata-v39-finalm engine-v39finalm && .venv/bin/python work/r11/buildrec.py V39Fin-m configs/V39Fin-rt.json "G: the final twin (v39-final + MEASUREMENT)"
+[ -x engine-cstar13/strata ] && .venv/bin/python work/r11/buildrec.py Cstar13 configs/Cstar13.json "C*13: v0.1.39 + patches/r11c39 (clean clone)"
+work/r11/servertests.sh /home/USER/ai-speed-testing/strata-compare/strata-cstar13; cd strata-cstar13 && ../.venv/bin/python -m unittest tools.test_strata_tokenizer 2>&1 | tail -3
+.venv/bin/python work/r11/t567_ids.py strata-cstar13 2000 2>&1 | tail -12
+[ -x engine-cstar13/strata ] && work/r11/with_server.sh HOST13 configs/Cstar13.json -- "work/r11/hostcheck.sh"
+[ -x engine-cstar13/strata ] && work/r11/startcheck.sh C13s configs/Cstar13.json
+[ -x engine-cstar13/strata ] && work/r11/startcheck.sh C13s1 configs/Cstar13-single.json
+[ -x engine-cstar13/strata ] && work/r11/startcheck.sh C13s262 configs/Cstar13-262k.json
+[ -x engine-cstar13/strata ] && REF=v39won work/r11/exact7.sh cstar13 configs/Cstar13.json
+[ -x engine-cstar13/strata ] && work/r11/with_server.sh N13 configs/Cstar13.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label N13 --temperature 1.0"
+[ -x engine-cstar13/strata ] && work/r11/with_server.sh FAIL13 configs/Cstar13.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+[ -x engine-cstar13/strata ] && work/r11/with_server.sh C13-t652 configs/Cstar13.json -- ".venv/bin/python work/r11/followup652.py http://127.0.0.1:8081 c13 plain think"
+[ -x engine-cstar13/strata ] && work/r11/with_server.sh C13-tstop configs/Cstar13.json -- ".venv/bin/python work/r11/stoptest.py http://127.0.0.1:8081 c13; .venv/bin/python work/r11/tooltag_test.py http://127.0.0.1:8081 c13 3"
+[ -x engine-cstar13/strata ] && work/r11/repeat3.sh rep-c13 configs/Cstar13.json
+[ -x engine-v39finalm/strata ] && work/r11/with_server.sh RT13 configs/V39Fin-rt.json -- ".venv/bin/python work/r11/roundtrip.py direct small r13-direct1"
+[ -x engine-v39finalm/strata ] && work/r11/with_server.sh RT13 configs/V39Fin-rt.json -- ".venv/bin/python work/r11/roundtrip.py direct small r13-direct2"
+[ -x engine-v39finalm/strata ] && work/r11/with_server.sh RT13 configs/V39Fin-rt.json -- ".venv/bin/python work/r11/roundtrip.py park small r13-park"
+[ -x engine-v39finalm/strata ] && work/r11/with_server.sh RT13 configs/V39Fin-rt.json -- ".venv/bin/python work/r11/roundtrip.py editref small r13-editref"
+.venv/bin/python work/r11/rt_compare.py r13 > results/r11/roundtrip-c13.md; cat results/r11/roundtrip-c13.md
+[ -x engine-cstar13/strata ] && work/r11/with_server.sh BR13 configs/BR13.json -- ".venv/bin/python work/r5/browser_test.py --engine-log \$ELOG --tag b13"
+work/r11/tagcheck.sh "Phase G gates done"
+work/r11/ldrscreen.sh A32L-o1 configs/Cstar13.json
+work/r11/ldrscreen.sh A32L-n1 configs/Cstar13-a32.json
+work/r11/ldrscreen.sh A32L-n2 configs/Cstar13-a32.json
+work/r11/ldrscreen.sh A32L-o2 configs/Cstar13.json
+.venv/bin/python work/r11/ldr_table.py chunk16k=A32L-o1,A32L-o2 auto32k=A32L-n1,A32L-n2 | tee results/r11/ab-G-a32-ldr.md
+work/r11/screen.sh A32S-o1 configs/Cstar13.json
+work/r11/screen.sh A32S-n1 configs/Cstar13-a32.json
+work/r11/screen.sh A32S-n2 configs/Cstar13-a32.json
+work/r11/screen.sh A32S-o2 configs/Cstar13.json
+.venv/bin/python work/r11/ab_table.py chunk16k=A32S-o1,A32S-o2 auto32k=A32S-n1,A32S-n2 | tee results/r11/ab-G-a32-full.md
+work/r11/ldrscreen.sh GL-121a configs/Cstar121.json
+work/r11/ldrscreen.sh GL-13a configs/Cstar13.json
+work/r11/ldrscreen.sh GL-13b configs/Cstar13.json
+work/r11/ldrscreen.sh GL-121b configs/Cstar121.json
+.venv/bin/python work/r11/ldr_table.py Cstar121=GL-121a,GL-121b Cstar13=GL-13a,GL-13b | tee results/r11/ab-G-ldr.md
+work/r11/decscreen.sh GD-121a configs/Cstar121.json
+work/r11/decscreen.sh GD-13a configs/Cstar13.json
+work/r11/decscreen.sh GD-13b configs/Cstar13.json
+work/r11/decscreen.sh GD-121b configs/Cstar121.json
+.venv/bin/python work/r11/ab_table.py Cstar121=GD-121a,GD-121b Cstar13=GD-13a,GD-13b | tee results/r11/ab-G-decode.md
+work/r11/screen.sh GS-121a configs/Cstar121.json
+work/r11/screen.sh GS-13a configs/Cstar13.json
+work/r11/screen.sh GS-13b configs/Cstar13.json
+work/r11/screen.sh GS-121b configs/Cstar121.json
+.venv/bin/python work/r11/ab_table.py Cstar121=GS-121a,GS-121b Cstar13=GS-13a,GS-13b | tee results/r11/ab-G-full.md
+work/r11/holdscreen11.sh GH-121a configs/Cstar121.json
+work/r11/holdscreen11.sh GH-13a configs/Cstar13.json
+work/r11/holdscreen11.sh GH-13b configs/Cstar13.json
+work/r11/holdscreen11.sh GH-121b configs/Cstar121.json
+.venv/bin/python work/r11/hold_table11.py GH-121a,GH-121b GH-13a,GH-13b | tee results/r11/holdout11-G.md
+work/r11/ldrhold11.sh GLH-121a configs/Cstar121.json
+work/r11/ldrhold11.sh GLH-13a configs/Cstar13.json
+work/r11/ldrhold11.sh GLH-13b configs/Cstar13.json
+work/r11/ldrhold11.sh GLH-121b configs/Cstar121.json
+.venv/bin/python work/r11/ldr_table.py Cstar121=GLH-121a,GLH-121b Cstar13=GLH-13a,GLH-13b | tee results/r11/ldr-holdout11-G.md
+work/r11/phase_end.sh pG1 keep
+echo "=== $(date -Is) MARK qG1"
+work/r11/hold.sh G2

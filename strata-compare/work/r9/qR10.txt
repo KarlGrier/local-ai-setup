@@ -1,0 +1,40 @@
+work/r9/tagcheck.sh "v0.1.32 port: build"
+BDIR=build work/r9/build.sh strata-r10 engine-r10c
+BDIR=build work/r9/build.sh strata-r10m engine-r10m
+.venv/bin/python work/r9/buildrec.py R10 configs/R10.json "v0.1.32 port (worktree build) - measured on its own"
+work/r9/exact7.sh e10 configs/R10.json
+work/r9/exact7.sh e10-gold configs/R10-gold.json
+work/r9/exact7.sh e10-gplain configs/R10-gplain.json
+work/r9/exact7.sh e10-v3 configs/R10-v3.json
+work/r9/tf.sh R10btf3500-helper configs/R10b-tf3500-helper.json engine-r10m/strata math corpus long16k long24k long28k long40k long64k
+work/r9/tf.sh R10btf3500-single configs/R10b-tf3500-single.json engine-r10m/strata math corpus long16k long24k long28k long40k long64k
+.venv/bin/python work/r9/tf_compare9.py R10btf3500-helper=R10mtf3500-helper R10btf3500-single=R10mtf3500-single | tee results/r9/tf-r10-vs-c10.txt
+work/r9/with_server.sh RT32-direct configs/R10b-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py direct small r32-ours-direct1"
+work/r9/with_server.sh RT32-direct configs/R10b-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py direct small r32-ours-direct2"
+work/r9/with_server.sh RT32-park configs/R10b-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py park small r32-ours-park"
+work/r9/with_server.sh RT32-editref configs/R10b-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py editref small r32-ours-editref"
+.venv/bin/python work/r9/rt_compare.py r32-ours > results/r9/roundtrip-r10.md; cat results/r9/roundtrip-r10.md
+work/r9/with_server.sh FAIL32 configs/R10.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r9/tagcheck.sh "v0.1.32 port: gates done"
+work/r9/decscreen.sh P32d-a configs/R10.json
+work/r9/decscreen.sh C10d-c configs/R9-C10.json
+work/r9/decscreen.sh C10d-d configs/R9-C10.json
+work/r9/decscreen.sh P32d-b configs/R10.json
+work/r9/screen.sh P32-a configs/R10.json
+work/r9/screen.sh C10-c configs/R9-C10.json
+work/r9/screen.sh C10-d configs/R9-C10.json
+work/r9/screen.sh P32-b configs/R10.json
+work/r9/tagcheck.sh "v0.1.32 port: A/B vs C*10 done"
+work/r9/grbench10.sh
+work/r9/decscreen.sh H32v5-a configs/R10.json
+work/r9/decscreen.sh H32st-a configs/R10-gold.json
+work/r9/decscreen.sh H32v3-a configs/R10-v3.json
+work/r9/decscreen.sh H32v3-b configs/R10-v3.json
+work/r9/decscreen.sh H32st-b configs/R10-gold.json
+work/r9/decscreen.sh H32v5-b configs/R10.json
+work/r9/decscreen.sh KA1-a configs/R10.json
+work/r9/decscreen.sh KA0-a configs/R10-ka0.json
+work/r9/decscreen.sh KA0-b configs/R10-ka0.json
+work/r9/decscreen.sh KA1-b configs/R10.json
+work/r9/tagcheck.sh "v0.1.32: HC + keepalive done"
+work/r9/phase_end.sh p032 keep

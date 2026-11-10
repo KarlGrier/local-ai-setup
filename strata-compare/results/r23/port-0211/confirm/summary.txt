@@ -1,0 +1,174 @@
+=== 2026-11-09 07:12:50 CONFIRMATION GAP (work/r23/gap-confirm0211.sh, Karl 11-07): B (x28h) vs P (P0211x-h), each also with --chat-cache 0, on R2 / R3 - measurements only, P028x stays served, nothing switches; rules sha 817e4ae8652a
+2026-11-09 07:12:50 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 3443652 (engine 3443669)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-09 07:14:08 port_gap4: gap open: test lock held (pid 3506799), 8080 stopped
+=== 2026-11-09 07:14:08 8080 down: engines left: none, MemAvailable 84 GB
+=== 2026-11-09 07:14:08 2 the starts: B P P B B P P B (chat cache on), Boff Poff Poff Boff (off); deadline 35 min
+=== 2026-11-09 07:14:08 start B1 (x28h.json)
+server ready (guard pid 3509657, server pid 3510937) load_time_s 15.363714155 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-B1_20261109T071409.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3510942: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3510937, 0 server pin(s)
+ENV CHECK OK
+B1r R2-report54k r0: prompt 54072 ttft 12.092 s, 3533 tokens, 146.63 tok/s, stop
+B1r R3-extract5k r0: prompt 5009 ttft 1.438 s, 1062 tokens, 164.92 tok/s, stop
+B1r R2-report54k r1: prompt 54072 ttft 11.89 s, 3780 tokens, 153.68 tok/s, stop
+B1r R3-extract5k r1: prompt 5013 ttft 1.368 s, 1029 tokens, 174.66 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:16:36 start P1 (P0211x-h.json)
+server ready (guard pid 3521687, server pid 3522513) load_time_s 15.369151062 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-P1_20261109T071637.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3523237: 45 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3522513, 2 server pin(s)
+ENV CHECK OK
+P1r R2-report54k r0: prompt 54069 ttft 12.087 s, 3118 tokens, 149.52 tok/s, stop
+P1r R3-extract5k r0: prompt 5009 ttft 1.459 s, 896 tokens, 174.89 tok/s, stop
+P1r R2-report54k r1: prompt 54071 ttft 11.889 s, 3004 tokens, 149.85 tok/s, stop
+P1r R3-extract5k r1: prompt 5010 ttft 1.383 s, 1070 tokens, 171.7 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:18:53 start P2 (P0211x-h.json)
+server ready (guard pid 3534886, server pid 3535593) load_time_s 15.414371159 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-P2_20261109T071855.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3536364: 45 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3535593, 2 server pin(s)
+ENV CHECK OK
+P2r R2-report54k r0: prompt 54072 ttft 12.104 s, 2753 tokens, 152.73 tok/s, stop
+P2r R3-extract5k r0: prompt 5011 ttft 1.467 s, 1007 tokens, 171.27 tok/s, stop
+P2r R2-report54k r1: prompt 54072 ttft 11.893 s, 2313 tokens, 143.03 tok/s, stop
+P2r R3-extract5k r1: prompt 5010 ttft 1.382 s, 971 tokens, 179.99 tok/s, stop
+vram at end: 0, 15493 MiB, 441 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:21:06 start B2 (x28h.json)
+server ready (guard pid 3547542, server pid 3548005) load_time_s 15.369385371 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-B2_20261109T072107.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3548805: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3548005, 0 server pin(s)
+ENV CHECK OK
+B2r R2-report54k r0: prompt 54069 ttft 12.094 s, 2804 tokens, 146.19 tok/s, stop
+B2r R3-extract5k r0: prompt 5012 ttft 1.435 s, 1165 tokens, 180.12 tok/s, stop
+B2r R2-report54k r1: prompt 54069 ttft 11.89 s, 3633 tokens, 152.14 tok/s, stop
+B2r R3-extract5k r1: prompt 5013 ttft 1.364 s, 1409 tokens, 181.76 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:23:29 start B3 (x28h.json)
+server ready (guard pid 3559548, server pid 3560469) load_time_s 14.359073027 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-B3_20261109T072330.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3560805: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3560469, 0 server pin(s)
+ENV CHECK OK
+B3r R2-report54k r0: prompt 54070 ttft 12.099 s, 3320 tokens, 151.88 tok/s, stop
+B3r R3-extract5k r0: prompt 5012 ttft 1.432 s, 976 tokens, 176.83 tok/s, stop
+B3r R2-report54k r1: prompt 54071 ttft 11.89 s, 3810 tokens, 155.82 tok/s, stop
+B3r R3-extract5k r1: prompt 5012 ttft 1.366 s, 1326 tokens, 184.14 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:25:52 start P3 (P0211x-h.json)
+server ready (guard pid 3572161, server pid 3573027) load_time_s 15.378552274 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-P3_20261109T072553.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3573465: 45 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3573027, 2 server pin(s)
+ENV CHECK OK
+P3r R2-report54k r0: prompt 54070 ttft 12.097 s, 4096 tokens, 154.79 tok/s, length
+P3r R3-extract5k r0: prompt 5011 ttft 1.449 s, 1126 tokens, 181.92 tok/s, stop
+P3r R2-report54k r1: prompt 54071 ttft 11.891 s, 4021 tokens, 152.42 tok/s, stop
+P3r R3-extract5k r1: prompt 5012 ttft 1.377 s, 1105 tokens, 175.87 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:28:25 start P4 (P0211x-h.json)
+server ready (guard pid 3586158, server pid 3586686) load_time_s 15.360077896 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-P4_20261109T072826.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3587470: 45 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3586686, 2 server pin(s)
+ENV CHECK OK
+P4r R2-report54k r0: prompt 54071 ttft 12.085 s, 3276 tokens, 147.78 tok/s, stop
+P4r R3-extract5k r0: prompt 5011 ttft 1.453 s, 1078 tokens, 175.69 tok/s, stop
+P4r R2-report54k r1: prompt 54072 ttft 11.887 s, 3612 tokens, 152.77 tok/s, stop
+P4r R3-extract5k r1: prompt 5013 ttft 1.384 s, 1000 tokens, 177.67 tok/s, stop
+vram at end: 0, 15483 MiB, 451 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:30:48 start B4 (x28h.json)
+server ready (guard pid 3599426, server pid 3600281) load_time_s 14.355544399 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-B4_20261109T073049.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3600696: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3600281, 0 server pin(s)
+ENV CHECK OK
+B4r R2-report54k r0: prompt 54071 ttft 12.092 s, 2703 tokens, 159.64 tok/s, stop
+B4r R3-extract5k r0: prompt 5010 ttft 1.463 s, 1445 tokens, 183.05 tok/s, stop
+B4r R2-report54k r1: prompt 54072 ttft 11.893 s, 3448 tokens, 156.45 tok/s, stop
+B4r R3-extract5k r1: prompt 5011 ttft 1.377 s, 1110 tokens, 177.91 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:33:05 start Boff1 (x28h-cc0.json)
+server ready (guard pid 3611280, server pid 3612103) load_time_s 15.383331359 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-Boff1_20261109T073307.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3612549: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3612103, 0 server pin(s)
+ENV CHECK OK
+Boff1r R2-report54k r0: prompt 54070 ttft 12.092 s, 3009 tokens, 146.47 tok/s, stop
+Boff1r R3-extract5k r0: prompt 5011 ttft 1.334 s, 1271 tokens, 188.3 tok/s, stop
+Boff1r R2-report54k r1: prompt 54071 ttft 11.885 s, 2368 tokens, 149.56 tok/s, stop
+Boff1r R3-extract5k r1: prompt 5011 ttft 1.268 s, 1113 tokens, 180.1 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:35:23 start Poff1 (P0211x-h-cc0.json)
+server ready (guard pid 3623389, server pid 3623943) load_time_s 15.372931875 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-Poff1_20261109T073524.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3624809: 45 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3623943, 2 server pin(s)
+ENV CHECK OK
+Poff1r R2-report54k r0: prompt 54071 ttft 12.081 s, 2378 tokens, 142.55 tok/s, stop
+Poff1r R3-extract5k r0: prompt 5011 ttft 1.33 s, 1137 tokens, 176.88 tok/s, stop
+Poff1r R2-report54k r1: prompt 54071 ttft 11.878 s, 3028 tokens, 148.8 tok/s, stop
+Poff1r R3-extract5k r1: prompt 5013 ttft 1.266 s, 1009 tokens, 170.5 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:37:41 start Poff2 (P0211x-h-cc0.json)
+server ready (guard pid 3635306, server pid 3635984) load_time_s 15.377324104 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-Poff2_20261109T073742.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3636672: 45 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3635984, 2 server pin(s)
+ENV CHECK OK
+Poff2r R2-report54k r0: prompt 54071 ttft 12.086 s, 3292 tokens, 148.02 tok/s, stop
+Poff2r R3-extract5k r0: prompt 5012 ttft 1.335 s, 1160 tokens, 177.36 tok/s, stop
+Poff2r R2-report54k r1: prompt 54068 ttft 11.884 s, 2627 tokens, 148.04 tok/s, stop
+Poff2r R3-extract5k r1: prompt 5013 ttft 1.261 s, 996 tokens, 181.67 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:39:58 start Boff2 (x28h-cc0.json)
+server ready (guard pid 3649368, server pid 3650099) load_time_s 14.339814245 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_c211-Boff2_20261109T073959.log
+vram after load: 0, 15411 MiB, 523 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3650637: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 3650099, 0 server pin(s)
+ENV CHECK OK
+Boff2r R2-report54k r0: prompt 54070 ttft 12.088 s, 3335 tokens, 154.57 tok/s, stop
+Boff2r R3-extract5k r0: prompt 5011 ttft 1.333 s, 1403 tokens, 177.67 tok/s, stop
+Boff2r R2-report54k r1: prompt 54070 ttft 11.88 s, 3801 tokens, 154.18 tok/s, stop
+Boff2r R3-extract5k r1: prompt 5012 ttft 1.267 s, 919 tokens, 171.75 tok/s, stop
+vram at end: 0, 15489 MiB, 445 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-09 07:42:21 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-09 07:42:26 port_gap4: memory back: MemAvailable 86 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-09 07:42:41 port_gap4: WARNING: 26 MB swapped out while P028x started
+2026-11-09 07:42:41 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-09 07:42:41 confirmation gap: 28 min with 8080 down
+AMENDMENT 2026-11-07 (Karl; applies from now on, not to finished gates; recorded before the confirmation gap): per-workload prompt numbers exclude the chat-cache save and are taken on the engine clock; the overall screen rule stays on the client clock minus the save at -1 %; the save is judged as its own line (its two levels taken into account); INFO flag: a workload's outside-engine time worse in every pass
+CONFIRMATION GAP (work/r23/gap-confirm0211.sh): the v0.2.11 port's R3 / R4 prompt fail - B (x28h) vs P (P0211x-h), each also with --chat-cache 0; measurements only, P028x stays served, nothing switches
+(a) prefill, chat cache off: R3 Poff +0.20 % vs Boff (Boff 3,922.8, Poff 3,930.7 tok/s; 4 / 4 R3s; noise 5.49 %) -> PASS
+  (info) R3-extract5k client clock: Poff +0.22 % vs Boff (noise 5.89 %)
+  (info) R2-report54k client clock: Poff +0.03 % vs Boff (noise 1.78 %)
+  (info) outside-engine time: no workload of Poff worse than Boff in every pass
+  (info) R2 engine clock: Poff +0.03 % vs Boff
+(b) prefill, chat cache on (minus the save): R3 P -0.05 % vs B (B 3,966.4, P 3,964.5 tok/s; 8 / 8 R3s; noise 6.54 %) -> PASS
+  (info) R3-extract5k client clock minus the save: P -0.03 % vs B (noise 6.75 %)
+  (info) R2-report54k client clock minus the save: P +0.01 % vs B (noise 1.92 %)
+  (info) outside-engine time: no workload of P worse than B in every pass
+  (info) R2 engine clock minus the save: P +0.02 % vs B
+(c) the chat-cache save: P -2.2 % vs B (save index = each save / the stored median of its level, geometric mean per pass then over passes; 4 / 4 passes; noise 11.7 %) -> PASS
+  (info) save 185 MiB: no stored band, not judged (fewer than 2 saves an arm, or under 20 ms); B 11 ms (mean 11.0), P 11 ms (mean 11.0)
+  (info) save 186 MiB: stored band 9-16; B 11/11/11 ms (mean 11.0), P 11/11/11 ms (mean 11.0)
+  (info) save 1238 MiB: stored band 102-113 / 123-137; B 117/112/116/114/115/113/132/129 ms (fast 5, slow 3), P 134/132/135/129/135/129/132/131 ms (fast 0, slow 8); the level mix is not judged
+  (info) B: the 1238 MiB save's level per start: B1 slow/fast, B2 fast/fast, B3 fast/fast, B4 slow/slow (3 of 4 starts on one level)
+  (info) P: the 1238 MiB save's level per start: P1 slow/slow, P2 slow/slow, P3 slow/slow, P4 slow/slow (4 of 4 starts on one level)
+  (info) B: R3's client TTFT by save level: fast 1393 ms (n 5), slow 1426 ms (n 3)
+  (info) P: R3's client TTFT by save level: slow 1419 ms (n 8)
+  (info) B: the engine's minor page faults per start (sampled): B1 1,872,170, B2 1,796,954, B3 1,869,568, B4 1,869,572
+  (info) P: the engine's minor page faults per start (sampled): P1 1,707,581, P2 1,708,279, P3 1,708,312, P4 1,708,324
+  (info) Boff: the engine's minor page faults per start (sampled): Boff1 1,447,324, Boff2 1,440,324
+  (info) Poff: the engine's minor page faults per start (sampled): Poff1 1,462,877, Poff2 1,285,939
+(d) the stored gate (results/r23/port-0211/gap) re-judged under the amendment: PASS
+  speed screen [11-07 amendment]: prompt numbers exclude the chat-cache save (aggregate: client TTFT minus the save; per workload: the engine's prompt ms minus the save)
+  speed screen decode: P +1.34 % vs B (B 155.4, P 157.5; noise 2.8 %) -> PASS
+  speed screen prompt: P +0.70 % vs B (B 2,137.2, P 2,152.2; noise 1.3 %) -> PASS
+  per-workload no-loss (P vs B) [11-07 amendment: prompt = engine prompt ms minus the chat-cache save]: none of the 9 slower beyond its noise; (info) client clock minus the save, slower beyond its noise: R4-agent33k -0.29 % (noise 0.07 %); (info) outside-engine time worse in every pass - for review (INFO): R4-agent33k P +16.7 ms vs B (spread 1.5 ms)
+  chat-cache save [11-07 amendment]: P -0.2 % vs B (save index = each save / the stored median of its level, geometric mean per pass then over passes; 3 / 3 passes; noise 2.0 %) -> PASS
+  (info) save 133 MiB: stored band 2-5; B 3/3/4 ms (mean 3.3), P 3/3/3 ms (mean 3.0)
+  (info) save 151 MiB: stored band 5-8; B 6 ms (mean 6.0), P -
+  (info) save 152 MiB: stored band 5-8; B 6/6 ms (mean 6.0), P 6/6/5 ms (mean 5.7)
+  (info) save 186 MiB: stored band 9-16; B 10/10/10 ms (mean 10.0), P 10/10/10 ms (mean 10.0)
+  (info) save 578 MiB: stored band 45-81; B 48/48/49 ms (mean 48.3), P 48/49/50 ms (mean 49.0)
+  (info) save 614 MiB: stored band 50-90; B 54/54/54 ms (mean 54.0), P 55/55/54 ms (mean 54.7)
+  (info) save 1238 MiB: stored band 102-113 / 123-137; B 105/106/104 ms (fast 3, slow 0), P 125/126/126 ms (fast 0, slow 3); the level mix is not judged
+VERDICT: BASELINE PASS under the 11-07 amended rule (switch requirements in the port plan still apply)
+A PASS is not a switch: Karl's switch conditions (PORT.md "Required before v0.2.11 could replace P028x") still apply; P028x stays served.
+=== 2026-11-09 07:42:41 confirmation gap done

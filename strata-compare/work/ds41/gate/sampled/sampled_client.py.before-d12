@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""sampled_client.py BASE OUTDIR - the request driver of C's sampled-distribution test (results/ds41/C-SAMPLED-TEST-PLAN.md).
+Written 11-07 at the desk and NOT RUN: it is started only inside an open DeepSeek gap, by work/ds41/tune/tunearm.sh as its
+CLIENT (URL and OUT in the environment), on one fresh served arm whose server has STRATA_DEBUG=1 in SERVER_ENV (server.py
+then prints each request's generated ids, stop token included: "[strata] raw ids: [...]" - the engine binary does not
+read STRATA_DEBUG). Like greedy_client.py, it only sends requests to the test server it is given and reads the engine log.
+
+Env:
+  SAMPLED_ARM       R1 (C0) | X (C-N) | R2 (C0v): picks the seed base (1,000,000 / 3,000,000 / 2,000,000), so no two
+                    arms share a seed and no draw is coupled between arms (the engine's Philox stream is keyed by seed and
+                    an engine-lifetime counter: vendor/sampler.cu:46, ds4_main.cpp:327)
+  SAMPLED_K         samples per prompt (default 4; R2 runs with 3)
+  SAMPLED_L         max_tokens (default 512: prompt + answer stays under STRATA_DS4_SLOT_MIN 1024, so no conversation is
+                    set aside to RAM or disk between requests)
+  SAMPLED_BUDGET_S  no request starts after this many seconds (default 480; the plan takes ~410 s at C0's ~24 tok/s)
+  GATE_LOG, GATE_EXE  as for greedy_client.py (gate_speed.py: the engine log whose "drafts A of O kept" lines it reads)
+
+The plan, fixed: K rounds, each the four prompts in order math, code, conv, prose - W1 ("math") and W2 ("code") of the
+gate's greedy check (basalt-ab workloads.json "normal", = prompts/longreason.json), C-conv and C-prose of its "calib" set;
+thinking off, no nonce (identical bytes in every arm), stream, T 1.0 / top-p 0.95 / top-k 20 / min-p 0.05 (+
+presence_penalty 0, which the DeepSeek engine ignores anyway: ds4_main.cpp:304-313 has no penalty keys), seed = base +
+1000 * prompt index + round. Interleaved rounds keep the prompts balanced if the budget cuts the plan short.
+-> OUTDIR/sampled-plan.json (written before the first request), OUTDIR/sampled.jsonl (one record a request: name, prompt,
+seed, prompt_tokens, completion_tokens, finish, ttft, decode tok/s, the drafts offered / kept), OUTDIR/abrun.jsonl
+(abrun's own records, with the text). sampled.py ids OUTDIR then builds the score file.
+Exit 0 every planned request answered, 1 a request failed, 4 the budget ended the plan early.
+"""
+import json
+import os
+import sys
+import time
+
+sys.path.insert(0, "/home/USER/ai-speed-testing/basalt-ab/scripts")
+sys.path.insert(0, "/home/USER/ai-speed-testing/strata-compare/work/ds41/gate")
+import abrun  # noqa: E402
+import gate_speed as GS  # noqa: E402
+
+SEED_BASE = {"R1": 1_000_000, "R2": 2_000_000, "X": 3_000_000}
+SAMPLING = {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.05, "presence_penalty": 0.0}
+ORDER = ("math", "code", "conv", "prose")
+
+
+def prompts():
+    wl = json.load(open(abrun.WL))
+    normal = {x["id"][:2]: x for x in wl["normal"]}
+    calib = {x["id"]: x for x in wl["calib"]}
+    return {"math": normal["W1"]["messages"], "code": normal["W2"]["messages"],
+            "conv": calib["C-conv"]["messages"], "prose": calib["C-prose"]["messages"]}
+
+
+def plan(arm, k, max_tokens):
+    base = SEED_BASE[arm]
+    reqs = []
+    for rnd in range(k):
+        for qi, q in enumerate(ORDER):
+            reqs.append({"name": f"{arm}-{q}-{rnd:02d}", "prompt": q, "round": rnd, "seed": base + 1000 * qi + rnd,
+                         "max_tokens": max_tokens})
+    return reqs
+
+
+def main():
+    url, out = sys.argv[1], sys.argv[2]
+    arm = os.environ.get("SAMPLED_ARM", "")
+    if arm not in SEED_BASE:
+        print(f"SAMPLED_ARM must be one of {sorted(SEED_BASE)} (got {arm!r})", flush=True)
+        return 1
+    k = int(os.environ.get("SAMPLED_K", "4"))
+    max_tokens = int(os.environ.get("SAMPLED_L", "512"))
+    budget = float(os.environ.get("SAMPLED_BUDGET_S", "480"))
+    os.makedirs(out, exist_ok=True)
+    msgs = prompts()
+    reqs = plan(arm, k, max_tokens)
+    json.dump({"arm": arm, "k": k, "max_tokens": max_tokens, "budget_s": budget, "sampling": SAMPLING,
+               "thinking": False, "nonce": False, "order": list(ORDER),
+               "prompts": {q: {"messages": msgs[q]} for q in ORDER}, "requests": reqs},
+              open(f"{out}/sampled-plan.json", "w"), indent=1)
+    t0 = time.monotonic()
+    rc = 0
+    for r in reqs:
+        if time.monotonic() - t0 > budget:
+            print(f"budget {budget:.0f} s reached: {r['name']} and later not sent", flush=True)
+            rc = 4
+            break
+        job = {"id": r["name"], "messages": msgs[r["prompt"]], "max_tokens": r["max_tokens"], "thinking": False,
+               "nonce": False}
+        o0 = GS.log_size()
+        try:
+            rec = abrun.one(url, f"sampled-{arm}", job, dict(SAMPLING, seed=r["seed"]), {}, r["round"],
+                            f"{out}/abrun.jsonl", keep_text=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"{r['name']}: failed ({type(e).__name__}: {e})", flush=True)
+            with open(f"{out}/sampled.jsonl", "a") as f:
+                f.write(json.dumps(dict(r, finish="error", error=f"{type(e).__name__}: {e}")) + "\n")
+            rc = 1
+            break
+        time.sleep(2)   # the request's engine lines follow its last token
+        e = GS.engine_lines(o0, GS.log_size())
+        dr = (e.get("drafts") or [{}])[0]
+        row = dict(r, prompt_tokens=rec.get("prompt_tokens"), completion_tokens=rec.get("completion_tokens"),
+                   finish=rec.get("finish"), ttft_s=rec.get("ttft_s"), decode_tps=rec.get("decode_tps"),
+                   drafts={"offered": dr.get("offered", 0), "kept": dr.get("kept", 0), "per_pos": dr.get("per_pos")},
+                   engine_prompt=(e.get("prompt") or [None])[0], slots=e.get("slots"))
+        with open(f"{out}/sampled.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+        print(f"{r['name']}: seed {r['seed']}, {rec.get('completion_tokens')} tokens ({rec.get('finish')}), "
+              f"{rec.get('decode_tps')} tok/s" + (f", drafts {dr['kept']} of {dr['offered']} kept" if dr else ""),
+              flush=True)
+    print(f"done: {sum(1 for _ in open(f'{out}/sampled.jsonl'))} of {len(reqs)} requests in "
+          f"{time.monotonic() - t0:.0f} s", flush=True)
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())

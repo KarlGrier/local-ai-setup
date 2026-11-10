@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Back to Qwen
+Comment=Stop DeepSeek, start Qwen (P028x), check it and release the research queue.
+Exec=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/deepseek-session.sh back-to-qwen
+Icon=go-previous
+Terminal=true
+Categories=Utility;

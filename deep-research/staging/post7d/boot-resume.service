@@ -1,0 +1,19 @@
+# boot-resume.service - staged 11-05 (staging/post7d/BOOT-RESUME.md); NOT installed. After review (Claude):
+#   cp -p ~/ai/deep-research/staging/post7d/boot-resume.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now boot-resume.service
+# --now matters: from then on it keeps the record (run/boot-resume/units.txt) that the next boot resumes from; started
+# in a running session it sees "no record yet" / "the record is from this boot" and only records.
+[Unit]
+Description=Boot resume (staging/post7d/boot-resume.sh): after a reboot, alert and resume the post-7d chain, the gap series, the retry and the weekend watcher at the next clean boundary; records the transient units meanwhile
+After=default.target kwatch.service deep-research-bench.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /home/USER/ai/deep-research/staging/post7d/boot-resume.sh
+WorkingDirectory=/home/USER/ai/deep-research
+# a crash is not retried: a second start in the same boot only records (the resume runs once per boot)
+Restart=no
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

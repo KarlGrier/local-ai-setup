@@ -1,0 +1,64 @@
+[90005] Title: Niko1221/Strata@v0.2.4: docs/DEEPSEEK41.md lines 1-60 (source code)
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/docs/DEEPSEEK41.md#L1-L60
+
+1: # DeepSeek-V4.1-Flash
+2: 
+3: DeepSeek-V4.1-Flash is a large mixture-of-experts model: 40 layers, 384 experts in each (6 are used for every word), and a 203 GB
+4: n-gram table next to them. Strata runs it with its own engine, `strata-dsv41` (`src/dsv41`, ported from Project Maya's
+5: `maya-ds4`, MIT; the notice is in `third_party/project-maya`). The file is Unsloth's UD-Q8_K_XL, pinned in `setup.py`: nine
+6: shards, 508.4 GB, the experts as MXFP4 and the rest in BF16. The two official 2-bit sets (below) are what a normal PC runs.
+7: 
+8: The 508 GB set is for a computer with several graphics cards and a lot of RAM. It was run on four Radeon AI PRO R9700 (32 GB each) with
+9: 251 GB of RAM. Strata does not refuse a smaller computer; it tells you what to expect first.
+10: 
+11: ## Where it goes
+12: 
+13: | | size | where |
+14: |---|---|---|
+15: | routed experts (15,360 of 18.8 MB) | 288.8 GB | as many as fit in graphics memory; the rest are computed on the CPU, read in place from the model files |
+16: | attention and other dense weights | 16.8 GB | graphics memory, one block of layers on each card (about 3.9 GB a card on four) |
+17: | n-gram table (Engram) | 202.8 GB | the SSD. A few rows are read for each word it writes. It is not counted in RAM, but a slow disk slows every word, so keep the model files on an NVMe drive |
+18: 
+19: Measured on the four R9700 cards: 6,197 experts (116.5 GB) in graphics memory, 9,163 (172.3 GB) on the CPU, which needs about that
+20: much free RAM to stay cached. `strata launch --plan` and `setup.py --check` work this out for your cards and RAM
+21: (`strata_control/dsv41_fit.py`; it predicted 6,240 experts on the R9700 box).
+22: 
+23: With less memory than that, part of the CPU's experts are read from the SSD while the model answers. It runs, slowly. A card
+24: that cannot hold its share of the dense weights (about 4 GB each on four cards, 16 GB on one) can make the engine stop at the start
+25: with an out-of-memory message. Both are said before anything is downloaded.
+26: 
+27: ## The official 2-bit versions (the ones for a normal PC)
+28: 
+29: Setup offers three official sets (ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF, pinned): **IQ1_M, 1.75 bpw** (`ist-das-1.75bpw`, 121 GB, slightly lower quality; setup recommends it where 2.00 is tight in memory or disk), **IQ2_XXS, 2.0
+30: same 111 GB n-gram table (downloaded once into `models/deepseek-v4.1-flash-shared`) and the 8 GB DSpark drafter: 257 GB of disk for
+31: 2.00, 274 GB for 2.25, 239 GB for 1.75, 533 GB for all three. Quality against the original model (4,995 positions, the final files): 2.00 has KL 0.170 and perplexity +15.5% (code +8.6%, agent work +5.3%); 2.25 has KL 0.107 and
+32: perplexity +7.3% (code +3.2%, agent work +2.2%). IQ1_M: perplexity +21% (KL 0.217, top-1 82.5%); code +8.9%, agent work +10.2%, multilingual +14%, docs +24%, plain English prose +53%, so it is weaker on prose. ISTA-DASLab's model card says 
+33: 
+34: | File | Size | What it is |
+35: | --- | ---: | --- |
+36: | IQ1_M shards (1.75 bpw), 4 files | 121 GB | the model, smallest set |
+37: | IQ2_XXS shards (2.00 bpw), 4 files | 138 GB | the model, middle set |
+38: | IQ2_XS shards (2.25 bpw), 4 files | 155 GB | the model, largest set |
+39: | IQ4_NL: `DeepSeek-V4.1-Flash-Engram-IQ4_NL.gguf` | 111 GB | the 4-bit Engram lookup table the model reads from RAM or SSD. Not a model to pick: all three sets use this one file, and it is already in their download sizes |
+40: | DSpark drafter (Q8_0) | 8 GB | the small draft model (Unsloth) |
+41: 
+42: 121 + 111 + 8 = 239 GB for 1.75; 138 + 111 + 8 = 257 GB for 2.00; 155 + 111 + 8 = 274 GB for 2.25.
+43: 
+44: Measured: an RTX 5070 (12 GB) with 64 GB of RAM and a 3.6 GB/s NVMe drive answers at about 4.7 tokens/s and reads prompts at 121
+45: tokens/s (4K) to 231 tokens/s (8K, layer-major path); an RTX 3060 (12 GB) with 46 GB of RAM about 7.2 tokens/s; four R9700 about 31
+46: tokens/s. Under about 40 GB of RAM it is untested and slow; setup says so and still installs.
+47: 
+48: Setup downloads with resume and SHA-256, packs the model with the plain recipe (`pack_gguf.py --model SET --shards ... --engram
+49: engram-IQ4_NL.gguf --engram-meta <UD shard 1> --dspark-gguf dspark-...-Q8_0.gguf`; do not add `--skip-tensors` or `--dense-override`:
+50: that packs without an error and gives garbage text), copies the shipped hot-expert profile (`data/dsv41/profile-2.00.bin` or `-2.25.bin`)
+51: into the pack as `expert-profile.bin`, checks `strata-dsv41 --pack-info` (every file present) and answers a 16-token test question
+52: (`tools/dsv41/smoke.py`, the text must name Paris). The start script passes `--dspark auto` (never `off`: `off` still loads the drafter
+53: and its 7 GB of experts take the graphics memory); the RAM store sizes itself. Long prompts use the engine's fast chunked path on its own (no flag is written: the engine picks the chunk size for your cards).
+54: 
+55: ## Install
+56: 
+57: ```
+58: ./setup.sh --family deepseek41 --model IST-DAS-2.00bpw   # 257 GB: the official 2.00 set + Engram + drafter (resumable, SHA-256 checked)
+59: ./setup.sh --family deepseek41 --model IST-DAS-2.25bpw   # 274 GB (the Engram is shared with 2.00)
+60: ./setup.sh --family deepseek41 --model IST-DAS-1.75bpw   # 239 GB, the smallest
+(docs/DEEPSEEK41.md has 142 lines.)

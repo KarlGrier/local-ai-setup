@@ -1,0 +1,46 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-v024-ds41/strata-dsv41",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw",
+  "--max-context",
+  "32768",
+  "--eos",
+  "1",
+  "--dspark",
+  "auto",
+  "--dspark-conf",
+  "0.65",
+  "--tp",
+  "2",
+  "--ssd-cache",
+  "70",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v024",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw/tokenizer",
+ "model_name": "deepseek-v4.1-flash",
+ "arch": "deepseek41",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/ds41/engine-DS41-v024.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8086,
+ "host": "127.0.0.1",
+ "engine_ready_s": 3600,
+ "sampling": {
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "env": {
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX5080,GPU-UUID-RTX4060TI",
+  "STRATA_DS4_PROMPT_SKIP": "0",
+  "DS4_STORE_FLOOR_GB": "16",
+  "DS4_FLOW_STATS": "1"
+ },
+ "_comment": "10-24 DS4.1 tuning: conf-r30-A = {\"DS4_FLOW_STATS\": 1, \"engine\": \"v024\"} on DS41-v024-s70.json"
+}

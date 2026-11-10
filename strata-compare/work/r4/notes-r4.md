@@ -1,0 +1,2 @@
+- 07:40 ROUND 4 start. Found a round-3 slip: CUDA unit tests (23:39/23:46/00:08) wrote 2 JIT cache entries (3003 + 2995 B) + dir 9/ into ~/.nv/ComputeCache (index file updated 00:08). Removed exactly those entries (index left; CUDA treats a missing entry as a miss). Round 4: work/r4/env.sh sets PIP_CACHE_DIR, XDG_*, CUDA_CACHE_PATH, TMPDIR, HF_HOME, npm cache inside tmp/r4.
+- 07:52 slip: a git am loop redirected stderr to /tmp/null (typo for /dev/null) → created an empty/near-empty file /tmp/null; removed at once.

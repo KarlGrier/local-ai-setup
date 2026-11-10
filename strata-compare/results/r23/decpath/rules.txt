@@ -1,0 +1,165 @@
+decpath_rules.py - r23 (Karl 11-05): THE DECODE-PATH CHECK, the rules of work/r23/gap-decpath.sh, written BEFORE any run.
+
+Karl 11-05: "run the decode-path check, and put it before Basalt a: the Basalt prompt-path port would otherwise be judged
+against a prompt path that may itself be the outlier. Score the same positions token by token through the decode path.
+For each prompt variant (default fused, unfused, CPU share, v2 kernels, GDN on), report its distance from the decode
+path, by prompt length. If the default fused path is the outlier: tell me how big the effect is on real long-prompt
+work and what turning it off would cost in prompt speed, before changing anything."
+
+WHY: the NLL gap (results/r23/nll-many/gap) and the stock GDN gap (results/r23/gdn-nll/gap) scored every 8th prompt row
+(1,024 on) of 11 long texts through the PROMPT path (STRATA_PREFILL_DUMP_R_ALL + score.py's offline head). Every
+variant has LOWER NLL than the default fused path (unfused -0.124, cpushare -0.100, v2 -0.049, GDN on -0.184 nats).
+The default's rows are identical for stock v0.2.10, P021n and P028x. Which side is right is open; the decode path is
+the reference here. NOTE (found writing this): the 11 texts are 8 distinct ones - 32k = pp32k (all 32,768 tokens),
+tf-long64k = tf-long96k (all 32,768), pp8k = 32k's first 8,011 - so the NLL gap's block bootstrap counted three texts
+twice. This check reads each distinct text once.
+
+THE DECODE PATH (what "token by token through the decode path" can mean in these engines, no build)
+  serve mode needs --spec >= 2, so the verify windows that read a prompt (STRATA_LOGPOS, upstream's teacher-forced
+  scorer, every build since 0.1.x) are at least 2 rows wide. 1-row windows exist only in the measurement twin
+  engine-r22p028xm (P028x + 5 MEASUREMENT commits): force=N + STRATA_FORCE_T1=1 scores every forced token in a 1-token
+  window "as speculation-off decode draws it" (gap 16), but writes NLL and the top pick only (no distribution, no KL).
+  So:
+  dec     (the reference) the served binary engine-r22p028x, configs/x28h.json (P028x without vision), every token of
+          the text read through 2-ROW verify windows (--spec 2, --short-read above the text length) with STRATA_LOGPOS +
+          STRATA_LOGPOS_TOPK=64: per position the log-probability of the text's next token, the full-vocabulary argmax
+          and the 64 most likely tokens. Every position's K/V comes from the decode path too. Settings otherwise score.py
+          run's (= quant_quality's fixed yardstick): --expert-cache 1 (every expert on the CPU pool, as decode's misses),
+          --pcie-frac 0, no adaptation, no suffix drafts, no prompt cache, FP16 K/V, STRATA_ROUTE_TAIL_SKIP=0,
+          STRATA_PREFILL_CPU_SHARE=0 (the prompt-path switches never run: all variants share this one reference).
+          With --pcie-frac 0 and one cache slot the experts' device does not depend on the window shape (gr-fork.md
+          point 2), so 2-row windows are the decode path's verify windows with the smallest shape serve allows.
+  dec1    (window check, optional) engine-r22p028xm, the same settings, force=N + STRATA_FORCE_T1=1: 1-row windows on
+          ldrsyn20k (16,110 tokens; prompt = its first 2 tokens, every later token forced). NLL + top pick only.
+  s210dec (stock check, optional) engine-v0210stock, configs/s0210-h.json, as dec, on ldrsyn20k.
+  Texts for dec, in this order, each read whole while the measured rate says it fits the budget (DECPATH_DEC_MIN,
+  default 50 min of engine time; a long text may be cut to fit, not below 8,192 tokens): pp4k (4,096), rep9k (9,010),
+  ldrsyn20k (16,110), 32k (32,768), tf-long64k (32,768), tf-long28k (28,672), tf-long112k (32,768), tf-long40k
+  (32,768). Estimated ~45-55 tok/s in 2-row windows with every expert on the CPU (r21/yq: 1,000 tokens in 12.4 s at
+  --spec 4; one 1-row window 20 ms at 1K, 28-36 ms at 28-32K in the NLL arms' logs): ~6 of the 8 texts in 50 min,
+  ~14,000 positions (1-4K ~2,300, 4-16K ~6,700, 16-32K ~5,600).
+
+POSITIONS: every 8th row from 1,024 on (the arms' rows: score.py run --rows all:8), up to the read length - 2. A row at p
+  predicts the text's token p + 1; the dec line at p must carry that target (checked at every position).
+  Strata: 1-4K [1,024, 4,096), 4-16K [4,096, 16,384), 16-32K [16,384, 32,768); blocks of 2,048 tokens inside a text
+  (never across a stratum edge), 10,000 bootstrap replicates, seed 20261105, 95 % percentile intervals.
+
+THE PROMPT VARIANTS (their rows already exist; nothing new runs for them):
+  default  results/r23/nll-many/gap/x28h  (P028x fused; ref (P021n) and stock s210 must be byte-identical: aliases)
+  unfused  .../gap/unfused   (P021n, STRATA_PF_FUSED=0; s210unf and x28h-unfused: aliases if byte-identical)
+  cpushare .../gap/cpushare  (P021n, STRATA_PREFILL_CPU_SHARE=0.4; s210cpu, x28h-cpushare likewise)
+  v2       .../gap/v2        (P021n, STRATA_PREFILL_V2=1 with Basalt's term; on P028x v2 = v2 off bitwise)
+  gdn      results/r23/gdn-nll/gap/s210gdn (stock v0.2.10, STRATA_GDN_TC=1 + STRATA_GDN_CONVL2=2)
+  An arm whose rows differ from every group joins as its own variant (e.g. x28h-unfused if not = unfused).
+  NOTE: the served config already sets STRATA_PREFILL_CPU_SHARE=0.4 (with _MAX 1792); the yardstick forces 0, so the
+  NLL gap's "default" is the share OFF and its "cpushare" arm carries the served env value (in served form the share
+  acts only on chunks below 1,792 tokens).
+
+METRICS of a variant X against dec, per stratum and over all positions:
+  K   KL(dec || X) over 65 bins (dec's 64 most likely tokens + the rest; X's probabilities from the full vocabulary):
+      a lower bound of the full KL, exact up to the mass outside dec's top 64. Mean, p90, rows with K > 1.
+  TV  total variation over the same 65 bins = the chance that a T = 1 draw differs from the decode path's (coupled).
+  A   top-1 agreement: X's full-vocabulary argmax = dec's.
+  D   mean(NLL_X - NLL_dec) (signed, nats/token) and |D|-free spread mean |NLL_X - NLL_dec|.
+  paired against the default: dK = K_def - K_X, dD = D_def - D_X, c = D_def - |D_X| (per replicate), with CIs.
+
+VALIDITY (else NOT JUDGED, the reason named):
+  dec ran cleanly (run_dec + env_dec PASS), >= 3 distinct texts, every used line's target = the text's next token;
+  pairing: over all positions A(default) >= 0.70 and median K(default) <= 0.20 (a shifted or wrong pairing gives
+  chance-level agreement and K >> 1; rounding between the window and the batched path at the same K/V is ~0.01-0.02).
+  A stratum with < 500 positions or < 2 texts is THIN: reported, not judged.
+
+THE VERDICT (overall = the headline; each stratum too), V = the variants other than the default:
+  DEFAULT IS THE OUTLIER  (a) D_def > 0 with its CI above 0, and for EVERY X in V: (b) dK_X's CI above 0 (the default is
+                          farther from the decode path in KL) and (c) c_X's CI above 0 (its NLL distance beyond X's)
+  DEFAULT IS NOT THE OUTLIER  some X in V with neither (b) nor (c): X is not closer to the decode path in either measure
+  MIXED                   otherwise (the default farther than some variants, or in one measure only): per-variant lines
+  CLOSEST to the decode path: the arm (default included) with the smallest K; "tied" with the next one when the paired
+  K difference's CI holds 0.
+
+WINDOW CHECK (dec1, INFO, ldrsyn20k): W_D = mean(NLL_dec1 - NLL_dec) and W_A = top-1 agreement dec1 vs dec at every
+  position from 1,024; "2-row windows stand for the 1-row decode path" if |W_D| <= max(0.02, 0.25 x the smallest
+  |D_def - D_X| on the same text's positions) and W_A >= A(default) there. Beside it, D_X and A_X against dec1 (NLL
+  and top pick only) on that text.
+STOCK CHECK (s210dec, INFO, ldrsyn20k): mean KL(dec || s210dec) over dec's top 64 (quant_quality.py compare's rule)
+  <= 0.02 and |mean(NLL_s210dec - NLL_dec)| <= 0.02 -> "x28h's decode path stands for stock's"; else a FLAG, and the
+  GDN arm is also reported against s210dec on that text.
+
+EFFECT ON REAL LONG-PROMPT WORK (reported always; the main ask if the default is the outlier): the 9-workload screen's
+  prompt lengths (gap b's B1n/B1a/B1r.jsonl; fallback the 11-05 values W3 26,729, A-edit 2,677, B-write 1,370, R1
+  24,240, R2 54,071, R3 5,011, R4 33,417) mapped to their stratum: after a prompt of that length, the default's next
+  pick differs from the decode path's in (1 - A_def) of cases vs (1 - A_closest) for the closest variant, a T = 1 draw
+  differs with probability TV_def vs TV_closest, and the NLL distance D_def vs D_closest (perplexity exp(D) - 1).
+  R2 (54K) lies beyond the measured 32K (the 16-32K numbers, flagged as an extrapolation); W1 / W2 (~120 tokens) below
+  1,024 (not measured). Generation quality itself is not measured here.
+
+SPEED (what turning it off would cost): cold prompt speed, Basalt's bp90 fixtures pp16k (16,676 tokens) and pp64k
+  (66,617), a fresh engine per (arm, fixture, pass), 2 passes in turned order, P028x as served (x28h, two cards):
+  spd-def (as served: PF_FUSED=1, CPU share 0.4 / max 1,792), spd-unf (+ STRATA_PF_FUSED=0), spd-sh0
+  (+ STRATA_PREFILL_CPU_SHARE=0, the yardstick's default env). Cost = mean_X / mean_def - 1 with the passes' spread
+  (max - min) / mean beside it. GDN on: not priced (gap 17 did not measure its prompt speed) and not measured here.
+
+OPTIONAL (only if it fits the deadline): decode gap b's Basalt arm-passes that failed 11-05 06:50-06:51 (a DeepSeek
+  engine held the 5080: B decode/pp16k/pp64k pass 1, LO decode/pp16k/pp64k pass 1, LO decode pass 2 - recomputed at
+  run time from gap b's cold-*.jsonl), rerun on engine-r23decode with gap b's configs into results/r23/decpath/bp90-rerun;
+  merged with gap b's records in decb-merged/ (gap b's files untouched) -> decode_rules.py decide-b ->
+  decision-b-merged.txt. And Karl's pillow 13.0.0 step (its own RESULT.txt; it never fails the gap).
+
+Nothing switches; nothing is served from this; P028x stays on 8080.
+
+11-05 REVISION, BEFORE ANY ANALYSIS (Karl 11-05, after results/r23/nll-many/recompute/REPORT.md: the 11 texts are 8
+distinct, and 2,048-token-block bootstraps understate the SE ~2.2 x against whole texts; the many-positions NLL bound is
+revoked as a gate: results/r23/nll-many/gap/ADOPTED-BOUND.REVOKED.json). Everything above about the runs, their settings,
+the env checks, the speed arms, the pillow step and the bp90 rerun stands unchanged. The verdict, its unit and its
+intervals below REPLACE "THE VERDICT" above, its per-stratum verdicts and its block-bootstrap CIs (those numbers stay in
+result.json as information and are never used for the verdict). Karl, verbatim: "Verdict unit: whole texts (8). Report
+the 2,048-block SE beside it, labelled, and never use it for the verdict. Fix the distance measure before the analysis
+runs, and use the same one for every text. Primary rule: Outlier: the default fused path is the farthest prompt path
+from the decode path in at least 7 of 8 texts. Not an outlier: it's farthest in 4 or fewer. 5 or 6: inconclusive. Write
+the chance rate for the actual number of arms into the rules."
+  TEXTS     the 8 distinct texts, as the dec arm reads them (its plan holds no duplicate): pp4k, rep9k, ldrsyn20k, 32k,
+            tf-long64k, tf-long28k, tf-long112k, tf-long40k. pp32k (= 32k), tf-long96k (= tf-long64k) and pp8k (= 32k's
+            first 8,011 tokens) are never read by dec and are dropped wherever the gaps' rows are used. The 5,064-token
+            span 32k shares with tf-long28k stays (Karl's rule). Positions: every 8th row from 1,024, as before.
+  DISTANCE  fixed now, the same for every text and every path: D_t(path) = the mean, over text t's scored positions, of
+            KL(dec || path) over 65 bins (dec's 64 most likely tokens + the rest; the path's probabilities from its full
+            vocabulary). Why: it weighs each position by what the decode path would draw; it cannot cancel the way a
+            signed NLL mean does; it is not driven by tokens the model gives almost no chance (rep9k: NLL ~10 nats per
+            token at KL ~0.0001 - its NLL differences are noise). A lower bound of the full KL (exact up to the mass
+            outside dec's top 64), the same bound for every path.
+  PATHS     byte-identical arms are one path (the dumps compared file by file): default = x28h = ref = s210; unfused =
+            x28h-unfused = s210unf; cpushare = x28h-cpushare = s210cpu; v2; gdn (s210gdn): A = 5 paths expected (the
+            analysis counts them and prints A). NOTE: cpushare = fused int8 OFF + the staged walk + the CPU share (the
+            recompute, section 6) - not one switch, and not the served long-prompt arithmetic (served chunks of >= 1,792
+            tokens keep the fused path with the share on).
+  RULE      per text the farthest path = the largest D_t (the default counts only when strictly the largest; exact
+            ties are not expected). k = the texts in which the default is the farthest, N = the texts read.
+            N = 8: DEFAULT IS THE OUTLIER if k >= 7; DEFAULT IS NOT AN OUTLIER if k <= 4; INCONCLUSIVE if k = 5 or 6.
+            Fewer texts read (dec's 50-min budget may stop at ~6): the same proportions - OUTLIER k >= ceil(7N/8), NOT
+            k <= floor(N/2), else INCONCLUSIVE - FLAGGED "Karl's rule is written for 8 texts". N < 5: NOT JUDGED.
+  CHANCE    if each of the A paths were equally likely to be the farthest in a text, independently: k ~ Binomial(N, 1/A).
+            A = 5, N = 8: P(k >= 7) = 0.000084, P(k <= 4) = 0.9896, P(k = 5 or 6) = 0.0103
+            A = 5, N = 7: P(k = 7) = 0.000013, P(k <= 3) = 0.9667, P(4-6) = 0.0333
+            A = 5, N = 6: P(k = 6) = 0.000064, P(k <= 3) = 0.9830, P(4-5) = 0.0169
+            A = 5, N = 5: P(k = 5) = 0.000320, P(k <= 2) = 0.9421, P(3-4) = 0.0576
+            (N = 8 with A = 4: 0.000381 / 0.9727 / 0.0269; with A = 6: 0.000024 / 0.9954 / 0.0046.) The decision prints
+            the exact rates for the A and N it has.
+  CIs       whole texts only: the equal-weight mean over texts of D_t per path, and of the paired D_t(default) -
+            D_t(path), with a t(N-1) interval (= CR1, one value per text) and a whole-text bootstrap (10,000 replicates,
+            seed 20261105); the position-weighted mean with a CR1 interval (clusters = texts, t(N-1)). Beside them, the
+            2,048-token-block bootstrap SE, labelled "2,048-block SE (not used for the verdict)".
+  SECONDARY, information only, declared now:
+   (a) the same count and means split into SHORT = pp4k, rep9k (their reads end at 4,096 and 9,010 tokens) and LONG =
+       the other six (every read >= 16,110 tokens: 32k and the four tf-long texts to 28-32K, ldrsyn20k - the
+       research-style text - to 16,110; the long-prompt worry is about 16K+ research and agent prompts).
+   (b) per-position |dNLL| between paths, binned by position in the text: 0-2K, 2-8K, 8-16K, 16K+ (scored rows start at
+       1,024): the two references (unfused, cpushare) and each arm (v2, gdn) against ref (= default) - on all 8
+       distinct texts from the two gaps' rows.tsv and on the dec positions - and every path against dec. Per bin: mean
+       and median |dNLL|, positions, texts, a whole-text bootstrap interval of the mean; per text, its last bin's mean
+       minus its first bin's (scatter growing with position = drift on long prompts).
+   (c) the 1-row check (dec1, ldrsyn20k): how far the 2-row decode path sits from true 1-row windows - mean |dNLL|,
+       signed dNLL and top-1 agreement at every position and per bin. "The reference is SOUND on that text" if, at the
+       same every-8th rows, its mean |dNLL| to the 1-row path is <= 0.5 x the smallest mean |dNLL| of any prompt path
+       to dec there, and its top-1 agreement with the 1-row path is >= the best prompt path's agreement with dec; else
+       NOT SHOWN SOUND. One text only: its intervals are 2,048-block ones, labelled.
+  The effect-on-real-work and speed sections stay as above (information; the per-range numbers are position-weighted).

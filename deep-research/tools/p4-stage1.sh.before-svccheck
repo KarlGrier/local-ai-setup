@@ -1,0 +1,100 @@
+#!/bin/bash
+# p4-stage1.sh - phase 4 stage 1 for build-order items 1 and 2 (the user, 10-20), after the new-build baselines:
+# waits for the phase 4 queue to log "queue finished (queue-plan-p4.json)" (nights allowed, run/night-ok), then runs
+# the replays one step at a time through strata-proxy, each holding run/bench.lock, Jan jobs first (waits while one is
+# queued or running), 8080 started on demand (P021).  Log: logs/p4-stage1.log.  tmp/p4-stage1.stop stops it between steps.
+#   item 1 (user-setup.md: the setup profile + setup-claim check)
+#     a  setupcheck on saved reports with the known setup errors: o01 deep medium (CPU, links), o02 report replay
+#        medium (x16 card in a x4 slot, the 5090's ratio for the 5080, a 16 GB 4060 Ti), o07 deep medium (24 GB VRAM as a
+#        file ceiling), 3 runs each; o03 deep medium once (no setup claims expected: false alarms)
+#     b  o07's lead wrap-up answer (captured call 650, where its 21-23 GB target first appears) again, 3x with the
+#        setup block, 3x without
+#     c  o07 report replays from each of those answers (with: + the block in the report prompts); then 3x with / 3x
+#        without from the ORIGINAL answer (it has the error, so the without side shows it: the report step alone)
+#     b2 o02's lead wrap-up answer (call 635, where "4060 Ti 16 GB" first appears) again, 3x with, 3x without, and
+#        the reports from each (c2)
+#     d  o02 report replays from the original answer, 3x with the block, 3x without (its x16 / 5090-ratio slips came
+#        from the report writer in one replay: the setup check on the saved report, 1a, is their direct test)
+#     e  setupcheck once on each with-side report (o07, o02)
+#   (10-20 evening, the user: item 1's replays cover the step where each error starts - the lead's final answer and
+#   the report, not the plan)
+#   item 2 (notyet-check.py)
+#     f  on the saved o03 reports: deep medium (10-19) and the two report replays (both said "pending")
+#     g  false alarms: the o01, o02 and o07 deep medium reports
+#   item 3 (critic + two-source verifier): critic and verify2, 3 runs each, on the o02 report replay (medium) and
+#     the o03 deep medium report
+set -u
+WS=/home/USER/ai/deep-research; cd $WS
+LOG=$WS/logs/p4-stage1.log
+SC=/home/USER/ai-speed-testing/strata-compare
+PY=$WS/.venv/bin/python
+R=results/bench2/runs; RP=results/bench2/replays
+SETUP=$WS/user-setup.md
+say() { echo "$(date '+%F %T') $*" >> $LOG; }
+user_jobs() {
+  /usr/bin/python3 -I -c "
+import sys; sys.path.insert(0, '$WS/tools'); import research_common as rc
+sys.exit(0 if any(j.get('state') in rc.ACTIVE or (j.get('state') == 'queued' and not j.get('user_paused') and not j.get('cancel_requested')) for j in rc.all_jobs()) else 1)"
+}
+step() {   # step NAME CMD...: Jan first, 8080 up, then the command (its own bench.lock)
+  local name=$1; shift
+  [ -e tmp/p4-stage1.stop ] && { say "stop file: stopping before $name"; exit 0; }
+  if user_jobs; then say "a Jan job is queued or running: waiting"; while user_jobs; do sleep 120; done; fi
+  env -u HTTP_PROXY -u HTTPS_PROXY $SC/configs/usability/bin/strata-ensure.sh "phase 4 stage 1" >> $LOG 2>&1 || { say "Strata not ready - stopping"; exit 1; }
+  # strata-proxy (8090): 10-21 10:08 it had gone down with the queue's service, and every call failed at once
+  proxy_ok() { [ "$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/v1/models)" = 200 ]; }
+  proxy_ok || { ./run-ldr.sh proxy >> $LOG 2>&1; proxy_ok; } || { say "strata-proxy not answering - stopping"; exit 1; }
+  say "$name: $*"
+  "$@" >> $LOG 2>&1 || say "$name: exit $?"
+}
+
+T0=$(date '+%F %T')
+say "p4-stage1 started (pid $$): waiting for the phase 4 queue to finish"
+# P4S1_NOWAIT=1: a restart after the queue has finished (10-21 10:15: the first start's steps all failed, proxy down)
+[ -n "${P4S1_NOWAIT:-}" ] || until awk -v t="$T0" 'substr($0,1,19) >= t' logs/bench2-queue.log | grep -q "queue finished (queue-plan-p4.json)"; do
+  [ -e tmp/p4-stage1.stop ] && { say "stop file while waiting"; exit 0; }
+  sleep 300
+done
+while [ -e tmp/bench2.hold ]; do sleep 60; done
+say "queue finished: stage 1 starts"
+
+# item 1 a
+step 1a $PY tools/level-replay.py setupcheck $R/screen-deep-medium/o01/report.md $RP/report/o02/report-medium.md \
+  $R/screen-extra-deep-medium/o07/report.md --setup $SETUP --n 3 --out $RP/setup/saved
+step 1a-fa $PY tools/level-replay.py setupcheck $R/screen-deep-medium/o03/report.md --setup $SETUP --n 1 --out $RP/setup/saved
+# item 2 f (the direct test, short)
+step 2f $PY tools/notyet-check.py $R/screen-deep-medium/o03/report.md $RP/report/o03/report-medium.md \
+  $RP/report/o03/report-xhigh.md --date 2026-10-19 --label s1- --out $RP/notyet
+# item 1 b-e
+O7=$R/screen-extra-deep-medium/o07
+step 1b-with $PY tools/level-replay.py lead $O7 --id 650 --setup $SETUP --n 3 --label setup
+step 1b-without $PY tools/level-replay.py lead $O7 --id 650 --n 3 --label plain
+for k in 1 2 3; do
+  step 1c-with-$k $PY tools/level-replay.py report $O7 --levels medium --lead $RP/lead/o07/call650-setup-$k.md --setup $SETUP --label setup$k
+  step 1c-without-$k $PY tools/level-replay.py report $O7 --levels medium --lead $RP/lead/o07/call650-plain-$k.md --label plain$k
+done
+step 1c-orig-with $PY tools/level-replay.py report $O7 --levels medium --setup $SETUP --n 3 --label origsetup
+step 1c-orig-without $PY tools/level-replay.py report $O7 --levels medium --n 3 --label origplain
+O2=$R/screen-deep-medium/o02
+step 1b2-with $PY tools/level-replay.py lead $O2 --id 635 --setup $SETUP --n 3 --label setup
+step 1b2-without $PY tools/level-replay.py lead $O2 --id 635 --n 3 --label plain
+for k in 1 2 3; do
+  step 1c2-with-$k $PY tools/level-replay.py report $O2 --levels medium --lead $RP/lead/o02/call635-setup-$k.md --setup $SETUP --label leadsetup$k
+  step 1c2-without-$k $PY tools/level-replay.py report $O2 --levels medium --lead $RP/lead/o02/call635-plain-$k.md --label leadplain$k
+done
+step 1d-with $PY tools/level-replay.py report $O2 --levels medium --setup $SETUP --n 3 --label setup
+step 1d-without $PY tools/level-replay.py report $O2 --levels medium --n 3 --label plain
+step 1e $PY tools/level-replay.py setupcheck $RP/report/o07/report-medium-setup1-1.md $RP/report/o07/report-medium-setup2-1.md \
+  $RP/report/o07/report-medium-setup3-1.md $RP/report/o02/report-medium-setup-1.md $RP/report/o02/report-medium-setup-2.md \
+  $RP/report/o02/report-medium-setup-3.md $RP/report/o07/report-medium-origsetup-1.md $RP/report/o07/report-medium-origsetup-2.md \
+  $RP/report/o07/report-medium-origsetup-3.md $RP/report/o02/report-medium-leadsetup1-1.md $RP/report/o02/report-medium-leadsetup2-1.md \
+  $RP/report/o02/report-medium-leadsetup3-1.md --setup $SETUP --n 1 --out $RP/setup/with
+# item 2 g
+step 2g $PY tools/notyet-check.py $R/screen-deep-medium/o01/report.md $R/screen-deep-medium/o02/report.md $O7/report.md --label s1- --out $RP/notyet
+# item 3 (critic / two-source verifier) on the saved o02 replay report and the o03 deep medium report
+step 3-critic-o02 $PY tools/level-replay.py critic $O2 $RP/report/o02/report-medium.md --n 3 --label saved
+step 3-critic-o03 $PY tools/level-replay.py critic $R/screen-deep-medium/o03 $R/screen-deep-medium/o03/report.md --n 3 --label saved
+step 3-verify2-o03 $PY tools/level-replay.py verify2 $R/screen-deep-medium/o03 $R/screen-deep-medium/o03/report.md --n 3 --label saved
+step 3-verify2-o02 $PY tools/level-replay.py verify2 $O2 $RP/report/o02/report-medium.md --n 3 --label saved
+bash $SC/bringup/lib/kcheck.sh p4-stage1 >> $LOG 2>&1 && say "kcheck clean" || say "KCHECK FAILED"
+say "p4-stage1 done"

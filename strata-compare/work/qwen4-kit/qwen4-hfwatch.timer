@@ -1,0 +1,10 @@
+[Unit]
+Description=Qwen4 day one: Hugging Face watch every 15 min through Mon 2026-11-30T23:59 (Karl 11-07; was Sun 11-08)
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=false
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

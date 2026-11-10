@@ -1,0 +1,15 @@
+[Unit]
+Description=MemAvailable dip recorder (deep-research tools/ram_dip.py): a breakdown at each new low below 20 GiB (100000 = no dip limit)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/USER/ai/deep-research
+ExecStart=/usr/bin/python3 /home/USER/ai/deep-research/tools/ram_dip.py 100000
+StandardOutput=append:/home/USER/ai/deep-research/logs/ram-dip.out
+StandardError=append:/home/USER/ai/deep-research/logs/ram-dip.out
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=default.target

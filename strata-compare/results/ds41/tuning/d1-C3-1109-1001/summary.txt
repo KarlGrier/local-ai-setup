@@ -1,0 +1,29 @@
+=== 2026-11-09 10:01:12 DeepSeek gap D1 C3: C2's config with --dspark-block 3, 3 passes - DS4.1 arm d1-C3 (/home/USER/ai-speed-testing/strata-compare/results/ds41/gate-1109-0938-d1/cfg-C3.json, server /home/USER/ai-speed-testing/strata-compare/strata-v026/serve/server.py, 3 passes): --max-context 131072 --eos 1 --dspark on --dspark-conf 0.65 --tp 2 --ssd-cache 68 --experts 6 --prefill-chunk 8192 --expert-profile /home/USER/ai-speed-testing/strata-compare/logs/ds41/gate/profile-arm.bin --dspark-block 3 --vram-experts 1.0 {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX4060TI,GPU-UUID-RTX5080', 'STRATA_DS4_PROMPT_SKIP': '1', 'DS4_STORE_FLOOR_GB': '14', 'DS4_SPLIT': '0,40', 'DS4_SETTLE_MS': '0', 'DS4_CACHE_DECAY': '0.8', 'DS4_ENGRAM_CACHE_MB': '16', 'STRATA_DS4_SLOT_KEEP': '1', 'STRATA_DS4_SLOT_CAP': '16', 'STRATA_DS4_SLOT_GB': '2', 'STRATA_DS4_AUTO_PIN': '1', 'STRATA_DS4_SLOT_RAM_GB': '1.7', 'STRATA_DS4_SLOT_DIR': '/home/USER/ai-speed-testing/strata-compare/logs/ds41/gate-slots/C3'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/d1-C3-1109-1001
+=== 2026-11-09 10:02:12 cool-down before the arm: 60 s, drive 39 -> 37 C
+dropcache: 7 model files dropped from the page cache in 0.5 s
+=== 2026-11-09 10:02:13 before: MemAvailable 86.2 GB; swap in use 2938 MB; vram 0, 17 MiB, 15917 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-11-09 10:02:25 ready after 12 s: MemAvailable 29.0 GB, engine RSS 58231 MB; vram 0, 15363 MiB, 571 MiB;1, 6747 MiB, 1143 MiB;
+=== 2026-11-09 10:20:28 requests done (rc 0): 17 responses
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: RAM store: up to 6619 slots of 10.3 MB (68.0 GB), policy 0, 8 reader threads, unbuffered reads
+ds4: RAM store: 6363 of the profile's hottest experts read in (49.4 GB) in 5.4 s
+ds4: CUDA0 layers [40, 42]: weights 0.34 GB, experts 4.47 GB (384 of 384 in VRAM), caches 0.00 GB, 1144 MiB free
+ds4: CUDA1 layers [0, 39] + head: weights 5.99 GB, experts 6.31 GB (693 of 15360 in VRAM), caches 0.12 GB, 571 MiB free
+ds4: 14667 routed experts on the CPU lane (126.5 GB, in place in the model's files), 16 threads
+=== 2026-11-09 10:20:35 GUARD: failed: memory - the engine's own memory was swapped (VmSwap 104536 kB)
+monitor: lowest MemAvailable 17.6 GB, peak engine RSS 70080 MB, peak VRAM used 5080 15439 MiB / 4060 Ti 6747 MiB
+swap: 1 swap-out episode(s) (a one-off push-out is logged only), 220.5 MB out, 2.3 MB in, engine VmSwap max 104536 kB
+=== 2026-11-09 10:20:35 kcheck clean
+P4K: [432.9, 471.2, 469.6] tok/s (mean 457.9, spread 4.18 %), tokens [4126, 4396, 4241], SSD [60.319, 57.577, 55.919] GB per prompt
+P20K: [820.2, 802.5, 820.9] tok/s (mean 814.5, spread 1.13 %), tokens [19752, 18891, 19524], SSD [120.552, 118.8, 119.719] GB per prompt
+W1-think: decode [37.46, 37.69, 36.85] tok/s, [3072, 3072, 3072] tokens, finish ['length', 'length', 'length'], SSD [0.0435, 0.0502, 0.048] GB/token, thinking chars [5709, 5183, 5722] / answer chars [1842, 1645, 1931]
+W2-code: decode [30.3, 30.28, 28.59] tok/s, [3072, 3072, 3072] tokens, finish ['length', 'length', 'length'], SSD [0.0737, 0.0731, 0.0861] GB/token, thinking chars [9631, 10159, 10359] / answer chars [3072, 3239, 3219]
+W3-research: decode [27.67, 25.33, 28.42] tok/s, [2048, 2048, 2048] tokens, finish ['length', 'length', 'length'], SSD [0.1608, 0.1776, 0.1522] GB/token, thinking chars [5151, 5268, 4888] / answer chars [1481, 1399, 1379]
+W1-W3 decode mean 31.4 tok/s over 9 responses; pass means [31.81, 31.1, 31.29] (spread 1.13 %); SSD 0.0961 GB/token
+CUDA0 layers [40,42]: 384 experts in VRAM (4.47 GB), weights 0.34 GB, 1144 MiB free
+CUDA1 layers [0,39]: 693 experts in VRAM (6.31 GB), weights 5.99 GB, 571 MiB free
+GPU clocks while decode: GPU0 SM 2812 MHz (p10 2797), util 95 %, 108.4 W; GPU1 SM 2550 MHz (p10 2550), util 4 %, 33.9 W
+GPU clocks while prompt: GPU0 SM 2805 MHz (p10 2797), util 97 %, 212.1 W; GPU1 SM 2550 MHz (p10 210), util 0 %, 28.9 W
+lowest MemAvailable 17.6 GB, peak engine RSS 70080 MB, peak VRAM [15439, 6747] MiB
+nvme0: no temperature samples between 10:01 and 10:21 (the logger started 22:18)
+=== 2026-11-09 10:20:35 done

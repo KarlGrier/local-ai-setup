@@ -1,0 +1,252 @@
+=== 2026-10-21 09:27:18 Basalt A/B GPU block starts (inside gap 5)
+0, NVIDIA GeForce RTX 5080, 360.00 W, 289 MiB
+1, NVIDIA GeForce RTX 4060 Ti, 160.00 W, 15 MiB
+=== 2026-10-21 09:27:19 S a (normal x2)
+server ready (guard pid 630081, server pid 630101) load_time_s 14.335988318 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ab-a_20261021T092719.log
+a warmup r0: prompt 126 ttft 0.56 s, 384 tokens, 156.64 tok/s, length
+a W1-think r0: prompt 110 ttft 0.345 s, 3072 tokens, 191.01 tok/s, length
+a W2-code r0: prompt 125 ttft 0.381 s, 3072 tokens, 156.09 tok/s, length
+a W3-research r0: prompt 26726 ttft 6.377 s, 2048 tokens, 155.61 tok/s, length
+a W4-prefill32k-0 r0: prompt 32744 ttft 7.687 s, 32 tokens, 108.85 tok/s, length
+a W4-prefill32k-1 r0: prompt 32746 ttft 7.52 s, 32 tokens, 111.76 tok/s, length
+a W1-think r1: prompt 111 ttft 0.409 s, 3072 tokens, 159.18 tok/s, length
+a W2-code r1: prompt 125 ttft 0.38 s, 3072 tokens, 151.53 tok/s, length
+a W3-research r1: prompt 26726 ttft 6.178 s, 2048 tokens, 148.93 tok/s, length
+a W4-prefill32k-0 r1: prompt 32745 ttft 7.519 s, 32 tokens, 96.3 tok/s, length
+a W4-prefill32k-1 r1: prompt 32744 ttft 7.52 s, 32 tokens, 111.82 tok/s, length
+=== 2026-10-21 09:30:38 S a1 (normal x2)
+server ready (guard pid 634336, server pid 634356) load_time_s 12.300826231 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ab-a1_20261021T093039.log
+a1 warmup r0: prompt 121 ttft 0.57 s, 384 tokens, 123.01 tok/s, length
+a1 W1-think r0: prompt 110 ttft 0.354 s, 3072 tokens, 150.31 tok/s, length
+a1 W2-code r0: prompt 125 ttft 0.392 s, 3072 tokens, 139.5 tok/s, length
+a1 W3-research r0: prompt 26728 ttft 6.4 s, 2048 tokens, 124.86 tok/s, length
+a1 W4-prefill32k-0 r0: prompt 32743 ttft 7.702 s, 32 tokens, 93.51 tok/s, length
+a1 W4-prefill32k-1 r0: prompt 32745 ttft 7.534 s, 32 tokens, 104.43 tok/s, length
+a1 W1-think r1: prompt 109 ttft 0.414 s, 3072 tokens, 144.9 tok/s, length
+a1 W2-code r1: prompt 126 ttft 0.387 s, 3072 tokens, 139.45 tok/s, length
+a1 W3-research r1: prompt 26729 ttft 6.182 s, 2048 tokens, 128.6 tok/s, length
+a1 W4-prefill32k-0 r1: prompt 32745 ttft 7.524 s, 32 tokens, 83.14 tok/s, length
+a1 W4-prefill32k-1 r1: prompt 32743 ttft 7.53 s, 32 tokens, 104.78 tok/s, length
+=== 2026-10-21 09:34:11 S b4 (normal x2)
+server ready (guard pid 638580, server pid 638595) load_time_s 14.342510870 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ab-b4_20261021T093412.log
+b4 warmup r0: prompt 125 ttft 0.56 s, 384 tokens, 148.24 tok/s, length
+b4 W1-think r0: prompt 112 ttft 0.352 s, 3072 tokens, 189.82 tok/s, length
+b4 W2-code r0: prompt 124 ttft 0.374 s, 3072 tokens, 154.27 tok/s, length
+b4 W3-research r0: prompt 26728 ttft 6.387 s, 2048 tokens, 153.55 tok/s, length
+b4 W4-prefill32k-0 r0: prompt 32745 ttft 7.696 s, 32 tokens, 99.76 tok/s, length
+b4 W4-prefill32k-1 r0: prompt 32745 ttft 7.528 s, 32 tokens, 155.78 tok/s, length
+b4 W1-think r1: prompt 109 ttft 0.411 s, 3072 tokens, 166.72 tok/s, length
+b4 W2-code r1: prompt 124 ttft 0.375 s, 3072 tokens, 156.66 tok/s, length
+b4 W3-research r1: prompt 26727 ttft 6.178 s, 2048 tokens, 151.07 tok/s, length
+b4 W4-prefill32k-0 r1: prompt 32744 ttft 7.517 s, 32 tokens, 114.17 tok/s, length
+b4 W4-prefill32k-1 r1: prompt 32745 ttft 7.522 s, 32 tokens, 121.34 tok/s, length
+=== 2026-10-21 09:37:29 S b5 (normal x2)
+server ready (guard pid 640860, server pid 640875) load_time_s 14.337106088 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ab-b5_20261021T093730.log
+b5 warmup r0: prompt 124 ttft 0.556 s, 384 tokens, 147.45 tok/s, length
+b5 W1-think r0: prompt 111 ttft 0.353 s, 3072 tokens, 168.51 tok/s, length
+b5 W2-code r0: prompt 123 ttft 0.377 s, 3072 tokens, 146.97 tok/s, length
+b5 W3-research r0: prompt 26727 ttft 6.373 s, 2048 tokens, 146.29 tok/s, length
+b5 W4-prefill32k-0 r0: prompt 32743 ttft 7.702 s, 32 tokens, 114.87 tok/s, length
+b5 W4-prefill32k-1 r0: prompt 32744 ttft 7.532 s, 32 tokens, 145.11 tok/s, length
+b5 W1-think r1: prompt 108 ttft 0.408 s, 3072 tokens, 164.38 tok/s, length
+b5 W2-code r1: prompt 126 ttft 0.38 s, 3072 tokens, 152.08 tok/s, length
+b5 W3-research r1: prompt 26726 ttft 6.182 s, 2048 tokens, 152.68 tok/s, length
+b5 W4-prefill32k-0 r1: prompt 32741 ttft 7.519 s, 32 tokens, 121.48 tok/s, length
+b5 W4-prefill32k-1 r1: prompt 32741 ttft 7.52 s, 32 tokens, 127.68 tok/s, length
+=== 2026-10-21 09:40:51 S b7 (normal x2)
+server ready (guard pid 643209, server pid 643224) load_time_s 14.339524867 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ab-b7_20261021T094052.log
+b7 warmup r0: prompt 123 ttft 0.561 s, 384 tokens, 145.55 tok/s, length
+b7 W1-think r0: prompt 112 ttft 0.35 s, 3072 tokens, 185.38 tok/s, length
+b7 W2-code r0: prompt 123 ttft 0.381 s, 3072 tokens, 153.98 tok/s, length
+b7 W3-research r0: prompt 26728 ttft 6.401 s, 2048 tokens, 151.4 tok/s, length
+b7 W4-prefill32k-0 r0: prompt 32745 ttft 7.703 s, 32 tokens, 106.99 tok/s, length
+b7 W4-prefill32k-1 r0: prompt 32745 ttft 7.533 s, 32 tokens, 94.33 tok/s, length
+b7 W1-think r1: prompt 110 ttft 0.409 s, 3072 tokens, 180.5 tok/s, length
+b7 W2-code r1: prompt 124 ttft 0.38 s, 3072 tokens, 150.37 tok/s, length
+b7 W3-research r1: prompt 26729 ttft 6.183 s, 2048 tokens, 153.6 tok/s, length
+b7 W4-prefill32k-0 r1: prompt 32741 ttft 7.519 s, 32 tokens, 105.55 tok/s, length
+b7 W4-prefill32k-1 r1: prompt 32743 ttft 7.52 s, 32 tokens, 127.47 tok/s, length
+=== 2026-10-21 09:44:09 S b7v (normal x1)
+server ready (guard pid 645423, server pid 645438) load_time_s 14.335294369 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ab-b7v_20261021T094410.log
+b7v warmup r0: prompt 123 ttft 0.556 s, 384 tokens, 142.14 tok/s, length
+b7v W1-think r0: prompt 109 ttft 0.35 s, 3072 tokens, 165.65 tok/s, length
+b7v W2-code r0: prompt 124 ttft 0.371 s, 3072 tokens, 147.52 tok/s, length
+b7v W3-research r0: prompt 26728 ttft 6.381 s, 2048 tokens, 152.1 tok/s, length
+b7v W4-prefill32k-0 r0: prompt 32746 ttft 7.712 s, 32 tokens, 113.8 tok/s, length
+b7v W4-prefill32k-1 r0: prompt 32744 ttft 7.532 s, 32 tokens, 136.9 tok/s, length
+=== 2026-10-21 09:46:16 S a1s7 (calib x2)
+server ready (guard pid 646859, server pid 646874) load_time_s 12.300918533 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ab-a1s7_20261021T094617.log
+a1s7 warmup r0: prompt 126 ttft 0.546 s, 384 tokens, 127.5 tok/s, length
+a1s7 C-conv r0: prompt 38 ttft 0.321 s, 1002 tokens, 123.98 tok/s, stop
+a1s7 C-struct r0: prompt 98 ttft 0.348 s, 7230 tokens, 174.24 tok/s, stop
+a1s7 C-prose r0: prompt 19 ttft 0.19 s, 1200 tokens, 114.69 tok/s, length
+a1s7 C-conv r1: prompt 38 ttft 0.325 s, 1096 tokens, 123.03 tok/s, stop
+a1s7 C-prose r1: prompt 19 ttft 0.201 s, 812 tokens, 115.89 tok/s, stop
+=== 2026-10-21 09:48:23 V pictures
+{"n": 1, "first_answer_token_s": 4.5, "total_s": 6.8, "thinking_chars": 1193, "answer_chars": 899, "usage": {"prompt_tokens": 322, "completion_tokens": 837, "total_tokens": 1159, "prompt_tokens_details": {"cached_tokens": 0}}}
+{"n": 2, "first_answer_token_s": 2.6, "total_s": 5.0, "thinking_chars": 992, "answer_chars": 906, "usage": {"prompt_tokens": 322, "completion_tokens": 823, "total_tokens": 1145, "prompt_tokens_details": {"cached_tokens": 317}}}
+reader RSS after: [1115] MiB
+reader RSS before: [1115] MiB
+{"n": 1, "first_answer_token_s": 3.4, "total_s": 4.8, "thinking_chars": 758, "answer_chars": 660, "usage": {"prompt_tokens": 336, "completion_tokens": 439, "total_tokens": 775, "prompt_tokens_details": {"cached_tokens": 0}}}
+{"n": 2, "first_answer_token_s": 1.9, "total_s": 3.2, "thinking_chars": 905, "answer_chars": 539, "usage": {"prompt_tokens": 336, "completion_tokens": 448, "total_tokens": 784, "prompt_tokens_details": {"cached_tokens": 331}}}
+reader RSS after: [1125] MiB
+0, 15445 MiB, 16303 MiB
+1, 6599 MiB, 8188 MiB
+vcpu W1-think r0: prompt 108 ttft 0.358 s, 3072 tokens, 161.52 tok/s, length
+vcpu W2-code r0: prompt 122 ttft 0.376 s, 3072 tokens, 156.71 tok/s, length
+vcpu W1-think r1: prompt 110 ttft 0.356 s, 3072 tokens, 160.32 tok/s, length
+vcpu W2-code r1: prompt 125 ttft 0.376 s, 3072 tokens, 158.78 tok/s, length
+vram at end: 0, 15451 MiB, 461 MiB 1, 6599 MiB, 1291 MiB 
+2026-10-21T09:50:49 srv-ab-vcpu exit=0 144s min_MemAvailable=34.5GiB@27s min_5080_free=439MiB@40s max_tree_RSS=52.1GiB max_swap_used=0.01GiB min_4060Ti_free=1291MiB ok
+=== 2026-10-21T09:50:50-05:00 ab-vcpu done
+{"n": 1, "first_answer_token_s": 3.2, "total_s": 6.4, "thinking_chars": 989, "answer_chars": 1147, "usage": {"prompt_tokens": 322, "completion_tokens": 904, "total_tokens": 1226, "prompt_tokens_details": {"cached_tokens": 0}}}
+{"n": 2, "first_answer_token_s": 2.0, "total_s": 4.7, "thinking_chars": 878, "answer_chars": 1104, "usage": {"prompt_tokens": 322, "completion_tokens": 686, "total_tokens": 1008, "prompt_tokens_details": {"cached_tokens": 317}}}
+reader RSS after: [] MiB
+reader RSS before: [] MiB
+{"n": 1, "first_answer_token_s": 3.3, "total_s": 5.1, "thinking_chars": 1096, "answer_chars": 737, "usage": {"prompt_tokens": 336, "completion_tokens": 674, "total_tokens": 1010, "prompt_tokens_details": {"cached_tokens": 0}}}
+{"n": 2, "first_answer_token_s": 1.8, "total_s": 3.1, "thinking_chars": 731, "answer_chars": 606, "usage": {"prompt_tokens": 336, "completion_tokens": 480, "total_tokens": 816, "prompt_tokens_details": {"cached_tokens": 331}}}
+reader RSS after: [] MiB
+0, 15433 MiB, 16303 MiB
+1, 6704 MiB, 8188 MiB
+vgpu W1-think r0: prompt 110 ttft 0.365 s, 3072 tokens, 160.44 tok/s, length
+vgpu W2-code r0: prompt 125 ttft 0.387 s, 3072 tokens, 154.69 tok/s, length
+vgpu W1-think r1: prompt 110 ttft 0.353 s, 3072 tokens, 157.58 tok/s, length
+vgpu W2-code r1: prompt 124 ttft 0.374 s, 3072 tokens, 153.78 tok/s, length
+vram at end: 0, 15433 MiB, 479 MiB 1, 6704 MiB, 1186 MiB 
+2026-10-21T09:53:18 srv-ab-vgpu exit=0 146s min_MemAvailable=35.0GiB@27s min_5080_free=479MiB@31s max_tree_RSS=51.8GiB max_swap_used=0.01GiB min_4060Ti_free=1186MiB ok
+=== 2026-10-21T09:53:19-05:00 ab-vgpu done
+=== 2026-10-21 09:53:19 D logit dumps (our engine, CLI)
+1024 tokens; /home/USER/ai-speed-testing/strata-compare/engine-r22p021/strata --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack ...
+rc 0; log /home/USER/ai-speed-testing/basalt-ab/results/dumps/strata-a.bin.log
+1024 tokens; /home/USER/ai-speed-testing/strata-compare/engine-r22p021/strata --pack /home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack ...
+rc 0; log /home/USER/ai-speed-testing/basalt-ab/results/dumps/strata-a1.bin.log
+=== 2026-10-21 09:53:47 B Basalt (each step in a network namespace of its own: unshare -rn)
+touch: cannot touch '/home/USER/ai-speed-testing/basalt-ab/home/cache/9ee2c74ced041f2c/engine.log': No such file or directory
+stat: cannot statx '/home/USER/ai-speed-testing/basalt-ab/home/cache/9ee2c74ced041f2c/engine.log': No such file or directory
+--- 09:54:00 basalt c1 ready after 13 s
+basalt generate: expert cache 4499 slots, 8.58 GiB of VRAM; policy is
+FileExpertSource: mapped pinned cache complement ready: resident 45.84 GiB, pinned 45.84 GiB in 8 s; page-locked and mapped
+basalt serve: 748 MiB of VRAM free with everything loaded
+basalt generate: experts live in VRAM 8.6 GiB (18%), peer GPU 0.0 GiB (0%), RAM 38.3 GiB (82%), file (SSD) 0.0 GiB (0%); 46.8 GiB in all
+0, 15249 MiB, 16303 MiB
+1, 15 MiB, 8188 MiB
+VmLck:	 0 kB VmRSS:	50101984 kB 
+c1 W1-think r0: prompt 109 ttft 0.29 s, 3072 tokens, 146.95 tok/s, length
+c1 W2-code r0: prompt 122 ttft 0.313 s, 3072 tokens, 125.69 tok/s, length
+c1 W3-research r0: prompt 26730 ttft 5.58 s, 2048 tokens, 130.28 tok/s, length
+c1 W4-prefill32k-0 r0: prompt 32744 ttft 6.818 s, 32 tokens, 86.2 tok/s, length
+c1 W4-prefill32k-1 r0: prompt 32744 ttft 6.625 s, 32 tokens, 86.99 tok/s, length
+c1 W1-think r1: prompt 111 ttft 0.287 s, 3072 tokens, 166.58 tok/s, length
+c1 W2-code r1: prompt 126 ttft 0.313 s, 3072 tokens, 145.12 tok/s, length
+c1 W3-research r1: prompt 26729 ttft 5.276 s, 2048 tokens, 129.26 tok/s, length
+c1 W4-prefill32k-0 r1: prompt 32745 ttft 6.562 s, 32 tokens, 74.57 tok/s, length
+c1 W4-prefill32k-1 r1: prompt 32744 ttft 6.559 s, 32 tokens, 99.68 tok/s, length
+c1cal C-conv r0: prompt 38 ttft 0.284 s, 930 tokens, 124.16 tok/s, stop
+c1cal C-struct r0: prompt 98 ttft 0.285 s, 7230 tokens, 194.51 tok/s, stop
+c1cal C-prose r0: prompt 19 ttft 0.176 s, 1104 tokens, 126.34 tok/s, stop
+c1cal C-conv r1: prompt 38 ttft 0.315 s, 1193 tokens, 128.62 tok/s, stop
+c1cal C-prose r1: prompt 19 ttft 0.18 s, 1200 tokens, 134.34 tok/s, length
+c1seed S-code-seed r0: prompt 109 ttft 0.29 s, 512 tokens, 112.86 tok/s, length
+c1seed S-think-seed r0: prompt 95 ttft 0.242 s, 512 tokens, 136.16 tok/s, length
+--- 09:58:08 basalt c1 stopped
+--- 09:58:21 basalt c0 ready after 13 s
+basalt generate: expert cache 5074 slots, 9.65 GiB of VRAM; policy is
+FileExpertSource: mapped pinned cache complement ready: resident 45.26 GiB, pinned 45.26 GiB in 8 s; page-locked and mapped
+basalt serve: 809 MiB of VRAM free with everything loaded
+basalt generate: experts live in VRAM 9.7 GiB (21%), peer GPU 0.0 GiB (0%), RAM 37.2 GiB (79%), file (SSD) 0.0 GiB (0%); 46.8 GiB in all
+0, 15140 MiB, 16303 MiB
+1, 15 MiB, 8188 MiB
+VmLck:	 0 kB VmRSS:	49343208 kB 
+c0seed S-code-seed r0: prompt 109 ttft 0.398 s, 512 tokens, 87.93 tok/s, length
+c0seed S-think-seed r0: prompt 95 ttft 0.281 s, 512 tokens, 93.45 tok/s, length
+--- 09:58:39 basalt c0 stopped
+seeded S-code-seed: spec 7 vs spec 0 differ at char 242 of 2098/1997 (512 / 512 tokens)
+seeded S-think-seed: spec 7 vs spec 0 differ at char 36 of 1286/1337 (512 / 512 tokens)
+basalt-bench rc 0
+bench.json not readable: Extra data: line 2 column 1 (char 7040)
+--- 10:01:48 basalt c1hc ready after 13 s
+basalt generate: expert cache 4499 slots, 8.58 GiB of VRAM; policy is
+FileExpertSource: mapped pinned cache complement ready: resident 45.84 GiB, pinned 45.84 GiB in 8 s; page-locked and mapped
+basalt serve: 749 MiB of VRAM free with everything loaded
+basalt generate: experts live in VRAM 8.6 GiB (18%), peer GPU 0.0 GiB (0%), RAM 38.3 GiB (82%), file (SSD) 0.0 GiB (0%); 46.8 GiB in all
+0, 15248 MiB, 16303 MiB
+1, 15 MiB, 8188 MiB
+VmLck:	 0 kB VmRSS:	50101960 kB 
+c1hc W1-think r0: prompt 112 ttft 0.408 s, 3072 tokens, 149.7 tok/s, length
+c1hc W2-code r0: prompt 122 ttft 0.316 s, 3072 tokens, 128.95 tok/s, length
+c1hc W3-research r0: prompt 26730 ttft 5.596 s, 2048 tokens, 123.06 tok/s, length
+HEADCHECK total: rows 10185 (2142 windows); exact top20 not all exactly rescored 222; two-stage top20 differs (ids or order) 222, as a set 209; argmax differs 12; max |two-stage - exact| over the exact top20 5.94936; rescored rows per column mean 3213 max 65536; windows at the 65536-row cap 85
+--- 10:03:02 basalt c1hc stopped
+ready after 9 s
+DONE 511 513 605.1 9479.9 length 0 0 0 65342 245280 179938 0 0.0 513 0; 511 top-64 rows in /home/USER/ai-speed-testing/basalt-ab/results/dumps/basalt-two.tsv.top (two-stage head)
+2026-10-21T10:03:22 basalt-ppl2 exit=0 20s min_MemAvailable=45.0GiB@10s min_5080_free=758MiB@10s max_tree_RSS=41.4GiB max_swap_used=0.01GiB min_4060Ti_free=7875MiB ok
+ready after 9 s
+DONE 511 513 612.7 9674.3 length 0 0 0 65342 245280 179938 0 0.0 513 0; 511 top-64 rows in /home/USER/ai-speed-testing/basalt-ab/results/dumps/basalt-exact.tsv.top (exact head)
+2026-10-21T10:03:43 basalt-pplx exit=0 20s min_MemAvailable=44.9GiB@10s min_5080_free=758MiB@10s max_tree_RSS=41.4GiB max_swap_used=0.01GiB min_4060Ti_free=7875MiB ok
+=== 2026-10-21 10:03:43 lossless: the same 511 teacher-forced rows (positions 512-1022), against ours on the 5080 alone
+Basalt two-stage vs exact head, 511 rows: top-20 ids+logits bit-identical 511, top-64 511
+=== 2026-10-21 10:03:44 tables
+| arm | workload | n | tokens | decode tok/s (client) | decode tok/s (engine) | accepted / drafted | expert-cache hit % | prompt tok/s | finish |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| a | W1-think | 2 | 3072.0 | 175.1 | 175.0 | 3978/5270 (75%) | 85.5 | 295.1 | length |
+| a | W2-code | 2 | 3072.0 | 153.8 | 153.8 | 4064/5457 (74%) | 76.1 | 328.6 | length |
+| a | W3-research | 2 | 2048.0 | 152.3 | 152.2 | 2842/3509 (81%) | 71.8 | 4258.8 | length |
+| a | W4-prefill32k-0 | 2 | 32.0 | 102.6 | 100.5 | 42/59 (71%) | 42.8 | 4307.4 | length |
+| a | W4-prefill32k-1 | 2 | 32.0 | 111.8 | 110.2 | 39/64 (61%) | 65.2 | 4354.5 | length |
+| a1 | W1-think | 2 | 3072.0 | 147.6 | 147.5 | 3746/5226 (72%) | 80.2 | 287.1 | length |
+| a1 | W2-code | 2 | 3072.0 | 139.5 | 139.4 | 4072/5462 (75%) | 71.9 | 322.2 | length |
+| a1 | W3-research | 2 | 2048.0 | 126.7 | 126.7 | 2821/3525 (80%) | 63.0 | 4250.1 | length |
+| a1 | W4-prefill32k-0 | 2 | 32.0 | 88.3 | 86.2 | 41/59 (69%) | 31.0 | 4301.6 | length |
+| a1 | W4-prefill32k-1 | 2 | 32.0 | 104.6 | 102.4 | 41/57 (72%) | 53.4 | 4347.4 | length |
+| b4 | W1-think | 2 | 3072.0 | 178.3 | 178.1 | 4134/5213 (79%) | 83.5 | 291.6 | length |
+| b4 | W2-code | 2 | 3072.0 | 155.5 | 155.4 | 4036/5516 (73%) | 77.4 | 331.0 | length |
+| b4 | W3-research | 2 | 2048.0 | 152.3 | 152.2 | 2863/3409 (84%) | 70.0 | 4255.4 | length |
+| b4 | W4-prefill32k-0 | 2 | 32.0 | 107.0 | 104.3 | 42/59 (71%) | 42.0 | 4305.6 | length |
+| b4 | W4-prefill32k-1 | 2 | 32.0 | 138.6 | 134.5 | 43/55 (78%) | 66.8 | 4351.6 | length |
+| b5 | W1-think | 2 | 3072.0 | 166.4 | 166.4 | 3894/5298 (73%) | 85.5 | 289.5 | length |
+| b5 | W2-code | 2 | 3072.0 | 149.5 | 149.4 | 4011/5604 (72%) | 76.5 | 328.9 | length |
+| b5 | W3-research | 2 | 2048.0 | 149.5 | 149.4 | 2828/3481 (81%) | 71.7 | 4258.6 | length |
+| b5 | W4-prefill32k-0 | 2 | 32.0 | 118.2 | 114.6 | 42/50 (84%) | 43.9 | 4302.8 | length |
+| b5 | W4-prefill32k-1 | 2 | 32.0 | 136.4 | 132.8 | 47/54 (87%) | 64.5 | 4350.5 | length |
+| b7 | W1-think | 2 | 3072.0 | 182.9 | 182.9 | 4315/5173 (83%) | 82.7 | 294.3 | length |
+| b7 | W2-code | 2 | 3072.0 | 152.2 | 152.1 | 4084/5491 (74%) | 76.2 | 324.6 | length |
+| b7 | W3-research | 2 | 2048.0 | 152.5 | 152.4 | 2889/3419 (84%) | 70.7 | 4249.2 | length |
+| b7 | W4-prefill32k-0 | 2 | 32.0 | 106.3 | 103.6 | 41/53 (77%) | 36.5 | 4302.6 | length |
+| b7 | W4-prefill32k-1 | 2 | 32.0 | 110.9 | 109.2 | 42/61 (69%) | 61.8 | 4350.5 | length |
+| b7v | W1-think | 1 | 3072 | 165.7 | 165.6 | 1984/2674 (74%) | 85.7 | 311.8 | length |
+| b7v | W2-code | 1 | 3072 | 147.5 | 147.5 | 1957/2829 (69%) | 79.8 | 334.4 | length |
+| b7v | W3-research | 1 | 2048 | 152.1 | 152.0 | 1449/1703 (85%) | 71.8 | 4188.8 | length |
+| b7v | W4-prefill32k-0 | 1 | 32 | 113.8 | 110.8 | 22/26 (85%) | 40.3 | 4245.9 | length |
+| b7v | W4-prefill32k-1 | 1 | 32 | 136.9 | 133.6 | 21/22 (95%) | 60.8 | 4347.4 | length |
+| vcpu | W1-think | 2 | 3072.0 | 160.9 | - | - | - | 305.0 | length |
+| vcpu | W2-code | 2 | 3072.0 | 157.7 | - | - | - | 328.8 | length |
+| vgpu | W1-think | 2 | 3072.0 | 159.0 | - | - | - | 306.4 | length |
+| vgpu | W2-code | 2 | 3072.0 | 154.2 | - | - | - | 327.1 | length |
+| c1 | W1-think | 2 | 3072.0 | 156.8 | - | - | - | 381.5 | length |
+| c1 | W2-code | 2 | 3072.0 | 135.4 | - | - | - | 396.5 | length |
+| c1 | W3-research | 2 | 2048.0 | 129.8 | - | - | - | 4927.9 | length |
+| c1 | W4-prefill32k-0 | 2 | 32.0 | 80.4 | - | - | - | 4896.2 | length |
+| c1 | W4-prefill32k-1 | 2 | 32.0 | 93.3 | - | - | - | 4967.4 | length |
+
+- a: experts in VRAM at start: 4433 slots / 8.46 GiB
+- a1: experts in VRAM at start: 4433 slots / 8.46 GiB
+- b4: experts in VRAM at start: 4433 slots / 8.46 GiB
+- b5: experts in VRAM at start: 4433 slots / 8.46 GiB
+- b7: experts in VRAM at start: 4433 slots / 8.46 GiB
+- b7v: experts in VRAM at start: 4365 slots / 8.33 GiB
+- vcpu: experts in VRAM at start: 4433 slots / 8.46 GiB
+- vgpu: experts in VRAM at start: 4429 slots / 8.45 GiB
+- c1: experts in VRAM at start: -
+| arm | workload | n | tokens | decode tok/s (client) | decode tok/s (engine) | accepted / drafted | expert-cache hit % | prompt tok/s | finish |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| a1s7 | C-conv | 2 | 1049.0 | 123.5 | 123.4 | 1280/1954 (66%) | 70.5 | 117.6 | stop |
+| a1s7 | C-struct | 1 | 7230 | 174.2 | 174.2 | 5376/5616 (96%) | 75.6 | 282.0 | stop |
+| a1s7 | C-prose | 2 | 1006.0 | 115.3 | 115.2 | 1071/2138 (50%) | 75.8 | 97.3 | length,stop |
+| c1cal | C-conv | 2 | 1061.5 | 126.4 | 125.9 | 1321/1796 (74%) | 69.7 | 127.2 | stop |
+| c1cal | C-struct | 1 | 7230 | 194.5 | 194.4 | 6127/6326 (97%) | 75.2 | 344.3 | stop |
+| c1cal | C-prose | 2 | 1152.0 | 130.3 | 130.1 | 1245/1839 (68%) | 77.6 | 106.7 | length,stop |
+
+- a1s7: experts in VRAM at start: 4433 slots / 8.46 GiB
+- c1cal: experts in VRAM at start: -
+HEADCHECK total: rows 10185 (2142 windows); exact top20 not all exactly rescored 222; two-stage top20 differs (ids or order) 222, as a set 209; argmax differs 12; max |two-stage - exact| over the exact top20 5.94936; rescored rows per column mean 3213 max 65536; windows at the 65536-row cap 85
+=== 2026-10-21 10:03:44 Basalt A/B GPU block done

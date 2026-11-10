@@ -1,0 +1,27 @@
+{
+ "_comment": "Offline test config: the same tooling on phase 3/4 runs that exist (pristine LDR baseline vs deep p4s7). h01/h03 and the c questions have no p4s7 run (tests 'not run'); c01 has LDR's '## Answer: X' heading, h02 / h04 the headline-only lead.",
+ "timing": {"open_min": 171, "checkable_min": 47},
+ "arms": [
+  {"name": "baseline", "profile": "baseline", "label": ""},
+  {"name": "final", "profile": "deep", "label": "p4s7", "effort": "medium", "verify_effort": "xhigh",
+   "items": ["setup", "critic", "code", "fixes", "read", "claims"]}
+ ],
+ "engine": {"config": "configs/P021m.json", "sha12": "7b38796237f5"},
+ "include_o01": false,
+ "require_labels": false,
+ "lines": {
+  "checkable": {"title": "checkable (test)", "sets": [{"set": "hard-screen", "ids": ["h01", "h02", "h03", "h04", "h05"]},
+                                                     {"set": "screen", "ids": ["c01", "c05", "c09"]}]},
+  "harder": {"title": "harder checkable (test)", "sets": [{"set": "hard-screen", "ids": ["h06", "h08"]}]},
+  "open": {"title": "open (test)", "sets": [{"set": "screen", "kind": "open"}]}
+ },
+ "o01_line": {"set": "p5-o01", "kind": "open"},
+ "plan_order": ["open", "harder", "checkable"],
+ "needs": {"hard-screen": "FROZEN-hard.txt", "screen": "FROZEN.txt"},
+ "frozen_files": ["FROZEN.txt", "FROZEN-hard.txt", "FROZEN-p5-harder.txt"],
+ "answer_files": ["answers/answers.jsonl", "answers/answers-hard.jsonl", "answers/answers-p5-harder.jsonl"],
+ "open_refs": {"o01": ["o01-moe-from-ram.md", 5], "o02": ["o02-third-gpu.md", 6], "o03": ["o03-eu-ai-act.md", 6]},
+ "blind_drop": "Setup check,Check these,Version check,Arithmetic check,Consistency check",
+ "out": "OVERRIDDEN-BY-TESTS",
+ "checkable_batch": 3
+}

@@ -1,0 +1,314 @@
+--- checks.py.fix1b	2026-10-29 10:22:56.371507590 -0500
++++ checks.py	2026-10-29 11:13:29.778463763 -0500
+@@ -18,7 +18,9 @@
+             report stage plans its checks to finish by the budget (TimePlan below; the strategy sets the deadlines)
+   consist   the consistency pass (10-27): statements in different parts of the report that contradict each other
+             (the Answer or an action list against a detailed section) are found, and the one the report's own
+-            evidence does not support is marked with the correction ("[Consistency check: ...]")
++            evidence does not support is marked with the correction ("[Consistency check: ...]"); 10-29: its focused
++            step first evaluates each rule the report states about a recommended setting on the task's own numbers
++            (arithmetic written out, recomputed in code), then compares the outcome with the claims about this setup
+ Marks never contain square brackets inside them, so tools/blind-open.py can strip every one with one pattern.
+ """
+ from __future__ import annotations
+@@ -1641,11 +1643,31 @@
+ # 10-28 (A8 (3), K4 missed: the DSpark section's rule "not loaded when the experts exceed 1.5x the VRAM" against the
+ # action list's "auto loads the drafter" - a rule against a claim about this PC, 300 lines apart): per setting the
+ # Answer / action list recommends, every sentence of the report about it in one small prompt
++# 10-29 (K4 still missed after A8, replay b-f5c-full: the --dspark prompt held the 1.5x rule, the "auto loads the 8 GB
++# drafter" claim and the task's 138 GB / 16 + 8 GB, and the model still did not apply the rule): rule first, and the
++# evaluation is part of the reply - per setting the model lists each rule / threshold / condition the sentences state,
++# evaluates it on the task's own numbers with the arithmetic written out, and only then compares the outcome with each
++# claim about this setup. Sentences carry ids (S1, S2, ...), so the quotes come back exact and the reply stays short.
+ CONSIST_FOCUS_PROMPT = VERIFY_MARK + """ A research report recommends the settings below for the user's setup. For \
+-each, every sentence of the report about it is listed, with the section it is in. Do these sentences agree about \
+-what the setting does ON THIS SETUP (the task and the setup facts below)? Apply any rule they state (a default that \
+-depends on the hardware, a threshold, a guard, a cap) to this setup before you compare. Report only real conflicts: \
+-one sentence's claim about this setup that another sentence, or a rule applied to this setup, contradicts.
++each, every sentence of the report about it is listed with an id (S1, S2, ...) and the section it is in. Check \
++whether these sentences agree about what the setting does ON THIS SETUP: the setup the task describes (its hardware, \
++versions, settings and measured numbers come first), then the setup facts below for what the task does not say.
++
++For each setting, work in this order (the reply has a field for each step):
++1. RULES. List each rule the sentences state about the setting: a default that depends on the hardware, a \
++threshold, a condition (only when, unless, if ... exceeds ...), a guard (one GPU only), a cap or limit. Evaluate it \
++on this setup: name each input with its number and where the number comes from (the task, the setup facts, or a \
++sentence id), write the arithmetic out with the numbers (for example "1.5 x 20 GB = 30 GB; 100 GB > 30 GB"), say \
++whether the condition holds here (yes, no, or unknown when no number for it is given anywhere) and what the rule \
++therefore gives on this setup.
++2. CLAIMS. Only then compare that outcome with each sentence that claims what the setting does on this setup, what \
++the user has now, or what changing it gains here. A claim that disagrees with the outcome is a conflict even when \
++neither sentence mentions the other: such a conflict often shows only once the rule is applied to the user's \
++numbers. A test the task says the user tried once is not the current state unless the task says so. Decide which \
++one the report's own evidence supports (the code quote, the measured figure, the more specific source).
++3. OTHER CONFLICTS. Also list two sentences whose claims about this setup contradict each other directly.
++Different wording is not a conflict, nor are statements about different conditions that are both right - but a \
++condition is different only when it does not hold on this setup.
+ 
+ <task>
+ {task}
+@@ -1655,9 +1677,15 @@
+ {items}
+ </settings>
+ 
+-Reply with JSON only: {{"contradictions": [{{"setting": "...", "quote_a": "<copied exactly>", "quote_b": "<copied \
+-exactly>", "right": "a|b|unclear", "why": "<one sentence; for a rule, what it gives on this setup>", "fix": "<the \
+-corrected statement for the wrong one, or empty>"}}]}}"""
++Reply with JSON only. Use the sentence ids; at most 3 rules per setting ("rules": [] when it states none); a claim \
++that agrees needs only its id and "agrees": "yes".
++{{"settings": [{{"setting": "...", "rules": [{{"rule": "S<id>", "condition": "<the rule in a few words>", "inputs": \
++"<each number and its source>", "arithmetic": "<the calculation, written out>", "holds": "yes|no|unknown", \
++"outcome": "<what the rule gives on this setup>", "claims": [{{"claim": "S<id>", "agrees": "yes|no", "right": \
++"rule|claim|unclear", "why": "<one sentence>", "fix": "<the corrected claim, or empty>"}}]}}], "conflicts": \
++[{{"quote_a": "S<id>", "quote_b": "S<id>", "right": "a|b|unclear", "why": "<one sentence>", "fix": "<the corrected \
++statement for the wrong one, or empty>"}}]}}]}}"""
++FOCUS_PER_CALL = 5            # settings per focused call (10 settings at most -> 2 calls, as before)
+ ACTION_HEAD_RE = re.compile(r"(?i)answer|key findings|action|plan|tier a|tonight|recommend|try first|summary|ranked")
+ 
+ 
+@@ -1688,10 +1716,11 @@
+ RULE_CUE_RE = re.compile(r"(?i)\b(only|when|if|unless|above|below|default|auto|cap|requires?|single|never|always)\b")
+ 
+ 
+-def sentences_about(body: str, name: str, max_n: int = 16, per_section: int = 3) -> list[str]:
++def sentences_about(body: str, name: str, max_n: int = 16, per_section: int = 3, rows: bool = False) -> list:
+     """The report's sentences about a setting, spread over its sections (2 each at most): the action sections' first,
+     then sentences that state a rule (a threshold, a guard; then a condition or default), then the rest. A one-word form of the name
+-    ('dspark') counts unless it is a common word of these reports ('experts', 'split', 'cache')."""
++    ('dspark') counts unless it is a common word of these reports ('experts', 'split', 'cache'). rows=True: (the
++    shown line, the sentence as the report has it) pairs, so a reply's sentence id maps back to an exact quote."""
+     text = strip_marks(body)
+     vs = [v for v in _name_variants(name) if " " in v or "-" in v or "_" in v or v not in COMMON_WORDS]
+     cands, sec = [], ""
+@@ -1712,10 +1741,10 @@
+         if per.get(sec, 0) >= per_section:
+             continue
+         per[sec] = per.get(sec, 0) + 1
+-        out.append((k, f"[{sec}] {clean_mark(sent, 400)}"))
++        out.append((k, f"[{sec}] {clean_mark(sent, 400)}", sent))
+         if len(out) >= max_n:
+             break
+-    return [t for _, t in sorted(out)]
++    return [(t, s) if rows else t for _, t, s in sorted(out)]
+ 
+ 
+ def consistency_check(llm: Callable[[str], str], task: str, body: str, facts: str = "", focus: bool = True) -> dict:
+@@ -1726,29 +1755,154 @@
+     if not focus:
+         return res
+     names = [n for n in action_settings(body) if len(sentences_about(body, n)) >= 2]
+-    found = []
+-    for start in range(0, len(names), 5):
+-        block = "\n\n".join(f"### {n}\n" + "\n".join(f"- {s}" for s in sentences_about(body, n))
+-                              for n in names[start:start + 5])
+-        got = _json(llm(CONSIST_FOCUS_PROMPT.format(task=task, facts=fb, items=block)), "contradictions")
+-        found += [c for c in got or [] if isinstance(c, dict)]
++    found, rule_checks, unparsed = [], [], 0
++    for start in range(0, len(names), FOCUS_PER_CALL):
++        block, ids = focus_block(body, names[start:start + FOCUS_PER_CALL])
++        got, rc = focus_reply(llm(CONSIST_FOCUS_PROMPT.format(task=task, facts=fb, items=block)), ids)
++        if got is None:
++            unparsed += 1
++            continue
++        found += got
++        rule_checks += rc
+     seen = {(_norm_map(str(c.get("quote_a") or ""))[0], _norm_map(str(c.get("quote_b") or ""))[0])
+             for c in (items or []) if isinstance(c, dict)}
+     for c in found:
+         k = (_norm_map(str(c.get("quote_a") or ""))[0], _norm_map(str(c.get("quote_b") or ""))[0])
+         if k not in seen and (k[1], k[0]) not in seen:
+             seen.add(k)
+-            c["step"] = "focused"
++            c.setdefault("step", "focused")
+             res["contradictions"] = (res["contradictions"] or []) + [c]
+     res["focused_settings"] = names
++    res["rule_checks"] = rule_checks           # every rule evaluated, with or without a conflict (for the reader)
++    if unparsed:
++        res["focused_unparsed"] = unparsed
+     return res
+ 
+ 
++def focus_block(body: str, names: list[str]) -> tuple[str, dict[str, str]]:
++    """The <settings> block of one focused call: per setting its sentences, each with an id (S1, S2, ...; a sentence
++    listed under two settings keeps one id) -> (block, {id: the sentence as the report has it})."""
++    ids: dict[str, str] = {}
++    by_raw: dict[str, str] = {}
++    parts = []
++    for n in names:
++        lines = []
++        for shown, raw in sentences_about(body, n, rows=True):
++            sid = by_raw.get(raw)
++            if sid is None:
++                sid = by_raw[raw] = f"S{len(by_raw) + 1}"
++                ids[sid] = raw
++            lines.append(f"- {sid} {shown}")
++        parts.append(f"### {n}\n" + "\n".join(lines))
++    return "\n\n".join(parts), ids
++
++
++_SID_RE = re.compile(r"\W*S(\d+)\b")
++
++
++def _sentence(v: Any, ids: dict[str, str]) -> str:
++    """A reply's 'S12' (or '[S12]', 'S12: ...') -> that sentence of the report ('' for an unknown id); any other text
++    is taken as a quote."""
++    s = str(v or "").strip()
++    m = _SID_RE.match(s)
++    return ids.get(f"S{m.group(1)}", "") if m else s
++
++
++def _yes(v: Any) -> bool:
++    return v is True or str(v).strip().lower() in ("yes", "true", "holds")
++
++
++def _no(v: Any) -> bool:
++    return v is False or str(v).strip().lower() in ("no", "false", "disagrees")
++
++
++_CMP_RE = re.compile(rf"(?<![\w.$/=–-])(?P<l>{_EQ_EXPR})\s*(?P<op>>=|<=|≥|≤|>|<)\s*~?\s*(?P<r>{_EQ_EXPR})"
++                     r"(?!\s*[-×*÷/+−^x]\s*[\d(])")         # the right side whole ("1.5 x (24 GB - 5.9 GB)")
++
++
++def recheck_evaluation(text: str) -> dict:
++    """The written-out arithmetic of a rule's evaluation recomputed in code (no model): its equations (as Fix 3 checks
++    a report's) and its comparisons ("138 GB > 1.5 x 18 GB"). Returns the counts and the steps that do not hold."""
++    text = str(text or "")
++    eqs = explicit_equations(text)
++    wrong = [f"{e['formula']} = {e['stated']} (recomputed {fmt_num(e['computed'])})"
++             for e in eqs if e.get("status") == "wrong"]
++    n_eq = len(eqs)
++    n_cmp = 0
++    for m in _CMP_RE.finditer(text):
++        a, b = _eq_side(m.group("l")), _eq_side(m.group("r"))
++        if a is None or b is None:
++            continue
++        n_cmp += 1
++        x, y = (a[0], b[0]) if a[2] and b[2] else (a[1], b[1])
++        op = {"≥": ">=", "≤": "<="}.get(m.group("op"), m.group("op"))
++        ok = {">": x > y, "<": x < y, ">=": x >= y, "<=": x <= y}[op]
++        if not ok:
++            wrong.append(f"{m.group(0).strip()} does not hold")
++    return {"equations": n_eq, "comparisons": n_cmp, "wrong": wrong}
++
++
++def focus_reply(text: str, ids: dict[str, str]) -> tuple[list[dict] | None, list[dict]]:
++    """One focused reply -> (contradictions, rule checks); (None, []) when it holds no usable JSON.
++    A rule against a claim: quote_a = the claim, quote_b = the rule, step "rule", with the rule's evaluation; dropped
++    when the model could not evaluate the rule here (holds "unknown"); not settled when the evaluation's own arithmetic
++    does not recompute. Two sentences against each other: step "focused". A reply in the old shape (a plain
++    "contradictions" list) is taken as conflicts."""
++    sets = _json(text, "settings")
++    if not isinstance(sets, list):
++        old = _json(text, "contradictions")
++        if not isinstance(old, list):
++            return None, []
++        sets = [{"setting": "", "conflicts": old}]
++    found, checks = [], []
++    for s in sets:
++        if not isinstance(s, dict):
++            continue
++        name = str(s.get("setting") or "")
++        for r in s.get("rules") if isinstance(s.get("rules"), list) else []:
++            rule = _sentence(r.get("rule"), ids) if isinstance(r, dict) else ""
++            if not rule:
++                continue
++            ev = {k: clean_mark(r.get(k), 400) for k in ("condition", "inputs", "arithmetic", "outcome")}
++            holds = "yes" if _yes(r.get("holds")) else "no" if _no(r.get("holds")) else "unknown"
++            ev["holds"] = holds
++            rech = recheck_evaluation(ev["arithmetic"])
++            rec = {"setting": name, "rule": rule, **ev, "recheck": rech, "claims": []}
++            for c in r.get("claims") if isinstance(r.get("claims"), list) else []:
++                claim = _sentence(c.get("claim"), ids) if isinstance(c, dict) else ""
++                if not claim or claim == rule:
++                    continue
++                agrees = "no" if _no(c.get("agrees")) else "yes" if _yes(c.get("agrees")) else "unclear"
++                rec["claims"].append({"claim": claim, "agrees": agrees, "why": clean_mark(c.get("why"), 300)})
++                if agrees != "no" or holds == "unknown":
++                    continue
++                right = {"rule": "b", "claim": "a"}.get(str(c.get("right") or "").strip().lower(), "unclear")
++                why = str(c.get("why") or "").strip()
++                if rech["wrong"]:
++                    right = "unclear"
++                    why = (why + " " if why else "") + ("(the evaluation's arithmetic does not recompute: "
++                                                         + "; ".join(rech["wrong"][:2]) + ")")
++                found.append({"setting": name, "quote_a": claim, "quote_b": rule, "right": right, "why": why,
++                              "fix": str(c.get("fix") or "").strip(), "step": "rule", "evaluation": ev})
++            checks.append(rec)
++        for c in s.get("conflicts") if isinstance(s.get("conflicts"), list) else []:
++            if not isinstance(c, dict):
++                continue
++            a, b = _sentence(c.get("quote_a"), ids), _sentence(c.get("quote_b"), ids)
++            if a and b and a != b:
++                found.append({**c, "setting": str(c.get("setting") or name), "quote_a": a, "quote_b": b,
++                              "step": "focused"})
++    return found, checks
++
++
+ def consistency_marks(res: dict) -> list[tuple[str, str]]:
+     items = []
+     for c in (res or {}).get("contradictions") or []:
+         if not isinstance(c, dict):
+             continue
++        if c.get("step") == "rule" and isinstance(c.get("evaluation"), dict):
++            items += _rule_marks(c)
++            continue
+         a, b = str(c.get("quote_a") or ""), str(c.get("quote_b") or "")
+         right = str(c.get("right") or "unclear").lower()
+         why, fix = clean_mark(c.get("why"), 220), clean_mark(c.get("fix"), 220)
+@@ -1763,6 +1917,32 @@
+     return items
+ 
+ 
++def _rule_marks(c: dict) -> list[tuple[str, str]]:
++    """The marks of a rule-step pair (quote_a = the claim, quote_b = the rule): the claim's mark names the rule by its
++    condition (a rule sentence's first words often do not show it) and ends with the evaluation's deciding step
++    ("... 138 GB > 27.15 GB"); the whole evaluation is in the section."""
++    ev = c["evaluation"]
++    claim, rule = str(c.get("quote_a") or ""), str(c.get("quote_b") or "")
++    right = str(c.get("right") or "unclear").lower()
++    why, fix = clean_mark(c.get("why"), 180), clean_mark(c.get("fix"), 160)
++    cond = clean_mark(ev.get("condition"), 90)
++    as_rule = (f"the rule elsewhere in this report ({cond})" if cond
++               else f"\"{clean_mark(rule, 120)}\" elsewhere in this report")
++    as_claim = f"\"{clean_mark(claim, 120)}\" elsewhere in this report"
++    arith = clean_mark(ev.get("arithmetic"), 1000)
++    if len(arith) > 90:
++        arith = "... " + clean_mark(re.split(r";\s*", arith.rstrip("; "))[-1], 86)
++    applied = f"; applied to this setup: {arith}" if arith else ""
++    said = f"; {fix.rstrip('.')}" if fix else (f"; {why.rstrip('.')}" if why else "")
++    if right == "b":
++        return [(claim, mark("Consistency check", f"contradicts {as_rule}, which the evidence supports{said}{applied}"))]
++    if right == "a":
++        return [(rule, mark("Consistency check", f"contradicts {as_claim}, which the evidence supports{said}{applied}"))]
++    unsettled = "; not settled" + (f" ({why})" if why else "")
++    return [(claim, mark("Consistency check", f"contradicts {as_rule}{unsettled}{applied}")),
++            (rule, mark("Consistency check", f"contradicts {as_claim}{unsettled}{applied}"))]
++
++
+ def consistency_section(res: dict) -> str:
+     cs = (res or {}).get("contradictions")
+     if cs is None:
+@@ -1778,6 +1958,11 @@
+         verdict = {"a": "the first holds", "b": "the second holds"}.get(right, "not settled")
+         lines.append(f"- \"{clean_mark(c.get('quote_a'), 160)}\" vs \"{clean_mark(c.get('quote_b'), 160)}\": {verdict}"
+                      + (f" - {clean_mark(c.get('why'), 200)}" if c.get("why") else ""))
++        ev = c.get("evaluation") if c.get("step") == "rule" else None
++        if isinstance(ev, dict):           # the second statement is a rule: how it was applied, for the reader to check
++            lines.append("  - The rule applied to this setup: " + "; ".join(
++                f"{k} {clean_mark(ev.get(k), 300)}" for k in ("condition", "inputs", "arithmetic", "holds", "outcome")
++                if ev.get(k)) + ".")
+     return "\n".join(lines)
+ 
+ 
+@@ -1810,8 +1995,10 @@
+ # opening 43 s, citation check 12.4 s a claim, setup check 338 s, critic 193 s; the new checks are estimated alike
+ # (10-27 replays: setup 328-430 s, version 4 calls 275-431 s, arith 262-320 s, consistency 165-347 s, critic 76-193 s,
+ # a checked claim 9.7 s)
++# 10-29 (K4): "consist" 480 -> 900 - the pass with its focused step measured 729 / 747 s on the 10-28 replays b-f5c-full
++# / b-f5c-fixes (1 + 2 calls; ~800 s at scale 1.0), and the rule-first focused replies are longer (re-measure)
+ EST = {"outline": 200, "section": 55, "opening": 60, "cite": 1, "setup": 420, "version": 450, "arith": 330,
+-       "consist": 480, "critic": 200, "notyet": 300, "claim": 12.5, "files": 60}
++       "consist": 900, "critic": 200, "notyet": 300, "claim": 12.5, "files": 60}
+ 
+ 
+ def reserve_s(budget_s: float) -> float:

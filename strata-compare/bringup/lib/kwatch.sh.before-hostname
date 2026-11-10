@@ -1,0 +1,48 @@
+#!/bin/bash
+# kwatch.sh - round 19 (after the RAM fault at 6200 MT/s): follows the kernel log and, at the first error line, stops
+# everything: records the line (logs/r19/kwatch.log, tmp/r19/KERNEL_ERROR), puts STOP at the head of the queue (the rest
+# saved in work/r19/queue-at-kernel-error.txt), kills the queue's job tree by PID (tmp/r19/queue.pid) and every process named
+# strata or stressapptest, then exits. The user's rule: check the kernel log after each big run and stop at the first error.
+#   start:  systemctl --user start kwatch (user service since 2026-10-19, starts with the session at boot)   stop: systemctl --user stop kwatch
+#   test:   bringup/lib/kwatch.sh --simulate   - the same stop once, now, logged as SIMULATED (no kernel error needed)
+# 2026-10-18: the stop also ends Strata's server wrappers (serve/server.py): a wrapper left running kept 8080 taken, so
+# the on-demand launcher waited for a ready that never came, and it would have reloaded the model on the next request.
+WS=/home/USER/ai-speed-testing/strata-compare; cd $WS
+LOG=logs/r19/kwatch.log; FLAG=tmp/r19/KERNEL_ERROR; Q=bringup/lib/queue.txt
+mkdir -p logs/r19 tmp/r19
+PAT='Oops|BUG:|kernel BUG|Machine check|mce: |\[Hardware Error\]|EDAC .*(error|CE|UE)|Bad page|Bad rss|general protection|soft lockup|hung_task|blocked for more than|Out of memory|oom-kill|oom_reaper|NVRM: Xid|segfault|WARNING: CPU|watchdog: |page allocation failure|I/O error|nvme.*(timeout|reset)'
+desc() { local p; for p in $(pgrep -P $1); do desc $p; echo $p; done; }
+wrappers() {   # Strata's server wrappers: the engines' parents, and any wrapper in a pid file (its engine may be gone)
+  local p pp f
+  for p in $(pgrep -x strata); do pp=$(ps -o ppid= -p $p | tr -d ' '); [ -n "$pp" ] && echo $pp; done
+  for f in logs/run/strata-*.pid; do [ -f "$f" ] && cat "$f"; done
+}
+stop_all() {   # $1 = the line that triggered it, $2 = label
+  local line=$1 label=$2 p c w ws=""
+  echo "$(date -Is) $label: $line" >> $LOG
+  echo "$line" > $FLAG
+  cp $Q work/r19/queue-at-kernel-error.txt; { echo STOP; cat $Q; } > $Q.new && mv $Q.new $Q
+  if [ -f tmp/r19/queue.pid ] && kill -0 "$(cat tmp/r19/queue.pid)" 2>/dev/null; then
+    kids=$(desc "$(cat tmp/r19/queue.pid)"); [ -n "$kids" ] && kill $kids 2>/dev/null
+    echo "$(date -Is) killed the queue's jobs: $kids" >> $LOG
+  fi
+  for w in $(wrappers | sort -u); do grep -qa "serve/server.py" /proc/$w/cmdline 2>/dev/null && ws="$ws $w"; done
+  for p in $(pgrep -x strata) $(pgrep -x stressapptest) $ws; do
+    c=$(cat /proc/$p/comm 2>/dev/null); kill $p 2>/dev/null && echo "$(date -Is) killed $p ($c)" >> $LOG
+  done
+  for i in $(seq 15); do w=""; for p in $ws; do kill -0 $p 2>/dev/null && w="$w $p"; done; [ -z "$w" ] && break; sleep 1; done
+  for p in $w; do kill -KILL $p 2>/dev/null && echo "$(date -Is) killed -9 $p (server wrapper still there after 15 s)" >> $LOG; done
+  sleep 3; journalctl -k -b 0 --no-pager -o short-iso | tail -40 >> $LOG
+}
+if [ "${1:-}" = --simulate ]; then
+  stop_all "SIMULATED (kwatch.sh --simulate, $(date -Is))" "SIMULATED STOP"
+  echo "$(date -Is) simulated stop done (the running watcher, if any, keeps watching)" >> $LOG; exit 0
+fi
+echo $$ > tmp/r19/kwatch.pid
+echo "$(date -Is) kwatch start (pid $$, tainted $(cat /proc/sys/kernel/tainted))" >> $LOG
+journalctl -k -f -n 0 --no-pager -o short-iso | while IFS= read -r line; do
+  grep -qiE "$PAT" <<< "$line" || continue
+  stop_all "$line" "KERNEL ERROR"
+  echo "$(date -Is) kwatch stop (tainted $(cat /proc/sys/kernel/tainted))" >> $LOG
+  pkill -P $$ journalctl 2>/dev/null; exit 0
+done

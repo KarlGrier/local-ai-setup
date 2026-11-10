@@ -1,0 +1,13 @@
+=== 2026-10-23 21:52:46 DS4.1 speed test: v0.2.4 stock strata-dsv41, IST-DAS 2.00 bpw (IQ2_XXS), both cards (--tp 2), prompt skip 0, disk skip off -> /home/USER/ai-speed-testing/strata-compare/results/ds41/speed-v024-1023-2152
+2026-10-23 21:52:46 port_gap4: hold set; waiting for the running research run to finish
+run-strata: not running
+2026-10-23 21:52:47 port_gap4: gap open: test lock held (pid 505925), 8080 stopped
+=== 2026-10-23 21:52:47 before: MemAvailable 86.0 GB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-23 21:52:57 ready after 10 s: MemAvailable 44.2 GB, engine RSS 42516 MB; vram 0, 15359 MiB, 575 MiB;1, 7299 MiB, 591 MiB;
+=== 2026-10-23 21:52:57 requests done (rc 1): 0 responses
+monitor: lowest MemAvailable 44.1 GB, peak engine RSS 42516 MB, peak VRAM used 5080 15359 MiB / 4060 Ti 7299 MiB
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-10-23 21:56:22 port_gap4: served build back (7b38796237f5), policy on, queue released
+=== 2026-10-23 21:56:22 8080 back on P021m
+=== 2026-10-23 21:56:22 kcheck clean
+=== 2026-10-23 21:56:22 done

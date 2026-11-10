@@ -1,0 +1,64 @@
+--- a/local_deep_research/advanced_search_system/strategies/langgraph_agent_strategy.py
++++ b/local_deep_research/advanced_search_system/strategies/langgraph_agent_strategy.py
+@@ -1195,6 +1195,28 @@
+     return "\n\n".join(lines) if lines else "No results."
+ 
+ 
++def _deep_engine_titles(store: Any, results: list) -> list:
++    """10-29 engine-scope labels (deep/enginescope.py, LDR_DEEP_FIX version): search results whose page is placed in
++    another engine of the task's project (a GitHub path, or a snippet with clear markers) get [OTHER ENGINE ...] ahead
++    of their title - copies only; the collector and the evidence keep the plain titles."""
++    try:
++        from ...deep import enginescope as _es
++
++        if not _es.scopes_of(store):
++            return results
++        out = []
++        for r in results:
++            if isinstance(r, dict):
++                t = r.get("title", "No title")
++                t2 = _es.search_title(store, r.get("link", r.get("url", "")), t, r.get("snippet", r.get("body", "")) or "")
++                r = dict(r, title=t2) if t2 != t else r
++            out.append(r)
++        return out
++    except Exception:  # noqa: BLE001 - a label never breaks a search
++        logger.exception("deep: engine-scope search labels failed")
++        return results
++
++
+ def _make_web_search_tool(
+     search_engine_name: str,
+     model: BaseChatModel,
+@@ -1231,6 +1253,7 @@
+             _store = getattr(collector, "deep_store", None)
+             if _store is not None:
+                 _store.add_search(query, indexed, engine=search_engine_name)
++                indexed = _deep_engine_titles(_store, indexed)
+             return _format_results(indexed, start)
+         except Exception as exc:
+             logger.exception("web_search tool error")
+@@ -1646,7 +1669,11 @@
+         if _DEEP.enabled:
+             from ...deep.prompts import SUBAGENT_PROMPT as _DEEP_SUBAGENT_PROMPT
+ 
+-            subagent_prompt = _DEEP_SUBAGENT_PROMPT.format(date=current_date)
++            from ...deep.enginescope import prompt_rule as _deep_engine_rule
++
++            # 10-29: one engine-scope rule line when the task is about one engine of a multi-engine project
++            subagent_prompt = _DEEP_SUBAGENT_PROMPT.format(date=current_date) + _deep_engine_rule(
++                getattr(collector, "deep_store", None))
+         specialized_names = [
+             t.name
+             for t in sub_tools
+@@ -2940,6 +2967,11 @@
+                 from ...deep.codetool import lead_addendum as _code_addendum
+ 
+                 system_prompt += _code_addendum(self.collector)
++            # 10-29: the engine scope (LDR_DEEP_FIX version) - one rule line when the task is about one engine of a
++            # multi-engine project (Strata's DeepSeek engine); tool results mark the other engine's sources
++            from ...deep.enginescope import prompt_rule as _deep_engine_rule
++
++            system_prompt += _deep_engine_rule(self.deep_store)
+             if getattr(self, "deep_seed", None) is not None:
+                 from ...deep.seed import lead_addendum
+ 

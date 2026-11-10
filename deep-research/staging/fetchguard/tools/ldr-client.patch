@@ -1,0 +1,60 @@
+--- /home/USER/ai/deep-research/tools/ldr-client.py	2026-10-27 15:00:51.964024771 -0500
++++ /home/USER/ai/deep-research/staging/fetchguard/tools/ldr-client.py	2026-11-03 23:08:12.063561958 -0600
+@@ -34,6 +34,7 @@
+ CREDS = WS / "run" / "ldr-credentials"
+ SESSION = WS / "run" / "ldr-session.json"           # the session cookie (mode 600), reused across runs
+ CALL_LOG = WS / "logs" / "llm-calls.jsonl"
++FETCH_GUARD_LOG = WS / "logs" / "fetch-guard.jsonl"   # 11-03: LDR patch 0006's events (fetch_guard.py)
+ sys.path.insert(0, str(WS / "tools"))
+ import research_common as rc  # noqa: E402  (10-21: search_health, the search-failure guard)
+ MODE_FILE = WS / "run" / "proxy-mode.json"
+@@ -400,6 +401,40 @@
+         return type(e).__name__
+ 
+ 
++def fetch_guard_stats(t0: float, t1: float, max_events: int = 50) -> dict:
++    """11-03 (LDR patch 0006): the fetch guard's events between t0 and t1 - pages skipped (over the size/tag cap),
++    pages whose extraction passed the watchdog time, and the largest / slowest page parsed."""
++    out = {"skipped": 0, "slow": 0, "pages": 0, "largest_mb": None, "max_tags": None, "slowest_s": None,
++           "events": []}
++    try:
++        f = open(FETCH_GUARD_LOG, encoding="utf-8")
++    except OSError:
++        out["log"] = "missing (patch 0006 not installed?)"
++        return out
++    with f:
++        for line in f:
++            try:
++                r = json.loads(line)
++            except ValueError:
++                continue
++            if not (t0 <= (r.get("t") or 0) <= t1):
++                continue
++            kind = r.get("kind")
++            if kind in ("page", "slow_done"):
++                out["pages"] += 1
++                if r.get("bytes") is not None:
++                    out["largest_mb"] = max(out["largest_mb"] or 0, round(r["bytes"] / 1048576, 2))
++                if r.get("tags") is not None:
++                    out["max_tags"] = max(out["max_tags"] or 0, r["tags"])
++                if r.get("s") is not None:
++                    out["slowest_s"] = max(out["slowest_s"] or 0, r["s"])
++            if kind in ("skipped", "slow"):
++                out[kind] += 1
++            if kind in ("skipped", "slow", "slow_done") and len(out["events"]) < max_events:
++                out["events"].append({k: r.get(k) for k in ("kind", "url", "reason", "bytes", "tags", "s")})
++    return out
++
++
+ def analyze(out: Path, check_urls=True):
+     marks = json.loads((out / "marks.json").read_text())
+     calls = [json.loads(l) for l in (out / "calls.jsonl").read_text().splitlines() if l.strip()]
+@@ -488,6 +523,8 @@
+     wall = marks["t_end"] - marks["t_start"]
+     s["strata_busy_share"] = round(busy / wall, 3) if wall else None
+     s["generated_tokens_per_wall_s"] = round(s["generated_tokens"] / wall, 1) if wall else None
++    # 11-03 (Karl): pages the fetch guard skipped or flagged slow are counted in every run's summary
++    s["fetch_guard"] = fetch_guard_stats(marks["t_start"], marks["t_end"])
+     deep_stats = out / "deep" / "stats.json"
+     if deep_stats.exists():
+         d = json.loads(deep_stats.read_text())

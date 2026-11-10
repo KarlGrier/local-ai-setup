@@ -1,0 +1,71 @@
+=== 2026-11-09 11:29:13 U ADOPTION GAP (work/r23/gap-u-adopt.sh, Karl 11-09): STRATA_HC_UPMIX=1 into configs/P028x.json with the mismatch guard, one restart; exact7 + the short speed check
+=== 2026-11-09 11:29:13   PLAN OK: U to be added
+=== 2026-11-09 11:29:14   u_adopt.py selftest: 18 / 18 ok
+2026-11-09 11:29:14 port_gap4: hold set; waiting for the running research run to finish
+2026-11-09 11:29:59 port_gap4: a chat is being answered on 8080, or a request just finished - the gap waits for it
+2026-11-09 11:30:29 port_gap4: no chat being answered any more - going on
+2026-11-09 11:30:29 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 28810 (engine 28831)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-09 11:31:47 port_gap4: gap open: test lock held (pid 30804), 8080 stopped
+=== 2026-11-09 11:31:47 8080 down: engines left: none MemAvailable 87 GB
+=== 2026-11-09 11:31:47 2 the config: backup P028x.json.before-upmix-1109, + env STRATA_HC_UPMIX=1
+=== 2026-11-09 11:31:47   edited: env STRATA_HC_UPMIX=1 added (28 env keys), backup P028x.json.before-upmix-1109
+=== 2026-11-09 11:31:47   gate edit PASS edited: env STRATA_HC_UPMIX=1 added (28 env keys), backup P028x.json.before-upmix-1109
+=== 2026-11-09 11:31:47   S = configs/P028x.json (with U) without the picture reader = x28h.json + STRATA_HC_UPMIX=1: OK
+=== 2026-11-09 11:31:47   gate derive PASS S = configs/P028x.json (with U) without the picture reader = x28h.json + STRATA_HC_UPMIX=1: OK
+=== 2026-11-09 11:31:47 3 exact7 S (P028x.json + U, without the picture reader) at pin 2500 against P028x's stored x28h-e7a
+=== 2026-11-09 11:31:47 exact7 r23ua11091129-S (S.json against x28h-e7a, pin 2500)
+engine pid 31201: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 31548: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 31898: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 32237: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 32448: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 32722: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 33026: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+r23ua11091129-S-x-math   out 6b251415 (x28h-e7a 6b251415) =  ms/round 33.14  prompt ms 551
+r23ua11091129-S-s-math   out 8c25c022 (x28h-e7a 8c25c022) =  ms/round 32.11  prompt ms 581
+r23ua11091129-S-x-code   out 3585ad6f (x28h-e7a 3585ad6f) =  ms/round 24.87  prompt ms 497
+r23ua11091129-S-s-code   out 2fe9fd9e (x28h-e7a 2fe9fd9e) =  ms/round 23.53  prompt ms 499
+r23ua11091129-S-x-p2000  out 3e219376 (x28h-e7a 3e219376) =  ms/round 37.41  prompt ms 1100
+r23ua11091129-S-x-32k    out 651f56c8 (x28h-e7a 651f56c8) =  ms/round 39.05  prompt ms 7254
+r23ua11091129-S-x-112k   out a393ca0a (x28h-e7a a393ca0a) =  ms/round 32.29  prompt ms 24584
+exact7 r23ua11091129-S: 7/7 identical to x28h-e7a
+exact7-slots r23ua11091129-S: 3238+3300 slots (5080 + 4060 Ti); x28h-e7a: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 28 env keys as configured, STRATA_ROUTE_TAIL_SKIP=0, no other STRATA_*, harness args as expected
+exact7 r23ua11091129-S: 7/7, slots MATCHED -> PASS
+=== 2026-11-09 11:35:04 4 the short speed check (a fresh engine each, 1 pass): pp16k, pp64k, decode
+=== 2026-11-09 11:35:04 server r23ua11091129-S-pp16k (S.json)
+server ready (guard pid 33466, server pid 33481) load_time_s 14.342089893 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23ua11091129-S-pp16k_20261109T113505.log
+engine pid 33486: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23ua11091129-S-pp16k pass 1 pp16k: 16676 tokens, 3929.5 tok/s engine
+=== 2026-11-09 11:36:00 server r23ua11091129-S-pp64k (S.json)
+server ready (guard pid 34721, server pid 34736) load_time_s 14.345848284 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23ua11091129-S-pp64k_20261109T113601.log
+engine pid 34741: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23ua11091129-S-pp64k pass 1 pp64k: 66617 tokens, 4566.1 tok/s engine
+=== 2026-11-09 11:37:06 server r23ua11091129-S-decode (S.json)
+server ready (guard pid 36138, server pid 36153) load_time_s 14.345910421 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23ua11091129-S-decode_20261109T113707.log
+engine pid 36158: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23ua11091129-S-decode pass 1 conv: 1033 tokens (stop), 147.0 tok/s decode
+r23ua11091129-S-decode pass 1 struct: 7230 tokens (stop), 231.0 tok/s decode
+r23ua11091129-S-decode pass 1 prose: 1200 tokens (length), 137.7 tok/s decode
+  pp16k: S 3,929.5 tok/s; vs this morning's P 3,849.8 (+2.1 %); vs this morning's PU 3,976.4 (-1.2 %)
+  pp64k: S 4,566.1 tok/s; vs this morning's P 4,365.6 (+4.6 %); vs this morning's PU 4,565.3 (+0.0 %)
+  decode tok/s (1 pass, sampled, noise 4-7 %): conv 147.0 (P 140.1, +4.9 %) (PU 148.7, -1.1 %); struct 231.0 (P 225.3, +2.5 %) (PU 232.2, -0.5 %); prose 137.7 (P 129.1, +6.7 %) (PU 128.1, +7.5 %)
+  SPEED OK (no prompt set more than 3 % below P028x)
+=== 2026-11-09 11:38:48 6 port_gap4.sh end: 8080 restarts on configs/P028x.json (U + the guard)
+2026-11-09 11:38:53 port_gap4: memory back: MemAvailable 87 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-09 11:39:07 port_gap4: WARNING: 22 MB swapped out while P028x started
+2026-11-09 11:39:07 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-09 11:39:07 7 after the restart: the served engine, the guard, one chat
+=== 2026-11-09 11:39:07   8080 engine pid 38563: sha f4c4f654fb24 (want f4c4f654fb24), STRATA_HC_UPMIX=1 in its environment: yes
+  guard: a request naming deepseek-v4.1-flash -> HTTP 400 with the guard text: PASS
+  chat: HTTP 200, 38 tokens, finish stop, answer 'OK.': PASS
+  SERVED PASS
+=== 2026-11-09 11:39:08   (info) the served engine's env against configs/P028x.json: ENV CHECK OK
+=== 2026-11-09 11:39:08 RESULT: ADOPTED: 8080 = P028x + STRATA_HC_UPMIX=1 + the mismatch guard (one restart). exact7 7/7 MATCHED vs x28h-e7a; speed (1 pass): pp16k: S 3,929.5, P 3,849.8 (+2.1 %), PU 3,976.4 (-1.2 %);pp64k: S 4,566.1, P 4,365.6 (+4.6 %), PU 4,565.3 (+0.0 %); SPEED OK (no prompt set more than 3 % below P028x); guard 400 + chat PASS. Rollback: configs/P028x.json.before-upmix-1109

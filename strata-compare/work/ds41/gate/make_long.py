@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""make_long.py OUT_JSON - 11-03 (Karl's gate: "B also gets long prompts with the memory watched ... ~64K and ~97K-token
+prompts ... Give A the same long prompts"). CPU only, run by gate.sh inside its gap (once; the file is kept in scratch/). Two user messages, cut to a token
+count with DeepSeek's own tokenizer (the daily pack's tokenizer folder, strata-v026's tools/strata_tokenizer.py with the
+pack's pre-tokenizer "deepseek3" from tokenizer.json - the way server.py builds it):
+  L64  prompts/speed.json's 64k text (rep 0), ~64,000 prompt tokens
+  L97  prompts/speed.json's 120k text (rep 0), ~97,000 prompt tokens - the text of the 10-27 97K filled-context run on
+       A (results/ds41/tuning/long100k-1027-0136: 96,917 tokens in 102.3 s, lowest 18.9 GB with everything up)
+Each message: an instruction line, the text cut at a token boundary (decode(encode(text)[:n])), a short question. The
+client adds a fresh nonce line at the start of every request (abrun.with_nonce), so the two prompts share no prefix
+with each other or with any earlier request. The chat template adds ~10-20 tokens; the server's usage reports the real
+count. -> OUT_JSON: [{"id", "messages", "text_tokens", "target", "source"}].
+"""
+import json
+import sys
+import time
+
+SC = "/home/USER/ai-speed-testing/strata-compare"
+TP = f"{SC}/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw/tokenizer"
+sys.path.insert(0, f"{SC}/strata-v026/tools")
+import strata_tokenizer as ST  # noqa: E402
+
+HEAD = "Read the text below, then answer the question after it.\n\n<text>\n"
+TAIL = "\n</text>\n\nQuestion: in two or three sentences, what is this text about, and what does its last part cover?"
+WANT = [("L64", "64k", 0, 64000), ("L97", "120k", 0, 97000)]
+
+
+def main():
+    out = sys.argv[1]
+    vocab = json.load(open(f"{TP}/vocab.json", encoding="utf-8"))
+    toks = [None] * len(vocab)
+    for t, i in vocab.items():
+        toks[i] = t
+    tcfg = json.load(open(f"{TP}/tokenizer.json", encoding="utf-8"))   # ("pre": "deepseek3" - as server.py builds it)
+    tok = ST.Tokenizer(toks, open(f"{TP}/merges.txt", encoding="utf-8").read().split("\n"),
+                       json.load(open(f"{TP}/token_type.json")), tcfg.get("pre") or "qwen35", tcfg.get("special_ids") or None)
+    sp = json.load(open(f"{SC}/prompts/speed.json"))
+    wrap = len(tok.encode(HEAD + TAIL)) + 16          # (+ the nonce line, about 8 tokens, and the template's tokens)
+    res = []
+    for pid, size, rep, target in WANT:
+        t0 = time.time()
+        src = next(p for p in sp if p["size"] == size and p["rep"] == rep)["messages"][0]["content"]
+        ids = tok.encode(src)
+        n = target - wrap
+        if len(ids) < n:   # 11-03: the gate's first run stopped here at 63,623 of 63,944 (0.5 % short)
+            if len(ids) < 0.97 * n:
+                raise SystemExit(f"{pid}: the {size} text has only {len(ids)} tokens, {n} wanted")
+            print(f"{pid}: the {size} text has {len(ids)} tokens, {n} wanted - all of it used ({100 * len(ids) / n:.1f} %)")
+            n = len(ids)
+        text = tok.decode(ids[:n])
+        got = len(tok.encode(HEAD + text + TAIL))
+        res.append({"id": pid, "messages": [{"role": "user", "content": HEAD + text + TAIL}], "text_tokens": got,
+                    "target": target, "source": f"prompts/speed.json {size} rep {rep} ({len(ids)} tokens), first {n}",
+                    "chars": len(HEAD + text + TAIL)})
+        print(f"{pid}: {got} tokens in the user message (target {target} with the template), {len(text)} characters of the "
+              f"{size} text ({len(ids)} tokens); {time.time() - t0:.0f} s", flush=True)
+    json.dump(res, open(out, "w"))
+    print(f"wrote {out}")
+
+
+if __name__ == "__main__":
+    main()

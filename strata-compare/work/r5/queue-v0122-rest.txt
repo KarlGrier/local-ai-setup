@@ -1,0 +1,6 @@
+SCREEN_EXTRA= work/r5/screen.sh R5c-d configs/R5c-single.json
+work/r5/with_server.sh ST-single configs/R5c-single.json -- ".venv/bin/python work/r5/steady.py R5c-single --engine-log logs/r5/engine-R5c-single.log"
+work/r5/with_server.sh ST-gr configs/R5c-gr.json -- ".venv/bin/python work/r5/steady.py R5c-gr --engine-log logs/r5/engine-R5c-gr.log"
+work/r5/with_server.sh FAIL9 configs/R5c-single.json -- ".venv/bin/python work/r5/failures.py vramgrab --mib -32 --engine-log logs/r5/engine-R5c-single.log"
+work/r5/with_server.sh FAIL10 configs/R5c-single.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; nvidia-smi -i GPU-UUID-RTX5080 --query-gpu=memory.free --format=csv,noheader; .venv/bin/python work/r5/failures.py vramgrab --mib -32 stop120k idlecpu --engine-log logs/r5/engine-R5c-single.log"
+echo "waiting for work/r5/GO-SOAK (v5 decision; final engine built)"; until [ -e work/r5/GO-SOAK ]; do sleep 20; done; work/r5/soak.sh 120

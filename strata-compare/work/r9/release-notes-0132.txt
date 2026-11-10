@@ -1,0 +1,86 @@
+**Multi-GPU short prompts fixed, AMD decode +12%, Unsloth's Q4 model in setup with 2.8x faster prompts, and 30+ community changes - with the same answers.**
+
+**Multi-GPU: short prompts faster again (#340, riverhh76).** Since 0.1.30 a layer split lent each card's expert cache to
+its prompt path and refilled it after every request, one card after another; 0.1.31's bigger streaming ring made the
+loans larger. Short prompts lost up to a third of their speed (2x RTX A5000: -35%). 0.1.32 refills all cards at once,
+uses a smaller ring on a split, and lets a card with free VRAM keep its own prompt buffers - with exactly 0.1.31's
+output. Measured on an R9700 + RX 9070 XT: 2K prompts 993 -> 1,270 tok/s, 16K 1,852 -> 1,980. `STRATA_SPLIT_OWN=1`
+(opt-in) gives every card its own buffers: 2K 1,470 and 16K 2,230 there, with a slightly different output.
+`--no-prefill-borrow` works on a split again.
+
+**AMD:**
+- The router is rewritten for RDNA without its serial parts: decode +12% on the R9700 (62 -> 70 tok/s), +4% on the RX
+  9070 XT, bit-for-bit the same output. `STRATA_HIP_ROUTER_OLD=1` brings the old kernel back.
+- Opt-in `STRATA_HIP_WMMA=1` (RX 9070 / R9700): the prompt's attention on RDNA4's matrix cores, +36-51% prompt speed
+  on the R9700 (4K/16K) with a slightly different output (#329 by bsorensen110 measured the same speed; credited).
+- Setup can use the CPU image encoder with AMD (#304), and the Monitor shows AMD GPU readings (#301).
+- #337 (bsorensen110): on AMD the prompt's QSA top-k picks its kernel by the blocks a query actually has (the same
+  output); its RDNA4 matrix-core block scorer is opt-in (`STRATA_SELECT_WMMA=1`). #339 (bsorensen110): a gfx1201
+  hipBLASLt table for hipBLASLt 1.5 (ROCm nightly; +3.9% prompt on an R9700). #311 (Rafael Grossi): the RX 6800 /
+  6900 series (RDNA2, gfx1030) as a community card in setup and the build.
+
+**Unsloth UD-Q4_K_XL (experimental):**
+- In setup: `--family unsloth --model UD-Q4_K_XL` downloads the four files (each checked once by size and SHA-256),
+  packs them and picks the RAM budget from the PC's RAM.
+- Long prompts 2.8x faster on a 64 GB PC: a 16K prompt reads at 160 tok/s instead of 57 (more experts read from the
+  SSD in parallel).
+- Quality against llama.cpp on the same file: the same top token at 99.0% of the positions of a code answer and
+  97.5% of a thinking answer (the fork's own numbers: 98-99% and ~96%); perplexities within 3% (docs/UNSLOTH_Q4.md).
+
+**Fixes:**
+- OrcaRouter IQ3_XXS packs load again (broken since 0.1.25; #326, Gen4536).
+- The draft layer's download checks every tensor's SHA-256 and fetches a corrupt one again; a mirror that ignores
+  range requests can no longer write wrong data (#327, lifeidle).
+- During an engine restart a request gets "the engine is starting" (503) instead of an error about a context of 0
+  (#344, backstable).
+- Conversation cache (opt-in): a subagent's turns no longer push its parent conversation out (#342, Anhelone).
+- RTX 20 (Turing): the image encoder in the ready-made engine has RTX 20 code, and setup picks the CPU encoder for a
+  card it doesn't cover (#331).
+- Setup's `--gguf-dir` takes any number of files (#305); Pascal/Volta builds through setup with
+  `STRATA_EXPERIMENTAL_SM60=1` (#295, giostrives); model aliases in the config (#297).
+
+**Community changes (all checked byte-identical on four models, or opt-in):**
+- Faster, same output: the verify commit overlaps the draft (#284, sergqwer), a finer multi-token hyper-connection
+  read chosen per card (#315, BlueKingMuch), the SSD kept awake while PLE rows are read (#317, BlueKingMuch).
+  Decode here +2-4% over 0.1.31.
+- Server: `/v1/messages/count_tokens`, a relative engine path (#278); OPTIONS, opt-in CORS on `/v1/*` with a trusted-
+  origin list, reverse-proxy support (#321, BlitzenCats - without the header bypass the PR had); an opt-in request
+  monitor (#332); lazy start and a reliable unload (#333); `response_format` JSON checks (#334, KadoBOT);
+  `"anthropic_thinking": "on_request"` (opt-in) for clients like Claude Code's helper calls.
+- Opt-in: larger prompt chunks `--prefill auto:32768` (#282), BF16 remainder projections (#283), a float64 RoPE table
+  (#280), Hadamard-rotated INT8 KV (#293), a BF16 token embedding (#290), an FP8 PLE table (#291), all sergqwer;
+  `--pool-affinity auto` for P/E-core CPUs (#272, praveshkhatana); `--coupled-draft` (#274).
+- Also: NaN-safe FP16 SwiGLU saturation (#281), `--draft-vocab cyrillic` (#287), the image encoder's `--flash-attn`
+  (#288), the GPU named at start (#289), `STRATA_DUMP_FIRST_LOGITS` (#276), experts.bin reuse checks the blobs (#277),
+  verify profile fix (#320, xyzzing), retained K/V through the cache gate (#309, chimpera), OrcaRouter Q4_K_S pieces
+  (#296, Suoriks).
+
+**Checked before the release:**
+- Every change gated: byte-identical to 0.1.31 with a fixed cache on all four quants on this PC (Q2_0, IQ3_XXS, IQ3_S,
+  the Coder), including the prompt path's internal state - each work stream on its own, then the merged release;
+  default-settings speed A/Bs (5 pairs) on Q2_0 and IQ3_S: the release decodes +1.5 to +3.8% faster than 0.1.31 with
+  the same expert slots. Two changes were reworked because they cost speed or changed defaults: the Unsloth prompt
+  kernels are a build option (they took VRAM from every model), and #278's no-thinking default is opt-in.
+- Real use at a 64K context on all five models (Q2_0, IQ2_XS, IQ3_XXS, IQ3_S, the Coder), through the server: a fact
+  found in a 57,023-token document, the follow-up turn, a tool call, a cancelled long prompt followed by a new
+  request, a sampled answer - no engine restart, no low VRAM.
+- Images: the new image encoder (RTX 20 code added) behind the 0.1.32 server with IQ3_XXS: the right answer about a
+  picture and different sampled descriptions.
+- The server's tests (117), setup's tests, the pack and draft-layer download tests, the parity tests of the changed
+  kernels.
+- Linux (WSL, RTX 5070): builds, and Q2_0 is byte-identical to 0.1.31 (10/10); the default settings pass.
+- AMD (RX 9070 XT and R9700): the HIP build with its tests (all pass but the two that need a model fixture or an
+  AVX-512 CPU), the live server test on each card (R9700 92 tokens/s, 9070 XT 36) and on the two-card split (76),
+  the split's output identical to 0.1.31 (5+5 starts), the router bitwise identical to the old one; a gfx1030
+  build compiles (no RDNA2 card here).
+- The Unsloth model on this PC: setup's flow (mocked end to end), quality against llama.cpp, the prompt speed.
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` (Linux:
+`./setup.sh`). Setup installs engine 0.1.32.
+
+The ready-made Strata engine for Windows (RTX 20 / 30 / 40 / 50: sm_75, sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler
+or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.

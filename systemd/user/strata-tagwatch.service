@@ -1,0 +1,16 @@
+[Unit]
+Description=Hourly check for a new final Strata release; flags changes on our served Qwen build's engine/server path for Karl's decision without pausing anything (10-31; strata-compare work/r21/tagwatch.sh + work/r22/tagcheck.sh; read-only)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/USER/ai-speed-testing/strata-compare
+ExecStart=/bin/bash /home/USER/ai-speed-testing/strata-compare/work/r21/tagwatch.sh
+StandardOutput=append:/home/USER/ai-speed-testing/strata-compare/logs/r21/tagwatch.out
+StandardError=append:/home/USER/ai-speed-testing/strata-compare/logs/r21/tagwatch.out
+# it exits on purpose at a release that changes the engine/server (desktop alert, "NEW TAG ..." in tagwatch.out): the
+# release is reviewed, work/r22/tagcheck.sh --accept <tag> raises the baseline, then the watch is started again
+Restart=no
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,107 @@
+=== v0.1.20 2026-09-28T17:59:33Z main
+**Faster new chats for agent clients, a hit-rate column in the Monitor, a PCIe-aware default, and community fixes.**
+
+- **New chats reuse the system prompt** (#62 by @j-luwierski, #65 by @code-martin):
+  - A prompt read from the start is now also checkpointed at the end of its system prompt (with the tool list), when that is 2,048 tokens or more.
+  - That checkpoint is kept while the others rotate by least recent use, so the next new chat of the same client reads only what comes after it.
+  - Measured: a 3,883-token system prompt is reused whole by a new chat, also after more turns than the cache has slots.
+  - `--prompt-cache-root 0` turns it off. See the [details](https://github.com/Niko1221/Strata/blob/main/docs/DETAILS.md#using-it).
+- **Monitor: expert-cache hit rate per request** (#69 by @code-martin): the share of the experts looked up while writing the answer that were already in VRAM.
+- **A default PCIe share that fits your link** (#44 by @pipeob0):
+  - The engine measures the PCIe bandwidth at start. On a narrower link (e.g. an x8 card) it lowers the share of the missing experts that the GPU reads over PCIe.
+  - x16 links keep the measured default. `--calibrate` still measures it outright.
+- **OrcaRouter's Uncensored IQ3_XXS** can be packed with `iq_pack.py --compat-bf16` (#67 by @acrogenesis); see [docs/ORCA.md](https://github.com/Niko1221/Strata/blob/main/docs/ORCA.md). It is a manual setup, not an installer option. The official models pack exactly as before.
+- **Fixed:**
+  - setup could fail on Windows when an antivirus scanner held a file while llama.cpp was unpacked (#63 by @alfirus);
+  - the Monitor showed the version of the `BUILD.json` next to the engine instead of the engine's own (from #41 by @midhatn).
+- **The parity tool** fails the run on a kernel mismatch instead of only printing it (#64 by @pipeob0).
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` with the model window closed: it updates the engine to 0.1.20 by itself. On Linux, run `./setup.sh`: it compiles the new engine.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+
+=== v0.1.19 2026-09-28T17:13:49Z main
+**Penalties that really apply, tuning for your PC, tools from MCP servers, and a fix for starting with a small page file.**
+
+- **Fixed: repetition, presence and frequency penalties were mostly not applied** (#53).
+  - What went wrong: speculative decoding checks several guessed tokens at once, but only the first of each batch got the request's penalty history. The others were judged against memory that was never filled in.
+  - What it meant: with ~3 tokens per step, most tokens ignored the penalties, and `penalty_last_n` near 4096 could crash the engine.
+  - Now every checked token gets its own history, exactly as if the engine decoded one token at a time.
+  - The cost: requests with penalties are 1-11% slower, because more draft guesses are rejected. Requests without penalties give the same answers at the same speed.
+  - Found by an engineering review of the engine. Tested on Q2_0, IQ2_XS (Swift), IQ3_XXS, IQ3_S and the Coder.
+- **Sampler:**
+  - `top_k` = 0 or above 64 now means "the widest list the engine keeps" (64), instead of an unwritten token (engine) or a silent 20 (server);
+  - token ids outside the vocabulary in a history are ignored.
+- **`strata.exe` on the command line samples again:** with `--temperature`/`--seed` the speculative loop used to decode greedily. It also prints the sampling it uses.
+- **The model starts with a small Windows page file** (#60, thanks @shanoor).
+  - Why it failed: memory on the graphics card also needs room in Windows' commit (RAM plus page file). With the page file off or tiny, the expert cache could not be allocated even though VRAM was free, and the engine stopped.
+  - Now it retries with a smaller cache and says why.
+  - Setup warns when the page file is under 4 GB. The fix: set it to "System managed".
+- **`START-HERE.bat --calibrate`: tuning for your PC.**
+  - It measures three engine settings that depend on the machine: the PCIe share, the draft depth and the CPU threads.
+  - It keeps a setting only when it is more than 3% faster, and remembers the result per PC and model.
+  - Setup offers it after an install. On the RTX 5070 test PC it made the Coder 7.6% faster.
+- **Tools from MCP servers in the chat page.**
+  - List servers in the run config under `mcp_servers`; Claude Desktop's `mcpServers` block can be pasted as it is.
+  - The model can then call their tools in the web app's chat: files, search, GitHub and so on. Each call shows as a card.
+  - API clients are not affected. See the [details](https://github.com/Niko1221/Strata/blob/main/docs/DETAILS.md#tools-from-mcp-servers).
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` with the model window closed: it updates the engine to 0.1.19 by itself. On Linux, run `./setup.sh`: it compiles the new engine.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+
+=== v0.1.18 2026-09-28T14:06:44Z main
+**Clearer engine updates, a `SETUP.bat` shortcut, and a sampler guard.**
+
+- **Updating right after a release no longer keeps the old engine without saying why** (#58, thanks @XeonG). New files on `main` could reach you a few minutes before the release's engine finished uploading; setup then kept the installed engine with only a short warning. Releases are now published together with the engine, and if it ever happens again setup says the new engine isn't published yet and to run it again in a few minutes.
+- **`SETUP.bat`**: double-click it to change settings or install another model (the same as `START-HERE.bat --setup`; on Linux `./setup.sh --setup`).
+- **Sampler:** with the penalty window set to 0, the sampling kernel no longer touches its (then empty) penalty buffer when a caller still passes a token history (#59, thanks @j-luwierski). The server never does this, so answers are unchanged; it's a guard for other callers of the kernel.
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat`. An existing 0.1.17 engine keeps working (nothing in this release needs the new one); a new install gets 0.1.18. On Linux, run `./setup.sh`.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+
+=== v0.1.17 2026-09-28T13:40:19Z main
+**Claude Code works with Strata, sampling matches llama.cpp, and you can choose the GPU.**
+
+- **Claude Code** can use Strata (#55, #56, thanks @Nicolas0315): the server accepts `/v1/messages?beta=true`, and a system message in the middle of a conversation (Claude Code sends its hook context that way; some OpenAI clients send late "developer" messages) no longer breaks the chat template. Set `ANTHROPIC_BASE_URL=http://127.0.0.1:8080` and `ANTHROPIC_MODEL` to a Claude model name it knows (Strata ignores the name) - see the [details](https://github.com/Niko1221/Strata/blob/main/docs/DETAILS.md#using-it).
+- **Fixed: sampling applied the repetition, frequency and presence penalties twice** (#53, thanks @hendrikp). With `presence_penalty` 1.5 at temperature 0.7, a repeated word was about 4x less likely than it should be. The order is now llama.cpp's: penalties once, then top_k, top_p, min_p, temperature. Greedy answers (temperature 0, the default) are unchanged.
+- **Choose the GPU** on a PC with more than one (#51, thanks @ivancheg8): setup uses the one with the most VRAM, or `START-HERE.bat --gpu 1` (numbered as `nvidia-smi` shows them); the Monitor shows that card.
+- **`tools/needle_bench.py`** checks long-context recall through a running server: it hides a code word in a long text and asks for it (#33).
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` with the model window closed: it updates the engine to 0.1.17 by itself. On Linux, run `./setup.sh`: it compiles the new engine.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+
+=== v0.1.16 2026-09-28T12:44:05Z main
+**New: the Coder model. No more re-downloads after an update. Strata is now open source (MIT).**
+
+- **The GSQ-RCO Coder** ([ISTA-DASLab](https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF)), thanks to @pjgmobile's PR #54: Qwen3.8-Flash-Next with half of its experts removed - the ones code, tool use and images need are kept (91% of the full model's SWE-bench Verified, 99% of LiveCodeBench, by its authors). It needs only **32 GB of RAM**, runs 262K context on 64 GB, and on a 12 GB card reads prompts at 599-1,350 tokens/s and writes 43-53 tokens/s (1K-262K). Images work. Install it with `START-HERE.bat --setup --family coder`; with the original model installed, only its 29.6 GB shard 1 is downloaded (the rest is the same file).
+- **Updating no longer downloads the model again.** The model files now live in a `Strata-data` folder next to your Strata folder, so a new copy (an update unzipped elsewhere) finds them and sets itself up the same way. Existing installs are moved there at their next start - instantly on the same drive, and their old folder keeps working.
+- **Clearer start.** Before and while the model loads, the window says that your PC can be slow or stop responding for 1-3 minutes (the model is loaded into RAM and locked for the GPU), and what it is doing, instead of a silent wait.
+- **Open source:** Strata is now under the MIT License. Thank you to everyone who contributed - @pipeob0, @pjgmobile, @code-martin, @coolio986, @Mirtraxxx, @Vistawizard, @j-luwierski and everyone who reported issues.
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` with the model window closed: it updates the engine to 0.1.16 by itself. On Linux, run `./setup.sh`: it compiles the new engine.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+

@@ -1,0 +1,342 @@
+=== 2026-11-06 06:58:10 UNSLOTH DYNAMIC v3.1 GAP (work/r23/gap-ud31.sh): P, U, S, R - exactness, the KL rules against R at the text level (text NLL INFO: the NLL bound is revoked), speed (Karl 11-04; STRATA_HC_Q8=1 on U and R, the pack-rounding rule, 11-05) - measurements only, P028x stays served, nothing switches
+=== 2026-11-06 06:58:10   gate rules INFO the rule text at the gap's start (ud31_rules.py's docstring, incl. the frozen pack-rounding rule): gap/rules.txt sha 6c68d8b69d6c
+=== 2026-11-06 06:58:10   gate predl PASS DOWNLOAD OK: 4 shards, sizes and SHA256SUMS = tree.json's pinned LFS oids (the downloader's stream hashes)
+=== 2026-11-06 06:58:10   gate prenll PASS NLL OK: the NLL gap validated the scorer (validate_ref PASS: offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding ); the bound REVOKED 11-05 (ADOPTED-BOUND.REVOKED.json): NLL is INFO
+=== 2026-11-06 06:58:10   gate cfg PASS CFG OK: U, S, R configs = configs/x28h.json + only their named differences; tail skip 0; STRATA_HC_Q8=1 in U and R only (P = x28h and S off); engine-r22p028x
+=== 2026-11-06 06:58:10   gate lossless_U_cfg PASS patchtest lossless: cfg: PASS (tail skip 0, adapt-async 0, CPU share 0.4, 0.2.7 defaults ROUTE_PRIOR=0 PROMPT_ATTN_IMMA=0 GR_V3=1 PREFILL_LAYER_MAJOR=0, PLE 0)
+=== 2026-11-06 06:58:10   gate lossless_S_cfg PASS patchtest lossless: cfg: PASS (tail skip 0, adapt-async 0, CPU share 0.4, 0.2.7 defaults ROUTE_PRIOR=0 PROMPT_ATTN_IMMA=0 GR_V3=1 PREFILL_LAYER_MAJOR=0, PLE 0)
+=== 2026-11-06 06:58:10 R: K-quant prompt kernels ON (R's experts); disk: ~123 GB free after the splice; exact7 labels u31-11060658-*; ud31-download unit: inactive
+2026-11-06 06:58:10 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 2271558 (engine 2271572)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-06 07:28:08 port_gap4: gap open: test lock held (pid 2877186), 8080 stopped
+=== 2026-11-06 07:28:08 8080 down: engines left: none, MemAvailable 85 GB
+=== 2026-11-06 07:28:08 1 re-hash the 4 shards (sha256 against tree.json's pinned oids; pages dropped as read)
+SHA OK: 4 shards re-hashed in 25 s: sha256 = the pinned oids
+=== 2026-11-06 07:28:33 pack U: Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf -> /home/USER/ai-speed-testing/strata-compare/bringup/out/ud31/pack-u --compat-bf16
+=== 2026-11-06 07:28:40   gate pack_U PASS rc 0: index.txt: 1079 tensors, 303 served natively, 0 in extra.bin, arena 1.38 GiB conversions.json: 460 tensors converted to the engine's form (264 exact, 196 rounded; max |err| 0.0204) compat-bf16: 195 te
+=== 2026-11-06 07:28:40   gate tok_U PASS tokenizer = P028x's (bringup/out/r20a/pack/tokenizer)
+pack-u (compat_bf16 True): hc conversions 192 down/up Q8_0->BF16 rounded, 96 inject F32->BF16 exact, 2 output down/up Q8_0->BF16 rounded
+=== 2026-11-06 07:28:40 1b the splice: v3.1's routed experts into our ISTA shard 1 (shard 2 hard-linked), then sync + evict
+=== 2026-11-06 07:28:40   before: MemAvailable: 87494 MiB  SwapFree: 29224 MiB  Dirty: 1427 MiB  
+1223 tensors in our shard 1: 144 routed experts from Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00004.gguf, Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00004.gguf, Qwen3.8-Flash-Next-UD-IQ3_XXS-00004-of-00004.gguf (46.84 GiB; ours 46.84 GiB; types {'IQ4_NL': 45, 'IQ2_S': 52, 'Q2_0': 3, 'IQ3_XXS': 42, 'IQ4_XS
+wrote /home/USER/ai-speed-testing/strata-compare/models/unsloth-v31/splice-S/Qwen3.8-Flash-Next-UD31x-GSQ-RCO-IQ3_S-00001-of-00002.gguf: 51.04 GiB of tensor data in 39 s; Qwen3.8-Flash-Next-UD31x-GSQ-RCO-IQ3_S-00002-of-00002.gguf -> hard link to Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf
+VERIFY OK: 1223 tensors in our order, 144 experts with the expert shards' types, the rest ours; split keys {'split.no': 0, 'split.count': 2, 'split.tensors.count': 1224}; size 54,817,524,224 B; head tensors = ours; spot checks equal; shard 2 = our inode
+=== 2026-11-06 07:29:25   gate splice PASS wrote /home/USER/ai-speed-testing/strata-compare/models/unsloth-v31/splice-S/Qwen3.8-Flash-Next-UD31x-GSQ-RCO-IQ3_S-00001-of-00002.gguf: 51.04 GiB of tensor data in 39 s; Qwen3.8-Flash-Next-UD31x-GSQ-
+=== 2026-11-06 07:29:25   gate splice_verify PASS VERIFY OK: 1223 tensors in our order, 144 experts with the expert shards' types, the rest ours; split keys {'split.no': 0, 'split.count': 2, 'split.tensors.count': 1224}; size 54,817,524,224 B; head tensors = ours; spot checks equal; shard 2 = our in
+PAGE CACHE OK: Dirty + Writeback 0 MiB after 0 s (want <= 256); MemAvailable 85 GiB, swap used 3543 MiB
+=== 2026-11-06 07:29:29   evicted (splice): 12 files; MemAvailable: 87722 MiB  Cached: 9609 MiB  SwapFree: 29224 MiB  Dirty: 0 MiB  Writeback: 0 MiB  
+=== 2026-11-06 07:29:29 pack S: Qwen3.8-Flash-Next-UD31x-GSQ-RCO-IQ3_S-00001-of-00002.gguf -> /home/USER/ai-speed-testing/strata-compare/bringup/out/ud31/pack-s 
+=== 2026-11-06 07:29:30   gate pack_S PASS rc 0: index.txt: 1079 tensors, 302 served natively, 0 in extra.bin, arena 1.43 GiB 
+=== 2026-11-06 07:29:30   gate tok_S PASS tokenizer = P028x's (bringup/out/r20a/pack/tokenizer)
+=== 2026-11-06 07:29:30   gate pack_S_dense PASS pack-s dense.bin and index rows = P028x's bringup/out/r20a/pack byte for byte (the dense path is P028x's)
+=== 2026-11-06 07:29:30 pack R: Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf -> /home/USER/ai-speed-testing/strata-compare/bringup/out/ud31/pack-r --compat-bf16
+=== 2026-11-06 07:29:37   gate pack_R PASS rc 0: index.txt: 1079 tensors, 303 served natively, 0 in extra.bin, arena 1.38 GiB conversions.json: 460 tensors converted to the engine's form (264 exact, 196 rounded; max |err| 0.0144) compat-bf16: 195 te
+=== 2026-11-06 07:29:37   gate tok_R PASS tokenizer = P028x's (bringup/out/r20a/pack/tokenizer)
+pack-r (compat_bf16 True): hc conversions 192 down/up Q8_0->BF16 rounded, 96 inject F32->BF16 exact, 2 output down/up Q8_0->BF16 rounded
+=== 2026-11-06 07:29:40   evicted (packs): 12 files; MemAvailable: 87385 MiB  Cached: 13966 MiB  SwapFree: 29224 MiB  Dirty: 2903 MiB  Writeback: 0 MiB  
+PAGE CACHE OK: Dirty + Writeback 10 MiB after 24 s (want <= 256); MemAvailable 85 GiB, swap used 3543 MiB
+=== 2026-11-06 07:30:04   arms: P, U yes, S yes, R yes (118 min to the deadline)
+=== 2026-11-06 07:30:04 2 exactness: exact7 at pin 2500, U1 / S1 against P028x's x28h-e7a (INFO), U2 / S2 against U1 / S1 (7/7 + MATCHED)
+=== 2026-11-06 07:30:04 exact7 u31-11060658-U1 (ud31-U.json, against x28h-e7a)
+u31-11060658-U1-x-math   out ca4ceff1 (x28h-e7a 6b251415) DIFFERENT  ms/round 32.44  prompt ms 515
+u31-11060658-U1-s-math   out 4ee47e9e (x28h-e7a 8c25c022) DIFFERENT  ms/round 34.10  prompt ms 513
+u31-11060658-U1-x-code   out b457ed46 (x28h-e7a 3585ad6f) DIFFERENT  ms/round 25.39  prompt ms 519
+u31-11060658-U1-s-code   out 1748e7be (x28h-e7a 2fe9fd9e) DIFFERENT  ms/round 24.82  prompt ms 535
+u31-11060658-U1-x-p2000  out d4270b0d (x28h-e7a 3e219376) DIFFERENT  ms/round 36.98  prompt ms 1106
+u31-11060658-U1-x-32k    out 0d545d7f (x28h-e7a 651f56c8) DIFFERENT  ms/round 34.58  prompt ms 7493
+u31-11060658-U1-x-112k   out b806e832 (x28h-e7a a393ca0a) DIFFERENT  ms/round 32.58  prompt ms 25490
+exact7 u31-11060658-U1: 0/7 identical to x28h-e7a
+exact7-slots u31-11060658-U1: 3240+3300 slots (5080 + 4060 Ti); x28h-e7a: 3238+3300 -> DIFFER
+ENV CHECK OK: 7 engine start(s) (e7, 2 GPU(s)), 28 env keys as configured, no other STRATA_*, harness args as expected
+exact7 u31-11060658-U1: 0/7 vs x28h-e7a, slots DIFFER (3240+3300 slots (5080 + 4060 Ti); x28h-e7a: 3238+3300), 7/7 item outputs -> INFO
+=== 2026-11-06 07:33:24 exact7 u31-11060658-U2 (ud31-U.json, against u31-11060658-U1)
+u31-11060658-U2-x-math   out ca4ceff1 (u31-11060658-U1 ca4ceff1) =  ms/round 32.06  prompt ms 512
+u31-11060658-U2-s-math   out 4ee47e9e (u31-11060658-U1 4ee47e9e) =  ms/round 33.75  prompt ms 495
+u31-11060658-U2-x-code   out b457ed46 (u31-11060658-U1 b457ed46) =  ms/round 25.10  prompt ms 535
+u31-11060658-U2-s-code   out 1748e7be (u31-11060658-U1 1748e7be) =  ms/round 24.75  prompt ms 526
+u31-11060658-U2-x-p2000  out d4270b0d (u31-11060658-U1 d4270b0d) =  ms/round 37.13  prompt ms 1102
+u31-11060658-U2-x-32k    out 0d545d7f (u31-11060658-U1 0d545d7f) =  ms/round 34.83  prompt ms 7462
+u31-11060658-U2-x-112k   out b806e832 (u31-11060658-U1 b806e832) =  ms/round 32.59  prompt ms 25431
+exact7 u31-11060658-U2: 7/7 identical to u31-11060658-U1
+exact7-slots u31-11060658-U2: 3240+3300 slots (5080 + 4060 Ti); u31-11060658-U1: 3240+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7, 2 GPU(s)), 28 env keys as configured, no other STRATA_*, harness args as expected
+exact7 u31-11060658-U2: 7/7 vs u31-11060658-U1, slots MATCHED (3240+3300 slots (5080 + 4060 Ti); u31-11060658-U1: 3240+3300), 7/7 item outputs -> PASS
+=== 2026-11-06 07:36:43 exact7 u31-11060658-S1 (ud31-S.json, against x28h-e7a)
+u31-11060658-S1-x-math   out f7910cc6 (x28h-e7a 6b251415) DIFFERENT  ms/round 32.34  prompt ms 470
+u31-11060658-S1-s-math   out 275484b7 (x28h-e7a 8c25c022) DIFFERENT  ms/round 32.56  prompt ms 493
+u31-11060658-S1-x-code   out e6b535b5 (x28h-e7a 3585ad6f) DIFFERENT  ms/round 26.12  prompt ms 513
+u31-11060658-S1-s-code   out 7cdad276 (x28h-e7a 2fe9fd9e) DIFFERENT  ms/round 22.63  prompt ms 492
+u31-11060658-S1-x-p2000  out bb38ad05 (x28h-e7a 3e219376) DIFFERENT  ms/round 37.13  prompt ms 1136
+u31-11060658-S1-x-32k    out 0d545d7f (x28h-e7a 651f56c8) DIFFERENT  ms/round 32.30  prompt ms 7430
+u31-11060658-S1-x-112k   out f281ea37 (x28h-e7a a393ca0a) DIFFERENT  ms/round 30.10  prompt ms 25433
+exact7 u31-11060658-S1: 0/7 identical to x28h-e7a
+exact7-slots u31-11060658-S1: 3240+3300 slots (5080 + 4060 Ti); x28h-e7a: 3238+3300 -> DIFFER
+ENV CHECK OK: 7 engine start(s) (e7, 2 GPU(s)), 27 env keys as configured, no other STRATA_*, harness args as expected
+exact7 u31-11060658-S1: 0/7 vs x28h-e7a, slots DIFFER (3240+3300 slots (5080 + 4060 Ti); x28h-e7a: 3238+3300), 7/7 item outputs -> INFO
+=== 2026-11-06 07:40:03 exact7 u31-11060658-S2 (ud31-S.json, against u31-11060658-S1)
+u31-11060658-S2-x-math   out f7910cc6 (u31-11060658-S1 f7910cc6) =  ms/round 32.48  prompt ms 496
+u31-11060658-S2-s-math   out 275484b7 (u31-11060658-S1 275484b7) =  ms/round 32.63  prompt ms 486
+u31-11060658-S2-x-code   out e6b535b5 (u31-11060658-S1 e6b535b5) =  ms/round 26.15  prompt ms 519
+u31-11060658-S2-s-code   out 7cdad276 (u31-11060658-S1 7cdad276) =  ms/round 22.85  prompt ms 540
+u31-11060658-S2-x-p2000  out bb38ad05 (u31-11060658-S1 bb38ad05) =  ms/round 36.89  prompt ms 1112
+u31-11060658-S2-x-32k    out 0d545d7f (u31-11060658-S1 0d545d7f) =  ms/round 32.07  prompt ms 7459
+u31-11060658-S2-x-112k   out f281ea37 (u31-11060658-S1 f281ea37) =  ms/round 30.11  prompt ms 25370
+exact7 u31-11060658-S2: 7/7 identical to u31-11060658-S1
+exact7-slots u31-11060658-S2: 3240+3300 slots (5080 + 4060 Ti); u31-11060658-S1: 3240+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7, 2 GPU(s)), 27 env keys as configured, no other STRATA_*, harness args as expected
+exact7 u31-11060658-S2: 7/7 vs u31-11060658-S1, slots MATCHED (3240+3300 slots (5080 + 4060 Ti); u31-11060658-S1: 3240+3300), 7/7 item outputs -> PASS
+=== 2026-11-06 07:43:24 3 quality: score.py run --set long11 --rows all:8 on P, U, S, R (104 min to the deadline)
+=== 2026-11-06 07:43:24 quality arm P (x28h.json; ~7 min)
+engine pid 2889379: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 28 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  P: 32816 rows from 11 texts in 275 s
+=== 2026-11-06 07:47:59   gate run_P PASS score.py run rc 0: 32816 rows from 11 texts in 275 s
+HCQ8 OK: x28h.json (off): no STRATA_HC_Q8 line, the config's switch off: the hc projections as the file / pack store them
+=== 2026-11-06 07:47:59   P: 5 min
+=== 2026-11-06 07:47:59 quality arm U (ud31-U.json; ~7 min)
+engine pid 2893528: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 29 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  U: 32816 rows from 11 texts in 275 s
+=== 2026-11-06 07:52:35   gate run_U PASS score.py run rc 0: 32816 rows from 11 texts in 275 s
+HCQ8 OK: ud31-U.json (on): 1 engine start(s) with 'STRATA_HC_Q8=1: 0.63 GiB of Q8_0 hyper-connection projections'; the GGUF's own Q8_0 hc: 194 tensors, 675,430,400 B = 0.63 GiB, 192 of 192 layer down/up rows Q8_0 in the file
+=== 2026-11-06 07:52:35   U: 5 min
+=== 2026-11-06 07:52:35 quality arm S (ud31-S.json; ~7 min)
+engine pid 2896691: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 28 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  S: 32816 rows from 11 texts in 274 s
+=== 2026-11-06 07:57:10   gate run_S PASS score.py run rc 0: 32816 rows from 11 texts in 274 s
+HCQ8 OK: ud31-S.json (off): no STRATA_HC_Q8 line, the config's switch off: the hc projections as the file / pack store them
+=== 2026-11-06 07:57:10   S: 5 min
+=== 2026-11-06 07:57:10 quality arm R (ud31-R.json; ~12 min)
+engine pid 2900331: 30 env keys, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 30 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  R: 32816 rows from 11 texts in 715 s
+=== 2026-11-06 08:09:06   gate run_R PASS score.py run rc 0: 32816 rows from 11 texts in 715 s
+HCQ8 OK: ud31-R.json (on): 1 engine start(s) with 'STRATA_HC_Q8=1: 0.63 GiB of Q8_0 hyper-connection projections'; the GGUF's own Q8_0 hc: 194 tensors, 675,430,400 B = 0.63 GiB, 192 of 192 layer down/up rows Q8_0 in the file
+=== 2026-11-06 08:09:06   R: 12 min
+=== 2026-11-06 08:09:06 4 speed: the 9-workload screen, 3 passes (P U S / S U P / U S P), a fresh test server each (79 min to the deadline)
+=== 2026-11-06 08:09:06 screen P1 (x28h.json)
+server ready (guard pid 2911716, server pid 2911736) load_time_s 15.363209790 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ud31-P1_20261106T080909.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 2911741: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+P1n W1-think r0: prompt 110 ttft 0.298 s, 3072 tokens, 167.62 tok/s, length
+P1n W2-code r0: prompt 125 ttft 0.324 s, 3072 tokens, 157.18 tok/s, length
+P1n W3-research r0: prompt 26730 ttft 6.065 s, 2048 tokens, 161.88 tok/s, length
+P1a A-edit r0: prompt 2677 ttft 1.017 s, 331 tokens, 128.0 tok/s, tool_calls
+P1a B-write r0: prompt 1372 ttft 0.854 s, 2336 tokens, 155.94 tok/s, tool_calls
+P1r R1-verify20k r0: prompt 24238 ttft 5.529 s, 3628 tokens, 156.03 tok/s, stop
+P1r R2-report54k r0: prompt 54071 ttft 12.026 s, 3402 tokens, 152.13 tok/s, stop
+P1r R3-extract5k r0: prompt 5010 ttft 1.421 s, 1392 tokens, 184.68 tok/s, stop
+P1r R4-agent33k r0: prompt 33416 ttft 7.834 s, 333 tokens, 118.48 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-06 08:12:50   gate fatal_scrP1 PASS no fatal / stall / restart / non-finite line
+HCQ8 OK: x28h.json (off): no STRATA_HC_Q8 line, the config's switch off: the hc projections as the file / pack store them
+=== 2026-11-06 08:12:50 screen U1 (ud31-U.json)
+server ready (guard pid 2926951, server pid 2926970) load_time_s 14.346992405 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ud31-U1_20261106T081252.log
+vram after load: 0, 15408 MiB, 526 MiB 1, 6629 MiB, 1261 MiB 
+engine pid 2926977: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+U1n W1-think r0: prompt 110 ttft 0.297 s, 3072 tokens, 194.21 tok/s, length
+U1n W2-code r0: prompt 126 ttft 0.323 s, 3072 tokens, 164.02 tok/s, length
+U1n W3-research r0: prompt 26730 ttft 5.985 s, 2048 tokens, 182.07 tok/s, length
+U1a A-edit r0: prompt 2677 ttft 1.017 s, 308 tokens, 131.32 tok/s, tool_calls
+U1a B-write r0: prompt 1371 ttft 0.866 s, 4096 tokens, 151.07 tok/s, length
+U1r R1-verify20k r0: prompt 24240 ttft 5.493 s, 3801 tokens, 154.22 tok/s, stop
+U1r R2-report54k r0: prompt 54069 ttft 11.932 s, 4096 tokens, 152.68 tok/s, length
+U1r R3-extract5k r0: prompt 5008 ttft 1.44 s, 1256 tokens, 179.25 tok/s, stop
+U1r R4-agent33k r0: prompt 33415 ttft 7.786 s, 306 tokens, 128.77 tok/s, tool_calls
+vram at end: 0, 15484 MiB, 450 MiB 1, 6631 MiB, 1259 MiB 
+=== 2026-11-06 08:16:44   gate fatal_scrU1 PASS no fatal / stall / restart / non-finite line
+HCQ8 OK: ud31-U.json (on): 1 engine start(s) with 'STRATA_HC_Q8=1: 0.63 GiB of Q8_0 hyper-connection projections'; the GGUF's own Q8_0 hc: 194 tensors, 675,430,400 B = 0.63 GiB, 192 of 192 layer down/up rows Q8_0 in the file
+=== 2026-11-06 08:16:44 screen S1 (ud31-S.json)
+server ready (guard pid 2935439, server pid 2935454) load_time_s 14.341267358 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ud31-S1_20261106T081646.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6627 MiB, 1263 MiB 
+engine pid 2935459: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+S1n W1-think r0: prompt 108 ttft 0.304 s, 3072 tokens, 191.54 tok/s, length
+S1n W2-code r0: prompt 123 ttft 0.308 s, 3072 tokens, 159.17 tok/s, length
+S1n W3-research r0: prompt 26730 ttft 5.993 s, 2048 tokens, 167.44 tok/s, length
+S1a A-edit r0: prompt 2677 ttft 1.012 s, 226 tokens, 128.13 tok/s, tool_calls
+S1a B-write r0: prompt 1369 ttft 0.854 s, 3606 tokens, 157.64 tok/s, tool_calls
+S1r R1-verify20k r0: prompt 24239 ttft 5.472 s, 3708 tokens, 153.79 tok/s, stop
+S1r R2-report54k r0: prompt 54071 ttft 11.897 s, 2604 tokens, 148.78 tok/s, stop
+S1r R3-extract5k r0: prompt 5011 ttft 1.408 s, 1017 tokens, 179.45 tok/s, stop
+S1r R4-agent33k r0: prompt 33417 ttft 7.759 s, 398 tokens, 128.88 tok/s, tool_calls
+vram at end: 0, 15490 MiB, 444 MiB 1, 6629 MiB, 1261 MiB 
+=== 2026-11-06 08:20:25   gate fatal_scrS1 PASS no fatal / stall / restart / non-finite line
+HCQ8 OK: ud31-S.json (off): no STRATA_HC_Q8 line, the config's switch off: the hc projections as the file / pack store them
+base: 5/5 wanted lines; none of the unwanted lines -> PASS
+base: 5/5 wanted lines; none of the unwanted lines -> PASS
+=== 2026-11-06 08:20:25   gate lossless_U_log PASS patchtest lossless: cfg: PASS (tail skip 0, adapt-async 0, CPU share 0.4, 0.2.7 defaults ROUTE_PRIOR=0 PROMPT_ATTN_IMMA=0 GR_V3=1 PREFILL_LAYER_MAJOR=0, PLE 0); log clean
+base: 5/5 wanted lines; none of the unwanted lines -> PASS
+=== 2026-11-06 08:20:25   gate lossless_S_log PASS patchtest lossless: cfg: PASS (tail skip 0, adapt-async 0, CPU share 0.4, 0.2.7 defaults ROUTE_PRIOR=0 PROMPT_ATTN_IMMA=0 GR_V3=1 PREFILL_LAYER_MAJOR=0, PLE 0); log clean
+=== 2026-11-06 08:20:25   gate slots INFO 5080 + 4060 Ti slots at start (auto fill): P 4585+1
+3300 U 4602+1
+3300 S 4586+1
+3300
+=== 2026-11-06 08:20:25 screen S2 (ud31-S.json)
+server ready (guard pid 2939415, server pid 2939450) load_time_s 14.348787671 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ud31-S2_20261106T082027.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6627 MiB, 1263 MiB 
+engine pid 2939461: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+S2n W1-think r0: prompt 110 ttft 0.308 s, 3072 tokens, 185.44 tok/s, length
+S2n W2-code r0: prompt 126 ttft 0.321 s, 3072 tokens, 170.67 tok/s, length
+S2n W3-research r0: prompt 26727 ttft 5.965 s, 2048 tokens, 158.91 tok/s, length
+S2a A-edit r0: prompt 2677 ttft 1.011 s, 325 tokens, 119.95 tok/s, tool_calls
+S2a B-write r0: prompt 1369 ttft 0.861 s, 4096 tokens, 154.14 tok/s, length
+S2r R1-verify20k r0: prompt 24240 ttft 5.473 s, 3886 tokens, 158.16 tok/s, stop
+S2r R2-report54k r0: prompt 54072 ttft 11.899 s, 2665 tokens, 153.24 tok/s, stop
+S2r R3-extract5k r0: prompt 5009 ttft 1.407 s, 1207 tokens, 182.45 tok/s, stop
+S2r R4-agent33k r0: prompt 33415 ttft 7.769 s, 315 tokens, 130.58 tok/s, tool_calls
+vram at end: 0, 15490 MiB, 444 MiB 1, 6629 MiB, 1261 MiB 
+=== 2026-11-06 08:24:10   gate fatal_scrS2 PASS no fatal / stall / restart / non-finite line
+=== 2026-11-06 08:24:10 screen U2 (ud31-U.json)
+server ready (guard pid 2943419, server pid 2943435) load_time_s 14.347712954 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ud31-U2_20261106T082412.log
+vram after load: 0, 15408 MiB, 526 MiB 1, 6629 MiB, 1261 MiB 
+engine pid 2943441: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+U2n W1-think r0: prompt 109 ttft 0.316 s, 3072 tokens, 188.85 tok/s, length
+U2n W2-code r0: prompt 124 ttft 0.316 s, 3072 tokens, 158.29 tok/s, length
+U2n W3-research r0: prompt 26727 ttft 5.986 s, 2048 tokens, 161.06 tok/s, length
+U2a A-edit r0: prompt 2676 ttft 1.064 s, 365 tokens, 122.82 tok/s, tool_calls
+U2a B-write r0: prompt 1371 ttft 0.855 s, 4096 tokens, 152.61 tok/s, length
+U2r R1-verify20k r0: prompt 24238 ttft 5.499 s, 3719 tokens, 155.55 tok/s, stop
+U2r R2-report54k r0: prompt 54069 ttft 11.935 s, 3187 tokens, 145.85 tok/s, stop
+U2r R3-extract5k r0: prompt 5013 ttft 1.429 s, 1189 tokens, 174.68 tok/s, stop
+U2r R4-agent33k r0: prompt 33417 ttft 7.781 s, 369 tokens, 129.05 tok/s, tool_calls
+vram at end: 0, 15488 MiB, 446 MiB 1, 6631 MiB, 1259 MiB 
+=== 2026-11-06 08:28:02   gate fatal_scrU2 PASS no fatal / stall / restart / non-finite line
+=== 2026-11-06 08:28:02 screen P2 (x28h.json)
+server ready (guard pid 2947431, server pid 2947446) load_time_s 14.346820409 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ud31-P2_20261106T082804.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 2947451: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+P2n W1-think r0: prompt 110 ttft 0.295 s, 3072 tokens, 173.6 tok/s, length
+P2n W2-code r0: prompt 126 ttft 0.327 s, 3072 tokens, 162.81 tok/s, length
+P2n W3-research r0: prompt 26729 ttft 6.034 s, 2048 tokens, 161.73 tok/s, length
+P2a A-edit r0: prompt 2678 ttft 1.019 s, 330 tokens, 119.07 tok/s, tool_calls
+P2a B-write r0: prompt 1370 ttft 0.933 s, 1713 tokens, 167.11 tok/s, tool_calls
+P2r R1-verify20k r0: prompt 24241 ttft 5.537 s, 3910 tokens, 154.54 tok/s, stop
+P2r R2-report54k r0: prompt 54070 ttft 12.014 s, 2425 tokens, 145.47 tok/s, stop
+P2r R3-extract5k r0: prompt 5010 ttft 1.414 s, 1308 tokens, 174.42 tok/s, stop
+P2r R4-agent33k r0: prompt 33417 ttft 7.831 s, 412 tokens, 132.16 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-06 08:31:35   gate fatal_scrP2 PASS no fatal / stall / restart / non-finite line
+=== 2026-11-06 08:31:35 screen U3 (ud31-U.json)
+server ready (guard pid 2951169, server pid 2951191) load_time_s 13.335308043 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ud31-U3_20261106T083137.log
+vram after load: 0, 15408 MiB, 526 MiB 1, 6629 MiB, 1261 MiB 
+engine pid 2951196: 28 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+U3n W1-think r0: prompt 111 ttft 0.304 s, 3072 tokens, 186.18 tok/s, length
+U3n W2-code r0: prompt 124 ttft 0.317 s, 3072 tokens, 156.92 tok/s, length
+U3n W3-research r0: prompt 26726 ttft 5.98 s, 2048 tokens, 158.21 tok/s, length
+U3a A-edit r0: prompt 2676 ttft 1.015 s, 436 tokens, 134.13 tok/s, tool_calls
+U3a B-write r0: prompt 1372 ttft 0.843 s, 2457 tokens, 152.31 tok/s, tool_calls
+U3r R1-verify20k r0: prompt 24239 ttft 5.482 s, 3669 tokens, 155.73 tok/s, stop
+U3r R2-report54k r0: prompt 54071 ttft 11.923 s, 3006 tokens, 142.31 tok/s, stop
+U3r R3-extract5k r0: prompt 5011 ttft 1.411 s, 1192 tokens, 179.37 tok/s, stop
+U3r R4-agent33k r0: prompt 33416 ttft 7.78 s, 444 tokens, 133.9 tok/s, tool_calls
+vram at end: 0, 15494 MiB, 440 MiB 1, 6631 MiB, 1259 MiB 
+=== 2026-11-06 08:35:14   gate fatal_scrU3 PASS no fatal / stall / restart / non-finite line
+=== 2026-11-06 08:35:14 screen S3 (ud31-S.json)
+server ready (guard pid 2955144, server pid 2955159) load_time_s 14.348963276 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ud31-S3_20261106T083516.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6627 MiB, 1263 MiB 
+engine pid 2955164: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+S3n W1-think r0: prompt 111 ttft 0.298 s, 3072 tokens, 168.26 tok/s, length
+S3n W2-code r0: prompt 124 ttft 0.318 s, 3072 tokens, 168.62 tok/s, length
+S3n W3-research r0: prompt 26730 ttft 5.974 s, 2048 tokens, 165.33 tok/s, length
+S3a A-edit r0: prompt 2677 ttft 1.016 s, 763 tokens, 138.88 tok/s, tool_calls
+S3a B-write r0: prompt 1368 ttft 0.861 s, 1441 tokens, 175.88 tok/s, tool_calls
+S3r R1-verify20k r0: prompt 24239 ttft 5.468 s, 3714 tokens, 150.9 tok/s, stop
+S3r R2-report54k r0: prompt 54071 ttft 11.891 s, 4096 tokens, 158.79 tok/s, length
+S3r R3-extract5k r0: prompt 5009 ttft 1.407 s, 916 tokens, 182.0 tok/s, stop
+S3r R4-agent33k r0: prompt 33417 ttft 7.766 s, 285 tokens, 130.76 tok/s, tool_calls
+vram at end: 0, 15490 MiB, 444 MiB 1, 6629 MiB, 1261 MiB 
+=== 2026-11-06 08:38:52   gate fatal_scrS3 PASS no fatal / stall / restart / non-finite line
+=== 2026-11-06 08:38:52 screen P3 (x28h.json)
+server ready (guard pid 2958873, server pid 2958888) load_time_s 14.353685098 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_ud31-P3_20261106T083854.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 2958893: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+P3n W1-think r0: prompt 110 ttft 0.294 s, 3072 tokens, 166.75 tok/s, length
+P3n W2-code r0: prompt 124 ttft 0.334 s, 3072 tokens, 161.79 tok/s, length
+P3n W3-research r0: prompt 26728 ttft 6.035 s, 2048 tokens, 160.74 tok/s, length
+P3a A-edit r0: prompt 2678 ttft 1.015 s, 266 tokens, 123.44 tok/s, tool_calls
+P3a B-write r0: prompt 1369 ttft 0.857 s, 3585 tokens, 153.63 tok/s, tool_calls
+P3r R1-verify20k r0: prompt 24240 ttft 5.537 s, 3829 tokens, 154.5 tok/s, stop
+P3r R2-report54k r0: prompt 54072 ttft 12.018 s, 3148 tokens, 152.21 tok/s, stop
+P3r R3-extract5k r0: prompt 5013 ttft 1.44 s, 1528 tokens, 176.6 tok/s, stop
+P3r R4-agent33k r0: prompt 33417 ttft 7.831 s, 321 tokens, 120.87 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-06 08:42:43   gate fatal_scrP3 PASS no fatal / stall / restart / non-finite line
+=== 2026-11-06 08:42:43 quality: validate (each arm's own head), head check on P, compare (8 BLAS threads, nice 19)
+  validate P: offline head (the arm's own: x28h.json) AGREES with the engine's window rows (5 of 5 checks, mean KL 0.01899; <= 0.05 mean, <= 0.5 each)
+  validate U: offline head (the arm's own: ud31-U.json) AGREES with the engine's window rows (5 of 5 checks, mean KL 0.00440; <= 0.05 mean, <= 0.5 each)
+  validate S: offline head (the arm's own: ud31-S.json) AGREES with the engine's window rows (5 of 5 checks, mean KL 0.00333; <= 0.05 mean, <= 0.5 each)
+  validate R: offline head (the arm's own: ud31-R.json) AGREES with the engine's window rows (5 of 5 checks, mean KL 0.00662; <= 0.05 mean, <= 0.5 each)
+HEAD CHECK OK: P: score.py's own head and the per-arm head give the same KL at all 5 checks (5 decimals)
+31408 positions in 129 blocks; text NLL P 3.7306, U 3.7375, S 3.8343, R 3.4453; d vs P: U +0.0069 (se 0.0628), S +0.1037 (se 0.0631), R -0.2853 (se 0.0827); KL vs R: P 0.71835, U 0.76448, S 0.88686 (224 s)
+Unsloth Dynamic v3.1 gap - decision (2026-11-06 08:46:37; rules work/r23/ud31_rules.py (written 11-04, revised 11-05 before the gap))
+ARMS: P = P028x (configs/x28h.json, STRATA_HC_Q8 off as served); U = UD-IQ3_XXS v3.1 as shipped, STRATA_HC_Q8=1; S = v3.1's routed experts spliced into our ISTA file (off); R = UD-Q4_K_XL (HF cache), the KL reference, STRATA_HC_Q8=1
+  rules INFO the rule text at the gap's start (ud31_rules.py's docstring, incl. the frozen pack-rounding rule): gap/rules.txt sha 6c68d8b69d6c [ud31 11-06 06:58]
+  dl_sha PASS 4 shards re-hashed in 25 s: sha256 = the pinned oids [ud31 11-06 07:28]
+  pack_U PASS rc 0: index.txt: 1079 tensors, 303 served natively, 0 in extra.bin, arena 1.38 GiB conversions.json: 460 tensors converted to the engine's form (264 e
+  hcforms_U INFO pack-u (compat_bf16 True): hc conversions 192 down/up Q8_0->BF16 rounded, 96 inject F32->BF16 exact, 2 output down/up Q8_0->BF16 rounded [ud31 11-06 0
+  splice PASS wrote /home/USER/ai-speed-testing/strata-compare/models/unsloth-v31/splice-S/Qwen3.8-Flash-Next-UD31x-GSQ-RCO-IQ3_S-00001-of-00002.gguf: 51.04 GiB of 
+  splice_verify PASS VERIFY OK: 1223 tensors in our order, 144 experts with the expert shards' types, the rest ours; split keys {'split.no': 0, 'split.count': 2, 'split.te
+  dirty PASS Dirty + Writeback 0 MiB after 0 s (want <= 256); MemAvailable 85 GiB, swap used 3543 MiB [ud31 11-06 07:29]
+  pack_S PASS rc 0: index.txt: 1079 tensors, 302 served natively, 0 in extra.bin, arena 1.43 GiB  [ud31 11-06 07:29]
+  pack_S_dense PASS pack-s dense.bin and index rows = P028x's bringup/out/r20a/pack byte for byte (the dense path is P028x's) [ud31 11-06 07:29]
+  pack_R PASS rc 0: index.txt: 1079 tensors, 303 served natively, 0 in extra.bin, arena 1.38 GiB conversions.json: 460 tensors converted to the engine's form (264 e
+  hcforms_R INFO pack-r (compat_bf16 True): hc conversions 192 down/up Q8_0->BF16 rounded, 96 inject F32->BF16 exact, 2 output down/up Q8_0->BF16 rounded [ud31 11-06 0
+  tok_U PASS tokenizer = P028x's (bringup/out/r20a/pack/tokenizer) [ud31 11-06 07:28]
+  tok_S PASS tokenizer = P028x's (bringup/out/r20a/pack/tokenizer) [ud31 11-06 07:29]
+  tok_R PASS tokenizer = P028x's (bringup/out/r20a/pack/tokenizer) [ud31 11-06 07:29]
+EXACTNESS (repeatability: new weights cannot be bit-identical to P028x)
+  U: REPEATABLE. e7_U1 (vs P028x's x28h-e7a, INFO): exact7 u31-11060658-U1: 0/7 vs x28h-e7a, slots DIFFER (3240+3300 slots (5080 + 4060 Ti); x; e7_U2: PASS exact7 u31-11060658-U2: 7/7 vs u31-11060658-U1, slots MATCHED (3240+3300 slots (5080 + 406; lossless_U_cfg PASS, lossless_U_log PASS, start_U PASS, hcq8_scr_U PASS
+  S: REPEATABLE. e7_S1 (vs P028x's x28h-e7a, INFO): exact7 u31-11060658-S1: 0/7 vs x28h-e7a, slots DIFFER (3240+3300 slots (5080 + 4060 Ti); x; e7_S2: PASS exact7 u31-11060658-S2: 7/7 vs u31-11060658-S1, slots MATCHED (3240+3300 slots (5080 + 406; lossless_S_cfg PASS, lossless_S_log PASS, start_S PASS, hcq8_scr_S PASS, splice_verify PASS, pack_S_dense PASS
+QUALITY - A QUANT COMPARISON, NOT A LOSSLESS GATE, judged by the KL RULES AGAINST R AT THE TEXT LEVEL (11-05; the many-positions NLL bound is revoked, text NLL is INFO): lower KL against R is better
+  texts: 8 distinct (32k, tf-long28k, tf-long40k, tf-long64k, tf-long112k, pp4k, ldrsyn20k, rep9k; dropped as duplicates: pp32k, pp8k, tf-long96k), 22597 positions (every 8th row from 1,024)
+  rule (written before the gap): per text X vs P worse if X > 1.10 x P (+ 1 for the counts), better if P > 1.10 x X (+ 1); per metric WORSE / BETTER = >= 6 of the texts on that side and <= 1 on the other; X WORSE THAN P if any metric WORSE; BETTER if the mean BETTER and none WORSE; else INSIDE THE MARGIN (ABOVE / AT OR BELOW P by the pooled mean)
+  PACK ROUNDING (frozen rule, Karl 11-05): U's and R's prompt rows read their files' Q8_0 hyper-connections rounded to BF16 (pack time); P's and S's are BF16 in the file (unrounded)
+  KL vs R per arm, pooled (lower is better): P mean 0.71669 p90 2.08020 >1 4281 top-1 changed 5292 of 22597; U mean 0.73378 p90 2.10209 >1 4506 top-1 changed 5492 of 22597; S mean 0.88920 p90 2.70887 >1 5349 top-1 changed 6016 of 22597
+  KL rules, U vs P, text level -> INSIDE THE MARGIN, ABOVE P; RECORDED AS INCLUDES PACK ROUNDING (inside the margin (ABOVE P by the pooled mean KL)) - includes pack rounding (the prompt path reads U's Q8_0 HC projections as BF16 from the pack); not a verdict on the file
+    mean  INSIDE THE MARGIN texts worse 4, better 3, inside 0 (+ 1 below the floor, inside); pooled U 0.7338 vs P 0.7167; per text 32k:w tf-long28k:w tf-long40k:b tf-long64k:w tf-long112k:b pp4k:w ldrsyn20k:b rep9k:f
+    p90   INSIDE THE MARGIN texts worse 3, better 3, inside 1 (+ 1 below the floor, inside); pooled U 2.1021 vs P 2.0802; per text 32k:i tf-long28k:w tf-long40k:b tf-long64k:w tf-long112k:b pp4k:w ldrsyn20k:b rep9k:f
+    high  INSIDE THE MARGIN texts worse 4, better 3, inside 0 (+ 1 below the floor, inside); pooled U 4506 vs P 4281; per text 32k:w tf-long28k:w tf-long40k:b tf-long64k:w tf-long112k:b pp4k:w ldrsyn20k:b rep9k:f
+    flips INSIDE THE MARGIN texts worse 4, better 2, inside 1 (+ 1 below the floor, inside); pooled U 5492 vs P 5292; per text 32k:w tf-long28k:w tf-long40k:b tf-long64k:w tf-long112k:i pp4k:w ldrsyn20k:b rep9k:f
+    pooled ratio mean KL(R || U) / KL(R || P) 1.024: whole-text bootstrap se 0.066 CI [0.889, 1.145] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.034 CI [0.959, 1.093], 93 blocks]
+  KL rules, S vs P, text level -> INSIDE THE MARGIN, ABOVE P
+    mean  INSIDE THE MARGIN texts worse 5, better 0, inside 2 (+ 1 below the floor, inside); pooled S 0.8892 vs P 0.7167; per text 32k:w tf-long28k:i tf-long40k:w tf-long64k:w tf-long112k:w pp4k:w ldrsyn20k:i rep9k:f
+    p90   INSIDE THE MARGIN texts worse 5, better 0, inside 2 (+ 1 below the floor, inside); pooled S 2.7089 vs P 2.0802; per text 32k:w tf-long28k:i tf-long40k:w tf-long64k:w tf-long112k:w pp4k:w ldrsyn20k:i rep9k:f
+    high  INSIDE THE MARGIN texts worse 5, better 0, inside 2 (+ 1 below the floor, inside); pooled S 5349 vs P 4281; per text 32k:w tf-long28k:i tf-long40k:w tf-long64k:w tf-long112k:w pp4k:w ldrsyn20k:i rep9k:f
+    flips INSIDE THE MARGIN texts worse 4, better 0, inside 3 (+ 1 below the floor, inside); pooled S 6016 vs P 5292; per text 32k:w tf-long28k:i tf-long40k:w tf-long64k:i tf-long112k:w pp4k:w ldrsyn20k:i rep9k:f
+    pooled ratio mean KL(R || S) / KL(R || P) 1.241: whole-text bootstrap se 0.102 CI [1.085, 1.473] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.059 CI [1.134, 1.365], 93 blocks]
+  INFO U vs S (the whole file vs its experts in our file), the same rule: INSIDE THE MARGIN, AT OR BELOW S; mean: texts worse 0, better 5; pooled ratio 0.825: whole-text bootstrap se 0.098 CI [0.629, 1.008] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.040 CI [0.746, 0.903], 93 blocks]
+  TEXT NLL - INFO ONLY (the many-positions NLL bound is revoked 11-05; whole-text uncertainty first, the 2,048-token-block figure beside it, labelled):
+    per arm, pooled NLL (nats/token): P 3.7915, U 3.7237, S 3.7828, R 3.5861
+    U vs P: d -0.0677: whole-text bootstrap se 0.1841 CI [-0.5274, +0.1928] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.0801 CI [-0.2326, +0.0793], 93 blocks]; texts lower 3, higher 5; 32k:+0.048 tf-long28k:+0.116 tf-long40k:+0.093 tf-long64k:+0.385 tf-long112k:-0.278 pp4k:+0.235 ldrsyn20k:-0.005 rep9k:-3.002 [includes pack rounding (the prompt path reads U's Q8_0 HC projections as BF16 from the pack)]
+    S vs P: d -0.0087: whole-text bootstrap se 0.1774 CI [-0.4234, +0.2687] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.0771 CI [-0.1653, +0.1393], 93 blocks]; texts lower 3, higher 5; 32k:+0.304 tf-long28k:+0.052 tf-long40k:-0.478 tf-long64k:+0.426 tf-long112k:+0.212 pp4k:+0.336 ldrsyn20k:-0.028 rep9k:-2.295
+    R vs P: d -0.2054: whole-text bootstrap se 0.2798 CI [-0.6685, +0.3916] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.1084 CI [-0.4055, +0.0192], 93 blocks]; texts lower 6, higher 2; 32k:-0.374 tf-long28k:-0.601 tf-long40k:+1.130 tf-long64k:-0.650 tf-long112k:-0.490 pp4k:-0.191 ldrsyn20k:+0.455 rep9k:-1.828 [R: the reference quant; its hc rounded at pack time too]
+=> U DECODE-PATH FOLLOW-UP: WANTED (U's KL verdict INSIDE THE MARGIN, ABOVE P: inside the margin (ABOVE P by the pooled mean KL); work/r23/gap-ud31-dec.sh scores U's decode path with STRATA_HC_Q8=1 against the decode-path gap's P rows -> results/r23/ud31/dec/decision.txt decides)
+SPEED (Karl's no-loss rule: no workload slower beyond its noise; U and S vs P, the 9-workload screen x3)
+  U: NO LOSS: per-workload no-loss: none of the 9 slower beyond its noise; screen geomeans vs P: decode +1.95 % prompt +0.45 % (3 / 3 complete passes)
+  S: NO LOSS: per-workload no-loss: none of the 9 slower beyond its noise; screen geomeans vs P: decode +3.01 % prompt +0.96 % (3 / 3 complete passes)
+  INFO slots: 5080 + 4060 Ti slots at start (auto fill): P 4585+1
+SUMMARY
+  U: exactness REPEATABLE; KL rules vs P (text level) INCLUDES PACK ROUNDING; text NLL vs P (INFO) d -0.0677 (whole-text se 0.1841); speed NO LOSS [class INSIDE THE MARGIN, ABOVE P; includes pack rounding (the prompt path reads U's Q8_0 HC projections as BF16 from the pack)]
+  S: exactness REPEATABLE; KL rules vs P (text level) INSIDE THE MARGIN, ABOVE P; text NLL vs P (INFO) d -0.0087 (whole-text se 0.1774); speed NO LOSS
+  U DECODE-PATH FOLLOW-UP: WANTED
+NOTHING SWITCHES: P028x stays served; any use of v3.1 is Karl's call.
+=== 2026-11-06 08:46:37 => U DECODE-PATH FOLLOW-UP: WANTED (U's KL verdict INSIDE THE MARGIN, ABOVE P: inside the margin (ABOVE P by the pooled mean KL); work/r23/gap-ud31-dec.sh scores U's decode path with STRATA_HC_Q8=1 ag (gap-ud31-dec.sh runs only on WANTED)
+=== 2026-11-06 08:46:37 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-06 08:46:44 port_gap4: memory back: MemAvailable 87 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-06 08:47:01 port_gap4: WARNING: 1 MB swapped out while P028x started
+2026-11-06 08:47:01 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-06 08:47:01 v3.1 gap: 78 min with 8080 down
+=== 2026-11-06 08:47:01 v3.1 gap done

@@ -1,0 +1,291 @@
+=== 2026-11-04 15:17:08 NLL MANY-POSITIONS GAP (work/r23/gap-nll.sh): PLAN.md section 5 - measurements only, P028x stays served, nothing switches (Karl 11-04)
+=== 2026-11-04 15:17:08 an earlier attempt's outputs moved to /home/USER/ai-speed-testing/strata-compare/results/r23/nll-many/prev-1104-151708
+=== 2026-11-04 15:17:09   gate engines PASS  engine-r22p021n=68befe4e03bf engine-r22p028x=f4c4f654fb24 engine-r22p028=511f0bbbe646 (the past cases' binaries; nothing is built)
+2026-11-04 15:17:09 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 317937 (engine 317951)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-04 16:20:22 port_gap4: gap open: test lock held (pid 455139), 8080 stopped
+=== 2026-11-04 16:20:22 8080 down: engines left: none, MemAvailable 85 GB
+=== 2026-11-04 16:20:22 1 arm ref (P021n, configs/r21n1.json) and the validation of the offline head (score.py validate)
+=== 2026-11-04 16:20:22 arm ref (r21n1.json)
+engine pid 455339: 18 env keys, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 18 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  ref: 32k-32768: 32768 tokens, 4096 rows, 47 s
+  ref: tf-long28k-28672: 28672 tokens, 3584 rows, 72 s
+  ref: tf-long40k-32768: 32768 tokens, 4096 rows, 102 s
+  ref: tf-long64k-32768: 32768 tokens, 4096 rows, 131 s
+  ref: tf-long112k-32768: 32768 tokens, 4096 rows, 161 s
+  ref: pp4k-4096: 4096 tokens, 512 rows, 164 s
+  ref: ldrsyn20k-16110: 16110 tokens, 2014 rows, 179 s
+  ref: rep9k-9010: 9010 tokens, 1127 rows, 187 s
+  ref: pp32k-32768: 32768 tokens, 4096 rows, 216 s
+  ref: tf-long96k-32768: 32768 tokens, 4096 rows, 246 s
+  ref: pp8k-8019: 8019 tokens, 1003 rows, 253 s
+  ref: 32816 rows from 11 texts in 279 s
+=== 2026-11-04 16:25:02   gate run_ref PASS score.py run rc 0: 32816 rows from 11 texts in 279 s
+  validate ref: check-32k-2049                   KL(window || offline head) 0.00070  top-1 same  NLL window 4.8277 head 5.2672
+  validate ref: check-tf-long28k-4097            KL(window || offline head) 0.00492  top-1 same  NLL window 5.6261 head 6.2460
+  validate ref: check-ldrsyn20k-8193             KL(window || offline head) 0.01756  top-1 same  NLL window 5.4330 head 5.2249
+  validate ref: check-tf-long64k-12289           KL(window || offline head) 0.03238  top-1 DIFFERS  NLL window 2.7473 head 2.6243
+  validate ref: check-pp4k-2049                  KL(window || offline head) 0.00321  top-1 DIFFERS  NLL window 2.1760 head 2.1559
+=== 2026-11-04 16:25:05   gate validate_ref PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+=== 2026-11-04 16:25:05 2 the references and candidates (70 min to the deadline)
+=== 2026-11-04 16:25:05 arm ref2 (r21n1.json)
+engine pid 456709: 18 env keys, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 18 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  ref2: 32k-32768: 32768 tokens, 4096 rows, 40 s
+  ref2: tf-long28k-28672: 28672 tokens, 3584 rows, 66 s
+  ref2: tf-long40k-32768: 32768 tokens, 4096 rows, 96 s
+  ref2: tf-long64k-32768: 32768 tokens, 4096 rows, 125 s
+  ref2: tf-long112k-32768: 32768 tokens, 4096 rows, 154 s
+  ref2: pp4k-4096: 4096 tokens, 512 rows, 158 s
+  ref2: ldrsyn20k-16110: 16110 tokens, 2014 rows, 173 s
+  ref2: rep9k-9010: 9010 tokens, 1127 rows, 181 s
+  ref2: pp32k-32768: 32768 tokens, 4096 rows, 210 s
+  ref2: tf-long96k-32768: 32768 tokens, 4096 rows, 240 s
+  ref2: pp8k-8019: 8019 tokens, 1003 rows, 247 s
+  ref2: 32816 rows from 11 texts in 273 s
+=== 2026-11-04 16:29:39   gate run_ref2 PASS score.py run rc 0: 32816 rows from 11 texts in 273 s
+=== 2026-11-04 16:29:39 arm unfused (r21n1-unfused.json)
+engine pid 458003: 18 env keys, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 18 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  unfused: 32k-32768: 32768 tokens, 4096 rows, 41 s
+  unfused: tf-long28k-28672: 28672 tokens, 3584 rows, 67 s
+  unfused: tf-long40k-32768: 32768 tokens, 4096 rows, 96 s
+  unfused: tf-long64k-32768: 32768 tokens, 4096 rows, 126 s
+  unfused: tf-long112k-32768: 32768 tokens, 4096 rows, 155 s
+  unfused: pp4k-4096: 4096 tokens, 512 rows, 159 s
+  unfused: ldrsyn20k-16110: 16110 tokens, 2014 rows, 174 s
+  unfused: rep9k-9010: 9010 tokens, 1127 rows, 182 s
+  unfused: pp32k-32768: 32768 tokens, 4096 rows, 211 s
+  unfused: tf-long96k-32768: 32768 tokens, 4096 rows, 241 s
+  unfused: pp8k-8019: 8019 tokens, 1003 rows, 248 s
+  unfused: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 16:34:14   gate run_unfused PASS score.py run rc 0: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 16:34:14 arm cpushare (r21n1.json; --env STRATA_PREFILL_CPU_SHARE=0.4)
+engine pid 459304: 18 env keys, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 18 env keys as configured (+ pf_yardstick's fixed env, STRATA_PREFILL_CPU_SHARE=0.4), no other STRATA_*, score.py's engine args
+  cpushare: 32k-32768: 32768 tokens, 4096 rows, 38 s
+  cpushare: tf-long28k-28672: 28672 tokens, 3584 rows, 61 s
+  cpushare: tf-long40k-32768: 32768 tokens, 4096 rows, 87 s
+  cpushare: tf-long64k-32768: 32768 tokens, 4096 rows, 113 s
+  cpushare: tf-long112k-32768: 32768 tokens, 4096 rows, 139 s
+  cpushare: pp4k-4096: 4096 tokens, 512 rows, 143 s
+  cpushare: ldrsyn20k-16110: 16110 tokens, 2014 rows, 155 s
+  cpushare: rep9k-9010: 9010 tokens, 1127 rows, 160 s
+  cpushare: pp32k-32768: 32768 tokens, 4096 rows, 186 s
+  cpushare: tf-long96k-32768: 32768 tokens, 4096 rows, 212 s
+  cpushare: pp8k-8019: 8019 tokens, 1003 rows, 219 s
+  cpushare: 32816 rows from 11 texts in 241 s
+=== 2026-11-04 16:38:16   gate run_cpushare PASS score.py run rc 0: 32816 rows from 11 texts in 241 s
+=== 2026-11-04 16:38:16 arm v2 (r21n1-v2.json)
+engine pid 473907: 19 env keys, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 19 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  v2: 32k-32768: 32768 tokens, 4096 rows, 40 s
+  v2: tf-long28k-28672: 28672 tokens, 3584 rows, 66 s
+  v2: tf-long40k-32768: 32768 tokens, 4096 rows, 96 s
+  v2: tf-long64k-32768: 32768 tokens, 4096 rows, 125 s
+  v2: tf-long112k-32768: 32768 tokens, 4096 rows, 154 s
+  v2: pp4k-4096: 4096 tokens, 512 rows, 158 s
+  v2: ldrsyn20k-16110: 16110 tokens, 2014 rows, 173 s
+  v2: rep9k-9010: 9010 tokens, 1127 rows, 181 s
+  v2: pp32k-32768: 32768 tokens, 4096 rows, 210 s
+  v2: tf-long96k-32768: 32768 tokens, 4096 rows, 240 s
+  v2: pp8k-8019: 8019 tokens, 1003 rows, 247 s
+  v2: 32816 rows from 11 texts in 273 s
+=== 2026-11-04 16:42:50   gate run_v2 PASS score.py run rc 0: 32816 rows from 11 texts in 273 s
+=== 2026-11-04 16:42:50 arm x28h (x28h.json)
+engine pid 475190: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 28 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  x28h: 32k-32768: 32768 tokens, 4096 rows, 42 s
+  x28h: tf-long28k-28672: 28672 tokens, 3584 rows, 68 s
+  x28h: tf-long40k-32768: 32768 tokens, 4096 rows, 97 s
+  x28h: tf-long64k-32768: 32768 tokens, 4096 rows, 126 s
+  x28h: tf-long112k-32768: 32768 tokens, 4096 rows, 156 s
+  x28h: pp4k-4096: 4096 tokens, 512 rows, 160 s
+  x28h: ldrsyn20k-16110: 16110 tokens, 2014 rows, 174 s
+  x28h: rep9k-9010: 9010 tokens, 1127 rows, 182 s
+  x28h: pp32k-32768: 32768 tokens, 4096 rows, 211 s
+  x28h: tf-long96k-32768: 32768 tokens, 4096 rows, 241 s
+  x28h: pp8k-8019: 8019 tokens, 1003 rows, 248 s
+  x28h: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 16:47:25   gate run_x28h PASS score.py run rc 0: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 16:47:25 arm x28h-nov2 (x28h-nov2.json)
+engine pid 476515: 27 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 27 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  x28h-nov2: 32k-32768: 32768 tokens, 4096 rows, 42 s
+  x28h-nov2: tf-long28k-28672: 28672 tokens, 3584 rows, 68 s
+  x28h-nov2: tf-long40k-32768: 32768 tokens, 4096 rows, 97 s
+  x28h-nov2: tf-long64k-32768: 32768 tokens, 4096 rows, 126 s
+  x28h-nov2: tf-long112k-32768: 32768 tokens, 4096 rows, 156 s
+  x28h-nov2: pp4k-4096: 4096 tokens, 512 rows, 160 s
+  x28h-nov2: ldrsyn20k-16110: 16110 tokens, 2014 rows, 174 s
+  x28h-nov2: rep9k-9010: 9010 tokens, 1127 rows, 182 s
+  x28h-nov2: pp32k-32768: 32768 tokens, 4096 rows, 211 s
+  x28h-nov2: tf-long96k-32768: 32768 tokens, 4096 rows, 241 s
+  x28h-nov2: pp8k-8019: 8019 tokens, 1003 rows, 248 s
+  x28h-nov2: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 16:52:01   gate run_x28h-nov2 PASS score.py run rc 0: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 16:52:01 arm r28h (r28h.json)
+engine pid 477855: 26 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 26 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  r28h: 32k-32768: 32768 tokens, 4096 rows, 42 s
+  r28h: tf-long28k-28672: 28672 tokens, 3584 rows, 68 s
+  r28h: tf-long40k-32768: 32768 tokens, 4096 rows, 97 s
+  r28h: tf-long64k-32768: 32768 tokens, 4096 rows, 126 s
+  r28h: tf-long112k-32768: 32768 tokens, 4096 rows, 156 s
+  r28h: pp4k-4096: 4096 tokens, 512 rows, 160 s
+  r28h: ldrsyn20k-16110: 16110 tokens, 2014 rows, 174 s
+  r28h: rep9k-9010: 9010 tokens, 1127 rows, 182 s
+  r28h: pp32k-32768: 32768 tokens, 4096 rows, 211 s
+  r28h: tf-long96k-32768: 32768 tokens, 4096 rows, 241 s
+  r28h: pp8k-8019: 8019 tokens, 1003 rows, 248 s
+  r28h: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 16:56:36   gate run_r28h PASS score.py run rc 0: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 16:56:36 3 optional: P028x's own rounding references, each only if it fits (38 min to the deadline)
+=== 2026-11-04 16:56:36 arm x28h-unfused (x28h.json; --env STRATA_PF_FUSED=0)
+engine pid 479151: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 28 env keys as configured (+ pf_yardstick's fixed env, STRATA_PF_FUSED=0), no other STRATA_*, score.py's engine args
+  x28h-unfused: 32k-32768: 32768 tokens, 4096 rows, 42 s
+  x28h-unfused: tf-long28k-28672: 28672 tokens, 3584 rows, 68 s
+  x28h-unfused: tf-long40k-32768: 32768 tokens, 4096 rows, 97 s
+  x28h-unfused: tf-long64k-32768: 32768 tokens, 4096 rows, 127 s
+  x28h-unfused: tf-long112k-32768: 32768 tokens, 4096 rows, 156 s
+  x28h-unfused: pp4k-4096: 4096 tokens, 512 rows, 160 s
+  x28h-unfused: ldrsyn20k-16110: 16110 tokens, 2014 rows, 175 s
+  x28h-unfused: rep9k-9010: 9010 tokens, 1127 rows, 182 s
+  x28h-unfused: pp32k-32768: 32768 tokens, 4096 rows, 212 s
+  x28h-unfused: tf-long96k-32768: 32768 tokens, 4096 rows, 241 s
+  x28h-unfused: pp8k-8019: 8019 tokens, 1003 rows, 249 s
+  x28h-unfused: 32816 rows from 11 texts in 275 s
+=== 2026-11-04 17:01:12   gate run_x28h-unfused PASS score.py run rc 0: 32816 rows from 11 texts in 275 s
+=== 2026-11-04 17:01:12 arm x28h-cpushare (x28h.json; --env STRATA_PREFILL_CPU_SHARE=0.4)
+engine pid 480463: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 28 env keys as configured (+ pf_yardstick's fixed env, STRATA_PREFILL_CPU_SHARE=0.4), no other STRATA_*, score.py's engine args
+  x28h-cpushare: 32k-32768: 32768 tokens, 4096 rows, 38 s
+  x28h-cpushare: tf-long28k-28672: 28672 tokens, 3584 rows, 59 s
+  x28h-cpushare: tf-long40k-32768: 32768 tokens, 4096 rows, 84 s
+  x28h-cpushare: tf-long64k-32768: 32768 tokens, 4096 rows, 108 s
+  x28h-cpushare: tf-long112k-32768: 32768 tokens, 4096 rows, 133 s
+  x28h-cpushare: pp4k-4096: 4096 tokens, 512 rows, 136 s
+  x28h-cpushare: ldrsyn20k-16110: 16110 tokens, 2014 rows, 148 s
+  x28h-cpushare: rep9k-9010: 9010 tokens, 1127 rows, 152 s
+  x28h-cpushare: pp32k-32768: 32768 tokens, 4096 rows, 177 s
+  x28h-cpushare: tf-long96k-32768: 32768 tokens, 4096 rows, 201 s
+  x28h-cpushare: pp8k-8019: 8019 tokens, 1003 rows, 207 s
+  x28h-cpushare: 32816 rows from 11 texts in 228 s
+=== 2026-11-04 17:05:01   gate run_x28h-cpushare PASS score.py run rc 0: 32816 rows from 11 texts in 228 s
+27 of 27 kept-row / window-logit files identical (ref2 vs ref) -> IDENTICAL
+27 of 27 kept-row / window-logit files identical (x28h-nov2 vs x28h) -> IDENTICAL
+=== 2026-11-04 17:05:02 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-04 17:05:07 port_gap4: memory back: MemAvailable 87 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-04 17:05:20 port_gap4: WARNING: 1 MB swapped out while P028x started
+2026-11-04 17:05:20 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-04 17:05:20 NLL gap: 44 min with 8080 down
+=== 2026-11-04 17:05:20 after the gap (CPU, nice 19, 4 BLAS threads): validate the other arms, compare, decide
+  validate ref2: check-32k-2049                   KL(window || offline head) 0.00070  top-1 same  NLL window 4.8277 head 5.2672
+  validate ref2: check-tf-long28k-4097            KL(window || offline head) 0.00492  top-1 same  NLL window 5.6261 head 6.2460
+  validate ref2: check-ldrsyn20k-8193             KL(window || offline head) 0.01756  top-1 same  NLL window 5.4330 head 5.2249
+  validate ref2: check-tf-long64k-12289           KL(window || offline head) 0.03238  top-1 DIFFERS  NLL window 2.7473 head 2.6243
+  validate ref2: check-pp4k-2049                  KL(window || offline head) 0.00321  top-1 DIFFERS  NLL window 2.1760 head 2.1559
+=== 2026-11-04 17:05:42   gate validate_ref2 PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate unfused: check-32k-2049                   KL(window || offline head) 0.00010  top-1 same  NLL window 3.9097 head 3.8135
+  validate unfused: check-tf-long28k-4097            KL(window || offline head) 0.03753  top-1 same  NLL window 4.7420 head 5.2105
+  validate unfused: check-ldrsyn20k-8193             KL(window || offline head) 0.10649  top-1 DIFFERS  NLL window 3.2525 head 4.8337
+  validate unfused: check-tf-long64k-12289           KL(window || offline head) 0.01862  top-1 same  NLL window 2.1880 head 2.2138
+  validate unfused: check-pp4k-2049                  KL(window || offline head) 0.00109  top-1 same  NLL window 2.2751 head 2.2842
+=== 2026-11-04 17:05:47   gate validate_unfused PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate cpushare: check-32k-2049                   KL(window || offline head) 0.00099  top-1 same  NLL window 4.2822 head 3.9575
+  validate cpushare: check-tf-long28k-4097            KL(window || offline head) 0.01357  top-1 same  NLL window 5.4719 head 5.5946
+  validate cpushare: check-ldrsyn20k-8193             KL(window || offline head) 0.08296  top-1 DIFFERS  NLL window 6.2993 head 7.0095
+  validate cpushare: check-tf-long64k-12289           KL(window || offline head) 0.00148  top-1 same  NLL window 2.6928 head 2.7313
+  validate cpushare: check-pp4k-2049                  KL(window || offline head) 0.00061  top-1 same  NLL window 2.2445 head 2.2809
+=== 2026-11-04 17:05:50   gate validate_cpushare PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate v2: check-32k-2049                   KL(window || offline head) 0.00056  top-1 same  NLL window 4.2710 head 4.5548
+  validate v2: check-tf-long28k-4097            KL(window || offline head) 0.03005  top-1 same  NLL window 4.4192 head 5.3787
+  validate v2: check-ldrsyn20k-8193             KL(window || offline head) 0.10812  top-1 same  NLL window 5.8923 head 4.5856
+  validate v2: check-tf-long64k-12289           KL(window || offline head) 0.02355  top-1 same  NLL window 2.5566 head 2.7371
+  validate v2: check-pp4k-2049                  KL(window || offline head) 0.00204  top-1 same  NLL window 2.3386 head 2.2268
+=== 2026-11-04 17:05:53   gate validate_v2 PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate x28h: check-32k-2049                   KL(window || offline head) 0.00003  top-1 same  NLL window 5.1882 head 5.2672
+  validate x28h: check-tf-long28k-4097            KL(window || offline head) 0.03529  top-1 same  NLL window 5.4946 head 6.2460
+  validate x28h: check-ldrsyn20k-8193             KL(window || offline head) 0.03521  top-1 same  NLL window 6.0998 head 5.2249
+  validate x28h: check-tf-long64k-12289           KL(window || offline head) 0.02427  top-1 DIFFERS  NLL window 2.3238 head 2.6243
+  validate x28h: check-pp4k-2049                  KL(window || offline head) 0.00014  top-1 same  NLL window 2.1446 head 2.1559
+=== 2026-11-04 17:05:56   gate validate_x28h PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate x28h-nov2: check-32k-2049                   KL(window || offline head) 0.00003  top-1 same  NLL window 5.1882 head 5.2672
+  validate x28h-nov2: check-tf-long28k-4097            KL(window || offline head) 0.03529  top-1 same  NLL window 5.4946 head 6.2460
+  validate x28h-nov2: check-ldrsyn20k-8193             KL(window || offline head) 0.03521  top-1 same  NLL window 6.0998 head 5.2249
+  validate x28h-nov2: check-tf-long64k-12289           KL(window || offline head) 0.02427  top-1 DIFFERS  NLL window 2.3238 head 2.6243
+  validate x28h-nov2: check-pp4k-2049                  KL(window || offline head) 0.00014  top-1 same  NLL window 2.1446 head 2.1559
+=== 2026-11-04 17:06:00   gate validate_x28h-nov2 PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate r28h: check-32k-2049                   KL(window || offline head) 0.00003  top-1 same  NLL window 5.1659 head 5.2672
+  validate r28h: check-tf-long28k-4097            KL(window || offline head) 0.00728  top-1 same  NLL window 6.1080 head 6.2460
+  validate r28h: check-ldrsyn20k-8193             KL(window || offline head) 0.07418  top-1 same  NLL window 5.1470 head 5.2249
+  validate r28h: check-tf-long64k-12289           KL(window || offline head) 0.00840  top-1 DIFFERS  NLL window 2.6019 head 2.6243
+  validate r28h: check-pp4k-2049                  KL(window || offline head) 0.00681  top-1 DIFFERS  NLL window 2.1627 head 2.1559
+=== 2026-11-04 17:06:02   gate validate_r28h PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate x28h-unfused: check-32k-2049                   KL(window || offline head) 0.00012  top-1 same  NLL window 3.7151 head 3.8135
+  validate x28h-unfused: check-tf-long28k-4097            KL(window || offline head) 0.00293  top-1 same  NLL window 4.9455 head 5.2105
+  validate x28h-unfused: check-ldrsyn20k-8193             KL(window || offline head) 0.02787  top-1 same  NLL window 4.7307 head 4.8337
+  validate x28h-unfused: check-tf-long64k-12289           KL(window || offline head) 0.02851  top-1 same  NLL window 2.2413 head 2.2138
+  validate x28h-unfused: check-pp4k-2049                  KL(window || offline head) 0.00475  top-1 same  NLL window 2.2530 head 2.2842
+=== 2026-11-04 17:06:05   gate validate_x28h-unfused PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate x28h-cpushare: check-32k-2049                   KL(window || offline head) 0.00002  top-1 same  NLL window 3.9429 head 3.9575
+  validate x28h-cpushare: check-tf-long28k-4097            KL(window || offline head) 0.01426  top-1 same  NLL window 5.4767 head 5.5946
+  validate x28h-cpushare: check-ldrsyn20k-8193             KL(window || offline head) 0.02429  top-1 DIFFERS  NLL window 6.7196 head 7.0095
+  validate x28h-cpushare: check-tf-long64k-12289           KL(window || offline head) 0.06104  top-1 same  NLL window 2.8416 head 2.7313
+  validate x28h-cpushare: check-pp4k-2049                  KL(window || offline head) 0.00381  top-1 same  NLL window 2.2305 head 2.2809
+=== 2026-11-04 17:06:09   gate validate_x28h-cpushare PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+=== 2026-11-04 17:06:09 compare: ref / unfused, cpushare / ref2,v2,x28h,x28h-nov2,r28h (~31K positions each)
+  pp8k-8019: 875 positions
+reference ref; rounding references unfused, cpushare; 31408 NLL positions in 129 blocks (dump rows (offline head), positions >= 1024, every 8th row; blocks: 2048 tokens); bootstrap 10000 replicates
+KL bounds (rule3 form): mean <= 0.168114, p90 <= 0.287034, rows KL > 1 <= 887, changed top-1 <= 3432.0
+NLL of ref on these positions 3.7306; rule3 bound (1.10 x the larger reference distance) 0.1365
+arm                 n   KL mean       p90   >1   top1 |    NLL d              95% CI      se sd/pos |d|>.5  deff
+unfused         31408  0.147783  0.254088  886   3115 |  -0.1241 [ -0.1680, -0.0781]  0.0229  1.072  0.285  14.3
+cpushare        31408  0.152831  0.260940  842   3120 |  -0.0999 [ -0.1484, -0.0516]  0.0247  1.122  0.284  15.2
+ref2            31408  0.000000  0.000000    0      0 |  +0.0000 [ +0.0000, +0.0000]  0.0000  0.000  0.000   nan
+v2              31408  0.142812  0.217359  830   2905 |  -0.0489 [ -0.0889, -0.0047]  0.0216  1.065  0.272  13.0
+x28h            31408  0.000000  0.000000    0      0 |  +0.0000 [ +0.0000, +0.0000]  0.0000  0.000  0.000   nan
+x28h-nov2       31408  0.000000  0.000000    0      0 |  +0.0000 [ +0.0000, +0.0000]  0.0000  0.000  0.000   nan
+r28h            31408  0.000000  0.000000    0      0 |  +0.0000 [ +0.0000, +0.0000]  0.0000  0.000  0.000   nan
+  ref2: NLL excess over the spread bound S = -0.1365 (= identical rows, se 0; bootstrap 90% -0.1779 .. -0.0992; noise margin 0.0000) -> rule3 PASS, proposed rule PASS; KL checks PASS
+  v2: NLL excess over the spread bound S = -0.1855 (= -8.6 se; bootstrap 90% -0.2544 .. -0.1186; noise margin 0.0356) -> rule3 PASS, proposed rule UNDERPOWERED; KL checks PASS
+  x28h: NLL excess over the spread bound S = -0.1365 (= identical rows, se 0; bootstrap 90% -0.1779 .. -0.0992; noise margin 0.0000) -> rule3 PASS, proposed rule PASS; KL checks PASS
+  x28h-nov2: NLL excess over the spread bound S = -0.1365 (= identical rows, se 0; bootstrap 90% -0.1779 .. -0.0992; noise margin 0.0000) -> rule3 PASS, proposed rule PASS; KL checks PASS
+  r28h: NLL excess over the spread bound S = -0.1365 (= identical rows, se 0; bootstrap 90% -0.1779 .. -0.0992; noise margin 0.0000) -> rule3 PASS, proposed rule PASS; KL checks PASS
+  blocks  1024 ( 246): se unfused 0.0174  cpushare 0.0190  ref2 0.0000  v2 0.0170  x28h 0.0000  x28h-nov2 0.0000  r28h 0.0000
+  blocks  2048 ( 129): se unfused 0.0228  cpushare 0.0245  ref2 0.0000  v2 0.0213  x28h 0.0000  x28h-nov2 0.0000  r28h 0.0000
+  blocks  4096 (  65): se unfused 0.0288  cpushare 0.0316  ref2 0.0000  v2 0.0273  x28h 0.0000  x28h-nov2 0.0000  r28h 0.0000
+  blocks  8192 (  34): se unfused 0.0371  cpushare 0.0369  ref2 0.0000  v2 0.0370  x28h 0.0000  x28h-nov2 0.0000  r28h 0.0000
+  blocks  text (  11): se unfused 0.0458  cpushare 0.0420  ref2 0.0000  v2 0.0469  x28h 0.0000  x28h-nov2 0.0000  r28h 0.0000
+=== 2026-11-04 17:14:54   gate compare PASS rc 0 (1 = a candidate fails the proposed rule): result.json, rows.tsv
+=== 2026-11-04 17:14:54 compare with P028x as the reference (INFO): x28h / x28h-unfused, x28h-cpushare / x28h-nov2,r28h
+=== 2026-11-04 17:21:11   gate compare_x28h INFO result-x28h.json
+NLL many-positions gap - decision (2026-11-04 17:21:11; rules: work/r23/nll_rules.py, written before the gap)
+validation (score.py validate, ref arm): PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02) [nll 11-04 16:25]
+positions: 31408 in 129 blocks; NLL of ref there 3.7306; references unfused d -0.1241 (se 0.0229), cpushare d -0.0999 (se 0.0247); bound 1.10 x max |d_R| = 0.1365
+ref2       d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+v2         d -0.0489 [-0.0889, -0.0047] se 0.0216 | bound 0.1365 + margin 0.0356 (excess -0.1855 = -8.6 se) -> NLL UNDERPOWERED; KL mean 0.14281 p90 0.21736 >1 830 top-1 2905 -> KL PASS => UNDERPOWERED
+x28h       d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+x28h-nov2  d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+r28h       d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+identity ref2 = ref: d +0.000000, exactly-0 positions 1.0000, KL mean 0.00e+00; bytes: PASS 27 of 27 kept-row / window-logit files identical (ref2 vs ref)
+identity x28h-nov2 = x28h (gap 16: v2 on = off on P028x): PASS 27 of 27 kept-row / window-logit files identical (x28h-nov2 vs x28h)
+power: se 0.0000-0.0216 over v2, x28h, x28h-nov2, r28h (cap 0.01) -> UNDERPOWERED for v2: extend the texts (score.py run --max-len 65536: ~+40 % text, se x ~0.85; or add texts)
+what N buys (every 16th row: 15705 positions): se unfused 0.0232, cpushare 0.0234, ref2 0.0000, v2 0.0225, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+what N buys (every 64th row: 3927 positions): se unfused 0.0298, cpushare 0.0292, ref2 0.0000, v2 0.0274, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  1024: se unfused 0.0174, cpushare 0.0190, ref2 0.0000, v2 0.0170, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  2048: se unfused 0.0228, cpushare 0.0245, ref2 0.0000, v2 0.0213, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  4096: se unfused 0.0288, cpushare 0.0316, ref2 0.0000, v2 0.0273, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  8192: se unfused 0.0371, cpushare 0.0369, ref2 0.0000, v2 0.0370, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  text: se unfused 0.0458, cpushare 0.0420, ref2 0.0000, v2 0.0469, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+INFO - P028x (x28h) as the reference, its own rounding references x28h-unfused, x28h-cpushare: bound 0.1365
+  x28h-nov2  d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+  r28h       d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+validate on the other arms (INFO): unfused PASS, cpushare PASS, ref2 PASS, v2 PASS, x28h PASS, x28h-nov2 PASS, r28h PASS, x28h-unfused PASS, x28h-cpushare PASS
+=> JUDGED. The new bound is ADOPTED from this gap on (Karl 11-04): ADOPTED-BOUND.json. Past verdicts stay as recorded: PAST-VERDICTS-NOTE.txt.
+=== 2026-11-04 17:21:11 NLL gap done

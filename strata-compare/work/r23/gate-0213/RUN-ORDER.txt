@@ -1,0 +1,119 @@
+v0.2.13 BASELINE GATE - run order (written 11-10 by a helper; Claude runs these; nothing here has run for real - only
+gate0213_rules.py's selftest, make_configs0213.py (into scratch, and `single` once: configs/P0213x-single.json), the
+driver's --dry-run and the --mock test ran). Karl 11-10: "Baseline gate on the v0.2.13 port: yes, run it next (exactness
+on the command-line path, long40, the 3-pass screen and Basalt's speed rule). If the -2.5% decode turns out real beyond
+noise, find the cause desk-first, the same way as the 1.4% hunt, and note any pin for the Qwen4 port. Add the
+single-card fallback config only if it's cheap." NOTHING SWITCHES: 8080 stays the daily.
+
+Files (work/r23/gate-0213/):
+  gap-gate0213.sh       the driver (exit 0 done, 1 busy, 2 a bad argument, 3 a kernel error: stopped at once, the daily
+                        back unless the result says "8080 NOT back", 4 port_gap4 end failed, 5 not run: engines left after
+                        8080 stopped, 6 hard refusal (the switch gap does not stand for this build, a sha / file / stock
+                        engine / configure log / config / pin problem, a selftest), 7 signal, 8 the priority rule, 9 another
+                        instance). The v0.2.11 gate's steps (work/r23/gap-port0211.sh) on the switch gap's machinery
+                        (work/r23/switch-gap/gap-switch0213.sh: the kernel-error stop, the Qwen4 priority rule, the lock
+                        sweep, test_cleanup, the pid file, the signal trap, the watchdog, --dry-run, --mock)
+  gate0213_rules.py     the rules (its docstring, frozen into results/r23/port-0213/gate/rules.txt with the sha256 of every
+                        file the gap runs) and the tools the driver calls: switchref, pins, singleplan, single, decode,
+                        rules, decide, selftest. IMPORTS port0211_rules.py (speed / save under the 11-07 amendment,
+                        startlines, lost, e7cmp, KEYS), work/r22/g17_rules.py (via it: bp90_baseline, screen_rows, gm,
+                        spread, AMENDMENT_1107) and work/r23/switch-gap/switch_rules.py (port_pins, STANDARD, FIELDS)
+  make_configs0213.py   the gate's arm configs, written at run time into the gate's configs/ (B, P = switch_rules.py's arm
+                        recipes; PH = P0213x's CLI form; OFF; ST = OFF on stock v0.2.13; NOV2; SG = P0213x-single's test
+                        form) + `check`; `single` wrote configs/P0213x-single.json once (11-10 12:17, refuses to overwrite)
+  gate-start.sh         the starter (a user unit): checks the .ready, waits for build-p0213-stock and any open gap, runs a
+                        snapshot of the driver, retries a busy refusal every 15 min for up to 6 h
+  gap-mock-test.sh      the driver and the starter against stubs (scratch/mock only)
+Created outside this folder: configs/P0213x-single.json (NEW; the single-card fallback config = P0213x.json with
+Cstar18-single's one-card differences; P0213x.json's "fallback" key is NOT changed - Claude does that after the gate).
+No existing file was changed.
+
+0. Before (Claude checks; the driver refuses busy / hard otherwise):
+   - the stock build is done: build-p0213-stock inactive, logs/r23/build-p0213-stock.log ends "nogap-run: end: rc 0"
+     (11-10 12:11), engine-v0213stock/strata 96428c387ee6 = its SHA256 file = strata-v0213stock/build/strata, SOURCE
+     "stock v0.2.13 (d2f096475817...";
+   - today's switch gap stands: results/r23/port-0213/switch-gap/verdict.txt "SWITCH CHECKS PASS", P 639dfb1b7042 at
+     6dd81ecd1 (the driver checks it: gate0213_rules.py switchref);
+   - 8080 serves the daily (engine-r23afetch 153ce47d3ef0, configs/P028x.json).
+
+1. Desk checks (CPU only, no lock, no GPU, write only scratch/):
+     nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/work/r23/gate-0213/gate0213_rules.py selftest /home/USER/ai-speed-testing/strata-compare/work/r23/gate-0213/scratch/selftest
+        -> "gate0213 selftest: 45 checks, 0 failure(s)" (the v0.2.11 gate's stored screen + Basalt, gap 17's Basalt, the
+           switch gap's stored start log and exact7 runs, synthetic gates; it also runs make_configs0213.py make / check
+           into scratch)
+     bash /home/USER/ai-speed-testing/strata-compare/work/r23/gate-0213/gap-gate0213.sh --dry-run
+        -> "DRY RUN done: 0 refusal(s) would stop the real run now" (writes only scratch/gate-dry, scratch/gate-dry-logs,
+           scratch/selftest-dry, scratch/rb-cache; no lock, no GPU query, no kernel check, no request to any port)
+     bash /home/USER/ai-speed-testing/strata-compare/work/r23/gate-0213/gap-mock-test.sh
+        -> "gap-mock-test: 65 checks, ALL CHECKS PASSED" (~30 min; writes only work/r23/gate-0213/scratch/mock; its fake
+           engines are copies of sleep named g13mock-eng, never strata*, stopped by the test)
+
+2. Review, then write the .ready the starter requires: the sha256 (first 12 hex) of the driver, the rules, the config
+   maker, the three imported rules files, the single-card config and the starter itself. The starter refuses (exit 6, an
+   alert) when any of them changed, and when the snapshot it copied is not the reviewed driver:
+     D=/home/USER/ai-speed-testing/strata-compare/work/r23/gate-0213; W=/home/USER/ai-speed-testing/strata-compare
+     s() { sha256sum "$1" | cut -c1-12; }
+     echo "reviewed by Claude $(date '+%m-%d %H:%M'): <notes>; sha256 $(s $D/gap-gate0213.sh), rules $(s $D/gate0213_rules.py), mkcfg $(s $D/make_configs0213.py), switch $(s $W/work/r23/switch-gap/switch_rules.py), ru $(s $W/work/r23/port0211_rules.py), g17 $(s $W/work/r22/g17_rules.py), single $(s $W/configs/P0213x-single.json), starter $(s $D/gate-start.sh)" > $D/gap-gate0213.sh.ready
+   (The other files the gap runs - afetch_rules.py, basalt_rules.py / basalt_fix_rules.py, sq.py, fixtures_client.py,
+   exact7.sh, run.sh, with_server.sh, srv.sh, guard.py, kcheck.sh, p0_table.py, patchtest.sh, abarm.sh, pf_yardstick.py,
+   kernel_rule2/3.py, gap9_verdicts.py, port_gap4.sh, bp90_client.py, bp90_report.py, build-port0213.sh and the source
+   configs - are sha-recorded in rules.txt at the freeze and flagged by decide if they change during the gap.)
+
+3. Start the starter as a user unit (no argument):
+     systemd-run --user --unit=gate0213 --description="v0.2.13 baseline gate" /bin/bash /home/USER/ai-speed-testing/strata-compare/work/r23/gate-0213/gate-start.sh
+   Then confirm it runs: systemctl --user status gate0213 (active, its pid) and the first line of
+   results/r23/port-0213/gate-starter.log ("start (pid N): ... waiting for the build unit build-p0213-stock ... and for
+   no gap being open"). The pre-gap part (8080 serving) takes ~1 min (the selftest, the configs, the pins, fence4 on
+   strata-r23p0213's parser, the single-card plan: switch_rules.py fixtures reads the GGUF's vocabulary). A busy refusal is retried every 15 min for up to 6 h; exits 5, 6,
+   8 and 9 are final. To stop it before the gap opens: systemctl --user stop gate0213 (nothing changed). After the gap
+   opened, a stop leaves "INTERRUPTED" in result.txt with what to check (the gap possibly open; whether 8080 listens; if
+   it came during port_gap4.sh end: check 8080 first, do not run end a second time blindly).
+
+4. The gap (deadline P0213G_MAX_MIN = 130 min for new steps; GAP_MAX_MIN 155 for port_gap4.sh; a critical alert if the gap
+   is still open 20 min past the deadline). Expected ~81 min with 8080 down (~84 when stock 0.2.8 is needed; +7 with
+   P0213G_AF2_E7=1):
+   - exact7 at pin 2500 on the CLI forms (no STRATA_ADAPT_FETCH): ST (stock v0.2.13), OFF vs ST (e7_release, FIRST),
+     x28h, PH vs x28h (e7_vs_p028x: 7/7 expected; NOT 7/7 -> stock 0.2.8 vs stock v0.2.13, both pinned (e7_upstream)
+     decides as gap 16 / 17's T1 rule and port0211: upstream moved too -> INFO, the KL rules decide; upstream did not
+     move -> FAIL "our port changed bits"; slots not MATCHED -> not decided), the patch guards (7 checked, 0 off), PH
+     again (e7_repeat), NOV2 vs PH (e7_v2) - a pair only against a clean reference run; INFO PH vs the stored g23p-p211a;
+     the served forms' pair P vs B (both fetch=2) is NOT run by default (P0213G_AF2_E7=0): it is already stored -
+     r23sw11101048-P vs r23aa11091954-S2, 7/7 MATCHED, recorded before the gap as e7_af2_stored (P0213G_AF2_E7=1 runs it
+     in the gap, only when 104 min are left);
+   - pf_yardstick long40 on PH, kernel_rule2 + kernel_rule3 against gap 8's references (+ INFO logit files vs gap 16's
+     x28h and the v0.2.11 gate's p211);
+   - the screen B P / P B / B P on the served forms (B = the daily's test form, P = P0213x-af2's);
+   - THE SWAP RULE on every server start and every CLI run (exact7, long40): every 5 s the VmSwap of this gap's engines
+     (/proc/PID/status); > 0 = swap_TAG FAIL, the run left out (a CLI run's pair not judged) -> INCOMPLETE (named); a
+     client chain ending rc != 0 (or with no rc line) = rc_TAG FAIL, left out the same way;
+   - Basalt's fixtures, cold, M H / H M / M H (M = B, H = P), decode / pp16k / pp64k;
+   - INFO, only with 5 min left: the single-card start (P0213x-single's test form, the 5080 alone, 3 requests of 512
+     tokens at the standard sampling);
+   - the lock sweep, port_gap4.sh end (the daily back), a kernel check; then (CPU) lossless, #3961's line, the start lines,
+     the continuations, the reports, decide.
+   A KERNEL ERROR (kwatch's tmp/r19/KERNEL_ERROR, or a kernel check failing) stops it at once: the daily back, a critical
+   alert, result "KERNEL ERROR during the gap - stopped at once, ...", exit 3; kwatch is NOT cleared. A start gate the
+   stop caused or cut (from the first kstop / kfail line of gates.txt on, or of the step the stop names) is "seen at
+   the stop": BASELINE INCOMPLETE (stopped, ranked first), never FAIL. An engine process still running from before the
+   gap (8080's) is named, never stopped.
+
+5. Outputs (results/r23/port-0213/gate/): verdict.txt (line 1: BASELINE PASS / BORDERLINE / FAIL (named) / INCOMPLETE
+   (named); line 2: DECODE WITHIN NOISE / REAL LOSS / NOT DECIDED with P vs B and the noise), decision.txt / .json (the
+   verdict, the decode line and its per-workload INFO, the exact7 / KL / speed / save / Basalt lines, the single-card
+   INFO, flags), result.txt, result-line.txt, summary.txt, gates.txt, rules.txt, configs/, englog/, speed/ (void/),
+   bp90/ (runs/, void/, cold-M / cold-H, report.md), pfy/, single/, with_server/, foreign/, speed-table.md, lossless.txt,
+   cont-P.txt, kl-p213.txt, kl3-p213.txt. The starter's log: results/r23/port-0213/gate-starter.log.
+
+6. The priority-rule override (only when Karl says the Qwen4 day-one work is done): a dated reason line, e.g.
+     echo "2026-11-1X: Karl: the Qwen4 day-one work is done (<what>)" > /home/USER/ai-speed-testing/strata-compare/tmp/gate0213-priority-done
+   (this gap's own marker; the switch gap's tmp/switch0213-priority-done does not count here).
+
+   Taken from the switch gap, not re-run: C1 (C++ parity / unit tests, the server suite, the node tests, the read-back
+   start), C2 (served outputs against the daily, EXACT), C3 (the sampled test), C4 (web search, 3 search prompts), C5
+   (the lost-answer guard's count). NOT COVERED by either gap: the live tool-call test (B vs P), the picture / vision and
+   the chat-cache served-form checks (port0211 ran them) - required before a switch, or Karl's call.
+
+7. After: tell Karl the verdict and the decode line (verdict.txt, decision.txt). DECODE REAL LOSS -> the desk hunt (the
+   1.4 % hunt's way: the decode-path changes v0.2.8 -> v0.2.13, every new default the 19 pins do not cover; a short gap
+   only to confirm the top candidate) and a pin note for the Qwen4 port. NOTHING SWITCHES. If the single-card start
+   answered, Claude may point P0213x.json's "fallback" at configs/P0213x-single.json (not done by anything here).

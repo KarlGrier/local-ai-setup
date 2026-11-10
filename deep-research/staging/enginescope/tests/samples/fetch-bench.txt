@@ -1,0 +1,7 @@
+[90001] Title: Strata bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md
+[OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them]
+
+"Measured on 2026-10-09 by KarlGrier. Stock Strata v0.1.41 on the ISTA-DASLab IQ3_S file at a 131,072-token context: three"
+"cache stays warm across runs and its adaptive tier is on (the default)."
+"above 131,072, `--batch` slots, a layer split, and the 5080 without the helper card."

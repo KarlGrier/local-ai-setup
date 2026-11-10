@@ -1,0 +1,40 @@
+--- a/local_deep_research/content_fetcher/fetcher.py	2026-10-18 20:42:55.982588696 -0500
++++ b/local_deep_research/content_fetcher/fetcher.py	2026-10-18 20:42:55.987975502 -0500
+@@ -7,6 +7,7 @@
+ - Direct PDF links
+ """
+ 
++import threading
+ from typing import Any, Dict, List, Optional
+ from loguru import logger
+ 
+@@ -18,6 +19,12 @@
+ # Default maximum content length (500KB of text)
+ DEFAULT_MAX_CONTENT_LENGTH = 500_000
+ 
++# --- deep-research workspace patch (2026-10-18): one page at a time, in both profiles. Pages fetched in parallel
++# threads ran trafilatura's lxml parsing/copying concurrently and corrupted the heap ("double free or corruption",
++# ldr-web crash 10-18 20:14; reproduced outside LDR on Python 3.12.3 and 3.12.13). LDR already serializes the
++# extractors within one page (extraction/pipeline.py); this lock does the same across pages.
++_FETCH_LOCK = threading.RLock()
++
+ # URL types where HTML fallback is pointless when the specialized downloader fails
+ _NO_HTML_FALLBACK = {URLType.HTML, URLType.DOI, URLType.INVALID, URLType.PDF}
+ 
+@@ -210,6 +217,16 @@
+         self,
+         url: str,
+         max_length: Optional[int] = None,
++        prefer_text: bool = True,
++    ) -> Dict[str, Any]:
++        """Fetch content from a URL, one page at a time per process (see _FETCH_LOCK)."""
++        with _FETCH_LOCK:
++            return self._fetch_one(url, max_length=max_length, prefer_text=prefer_text)
++
++    def _fetch_one(
++        self,
++        url: str,
++        max_length: Optional[int] = None,
+         prefer_text: bool = True,
+     ) -> Dict[str, Any]:
+         """

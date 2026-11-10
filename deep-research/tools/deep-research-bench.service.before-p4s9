@@ -1,0 +1,16 @@
+[Unit]
+Description=Deep research measurements (phase 4 item 7d since 11-03: queue-plan-7d.json - s1-s4 p7d / p7dx pairs (routes 7d / 7dx, <= 30 paid per run), then o01-o03 p7d; ~/ai/deep-research/tools/bench2-queue.sh)
+After=default.target deep-research-runner.service
+
+[Service]
+Type=simple
+# waits for 09:00; new work only 09:00-22:00; stops between questions for a new Strata release or tmp/bench2.stop
+ExecStart=/bin/bash /home/USER/ai/deep-research/tools/bench2-queue.sh
+WorkingDirectory=/home/USER/ai/deep-research
+Environment=BENCH2_PLAN=queue-plan-7d.json
+Restart=on-failure
+RestartSec=60
+KillMode=process
+
+[Install]
+WantedBy=default.target

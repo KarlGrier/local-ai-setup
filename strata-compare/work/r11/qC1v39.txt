@@ -1,0 +1,15 @@
+work/r11/tagcheck.sh "Phase C start"; work/r11/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r11/build.sh strata-v39-count engine-v39count && .venv/bin/python work/r11/buildrec.py V39C configs/V39C-h3300.json "C.1 counting build: v39-win + the per-layer profile + R10A counters (MEASUREMENT)"
+[ -x engine-v39count/strata ] && REF=v39won work/r11/exact7.sh v39c3300 configs/V39C-h3300.json
+work/r11/ldrscreen.sh C1-3300a configs/V39C-h3300.json
+work/r11/ldrscreen.sh C1-2400a configs/V39C-h2400.json
+work/r11/ldrscreen.sh C1-1500a configs/V39C-h1500.json
+work/r11/ldrscreen.sh C1-3600a configs/V39C-h3600.json
+work/r11/ldrscreen.sh C1-3600b configs/V39C-h3600.json
+work/r11/ldrscreen.sh C1-1500b configs/V39C-h1500.json
+work/r11/ldrscreen.sh C1-2400b configs/V39C-h2400.json
+work/r11/ldrscreen.sh C1-3300b configs/V39C-h3300.json
+.venv/bin/python work/r11/ldr_table.py h3300=C1-3300a,C1-3300b h2400=C1-2400a,C1-2400b h1500=C1-1500a,C1-1500b h3600=C1-3600a,C1-3600b | tee results/r11/ab-C1-slots.md
+work/r11/phase_end.sh pC1 keep
+echo "=== $(date -Is) MARK qC1v39"

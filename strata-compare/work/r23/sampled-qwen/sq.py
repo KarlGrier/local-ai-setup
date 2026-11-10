@@ -1,0 +1,1341 @@
+#!/usr/bin/env python3
+"""sq.py - the Qwen served-mode sampled-distribution test (work/r23/sampled-qwen/): DeepSeek gap D2's test for the Qwen
+engine (Strata serving Qwen3.8-Flash-Next, P028x), reusable for any arm pair. Written 2026-11-09 at the desk; NOT RUN on
+real data: only `selftest` ran (synthetic data, no GPU, no engine, no server). The statistic and the rule: sq_stat.py
+(sampled.py's math, copied verbatim). The request driver: sq_client.py. The step list of a gap: STEPS-adaptfetch.txt.
+
+A test is a SPEC (JSON; spec-adaptfetch.json is the first use): the arms (each a config file + its changes: top-level
+keys, env, args; "same_as" another arm), their roles (one reference, one noise twin, candidates, verify starts), the
+plan (prompts, K rounds, max_tokens, thinking off), the exercise checks (log patterns per arm), the read-back check, the
+scorer. Nothing about the model is fixed here: tokenizer, template and vocabulary come from the arm configs.
+
+  sq.py rule SPEC                    print the frozen rule (a gap writes it to OUTDIR/rule.txt before any engine run)
+  sq.py derive SPEC OUTDIR           the arm configs OUTDIR/cfg/<arm>.json (+ STRATA_DEBUG=1, an own engine log
+                                     OUTDIR/logs/engine-<arm>.log), the scorer's OUTDIR/cfg/scorer.json, OUTDIR/spec.json
+                                     (the spec + its resolved prompts), OUTDIR/derive.json; refuses (exit 1) on any check
+  sq.py envcheck OUTDIR ARM          inside with_server.sh: the served arm's engine (by /proc/PID/exe) has its config's
+                                     env exactly and none of the spec's other switches; exit 0 / 1
+  sq.py ids OUTDIR ARM...            the arm's sampled.jsonl + server.out + the prompts rendered with the arm's own
+                                     server code and tokenizer -> OUTDIR/ARM/score-ids.json, score-ids.meta.json
+  sq.py score OUTDIR ARM... [--min-free-gb G] [--max-min M]
+                                     the scorer: ONE `strata --serve` engine (scorer.json under the yardstick's fixed
+                                     settings, --spec 2, STRATA_LOGPOS + TOPK 64) reads every valid sample of the arms
+                                     -> OUTDIR/ARM/score/score.tsv + .seg.json; its own env checked as it starts
+  sq.py envwatch JOBPID OUTDIR [--kill] [--max-s S]
+                                     the scorer engine under JOBPID's process tree, checked as it starts (the gap's form)
+  sq.py verify OUTDIR ARM            the read-back check of a verify start -> OUTDIR/verify-ARM.json; exit 0/1/2
+  sq.py decide OUTDIR [--stage1]     -> OUTDIR/decision.txt / .json. Exit 0 every candidate PASS (overall), 1 a FAIL,
+                                     2 NOT DECIDED; --stage1: 3 = the noise arm is needed
+  sq.py selftest [DIR]               synthetic data only (DIR under scratch/): exit 0 and "SELFTEST OK" when every case
+                                     gives the expected verdict
+  sq.py selftest-real [DIR] [--spec SPEC]
+                                     (desk / gap preflight, CPU only, read-only: NOT run 11-09) the real tokenizer and
+                                     template render the plan's prompts (C-conv 38, C-prose 19 ids, thinking off) and
+                                     `derive` of the spec (default spec-adaptfetch.json) into DIR for its reference arms
+                                     and the scorer
+11-10 (the v0.2.13 switch gap, work/r23/switch-gap/): an arm's "check_equal" may carry "top" (top-level keys such as the
+exe) besides "env", so a reference on another build checks out (B = x28h + U + STRATA_ADAPT_FETCH=2 on the fetch build);
+selftest-real takes --spec. Nothing else changed (the math, the client, the scorer, the rule text).
+"""
+import argparse
+import copy
+import hashlib
+import importlib.util
+import json
+import os
+import random
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.dont_write_bytecode = True        # modules are imported from trees this harness must not write into
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import sq_stat as ST  # noqa: E402
+import sq_client as SQC  # noqa: E402
+
+WS = "/home/USER/ai-speed-testing/strata-compare"
+PY = f"{WS}/.venv/bin/python"
+SCRATCH = os.path.join(HERE, "scratch")
+SPEC_DEFAULT = os.path.join(HERE, "spec-adaptfetch.json")
+STRIP_ARGS = ("--vision",)                                # u_adopt.py strip_engine: the picture reader's flag
+STRIP_KEYS = ("vision", "fallback", "model_not_running")  # ... and its server-side parts (u_adopt.py NOT_ENGINE)
+IGNORE = ("_comment", "log")
+HARNESS_ENV = {"STRATA_DEBUG": "1"}                        # server.py:5803-5805; the binary must not read it (checked)
+# switches an arm's engine must not carry unless its config sets them (besides every env key any arm of the spec sets)
+KNOWN_EXTRA = ("STRATA_ADAPT_FETCH", "STRATA_ADAPT_FETCH_VERIFY", "STRATA_ADAPT_CHECKRES", "STRATA_ADAPT_FETCH_MIN",
+               "STRATA_ADAPT_FETCH_MARGIN", "STRATA_LOGPOS", "STRATA_LOGPOS_TOPK", "STRATA_LOGPOS_EXTRA",
+               "STRATA_SPEC_GUMBEL", "STRATA_SPEC_PROB", "STRATA_OLD_SAMPLER", "STRATA_SAMPLER_ONE_BLOCK",
+               "STRATA_KEEP_EMPTY_TURNS", "STRATA_FORCE_T1", "STRATA_SPEC_EXACT", "STRATA_HC_UPMIX")
+# flags the server passes on as the config has them (server.py engine_args 3180-3232 may reshape the drafting flags -
+# drafting.apply - and adds --layer-split / --batch / profile flags, so --spec and --spec-min-p are not compared)
+ARGS_CHECKED = ("--expert-cache", "--expert-cache-device1", "--kv", "--kv-resident", "--prefill", "--max-context",
+                "--chat-cache", "--conversation-cache-mib", "--pcie-frac", "--adapt-every")
+LITERALS = ("<|", "|>", "<think>", "</think>", "<tool_call>", "</tool_call>")   # frontend.py mark_think_literals' kind
+SCORER_TOPK = 64
+
+
+def load_json(p):
+    return json.loads(Path(p).read_text(encoding="utf-8-sig"))
+
+
+def write_json(p, d):
+    Path(p).parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(str(p) + ".new")
+    tmp.write_text(json.dumps(d, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(tmp, p)
+
+
+def load_module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def last_val(argv, k):
+    v = None
+    for i, x in enumerate(argv[:-1]):
+        if x == k:
+            v = argv[i + 1]
+    return v
+
+
+def sha256_file(p):
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for b in iter(lambda: f.read(1 << 22), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+# ================================================================ derive: the arm configs
+def resolve_arm(spec, name):
+    """-> the arm's flat recipe {base, strip, top, env, args_set, args_drop_value}, same_as chains folded in order"""
+    a = spec["arms"][name]
+    if a.get("same_as"):
+        r = resolve_arm(spec, a["same_as"])
+    else:
+        r = {"base": a["base"], "strip": bool(a.get("strip", True)), "top": {}, "env": {}, "args_set": {},
+             "args_drop_value": []}
+    r = copy.deepcopy(r)
+    r["top"].update(a.get("top") or {})
+    r["env"].update(a.get("env") or {})
+    r["args_set"].update(a.get("args_set") or {})
+    r["args_drop_value"] += list(a.get("args_drop_value") or [])
+    return r
+
+
+def build_config(r):
+    c = load_json(r["base"])
+    if r["strip"]:
+        c["args"] = [x for x in c.get("args", []) if x not in STRIP_ARGS]
+        for k in STRIP_KEYS:
+            c.pop(k, None)
+    c.update(copy.deepcopy(r["top"]))
+    env = dict(c.get("env", {}))
+    for k, v in r["env"].items():
+        if v is None:
+            env.pop(k, None)
+        else:
+            env[k] = str(v)
+    c["env"] = env
+    args = list(c.get("args", []))
+    for k in r["args_drop_value"]:
+        while k in args:
+            i = args.index(k)
+            del args[i:i + 2]
+    for k, v in r["args_set"].items():
+        if k in args:
+            for i in range(len(args) - 1):
+                if args[i] == k:
+                    args[i + 1] = str(v)
+        else:
+            args += [k, str(v)]
+    c["args"] = args
+    return c
+
+
+def diff_keys(a, b):
+    return sorted(k for k in set(a) | set(b) if k not in IGNORE and a.get(k) != b.get(k))
+
+
+def resolve_prompts(spec):
+    """-> ({name: messages}, [problem]): the plan's prompts, from the frozen workloads file or inline"""
+    out, bad, cache = {}, [], {}
+    for p in spec["plan"]["prompts"]:
+        if p.get("messages") is not None:
+            out[p["name"]] = p["messages"]
+        elif p.get("source") == "workloads":
+            wl = spec["plan"].get("workloads") or p.get("workloads")
+            try:
+                w = cache.setdefault(wl, load_json(wl))
+                hit = [x for x in w[p["set"]] if x["id"] == p["id"]]
+                if len(hit) != 1:
+                    raise KeyError(f"{len(hit)} entries with id {p['id']}")
+                out[p["name"]] = hit[0]["messages"]
+            except (OSError, KeyError, ValueError, TypeError) as e:
+                bad.append(f"prompt {p['name']}: {wl} [{p.get('set')}] {p.get('id')}: {e}")
+                continue
+        else:
+            bad.append(f"prompt {p['name']}: neither messages nor source workloads")
+            continue
+        text = json.dumps(out[p["name"]], ensure_ascii=False)
+        lit = [x for x in LITERALS if x in text]
+        if lit:
+            bad.append(f"prompt {p['name']}: holds {lit} as text (the server marks such literals; refused so every arm's "
+                       "bytes are the template's alone)")
+        if any(m.get("role") not in ("system", "user", "assistant") or not isinstance(m.get("content"), str)
+               for m in out.get(p["name"], [])):
+            bad.append(f"prompt {p['name']}: only text messages of system / user / assistant")
+    return out, bad
+
+
+_BIN = {}
+
+
+def binary_bytes(p):
+    if p not in _BIN:
+        _BIN[p] = Path(p).read_bytes()
+    return _BIN[p]
+
+
+def check_config(name, c, a, served=True):
+    """the file-level checks of one arm config (before the harness env goes in)"""
+    bad = []
+    exe = c.get("exe", "")
+    if not exe or not os.path.isfile(exe):
+        bad.append(f"{name}: exe {exe!r} missing")
+        return bad
+    want = a.get("exe_sha12")
+    if want is not None:
+        if not re.fullmatch(r"[0-9a-f]{12}", str(want)):
+            bad.append(f"{name}: exe_sha12 {want!r} not filled in (12 hex of the build's sha256)")
+        elif sha256_file(exe)[:12] != want:
+            bad.append(f"{name}: exe {exe} sha256 {sha256_file(exe)[:12]} is not {want}")
+    data = binary_bytes(exe)
+    if served and b"STRATA_DEBUG" in data:
+        bad.append(f"{name}: the engine binary reads STRATA_DEBUG (the harness switch must stay server-only)")
+    for s in a.get("binary_has") or []:
+        if s.encode() not in data:
+            bad.append(f"{name}: the engine binary has no {s!r} (not the build the spec means)")
+    tp = c.get("tokenizer")
+    if served:
+        if not tp or not all(os.path.exists(os.path.join(tp, f)) for f in ("vocab.json", "merges.txt", "token_type.json")):
+            bad.append(f"{name}: tokenizer {tp!r} incomplete")
+        srv = c.get("server", "")
+        root = Path(srv).resolve().parent.parent if srv else None
+        if not srv or not os.path.isfile(srv) or not (root / "serve/frontend.py").exists() \
+                or not (root / "tools/strata_tokenizer.py").exists():
+            bad.append(f"{name}: server {srv!r} (with serve/frontend.py and tools/strata_tokenizer.py) missing")
+        if (c.get("arch") or "") == "deepseek41":
+            bad.append(f"{name}: arch deepseek41 - this harness is the Qwen engine's (DeepSeek: work/ds41/gate/sampled)")
+        if c.get("effort_position", "start") not in ("start", "end"):
+            bad.append(f"{name}: effort_position {c.get('effort_position')!r}")
+    return bad
+
+
+def cmd_derive(spec_path, o, quiet=False):
+    spec = ST.load_spec(spec_path)
+    bad = ST.check_spec(spec)
+    o = os.path.abspath(o)
+    rep = {"spec": spec_path, "spec_sha": ST.spec_sha(spec)[:16], "at": time.strftime("%F %T"), "arms": {}, "problems": []}
+    prompts, pb = resolve_prompts(spec)
+    bad += pb
+    cfgs = {}
+    served_keys = set()
+    for n, a in spec["arms"].items():
+        r = resolve_arm(spec, n)
+        served_keys |= set(r["env"])
+        try:
+            c = build_config(r)
+        except (OSError, ValueError) as e:
+            bad.append(f"{n}: base {r['base']}: {e}")
+            continue
+        bad += check_config(n, c, a)
+        ce = a.get("check_equal")
+        if ce:
+            try:
+                want = load_json(ce["config"])
+                want.update(copy.deepcopy(ce.get("top") or {}))    # (11-10) top-level keys too, e.g. the fetch build's exe
+                want["env"] = dict(want.get("env", {}), **{k: str(v) for k, v in (ce.get("env") or {}).items()})
+                d = diff_keys(c, want)
+                if d:
+                    bad.append(f"{n}: is not {os.path.basename(ce['config'])} + {ce.get('top') or ''}{ce.get('env')} in {d}")
+                rep["arms"].setdefault(n, {})["check_equal"] = "OK" if not d else f"DIFFERS in {d}"
+            except (OSError, ValueError) as e:
+                bad.append(f"{n}: check_equal {ce.get('config')}: {e}")
+        c["env"] = dict(c["env"], **HARNESS_ENV)
+        c["log"] = f"{o}/logs/engine-{n}.log"
+        c["_comment"] = (f"sq.py derive ({time.strftime('%F')}): the sampled test {spec['name']}, arm {n} "
+                         f"({a['role']}): {a.get('desc', '')}. Measurement only, never served.")
+        cfgs[n] = c
+        rep["arms"].setdefault(n, {}).update(role=a["role"], exe=c.get("exe"), env_changes=r["env"], top=r["top"])
+    sc = spec["scorer"]
+    try:
+        scfg = build_config({"base": sc["base"], "strip": bool(sc.get("strip", True)), "top": sc.get("top") or {},
+                             "env": sc.get("env") or {}, "args_set": {}, "args_drop_value": []})
+        bad += check_config("scorer", scfg, sc, served=False)
+        scfg["log"] = f"{o}/logs/engine-scorer.log"
+        scfg["_comment"] = f"sq.py derive: the scorer of {spec['name']} (CLI, yardstick settings, --spec 2). Never served."
+        cfgs["scorer"] = scfg
+    except (OSError, ValueError) as e:
+        bad.append(f"scorer: base {sc.get('base')}: {e}")
+    if not os.path.isfile(sc.get("quant_quality", "")):
+        bad.append(f"scorer: quant_quality {sc.get('quant_quality')!r} missing")
+    for n in cfgs:
+        ss = Path(f"{o}/cfg/{n}.shared-settings.json")
+        if ss.exists():
+            bad.append(f"{n}: {ss} exists (server.py:9293-9295 would load its shared settings)")
+    rep["problems"] = bad
+    if bad:
+        if not quiet:
+            print("derive REFUSED:\n  " + "\n  ".join(bad))
+        os.makedirs(o, exist_ok=True)
+        write_json(f"{o}/derive.json", rep)
+        return 1, rep
+    os.makedirs(f"{o}/logs", exist_ok=True)
+    for n, c in cfgs.items():
+        write_json(f"{o}/cfg/{n}.json", c)
+    full = dict(ST.spec_core(spec), resolved={"prompts": prompts, "configs": {n: f"{o}/cfg/{n}.json" for n in cfgs},
+                                              "derived_at": time.strftime("%F %T"), "known_env": sorted(served_keys)})
+    write_json(f"{o}/spec.json", full)
+    write_json(f"{o}/derive.json", rep)
+    if not quiet:
+        print(f"derive OK: {len(cfgs) - 1} arm configs + the scorer in {o}/cfg; {o}/spec.json (spec sha {rep['spec_sha']})")
+    return 0, rep
+
+
+# ================================================================ env checks
+def proc_env(pid):
+    env = dict(x.split("=", 1) for x in Path(f"/proc/{pid}/environ").read_bytes().decode("utf-8", "replace").split("\0")
+               if "=" in x)
+    argv = Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace").split("\0")
+    return env, (argv[:-1] if argv and argv[-1] == "" else argv)
+
+
+def served_env_problems(env, argv, cfg, known):
+    """a served arm's engine: the config's env exactly, no known switch behind it, its GPUs, its key args"""
+    want = cfg.get("env", {})
+    bad = [f"{k}={env.get(k, 'unset')} (want {v})" for k, v in want.items() if env.get(k) != v]
+    bad += [f"{k}={env[k]} set behind the config" for k in sorted(set(known) | set(KNOWN_EXTRA)) if k not in want and k in env]
+    n, w = (len([x for x in e.get("CUDA_VISIBLE_DEVICES", "").split(",") if x]) for e in (env, want))
+    if n != w:
+        bad.append(f"{n} GPU(s) in CUDA_VISIBLE_DEVICES (want {w})")
+    for k in ARGS_CHECKED:
+        cv = last_val(cfg.get("args", []), k)
+        if cv is not None and last_val(argv, k) != cv:
+            bad.append(f"{k} {last_val(argv, k)} (want {cv})")
+    if "--serve" not in argv:
+        bad.append("not a --serve engine")
+    return bad
+
+
+def cmd_envcheck(o, arm):
+    spec = ST.load_spec(f"{o}/spec.json")
+    cfg = load_json(f"{o}/cfg/{arm}.json")
+    known = (spec.get("resolved") or {}).get("known_env") or []
+    exe = os.path.realpath(cfg["exe"])
+    procs = []
+    for d in Path("/proc").iterdir():
+        if d.name.isdigit():
+            try:
+                if os.readlink(d / "exe") == exe:
+                    procs.append((d.name, *proc_env(d.name)))
+            except OSError:
+                continue
+    lines, bad_all = [], []
+    if len(procs) != 1:
+        bad_all.append(f"{len(procs)} running engine(s) {exe} (want exactly 1: this arm's)")
+    for pid, env, argv in procs:
+        bad = served_env_problems(env, argv, cfg, known)
+        lines.append(f"engine pid {pid}: {len(cfg.get('env', {}))} config env keys, --spec {last_val(argv, '--spec')} "
+                     f"--spec-min-p {last_val(argv, '--spec-min-p')} (INFO)" + (f"; MISMATCH {', '.join(bad)}" if bad else ""))
+        bad_all += bad
+    txt = "\n".join(lines + ["ENV CHECK " + ("OK" if not bad_all else "FAILED - this arm is not measured: " + "; ".join(bad_all))])
+    print(txt, flush=True)
+    Path(f"{o}/envcheck-{arm}.txt").write_text(txt + "\n")
+    return 0 if not bad_all else 1
+
+
+# ================================================================ ids: the prompts as the server renders them
+class Renderer:
+    """the prompt ids exactly as the arm's server builds them for our requests (thinking off, no tools, no images):
+    frontend.openai_to_messages (server.py:7704) -> mark_think_literals -> Service.render_prompt (server.py:4923-4938,
+    replicated: effort_position from the config, as effort_end_args 3077-3099 decides it) -> unmark -> tokenizer.encode
+    (server.py:4940-4955; the incremental PromptEncoder gives the same ids, work/r13/t567_ids.py). The modules are the arm's
+    own server tree's (serve/frontend.py, tools/strata_tokenizer.py) and its config's tokenizer (as server.py:8970-8988)."""
+    def __init__(self, cfg):
+        root = Path(cfg["server"]).resolve().parent.parent
+        for p in (str(root / "tools"), str(root)):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        for m in [k for k in sys.modules if k == "serve" or k.startswith("serve.") or k == "strata_tokenizer"]:
+            del sys.modules[m]                                 # another tree's modules: load this tree's
+        import strata_tokenizer as TK
+        from serve import frontend as FE
+        self.FE = FE
+        tp = Path(cfg["tokenizer"])
+        vocab = json.loads((tp / "vocab.json").read_text(encoding="utf-8"))
+        tokens = [None] * len(vocab)
+        for t, i in vocab.items():
+            tokens[i] = t
+        merges = (tp / "merges.txt").read_text(encoding="utf-8").split("\n")
+        types = json.loads((tp / "token_type.json").read_text())
+        try:
+            tcfg = json.loads((tp / "tokenizer.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            tcfg = {}
+        self.tok = TK.Tokenizer(tokens, merges, types, tcfg.get("pre") or "qwen35", tcfg.get("special_ids") or None)
+        tpl = tp / "chat_template.jinja"
+        self.tpl = FE.ChatTemplate(tpl if tpl.exists() else root / "serve/chat_template.jinja")
+        FE.use_family(None)                                    # server.py:9138: the Qwen effort words
+        self.literals = FE.literal_tags(getattr(self.tok, "control_tokens", ()))
+        eff = cfg.get("effort_position", "start") == "end"
+        if eff:                                                # server.py:3087-3096: only with an engine that has it
+            try:
+                eff = b"--tail-role-token" in binary_bytes(cfg["exe"]) and len(self.tok.encode("system", parse_special=True)) == 1
+            except OSError:
+                eff = False
+        self.effort_end = bool(eff)
+        self.vocab_size = len(tokens)
+
+    def render_prompt(self, messages, tools, kwargs):
+        effort = kwargs.get("reasoning_effort")
+        off = kwargs.get("enable_thinking") is False
+        if not self.effort_end or (not off and effort in (None, "", "xhigh", "high")):
+            return self.tpl.render(messages, tools=tools, **kwargs)
+        base = {k: v for k, v in kwargs.items() if k not in ("reasoning_effort", "enable_thinking")}
+        history = self.tpl.render(messages, tools=tools, add_generation_prompt=False, **base)
+        full = self.tpl.render(messages, tools=tools, add_generation_prompt=True, **kwargs)
+        mine = self.tpl.render(messages, tools=tools, add_generation_prompt=False, **kwargs)
+        if not full.startswith(mine):
+            return full
+        if not off:
+            raise ValueError("thinking on is not supported by this harness (v1)")
+        return history + full[len(mine):]
+
+    def __call__(self, messages):
+        body = {"messages": messages, "chat_template_kwargs": {"enable_thinking": False}}
+        msgs, tools, kw = self.FE.openai_to_messages(body)
+        if kw != {"enable_thinking": False} or tools:
+            raise ValueError(f"the request would render with {kw} / tools {bool(tools)}")
+        marked, mtools, changed = self.FE.mark_think_literals(msgs, tools, self.literals)
+        prompt = self.render_prompt(marked, mtools, kw)
+        plain = ()
+        if changed:
+            prompt, plain = self.FE.unmark_think_literals(prompt, self.literals)
+        return self.tok.encode(prompt, parse_special=True, plain=plain) if plain else self.tok.encode(prompt, parse_special=True)
+
+
+def request_slices(srv, recs):
+    """per record: its server-log text (by its byte range; else the i-th block ending at a raw-ids line)"""
+    if all(r.get("srv_off") for r in recs if r.get("finish") != "error"):
+        return [srv[r["srv_off"][0]:r["srv_off"][1]].decode("utf-8", "replace") if r.get("srv_off") else "" for r in recs], None
+    blocks, cur = [], []
+    for line in srv.decode("utf-8", "replace").splitlines(keepends=True):
+        cur.append(line)
+        if line.startswith(ST.RAW):
+            blocks.append("".join(cur))
+            cur = []
+    ok = [r for r in recs if r.get("finish") != "error"]
+    if len(blocks) != len(ok):
+        return ["" for _ in recs], f"{len(blocks)} raw-ids lines for {len(ok)} answered requests (no byte ranges recorded)"
+    it = iter(blocks)
+    return [next(it) if r.get("finish") != "error" else "" for r in recs], None
+
+
+def build_ids(o, arm, render=None, spec=None):
+    """-> (valid, total). OUTDIR/ARM/score-ids.json (the engine's --score / GEN form: one segment per sample, prompt +
+    generated ids), score-ids.meta.json (per sample: ok / why, prompt_n, gen_n), OUTDIR/prompt-ids.json (the rendered
+    prompts, the same for every arm)"""
+    spec = spec or ST.load_spec(f"{o}/spec.json")
+    d = f"{o}/{arm}"
+    recs = ST.read_jsonl(f"{d}/sampled.jsonl")
+    plan = json.load(open(f"{d}/sampled-plan.json"))
+    res = spec.get("resolved") or {}
+    pr = ST.prompts_of(spec)
+    glob_why = None
+    if plan.get("arm") != arm or plan.get("thinking") is not False or \
+            {q: plan["prompts"][q]["messages"] for q in plan["prompts"]} != {q: res["prompts"][q] for q in pr}:
+        glob_why = "sampled-plan.json is not this arm's thinking-off plan with the spec's prompts"
+    if render is None:
+        render = Renderer(load_json(f"{o}/cfg/{arm}.json"))
+    pids = {q: render(res["prompts"][q]) for q in pr}
+    pp = Path(f"{o}/prompt-ids.json")
+    if pp.exists():
+        prev = json.loads(pp.read_text())
+        diff = [q for q in pr if prev["prompts"].get(q) != pids[q]]
+        if diff:
+            glob_why = f"the rendered prompt ids of {diff} differ from {prev['from']}'s (the arms did not see identical prompts)"
+    else:
+        write_json(pp, {"from": arm, "prompts": pids, "lengths": {q: len(v) for q, v in pids.items()}})
+    srv = Path(f"{d}/server.out").read_bytes() if Path(f"{d}/server.out").exists() else b""
+    slices, seq_why = request_slices(srv, recs)
+    taint = [re.compile(t) for t in spec.get("taint") or []]
+    segs, meta = [], []
+    for r, sl in zip(recs, slices):
+        why, gen, note = glob_why or seq_why, None, None
+        raws = [line for line in sl.splitlines() if line.startswith(ST.RAW)]
+        reqs = [m for m in (ST.REQ_RE.match(line) for line in sl.splitlines()) if m]
+        dones = [m for m in (ST.DONE_RE.match(line) for line in sl.splitlines()) if m]
+        if why is None and r.get("finish") not in ("length", "stop"):
+            why = f"finish {r.get('finish')}"
+        if why is None and len(raws) != 1:
+            why = f"{len(raws)} raw-ids lines in the request's server log"
+        if why is None:
+            gen = [int(x) for x in json.loads(raws[0][len(ST.RAW):].strip())]
+            hit = [t.pattern for t in taint if any(t.search(line) for line in sl.splitlines())]
+            if hit:
+                why = f"server line(s) matching {hit}"
+            elif len(gen) != r.get("completion_tokens"):
+                why = f"{len(gen)} raw ids, completion_tokens {r.get('completion_tokens')}"
+            elif r.get("prompt_tokens") != len(pids[r["prompt"]]):
+                why = f"the server's prompt_tokens {r.get('prompt_tokens')}, the rendering {len(pids[r['prompt']])}"
+            elif reqs and (int(reqs[-1].group(3)) != r["prompt_tokens"] or reqs[-1].group(2) != "False"):
+                why = f"the server's request line says prompt_tokens {reqs[-1].group(3)} thinking {reqs[-1].group(2)}"
+            elif dones and int(dones[-1].group(1)) != len(gen):
+                why = f"the server's done line says {dones[-1].group(1)} tokens, the raw ids {len(gen)}"
+            elif not reqs:
+                note = "no '[strata] req openai' line (STRATA_DEBUG's request line) in the slice"
+        ids = pids[r["prompt"]] + (gen or [])
+        segs.append({"name": r["name"], "ids": ids})
+        meta.append({"name": r["name"], "prompt": r["prompt"], "prompt_n": len(pids[r["prompt"]]), "gen_n": len(gen or []),
+                     "ok": why is None, "why": why, "note": note})
+    json.dump({"version": "sq-qwen-sampled", "segments": segs}, open(f"{d}/score-ids.json", "w"))
+    json.dump({"segments": meta}, open(f"{d}/score-ids.meta.json", "w"), indent=1)
+    return sum(1 for m in meta if m["ok"]), len(meta)
+
+
+# ================================================================ the scorer
+def scorer_plan(o, spec):
+    pl = json.loads(Path(f"{o}/prompt-ids.json").read_text())
+    return max(len(v) for v in pl["prompts"].values()) + int(spec["plan"]["max_tokens"])
+
+
+def scorer_setup(o, spec, L, tsv):
+    """-> (args, env, want_strata): decpath_rules.py engine_cmd's form - quant_quality.engine_args (the yardstick's FIXED
+    settings, --max-context L + 512, --short-read L + 64, --prefill 512) with --spec 2 - and its env (the config's, the
+    lib dirs, FIXED_ENV, STRATA_LOGPOS / TOPK 64 / EXTRA = the tokenizer's <|im_end|> id or -1)"""
+    sc = spec["scorer"]
+    qq = load_module("quant_quality_sq", sc["quant_quality"])
+    cfg = load_json(f"{o}/cfg/scorer.json")
+    args = qq.engine_args(cfg, False, L)
+    if "--spec" in args:
+        args[args.index("--spec") + 1] = str(sc["spec"])
+    else:
+        args += ["--spec", str(sc["spec"])]
+    extra = -1
+    try:
+        extra = int(load_json(os.path.join(cfg.get("tokenizer", ""), "vocab.json")).get("<|im_end|>", -1))
+    except (OSError, ValueError, TypeError):
+        pass
+    env = {k: v for k, v in os.environ.items() if not k.startswith("STRATA_") or k == "STRATA_MON_GPU"}
+    env.update(cfg.get("env", {}))
+    if cfg.get("lib_dirs"):
+        env["LD_LIBRARY_PATH"] = ":".join(cfg["lib_dirs"] + [env.get("LD_LIBRARY_PATH", "")])
+    env.update(qq.FIXED_ENV)
+    env.update(STRATA_LOGPOS=str(tsv), STRATA_LOGPOS_TOPK=str(sc["topk"]), STRATA_LOGPOS_EXTRA=str(extra))
+    want = {k: v for k, v in env.items() if k.startswith("STRATA_") and k != "STRATA_MON_GPU"}
+    want.update({k: v for k, v in cfg.get("env", {}).items() if not k.startswith("STRATA_")})
+    return args, env, want, qq
+
+
+def scorer_env_problems(env, argv, args, want):
+    bad = [f"{k}={env.get(k, 'unset')} (want {v})" for k, v in want.items() if env.get(k) != v]
+    bad += [f"{k}={env[k]} (not the scorer's)" for k in sorted(env) if k.startswith("STRATA_") and k not in want
+            and k != "STRATA_MON_GPU"]
+    try:
+        i = argv.index("--serve")
+    except ValueError:
+        return bad + ["not the yardstick's --serve engine"]
+    if argv[i:] != args[1:]:
+        bad.append("the engine's arguments are not the scorer's (" + " ".join(argv[i:])[:200] + ")")
+    return bad
+
+
+def count_lines(p):
+    if not os.path.exists(p):
+        return 0
+    with open(p, "rb") as f:
+        return sum(1 for _ in f)
+
+
+def cmd_score(o, arms, min_free_gb=30.0, max_min=40.0):
+    spec = ST.load_spec(f"{o}/spec.json")
+    run = Path(f"{o}/score-run")
+    run.mkdir(parents=True, exist_ok=True)
+    tsv = run / "score.tsv"
+    for p in (tsv, run / "index.json", run / "stderr.txt"):
+        p.unlink(missing_ok=True)
+    L = scorer_plan(o, spec)
+    args, env, want, qq = scorer_setup(o, spec, L, tsv)
+    cfg = load_json(f"{o}/cfg/scorer.json")
+    items, problems = [], []
+    for arm in arms:
+        meta = {m["name"]: m for m in json.load(open(f"{o}/{arm}/score-ids.meta.json"))["segments"]}
+        for s in json.load(open(f"{o}/{arm}/score-ids.json"))["segments"]:
+            if meta.get(s["name"], {}).get("ok"):
+                if len(s["ids"]) > L:
+                    problems.append(f"{arm}/{s['name']}: {len(s['ids'])} ids > the plan's {L}")
+                    continue
+                items.append((arm, s))
+    idx = {"arms": arms, "L": L, "args": args, "scorer": f"{o}/cfg/scorer.json", "items": [], "problems": problems,
+           "started": time.strftime("%F %T")}
+
+    def save():
+        idx["seconds"] = round(time.time() - t0)
+        (run / "index.json").write_text(json.dumps(idx, indent=1))
+    t0 = time.time()
+    if qq.mem_available_gb() < min_free_gb:
+        idx["problems"].append(f"only {qq.mem_available_gb():.0f} GB available (< {min_free_gb}): no engine started")
+        save()
+        print(idx["problems"][-1])
+        return 1
+    errf = open(run / "stderr.txt", "w")
+    print("scorer engine:", " ".join(args), flush=True)
+    p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errf, text=True,
+                         cwd=cfg.get("cwd"), env=env, bufsize=1)
+    try:
+        e2, a2 = proc_env(p.pid)
+        bad = scorer_env_problems(e2, a2, args, want)
+    except OSError as e:
+        bad = [f"cannot read /proc/{p.pid}: {e}"]
+    if bad:
+        p.kill()
+        idx["problems"].append("ENV MISMATCH (engine stopped before it read anything): " + "; ".join(bad))
+        save()
+        print(idx["problems"][-1])
+        return 1
+    idx["env_check"] = f"OK: {len(want)} keys (the config's, FIXED_ENV, LOGPOS), the scorer's arguments"
+    for line in p.stdout:
+        if line.startswith("READY"):
+            break
+    else:
+        idx["problems"].append(f"the engine ended before READY (exit {p.wait()})")
+        save()
+        return 1
+    idx["ready_s"] = round(time.time() - t0, 1)
+    for arm, s in items:
+        if time.time() - t0 > max_min * 60:
+            idx["problems"].append(f"--max-min {max_min}: {arm}/{s['name']} and later not scored")
+            break
+        n0, ts = count_lines(tsv), time.time()
+        p.stdin.write("GEN 1 " + ",".join(map(str, s["ids"])) + "\n")
+        p.stdin.flush()
+        done = None
+        for line in p.stdout:
+            if line.startswith(("DONE", "ERR")):
+                done = line.strip()
+                break
+        if done is None or not done.startswith("DONE") or "nonfinite" in done:
+            idx["problems"].append(f"{arm}/{s['name']}: the engine answered {done!r}")
+            break
+        n1 = count_lines(tsv)
+        it = {"arm": arm, "name": s["name"], "first_line": n0, "end_line": n1, "n": len(s["ids"]),
+              "seconds": round(time.time() - ts, 2)}
+        if n1 - n0 != len(s["ids"]) - 1:
+            idx["problems"].append(f"{arm}/{s['name']}: {n1 - n0} LOGPOS lines, expected {len(s['ids']) - 1}")
+        idx["items"].append(it)
+        save()
+    try:
+        p.stdin.write("QUIT\n")
+        p.stdin.flush()
+        p.wait(timeout=600)
+    except (subprocess.TimeoutExpired, BrokenPipeError, OSError):
+        p.kill()
+    errf.close()
+    lines = open(tsv).read().splitlines() if tsv.exists() else []
+    for arm in arms:
+        sd = Path(f"{o}/{arm}/score")
+        sd.mkdir(parents=True, exist_ok=True)
+        out, segs = [], []
+        for it in idx["items"]:
+            if it["arm"] == arm:
+                segs.append({"name": it["name"], "first_line": len(out), "end_line": len(out) + it["end_line"] - it["first_line"]})
+                out += lines[it["first_line"]:it["end_line"]]
+        (sd / "score.tsv").write_text("\n".join(out) + ("\n" if out else ""))
+        (sd / "score.tsv.seg.json").write_text(json.dumps({"segments": segs, "scorer": f"{o}/cfg/scorer.json", "L": L,
+                                                           "args": args}, indent=1))
+    save()
+    tok = sum(it["n"] for it in idx["items"])
+    print(f"scored {len(idx['items'])} of {len(items)} samples ({tok} positions) in {time.time() - t0:.0f} s"
+          + "".join(f"\nPROBLEM: {b}" for b in idx["problems"]), flush=True)
+    return 0 if not idx["problems"] and len(idx["items"]) == len(items) else 1
+
+
+def proc_tree(root):
+    kids = {}
+    for d in Path("/proc").iterdir():
+        if d.name.isdigit():
+            try:
+                pp = int((d / "stat").read_text().rsplit(")", 1)[1].split()[1])
+            except (OSError, IndexError, ValueError):
+                continue
+            kids.setdefault(pp, []).append(int(d.name))
+    out, todo = set(), [root]
+    while todo:
+        q = todo.pop()
+        for c in kids.get(q, []):
+            if c not in out:
+                out.add(c)
+                todo.append(c)
+    return out
+
+
+def cmd_envwatch(job, o, kill=False, max_s=3600):
+    """decpath_rules.py envwatch's form for the scorer: its engine (by /proc/PID/exe under the job) checked as it starts"""
+    spec = ST.load_spec(f"{o}/spec.json")
+    args, env, want, _ = scorer_setup(o, spec, scorer_plan(o, spec), Path(f"{o}/score-run/score.tsv"))
+    exe = os.path.realpath(args[0])
+    seen, t_end = {}, time.time() + max_s
+    while time.time() < t_end:
+        done = not Path(f"/proc/{job}").exists()
+        for pid in sorted(proc_tree(job) | {job}):
+            if pid in seen:
+                continue
+            try:
+                if os.readlink(f"/proc/{pid}/exe") != exe:
+                    continue
+                e2, a2 = proc_env(pid)
+            except OSError:
+                continue
+            bad = scorer_env_problems(e2, a2, args, want)
+            seen[pid] = bad
+            killed = ""
+            if bad and kill:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed = "; STOPPED (by pid) before it measures"
+                except OSError:
+                    killed = "; could not stop it"
+            print(f"engine pid {pid}" + (f" -> ENV MISMATCH {', '.join(bad)}{killed}" if bad else " -> ENV OK"), flush=True)
+        if done:
+            break
+        time.sleep(0.5)
+    ok = bool(seen) and not any(seen.values())
+    print(("ENV CHECK OK: " if ok else "ENV CHECK FAILED - the scoring is void: ")
+          + (f"{len(seen)} scorer engine start(s)" if seen else f"no engine {exe} started in job {job}"), flush=True)
+    return 0 if ok else 1
+
+
+# ================================================================ verify / decide / rule
+def cmd_verify(o, arm):
+    spec = ST.load_spec(f"{o}/spec.json")
+    v = ST.verify_judge(f"{o}/{arm}", spec["verify"][spec["arms"][arm]["verify"]])
+    write_json(f"{o}/verify-{arm}.json", v)
+    print(f"read-back {arm}: {v['verdict']} - {v.get('why', '')}")
+    return {"PASS": 0, "FAIL": 1}.get(v["verdict"], 2)
+
+
+def cmd_decide(o, stage1=False):
+    spec = ST.load_spec(f"{o}/spec.json")
+    rt = Path(f"{o}/rule.txt")
+    want = ST.rule_text(spec)
+    if not rt.exists() or rt.read_text().rstrip("\n") != want:
+        res = {"spec": spec["name"], "spec_sha": ST.spec_sha(spec)[:16], "verdict": "NOT DECIDED", "c": round(ST.C_BOUND, 4),
+               "lambda80": round(ST.LAM80, 4), "arms": {}, "candidates": {}, "flags": [
+                   "rule.txt is missing or is not this spec's rule (written before the start?): nothing judged"]}
+        ST.write_decision(o, res)
+        print("decision NOT DECIDED: rule.txt is missing or is not this spec's rule")
+        return 2
+    res, rc = ST.judge(o, spec, stage1=stage1)
+    ST.write_decision(o, res)
+    print(f"decision {res['verdict']}: " + "; ".join(f"{x} {c['verdict']}" for x, c in (res.get("overall") or res["candidates"]).items()))
+    return rc
+
+
+# ================================================================ selftest (synthetic data only)
+SYN_TEMPLATE = (
+    "{%- for m in messages %}<|im_start|>{{ m.role }}\n{{ m.content }}<|im_end|>\n{% endfor %}"
+    "{%- if add_generation_prompt %}<|im_start|>assistant\n"
+    "{%- if enable_thinking is defined and enable_thinking is false %}<think>\n\n</think>\n\n"
+    "{%- else %}<think>\n{%- endif %}{%- endif %}")
+
+MOCK = r'''#!{py} -IB
+# a stand-in for `strata --serve` reading GEN 1 lines with STRATA_LOGPOS (sq.py selftest only): the synthetic model's rows
+import os, sys
+sys.path.insert(0, {here!r})
+import sq_stat as ST
+m = ST.SynthModel(vocab=int(os.environ.get("SQ_MOCK_VOCAB", "50000")), salt=int(os.environ.get("SQ_MOCK_SALT", "7")))
+out = open(os.environ["STRATA_LOGPOS"], "a")
+print("strata generate: memory guard: mock", file=sys.stderr, flush=True)
+print("READY", flush=True)
+for line in sys.stdin:
+    line = line.strip()
+    if line == "QUIT":
+        break
+    if not line.startswith("GEN "):
+        print("ERR expected GEN", flush=True)
+        continue
+    ids = [int(x) for x in line.split(" ")[-1].split(",")]
+    for t in range(len(ids) - 1):
+        out.write(ST.fmt_row(t, ids[t + 1], m.row_at(ids, t)) + "\n")
+    out.flush()
+    print("T " + str(ids[0]), flush=True)
+    print("DONE 1 " + str(len(ids)) + " 0.0 0.0", flush=True)
+'''
+
+
+def syn_tokenizer(d):
+    """a synthetic byte-level tokenizer in the pack's layout (vocab.json, merges.txt, token_type.json, chat_template)"""
+    root = Path(f"{WS}/strata-r22p028x/tools")
+    sys.path.insert(0, str(root))
+    import strata_tokenizer as TK
+    toks = [TK.BYTE_TO_UNICODE[b] for b in range(256)] + ["ab", "<|im_start|>", "<|im_end|>", "<|endoftext|>", "<think>",
+                                                             "</think>"]
+    types = [1] * 257 + [3, 3, 3, 4, 4]
+    os.makedirs(d, exist_ok=True)
+    json.dump({t: i for i, t in enumerate(toks)}, open(f"{d}/vocab.json", "w"))
+    open(f"{d}/merges.txt", "w").write("a b")
+    json.dump(types, open(f"{d}/token_type.json", "w"))
+    json.dump({"pre": "qwen35"}, open(f"{d}/tokenizer.json", "w"))
+    open(f"{d}/chat_template.jinja", "w").write(SYN_TEMPLATE)
+    return toks
+
+
+def selftest(base):
+    rng = random.Random(20261109)
+    ok = True
+
+    def chk(what, cond):
+        nonlocal ok
+        print(f"{'ok  ' if cond else 'FAIL'} {what}", flush=True)
+        ok = ok and bool(cond)
+    PR = ["math", "code", "conv", "prose"]
+    # ---- 1 constants, the math's identity with sampled.py, the sampler chain
+    chk(f"chi2(3) 99th percentile {ST.C_BOUND:.4f} (11.3449)", abs(ST.C_BOUND - 11.3449) < 1e-3)
+    chk(f"chi2(4) 99th percentile {ST.chi2_ppf(0.99, 4):.4f} (13.2767)", abs(ST.chi2_ppf(0.99, 4) - 13.2767) < 1e-3)
+    chk(f"noncentral chi2(3, {ST.LAM80:.3f}) passes c with probability {ST.ncx2_sf(ST.C_BOUND, 3, ST.LAM80):.3f} (0.80; "
+        "lambda80 15.458)", abs(ST.ncx2_sf(ST.C_BOUND, 3, ST.LAM80) - 0.80) < 1e-3 and abs(ST.LAM80 - 15.458) < 2e-3)
+    st, det = ST.math_identity()
+    print(f"     (math identity: {st}: {det})")
+    chk(f"the copied math is sampled.py's ({st})", st in ("identical", "changed", "absent") and st != "DIFFERENT")
+    ids, p, _ = ST.kept([(5, 0.0), (6, -0.5), (7, -1.0), (8, -4.0)] + [(100 + i, -30.0 - i) for i in range(60)])
+    chk(f"chain: min_p cuts the 4th token, top_p keeps 3 ({ids})", ids == [5, 6, 7])
+    ids, p, _ = ST.kept([(9, -0.01), (3, -0.01)] + [(100 + i, -6.0 - i) for i in range(62)])
+    chk(f"chain: ties go to the lower id ({ids[:2]})", ids[:2] == [3, 9])
+    ids, p, _ = ST.kept([(1, 0.0)] + [(100 + i, -0.05 * (i + 1)) for i in range(63)])
+    chk(f"chain: top_k 20 then top_p 0.95 over the 20 ({len(ids)} kept)", len(ids) == 19)
+
+    # ---- 2 the real spec (this folder's own file): consistent, its rule's fixed parts
+    spec = ST.load_spec(SPEC_DEFAULT)
+    sb = ST.check_spec(spec)
+    chk(f"spec-adaptfetch.json is consistent ({'; '.join(sb) or 'no problem'})", not sb)
+    rt = ST.rule_text(spec)
+    open(f"{base}/rule-adaptfetch.txt", "w").write(rt + "\n")
+    chk(f"its rule text (scratch/.../rule-adaptfetch.txt, {len(rt.splitlines())} lines, sha {hashlib.sha256(rt.encode()).hexdigest()[:12]}): "
+        "c 11.3449, lambda80 15.458, band = max(c, D2(R2, R1)), X1 / X2, the read-back VF, the overall rule",
+        "11.3449" in rt and "15.458" in rt and "band = max(c, D2(R2, R1))" in rt and "X1 (candidate)" in rt
+        and "X2 (candidate)" in rt and "VF = X2" in rt and "overall, per candidate" in rt and "presence_penalty 0" in rt)
+    s2 = copy.deepcopy(spec)
+    s2["arms"]["X2"]["seed_base"] = spec["arms"]["X1"]["seed_base"] + 1000
+    s3 = copy.deepcopy(spec)
+    s3["plan"]["thinking"] = True
+    chk("check_spec refuses overlapping seed ranges and a thinking-on plan",
+        any("overlap" in b for b in ST.check_spec(s2)) and any("thinking" in b for b in ST.check_spec(s3)))
+
+    # ---- 3 judge cases on arm folders in the real layout (4 prompts x 4 samples x 512 tokens = 8,192 an arm)
+    jspec = {"name": "selftest-judge", "use": "selftest", "fixed": "2026-11-09",
+             "plan": {"prompts": [{"name": q, "messages": [{"role": "user", "content": q}]} for q in PR],
+                      "max_tokens": 512, "thinking": False, "k": 4},
+             "arms": {"R1": {"role": "reference", "base": "/c.json", "seed_base": 1_000_000, "exercise": ["common", "nofetch"]},
+                      "R2": {"role": "noise", "same_as": "R1", "seed_base": 2_000_000, "exercise": ["common", "nofetch"]},
+                      "X1": {"role": "candidate", "same_as": "R1", "env": {"STRATA_ADAPT_FETCH": "1"}, "seed_base": 3_000_000,
+                             "exercise": ["common", "fetch1"]},
+                      "VF": {"role": "verify", "same_as": "X1", "env": {"STRATA_ADAPT_FETCH_VERIFY": "1"},
+                             "seed_base": 5_000_000, "k": 1, "verify": "fv", "covers": ["X1"]}},
+             "exercise": spec["exercise"], "verify": {"fv": dict(spec["verify"][next(iter(spec["verify"]))], min_requests=1,
+                                                             require=[r"STRATA_ADAPT_FETCH=1: the PCIe share takes"])},
+             "scorer": spec["scorer"], "taint": spec["taint"]}
+    jspec["exercise"] = dict(jspec["exercise"], fetch1=dict(spec["exercise"]["fetch1"], counter=None))
+    nofetch = (ST.ENGINE_EXACT,)
+    fetch1 = (ST.ENGINE_EXACT, ST.fetch_banner(1))
+    VOK = [ST.fetch_banner(1), "strata serve: fetch verify: 1088 admitted slots read back, 0 differ, 0 also on a helper, 0 slots not unique, 0 pending-copy targets"]
+    VBAD = VOK + ["strata serve: FETCH VERIFY layer 31 expert 117 slot 2207: the slot's bytes differ from the expert's blob"]
+
+    def mk(o, name, spp=4, gn=512, **kw):
+        ST.synth_arm(f"{o}/{name}", PR, rng, spp, gn, **kw)
+
+    def vf(o, lines):
+        os.makedirs(f"{o}/VF", exist_ok=True)
+        open(f"{o}/VF/engine.out", "w").write("\n".join([ST.ENGINE_EXACT] + lines) + "\n")
+        open(f"{o}/VF/sampled.jsonl", "w").write(json.dumps({"name": "VF-math-00", "finish": "length"}) + "\n")
+
+    def case(name, xkw, r2=True, r2kw=None, want="PASS", stage1=False, xlines=fetch1, vlines=VOK, r1kw=None,
+             r1lines=nofetch, spp=4, gn=512, want_overall=None, want_rc=None):
+        o = f"{base}/{name}"
+        shutil.rmtree(o, ignore_errors=True)
+        mk(o, "R1", spp, gn, engine_lines=r1lines, **(r1kw or {}))
+        mk(o, "X1", spp, gn, engine_lines=xlines, **xkw)
+        if r2:
+            mk(o, "R2", spp, gn, engine_lines=nofetch, served_sd=0.05, **(r2kw or {}))
+        if vlines is not None:
+            vf(o, vlines)
+        res, rc = ST.judge(o, jspec, stage1=stage1)
+        ST.write_decision(o, res)
+        got = res["candidates"]["X1"]["verdict"]
+        ov = (res.get("overall") or {}).get("X1", {}).get("verdict")
+        good = got == want and (want_overall is None or ov == want_overall) and (want_rc is None or rc == want_rc)
+        chk(f"case {name}: sampled {got} (want {want}), overall {ov}{' (want ' + want_overall + ')' if want_overall else ''}, "
+            f"exit {rc}; D2 {res['candidates']['X1'].get('d2_x_ref')}, band {res['candidates']['X1'].get('band')}, "
+            f"MDE {res['candidates']['X1'].get('mde_top1')}; {res['candidates']['X1'].get('why', '')[:110]}", good)
+        if os.environ.get("SQ_KEEP") != "1":
+            for a in ("R1", "R2", "X1"):
+                shutil.rmtree(f"{o}/{a}/score", ignore_errors=True)
+        return res, rc
+    case("identical", {}, want="PASS", want_overall="PASS", want_rc=0)
+    case("shifted-T0.8", {"temperature": 0.8}, want="FAIL", want_overall="FAIL", want_rc=1)
+    case("corrupt-share", {"noise_share": 0.3, "noise_sd": 3.0}, want="FAIL", want_overall="FAIL", want_rc=1)
+    case("too-few", {}, spp=3, gn=80, want="NOT DECIDED", want_rc=2)
+    case("underpowered", {}, spp=3, gn=350, want="NOT DECIDED", want_rc=2)
+    case("shifted-stage1-no-R2", {"temperature": 0.8}, r2=False, stage1=True, want="NOISE ARM NEEDED", want_rc=3)
+    case("shifted-final-no-R2", {"temperature": 0.8}, r2=False, want="NOT DECIDED", want_rc=2)
+    case("identical-no-R2", {}, r2=False, want="PASS", want_overall="PASS")
+    r, _ = case("band", {"temperature": 0.8}, r2kw={"temperature": 0.6}, want="PASS")
+    chk(f"  band case: D2(X1, R1) {r['candidates']['X1'].get('d2_x_ref')} > c but inside band {r.get('band')} = D2(R2, R1) "
+        f"(R2 drawn at T 0.6); flagged: {r['flags'][:1]}",
+        (r["candidates"]["X1"].get("d2_x_ref") or 0) > ST.C_BOUND and (r.get("band") or 0) > r["candidates"]["X1"]["d2_x_ref"]
+        and r["flags"])
+    case("misaligned-scorer", {"misalign": True}, r1kw={"misalign": True}, want="NOT DECIDED", want_rc=2)
+    case("x-fetch-not-on", {}, xlines=nofetch, want="NOT DECIDED", want_overall="NOT DECIDED", want_rc=2)
+    case("x-fetch-is-off", {}, xlines=fetch1 + ("strata serve: STRATA_ADAPT_FETCH is off (helper GPUs)",),
+         want="NOT DECIDED", want_rc=2)
+    case("r1-has-fetch", {}, r1lines=fetch1, want="NOT DECIDED", want_rc=2)
+    case("no-spec-exact", {}, xlines=(ST.fetch_banner(1),), want="NOT DECIDED", want_rc=2)
+    r, _ = case("verify-mismatch", {}, vlines=VBAD, want="PASS", want_overall="FAIL", want_rc=1)
+    chk(f"  the VERIFY mismatch line is flagged: read-back VF {r['verify']['VF']['verdict']} ({r['verify']['VF']['why'][:120]})",
+        r["verify"]["VF"]["verdict"] == "FAIL" and r["verify"]["VF"]["mismatch_lines"] == 1)
+    r, _ = case("verify-no-summary", {}, vlines=[ST.fetch_banner(1)], want="PASS", want_overall="NOT DECIDED", want_rc=2)
+    chk(f"  no read-back summary: VF {r['verify']['VF']['verdict']} ({r['verify']['VF']['why'][:80]})",
+        r["verify"]["VF"]["verdict"] == "NOT DECIDED")
+    r, _ = case("verify-few", {}, vlines=[ST.fetch_banner(1), "strata serve: fetch verify: 40 admitted slots read back, 0 differ, 0 also on a helper, 0 slots not unique, 0 pending-copy targets"],
+                want="PASS", want_overall="NOT DECIDED")
+    chk(f"  too few slots read back: VF {r['verify']['VF']['verdict']}", r["verify"]["VF"]["verdict"] == "NOT DECIDED")
+    r, _ = case("verify-differ-count", {}, vlines=[ST.fetch_banner(1), "strata serve: fetch verify: 2048 admitted slots read back, 3 differ, 0 also on a helper, 0 slots not unique, 0 pending-copy targets"],
+                want="PASS", want_overall="FAIL")
+    # a candidate pair: X2 shifted, X1 identical -> X1 PASS, X2 FAIL, exit 1
+    o = f"{base}/two-candidates"
+    shutil.rmtree(o, ignore_errors=True)
+    j2 = copy.deepcopy(jspec)
+    j2["arms"]["X2"] = dict(j2["arms"]["X1"], seed_base=4_000_000)
+    for a, kw in (("R1", {}), ("R2", {"served_sd": 0.05}), ("X1", {}), ("X2", {"temperature": 0.8})):
+        mk(o, a, engine_lines=fetch1 if a.startswith("X") else nofetch, **kw)
+    vf(o, VOK)
+    res, rc = ST.judge(o, j2)
+    ST.write_decision(o, res)
+    chk(f"case two-candidates: X1 {res['overall']['X1']['verdict']}, X2 {res['overall']['X2']['verdict']} (sampled "
+        f"{res['candidates']['X2']['verdict']}, not covered by VF), exit {rc}",
+        res["overall"]["X1"]["verdict"] == "PASS" and res["overall"]["X2"]["verdict"] == "FAIL" and rc == 1)
+    # decide: the frozen rule is checked
+    open(f"{o}/spec.json", "w").write(json.dumps(j2))
+    open(f"{o}/rule.txt", "w").write(ST.rule_text(j2) + "\n")
+    rc_ok = cmd_decide(o)
+    open(f"{o}/rule.txt", "w").write(ST.rule_text(j2).replace("4000", "3000") + "\n")
+    rc_bad = cmd_decide(o)
+    chk(f"decide: with this spec's rule.txt exit {rc_ok} (1: X2 FAILS); with an edited rule.txt exit {rc_bad} (NOT DECIDED)",
+        rc_ok == 1 and rc_bad == 2 and "rule.txt" in open(f"{o}/decision.txt").read())
+    for a in ("R1", "R2", "X1", "X2"):
+        shutil.rmtree(f"{o}/{a}", ignore_errors=True)
+
+    # ---- 4 ids: the raw-id parser, the counts, taints, the stop token, prompt ids across arms
+    o = f"{base}/ids"
+    shutil.rmtree(o, ignore_errors=True)
+    os.makedirs(f"{o}/A")
+    sp = {"name": "ids", "plan": {"prompts": [{"name": "m"}, {"name": "c"}], "max_tokens": 8, "thinking": False, "k": 1},
+          "arms": {"A": {"role": "reference"}, "B": {"role": "candidate"}},
+          "taint": [r"became non-finite", r"thinking budget reached"],
+          "resolved": {"prompts": {"m": [{"role": "user", "content": "m"}], "c": [{"role": "user", "content": "c"}]}}}
+    lines = ["[strata] sampling defaults\n",
+             "[strata] req openai: msgs=1 tools=0 max_tokens_raw=8/None max_new=8 thinking=False stream=True prompt_tokens=3 last='user':'m'\n",
+             "[strata] done: 4 tokens in 1 s (4.0 tok/s) (stop, cancel=False), expert cache 80.0% hit\n", "[strata] raw: 'x'\n",
+             f"{ST.RAW}[5, 6, 7, 99]\n",                                    # a: 4 ids, the stop token 99 included: valid
+             "[strata] req openai: msgs=1 tools=0 max_tokens_raw=8/None max_new=8 thinking=False stream=True prompt_tokens=3 last='user':'c'\n",
+             "[strata] the engine's logits became non-finite after 2 tokens (#879): the reply ends here\n",
+             "[strata] done: 2 tokens in 1 s (2.0 tok/s) (length, cancel=False)\n", f"{ST.RAW}[5, 6]\n",   # b: tainted
+             "[strata] req openai: msgs=1 tools=0 max_tokens_raw=8/None max_new=8 thinking=False stream=True prompt_tokens=3 last='user':'m'\n",
+             "[strata] done: 3 tokens in 1 s (3.0 tok/s) (length, cancel=False)\n", f"{ST.RAW}[1, 2, 3]\n",  # c: count mismatch
+             "[strata] req openai: msgs=1 tools=0 max_tokens_raw=8/None max_new=8 thinking=False stream=True prompt_tokens=4 last='user':'c'\n",
+             "[strata] done: 2 tokens in 1 s (2.0 tok/s) (length, cancel=False)\n", f"{ST.RAW}[8, 9]\n",     # d: prompt length
+             "[strata] req openai: msgs=1 tools=0 max_tokens_raw=8/None max_new=8 thinking=False stream=True prompt_tokens=3 last='user':'c'\n",
+             "[strata] done: 0 tokens in 1 s (no speed) (length, cancel=False)\n"]                          # e: no raw ids
+    data = "".join(lines).encode()
+    offs, pos = [], 0
+    bounds = [5, 9, 12, 15, 17]
+    cuts = [0] + [sum(len(x.encode()) for x in lines[:b]) for b in bounds]
+    offs = [[cuts[i], cuts[i + 1]] for i in range(5)]
+    open(f"{o}/A/server.out", "wb").write(data)
+    recs = [{"name": "a", "prompt": "m", "prompt_tokens": 3, "completion_tokens": 4, "finish": "stop"},
+            {"name": "b", "prompt": "c", "prompt_tokens": 3, "completion_tokens": 2, "finish": "length"},
+            {"name": "c", "prompt": "m", "prompt_tokens": 3, "completion_tokens": 4, "finish": "length"},
+            {"name": "d", "prompt": "c", "prompt_tokens": 4, "completion_tokens": 2, "finish": "length"},
+            {"name": "e", "prompt": "c", "prompt_tokens": 3, "completion_tokens": 0, "finish": "length"}]
+    with open(f"{o}/A/sampled.jsonl", "w") as f:
+        for r, so in zip(recs, offs):
+            f.write(json.dumps(dict(r, srv_off=so)) + "\n")
+    json.dump({"arm": "A", "thinking": False, "prompts": {q: {"messages": v} for q, v in sp["resolved"]["prompts"].items()}},
+              open(f"{o}/A/sampled-plan.json", "w"))
+    render = lambda m: [1, 2, 3] if m[0]["content"] == "m" else [1, 2, 4]   # noqa: E731
+    good, tot = build_ids(o, "A", render=render, spec=sp)
+    mt = {m["name"]: m for m in json.load(open(f"{o}/A/score-ids.meta.json"))["segments"]}
+    seg = {s["name"]: s["ids"] for s in json.load(open(f"{o}/A/score-ids.json"))["segments"]}
+    chk(f"ids: {good} of {tot} valid; a = prompt + 4 ids with the stop token ({seg['a']}); b tainted ({mt['b']['why']}); "
+        f"c ({mt['c']['why']}); d ({mt['d']['why']}); e ({mt['e']['why']})",
+        good == 1 and tot == 5 and mt["a"]["ok"] and seg["a"] == [1, 2, 3, 5, 6, 7, 99] and "non-finite" in (mt["b"]["why"] or "")
+        and "completion_tokens" in (mt["c"]["why"] or "") and "prompt_tokens" in (mt["d"]["why"] or "")
+        and "0 raw-ids" in (mt["e"]["why"] or ""))
+    os.makedirs(f"{o}/B")
+    for f_ in ("server.out", "sampled.jsonl"):
+        shutil.copy(f"{o}/A/{f_}", f"{o}/B/{f_}")
+    json.dump({"arm": "B", "thinking": False, "prompts": {q: {"messages": v} for q, v in sp["resolved"]["prompts"].items()}},
+              open(f"{o}/B/sampled-plan.json", "w"))
+    good_b, _ = build_ids(o, "B", render=lambda m: [1, 2, 3] if m[0]["content"] == "m" else [1, 2, 5], spec=sp)
+    mb = json.load(open(f"{o}/B/score-ids.meta.json"))["segments"]
+    chk(f"ids: an arm whose rendered prompts differ from the first arm's is invalid whole ({good_b} valid; {mb[0]['why'][:70]})",
+        good_b == 0 and "differ" in (mb[0]["why"] or ""))
+    os.makedirs(f"{o}/S")
+    open(f"{o}/S/server.out", "wb").write(data)
+    with open(f"{o}/S/sampled.jsonl", "w") as f:
+        for r in recs:
+            f.write(json.dumps(r) + "\n")
+    json.dump({"arm": "S", "thinking": False, "prompts": {q: {"messages": v} for q, v in sp["resolved"]["prompts"].items()}},
+              open(f"{o}/S/sampled-plan.json", "w"))
+    Path(f"{o}/prompt-ids.json").unlink()
+    good_s, _ = build_ids(o, "S", render=render, spec=sp)
+    ms = json.load(open(f"{o}/S/score-ids.meta.json"))["segments"]
+    chk(f"ids without byte ranges: 4 raw-ids lines for 5 answered requests -> all invalid ({good_s}; {ms[0]['why'][:60]})",
+        good_s == 0 and "raw-ids lines for 5" in (ms[0]["why"] or ""))
+
+    # ---- 5 the renderer with the server tree's own code on a SYNTHETIC tokenizer and template
+    td = f"{base}/syn-tokenizer"
+    toks = syn_tokenizer(td)
+    cfg = {"server": f"{WS}/strata-r22p028x/serve/server.py", "tokenizer": td, "exe": "/nonexistent"}
+    R = Renderer(cfg)
+    msgs = [{"role": "user", "content": "say ab"}]
+    got = R(msgs)
+    text = R.tpl.render([{"role": "user", "content": "say ab"}], enable_thinking=False)
+    want_ids = R.tok.encode(text, parse_special=True)
+    sp_ids = {t: i for i, t in enumerate(toks)}
+    chk(f"renderer (server tree's frontend.py + strata_tokenizer.py, synthetic tokenizer): {len(got)} ids = the template "
+        f"rendered thinking off and encoded; ends with the empty thinking block; 'ab' merged",
+        got == want_ids and got[:1] == [sp_ids["<|im_start|>"]] and sp_ids["<think>"] in got and sp_ids["</think>"] in got
+        and sp_ids["ab"] in got and not R.effort_end)
+
+    # ---- 6 derive on synthetic configs (strip, check_equal, exe / sha, binaries, shared settings, literals)
+    dd = f"{base}/derive"
+    shutil.rmtree(dd, ignore_errors=True)
+    os.makedirs(f"{dd}/c")
+    eng = f"{dd}/c/strata"
+    open(eng, "wb").write(b"\0engine STRATA_ADAPT_FETCH STRATA_ADAPT_FETCH_VERIFY --tail-role-token\0")
+    dbg = f"{dd}/c/strata-dbg"
+    open(dbg, "wb").write(b"\0engine STRATA_DEBUG\0")
+    x = {"exe": eng, "args": ["--pack", "p", "--spec", "7", "--kv-resident", "32768"], "env": {"CUDA_VISIBLE_DEVICES": "a,b",
+         "STRATA_SPEC_EXACT": "1"}, "log": "/l/x.log", "tokenizer": td, "server": cfg["server"], "fallback": None,
+         "port": 8081, "_comment": "x"}
+    pc = dict(copy.deepcopy(x), args=["--pack", "p", "--spec", "7", "--kv-resident", "32768", "--vision"],
+              env=dict(x["env"], STRATA_HC_UPMIX="1"), vision={"exe": "v"}, fallback="/c/f.json",
+              model_not_running={"m": "n"}, _comment="p", log="/l/p.log")
+    json.dump(x, open(f"{dd}/c/x28h.json", "w"))
+    json.dump(pc, open(f"{dd}/c/P.json", "w"))
+    json.dump({"normal": [{"id": "W1", "messages": [{"role": "user", "content": "prove it"}]}],
+               "calib": [{"id": "C", "messages": [{"role": "user", "content": "chat"}]},
+                         {"id": "L", "messages": [{"role": "user", "content": "a <|im_end|> b"}]}]}, open(f"{dd}/c/wl.json", "w"))
+    dspec = copy.deepcopy(spec)
+    dspec["name"] = "selftest-derive"
+    dspec["plan"].update(workloads=f"{dd}/c/wl.json", prompts=[{"name": "math", "source": "workloads", "set": "normal", "id": "W1"},
+                                                                {"name": "conv", "source": "workloads", "set": "calib", "id": "C"}])
+    for n, a in dspec["arms"].items():
+        if a.get("base"):
+            a["base"] = f"{dd}/c/P.json"
+            a["check_equal"] = {"config": f"{dd}/c/x28h.json", "env": {"STRATA_HC_UPMIX": "1"}}
+            a["exe_sha12"] = sha256_file(eng)[:12]
+        if a.get("top", {}).get("exe"):
+            a["top"]["exe"] = eng
+            a["exe_sha12"] = sha256_file(eng)[:12]
+    dspec["scorer"].update(base=f"{dd}/c/x28h.json")
+    json.dump(dspec, open(f"{dd}/spec.json", "w"))
+    rc, rep = cmd_derive(f"{dd}/spec.json", f"{dd}/out", quiet=True)
+    r1 = load_json(f"{dd}/out/cfg/R1.json") if rc == 0 else {}
+    x1 = load_json(f"{dd}/out/cfg/X1.json") if rc == 0 else {}
+    vfc = load_json(f"{dd}/out/cfg/VF.json") if rc == 0 else {}
+    sfull = load_json(f"{dd}/out/spec.json") if rc == 0 else {}
+    chk(f"derive OK ({'; '.join(rep['problems'])[:200] or 'no problem'}): R1 = P without --vision / vision / fallback / guard "
+        "= x28h + U (checked), + STRATA_DEBUG=1, own log; X1 = R1 + STRATA_ADAPT_FETCH=1; VF = X2 + VERIFY + CHECKRES; "
+        "spec.json has the resolved prompts and the same spec sha",
+        rc == 0 and "--vision" not in r1.get("args", []) and not any(k in r1 for k in STRIP_KEYS)
+        and r1["env"].get("STRATA_DEBUG") == "1" and r1["env"].get("STRATA_HC_UPMIX") == "1"
+        and r1["log"] == f"{dd}/out/logs/engine-R1.log" and x1["env"].get("STRATA_ADAPT_FETCH") == "1"
+        and vfc["env"].get("STRATA_ADAPT_FETCH") == "2" and vfc["env"].get("STRATA_ADAPT_FETCH_VERIFY") == "1"
+        and sfull["resolved"]["prompts"]["math"][0]["content"] == "prove it" and ST.spec_sha(sfull) == ST.spec_sha(dspec)
+        and ST.rule_text(sfull) == ST.rule_text(dspec))
+    bads = {}
+    for what, edit in (("sha", lambda s: s["arms"]["X1"].__setitem__("exe_sha12", "FILL-IN")),
+                       ("debug", lambda s: s["arms"]["X1"]["top"].__setitem__("exe", dbg)),
+                       ("missing", lambda s: s["arms"]["X1"]["top"].__setitem__("exe", f"{dd}/c/none")),
+                       ("equal", lambda s: s["arms"]["R1"]["check_equal"]["env"].__setitem__("STRATA_HC_UPMIX", "0")),
+                       ("literal", lambda s: s["plan"]["prompts"].append({"name": "lit", "source": "workloads", "set": "calib", "id": "L"})),
+                       ("has", lambda s: s["arms"]["X1"].__setitem__("binary_has", ["STRATA_NOT_IN_IT"]))):
+        s_ = copy.deepcopy(dspec)
+        edit(s_)
+        json.dump(s_, open(f"{dd}/spec-{what}.json", "w"))
+        rc_, rep_ = cmd_derive(f"{dd}/spec-{what}.json", f"{dd}/out-{what}", quiet=True)
+        bads[what] = (rc_, rep_["problems"][:1])
+    os.makedirs(f"{dd}/out-ss/cfg", exist_ok=True)
+    open(f"{dd}/out-ss/cfg/R1.shared-settings.json", "w").write("{}")
+    bads["shared"] = cmd_derive(f"{dd}/spec.json", f"{dd}/out-ss", quiet=True)[0], ["shared settings"]
+    chk("derive refuses: an unfilled exe_sha12, a binary that reads STRATA_DEBUG, a missing exe, an R1 that is not "
+        "x28h + U, a prompt holding a control literal, a binary without the spec's string, a shared-settings file: "
+        + ", ".join(f"{k} exit {v[0]}" for k, v in bads.items()), all(v[0] == 1 for v in bads.values()))
+    # (11-10) check_equal with "top": a reference on another build = its config + that build's exe (the switch gap's B =
+    # x28h + U + STRATA_ADAPT_FETCH=2 on the fetch build); a top that does not make it equal is refused
+    eng2 = f"{dd}/c/strata-fetch"
+    open(eng2, "wb").write(b"\0engine STRATA_ADAPT_FETCH STRATA_ADAPT_FETCH_VERIFY fetch build\0")
+    pt = dict(copy.deepcopy(pc), exe=eng2, env=dict(pc["env"], STRATA_ADAPT_FETCH="2"))
+    json.dump(pt, open(f"{dd}/c/P-top.json", "w"))
+    tops = {}
+    for what, top, env in (("top", {"exe": eng2}, {"STRATA_HC_UPMIX": "1", "STRATA_ADAPT_FETCH": "2"}),
+                           ("notop", None, {"STRATA_HC_UPMIX": "1", "STRATA_ADAPT_FETCH": "2"}),
+                           ("wrongtop", {"exe": eng}, {"STRATA_HC_UPMIX": "1", "STRATA_ADAPT_FETCH": "2"}),
+                           ("noenv", {"exe": eng2}, {"STRATA_HC_UPMIX": "1"})):
+        s_ = copy.deepcopy(dspec)
+        s_["arms"]["R1"]["base"] = f"{dd}/c/P-top.json"
+        s_["arms"]["R1"]["exe_sha12"] = sha256_file(eng2)[:12]
+        s_["arms"]["R1"]["check_equal"] = dict({"config": f"{dd}/c/x28h.json", "env": env}, **({"top": top} if top else {}))
+        json.dump(s_, open(f"{dd}/spec-{what}.json", "w"))
+        rc_, rep_ = cmd_derive(f"{dd}/spec-{what}.json", f"{dd}/out-{what}", quiet=True)
+        tops[what] = (rc_, rep_["arms"].get("R1", {}).get("check_equal"))
+    chk("derive check_equal with top (11-10): x28h + exe + U + =2 -> OK; without the top, with the wrong exe or without "
+        "=2 -> refused: " + ", ".join(f"{k} exit {v[0]} ({v[1]})" for k, v in tops.items()),
+        tops["top"] == (0, "OK") and all(tops[k][0] == 1 and str(tops[k][1]).startswith("DIFFERS") for k in ("notop", "wrongtop", "noenv")))
+
+    # ---- 7 the env checks (pure: synthetic /proc readings)
+    cf = load_json(f"{dd}/out/cfg/X1.json")
+    env_ok = dict(cf["env"], PATH="/usr/bin")
+    argv = [eng, "--serve"] + cf["args"]
+    chk("envcheck: the config's env exactly -> no problem; STRATA_ADAPT_FETCH set behind R1's config, a missing key, a "
+        "wrong --kv-resident, one GPU -> problems",
+        not served_env_problems(env_ok, argv, cf, sfull["resolved"]["known_env"])
+        and served_env_problems(dict(load_json(f"{dd}/out/cfg/R1.json")["env"], STRATA_ADAPT_FETCH="1"), argv,
+                                load_json(f"{dd}/out/cfg/R1.json"), sfull["resolved"]["known_env"])
+        and served_env_problems({k: v for k, v in env_ok.items() if k != "STRATA_DEBUG"}, argv, cf, [])
+        and served_env_problems(env_ok, [eng, "--serve"] + [a if a != "32768" else "16384" for a in cf["args"]], cf, [])
+        and not served_env_problems(env_ok, [eng, "--serve"] + [a if a != "7" else "4" for a in cf["args"]], cf, [])
+        and served_env_problems(dict(env_ok, CUDA_VISIBLE_DEVICES="a"), argv, cf, []))
+
+    # ---- 8 end to end on synthetic data: the client against a fake server, ids, the scorer runner on a mock engine, decide
+    e2e = f"{base}/e2e"
+    shutil.rmtree(e2e, ignore_errors=True)
+    os.makedirs(e2e)
+    mock = f"{e2e}/mock_engine.py"
+    open(mock, "w").write(MOCK.replace("{py}", PY).replace("{here!r}", repr(HERE)))
+    os.chmod(mock, 0o755)
+    vocab = 50000
+    model = ST.SynthModel(vocab=vocab, salt=7)
+    espec = copy.deepcopy(jspec)
+    espec["name"] = "selftest-e2e"
+    espec["exercise"]["fetch1"] = dict(spec["exercise"]["fetch1"], counter={"re": r"fetch admitted (\d+)", "group": 1, "min_total": 100})
+    for n in espec["arms"]:
+        espec["arms"][n].pop("base", None)
+    espec["arms"]["R1"]["base"] = f"{dd}/c/P.json"
+    sc_cfg = {"exe": mock, "args": ["--pack", "p", "--spec", "7", "--expert-cache", "auto", "--kv", "int8", "--prefill",
+              "auto:16384", "--vision"], "env": {"CUDA_VISIBLE_DEVICES": "a,b", "STRATA_SPEC_EXACT": "1",
+              "SQ_MOCK_VOCAB": str(vocab), "SQ_MOCK_SALT": "7"}, "tokenizer": td, "cwd": e2e}
+    os.makedirs(f"{e2e}/O/cfg", exist_ok=True)
+    write_json(f"{e2e}/O/cfg/scorer.json", sc_cfg)
+    espec["scorer"] = dict(spec["scorer"], base=f"{e2e}/O/cfg/scorer.json")
+    prompts = {q: [{"role": "user", "content": f"prompt {q}"}] for q in PR}
+    full = dict(espec, resolved={"prompts": prompts})
+    write_json(f"{e2e}/O/spec.json", full)
+    open(f"{e2e}/O/rule.txt", "w").write(ST.rule_text(full) + "\n")
+    erender = lambda m: [11, 12, 13] + [1000 + sum(map(ord, m[0]["content"])) % 997] * 2   # noqa: E731
+    t0 = time.time()
+    for arm, lines0, extra in (("R1", [ST.ENGINE_EXACT], []), ("R2", [ST.ENGINE_EXACT], []),
+                               ("X1", [ST.ENGINE_EXACT, ST.fetch_banner(1)], ["strata serve: fetch admitted 57 this request"]),
+                               ("VF", [ST.ENGINE_EXACT, ST.fetch_banner(1)],
+                                ["strata serve: fetch verify: 1088 admitted slots read back, 0 differ, 0 also on a helper, 0 slots not unique, 0 pending-copy targets"])):
+        slog, elog = f"{e2e}/server-{arm}.log", f"{e2e}/engine-{arm}.log"
+        open(slog, "w").write("[strata] sampling defaults from the config\n")
+        open(elog, "w").write("strata generate: memory guard: synthetic start\n" + "\n".join(lines0) + "\n")
+        fake = SQC.FakeServer(slog, elog, erender, model, sd=0.02, eng_extra=extra)
+        rc = SQC.run_with_fake(f"{e2e}/O/spec.json", arm, f"{e2e}/O/{arm}", fake, slog, elog)
+        if arm != "VF":
+            good, tot = build_ids(f"{e2e}/O", arm, render=erender)
+            chk(f"e2e {arm}: client exit {rc}, {tot} requests, ids {good} of {tot} valid", rc == 0 and good == tot == 16)
+    rc_s = cmd_score(f"{e2e}/O", ["R1", "R2", "X1"], min_free_gb=0.0, max_min=10.0)
+    idx = json.load(open(f"{e2e}/O/score-run/index.json"))
+    chk(f"e2e scorer on the mock engine: exit {rc_s}, {len(idx['items'])} samples, its env check ({idx.get('env_check', '-')[:60]}), "
+        f"args from quant_quality.engine_args + --spec 2 ({' '.join(idx['args'][1:])[:150]})",
+        rc_s == 0 and len(idx["items"]) == 48 and idx.get("env_check", "").startswith("OK")
+        and last_val(idx["args"], "--spec") == "2" and last_val(idx["args"], "--expert-cache") == "1"
+        and last_val(idx["args"], "--kv") == "fp16" and last_val(idx["args"], "--pcie-frac") == "0"
+        and last_val(idx["args"], "--short-read") == str(idx["L"] + 64) and "--vision" not in idx["args"])
+    args, env, want, _ = scorer_setup(f"{e2e}/O", full, idx["L"], Path(f"{e2e}/O/score-run/score.tsv"))
+    chk("scorer env check: a STRATA_ADAPT_FETCH behind it, a missing STRATA_LOGPOS_TOPK, other args -> problems",
+        not scorer_env_problems(env, args, args, want)
+        and scorer_env_problems(dict(env, STRATA_ADAPT_FETCH="1"), args, args, want)
+        and scorer_env_problems({k: v for k, v in env.items() if k != "STRATA_LOGPOS_TOPK"}, args, args, want)
+        and scorer_env_problems(env, args[:-1] + ["7"], args, want))
+    rc_v = cmd_verify(f"{e2e}/O", "VF")
+    rc_d = cmd_decide(f"{e2e}/O")
+    res = json.load(open(f"{e2e}/O/decision.json"))
+    a1 = res["arms"].get("R1", {})
+    chk(f"e2e decide: exit {rc_d} ({res['verdict']}), X1 {res['candidates']['X1']['verdict']} (D2 "
+        f"{res['candidates']['X1'].get('d2_x_ref')}), read-back VF {res['verify']['VF']['verdict']} (exit {rc_v}); R1 vs scorer "
+        f"{res.get('d2_ref_scorer')}, {a1.get('tokens')} tokens, {(a1.get('engine') or {}).get('decode_windows')} windows; "
+        f"X1 counter {res['arms']['X1'].get('exercise_info')} ({time.time() - t0:.0f} s)",
+        rc_d == 0 and rc_v == 0 and res["candidates"]["X1"]["verdict"] == "PASS" and res["verify"]["VF"]["verdict"] == "PASS"
+        and a1.get("tokens") == 8192 and (res.get("d2_ref_scorer") or 99) <= ST.C_BOUND
+        and list(res["arms"]["X1"]["exercise_info"].values()) == [16 * 57])
+    if os.environ.get("SQ_KEEP") != "1":
+        for a in ("R1", "R2", "X1"):
+            shutil.rmtree(f"{e2e}/O/{a}/score", ignore_errors=True)
+        Path(f"{e2e}/O/score-run/score.tsv").unlink(missing_ok=True)
+
+    # ---- 9 the client alone
+    SQC.client_checks(f"{base}/client", chk)
+
+    # ---- 10 calibration (token level, no files): false fails under H0, detection of the shifts
+    def calib(reps, n, **kw):
+        hits = 0
+        for _ in range(reps):
+            acc = {}
+            for role, k_ in (("R1", {}), ("X", kw)):
+                a = {q: ST.Acc() for q in PR}
+                for i in range(n):
+                    q = PR[i % 4]
+                    top = ST.synth_row(rng, vocab)
+                    xx = ST.draw(ST.jitter(top, rng, 0.02), rng, **k_)
+                    lp = dict(top)[xx]
+                    d_, s_, info = ST.token_terms(top, xx, lp)
+                    a[q].add(d_, s_, info, info["p_top"])
+                acc[role] = ST.combine(a, PR)
+            if ST.d2(acc["X"][0], acc["X"][1], acc["R1"][0], acc["R1"][1]) > ST.C_BOUND:
+                hits += 1
+        return hits / reps
+    ff = calib(200, 2000)
+    chk(f"calibration: false-fail rate under H0 {ff:.3f} over 200 synthetic tests at 2,000 tokens (alpha 0.01; accept <= 0.04)",
+        ff <= 0.04)
+    dt = calib(20, 8192, temperature=0.8)
+    chk(f"calibration: a temperature-0.8 arm detected in {dt:.2f} of 20 tests at 8,192 tokens (accept >= 0.90)", dt >= 0.90)
+    dn = calib(10, 8192, noise_share=0.3, noise_sd=3.0)
+    print(f"     (INFO: logit noise sd 3 on 30 % of the rows - a corrupted-slot stand-in - detected in {dn:.2f} of 10 at 8,192)")
+    dn2 = calib(10, 8192, noise_share=0.05, noise_sd=3.0)
+    dn3 = calib(6, 16384, noise_share=0.05, noise_sd=3.0)
+    print(f"     (INFO: the same on 5 % of the rows detected in {dn2:.2f} of 10 at 8,192 and {dn3:.2f} of 6 at 16,384)")
+    print("SELFTEST " + ("OK" if ok else "FAILED"))
+    return 0 if ok else 1
+
+
+def selftest_real(base, spec_path=SPEC_DEFAULT):
+    """(desk / the gap's preflight; NOT run 11-09) the real tokenizer and template: the plan's prompts rendered as the
+    served Qwen server renders them (C-conv must be 38 ids and C-prose 19, as P028x answered them in gap-speed's bp90 /
+    workloads.json expect_prompt_tokens); derive of the spec (default spec-adaptfetch.json; 11-10: --spec SPEC, e.g. the
+    switch gap's work/r23/switch-gap/spec-port0213.json) into DIR (the reference arms and the scorer must pass; the
+    candidates fail only on their not-yet-built exe)"""
+    ok = True
+
+    def chk(what, cond):
+        nonlocal ok
+        print(f"{'ok  ' if cond else 'FAIL'} {what}", flush=True)
+        ok = ok and bool(cond)
+    spec = ST.load_spec(spec_path)
+    print(f"     spec {spec_path} ({spec.get('name')})")
+    prompts, bad = resolve_prompts(spec)
+    chk(f"the plan's prompts resolve ({'; '.join(bad) or 'ok'})", not bad)
+    rc, rep = cmd_derive(spec_path, f"{base}/derive", quiet=True)
+    probs = rep["problems"]
+    ref_bad = [p for p in probs if p.split(":")[0] in ("R1", "R2", "scorer")]
+    print("     derive problems: " + ("; ".join(probs) or "none"))
+    ce = spec["arms"].get("R1", {}).get("check_equal") or {}
+    chk(f"derive: R1 / R2 / the scorer check out (R1 = {os.path.basename(spec['arms'].get('R1', {}).get('base', '?'))} "
+        f"stripped = {os.path.basename(ce.get('config', '?'))} + {ce.get('top') or ''}{ce.get('env')}: "
+        f"{rep['arms'].get('R1', {}).get('check_equal')})",
+        not ref_bad and rep["arms"].get("R1", {}).get("check_equal") == "OK")
+    r1 = resolve_arm(spec, "R1")
+    R = Renderer(build_config(r1))
+    lens = {q: len(R(prompts[q])) for q in prompts}
+    print(f"     rendered prompt lengths (thinking off): {lens}")
+    chk(f"C-conv renders to 38 ids and C-prose to 19 (as the served P028x counted them): {lens.get('conv')}, {lens.get('prose')}",
+        lens.get("conv") == 38 and lens.get("prose") == 19)
+    print("SELFTEST-REAL " + ("OK" if ok else "FAILED"))
+    return 0 if ok else 1
+
+
+def under_scratch(p):
+    r = os.path.realpath(SCRATCH)
+    return os.path.realpath(p) == r or os.path.realpath(p).startswith(r + os.sep)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("rule")
+    s.add_argument("spec")
+    s = sub.add_parser("derive")
+    s.add_argument("spec")
+    s.add_argument("outdir")
+    s = sub.add_parser("envcheck")
+    s.add_argument("outdir")
+    s.add_argument("arm")
+    s = sub.add_parser("ids")
+    s.add_argument("outdir")
+    s.add_argument("arms", nargs="+")
+    s = sub.add_parser("score")
+    s.add_argument("outdir")
+    s.add_argument("arms", nargs="+")
+    s.add_argument("--min-free-gb", type=float, default=30.0)
+    s.add_argument("--max-min", type=float, default=40.0)
+    s = sub.add_parser("envwatch")
+    s.add_argument("job", type=int)
+    s.add_argument("outdir")
+    s.add_argument("--kill", action="store_true")
+    s.add_argument("--max-s", type=float, default=3600)
+    s = sub.add_parser("verify")
+    s.add_argument("outdir")
+    s.add_argument("arm")
+    s = sub.add_parser("decide")
+    s.add_argument("outdir")
+    s.add_argument("--stage1", action="store_true")
+    for name in ("selftest", "selftest-real"):
+        s = sub.add_parser(name)
+        s.add_argument("dir", nargs="?")
+        if name == "selftest-real":
+            s.add_argument("--spec", default=SPEC_DEFAULT, help="(11-10) the spec to derive and render (default "
+                           "spec-adaptfetch.json)")
+    a = ap.parse_args(argv)
+    if a.cmd == "rule":
+        print(ST.rule_text(ST.load_spec(a.spec)))
+        return 0
+    if a.cmd == "derive":
+        return cmd_derive(a.spec, a.outdir)[0]
+    if a.cmd == "envcheck":
+        return cmd_envcheck(a.outdir, a.arm)
+    if a.cmd == "ids":
+        rc = 0
+        for arm in a.arms:
+            good, tot = build_ids(a.outdir, arm)
+            print(f"ids {arm}: {good} of {tot} samples valid -> {a.outdir}/{arm}/score-ids.json")
+            rc = rc or (0 if good == tot else 1)
+        return rc
+    if a.cmd == "score":
+        return cmd_score(a.outdir, a.arms, a.min_free_gb, a.max_min)
+    if a.cmd == "envwatch":
+        return cmd_envwatch(a.job, a.outdir, a.kill, a.max_s)
+    if a.cmd == "verify":
+        return cmd_verify(a.outdir, a.arm)
+    if a.cmd == "decide":
+        return cmd_decide(a.outdir, a.stage1)
+    base = a.dir or f"{SCRATCH}/{a.cmd}"
+    if not under_scratch(base):
+        print(f"{a.cmd} writes only under {SCRATCH}")
+        return 2
+    os.makedirs(base, exist_ok=True)
+    return selftest(base) if a.cmd == "selftest" else selftest_real(base, a.spec)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,31 @@
+#!/bin/bash
+# series-restart-after-ba.sh (11-05 14:3x) - one shot. The running gap series has the boundary bug fixed in
+# gap-series.sh at 14:3x (it launched Basalt a straight after the screen rerun with no question in between). Basalt b's
+# .ready mark was pulled, so after Basalt a the old series waits at Basalt b. This waits for "gap-basalt-a.sh exit 0"
+# in the series log and no open gap, then restores Basalt b's .ready and restarts the series (fixed code) with the
+# remaining steps (Basalt b, DeepSeek C rerun, Unsloth v3.1, the v3.1 follow-up), anchored at Basalt a's launch, so
+# Basalt b waits for a research question to start after Basalt a's gap. Any other exit of Basalt a: no restart (the
+# series stops itself on 3 / 4) - a NOTES line and a desktop notice.
+set -u
+SC=/home/USER/ai-speed-testing/strata-compare; W=$SC/work/r23; L=$SC/results/r23/gap-series.log; F=$W/gap-series.sh
+log() { echo "$(date '+%F %T') restart-waiter-ba: $*" | tee -a $L; }
+alert() { log "$1"; echo "$(date '+%m-%d %H:%M') GAP SERIES restart-waiter-ba: $1" >> $SC/NOTES.md
+          notify-send -a "Strata gaps" -u critical "Gap series" "$1" 2> /dev/null || true; }
+log "waiting for Basalt a to finish (then: restore Basalt b's .ready, restart the series with the fixed boundary test)"
+for i in $(seq 2880); do grep -q 'work/r23/gap-basalt-a.sh exit' $L && break; sleep 15; done
+rc=$(grep 'work/r23/gap-basalt-a.sh exit' $L | tail -1 | awk '{print $NF}')
+[ "$rc" = 0 ] || { alert "Basalt a exit '${rc:-none}' - the series was NOT restarted (Basalt b stays without its .ready)"; exit 1; }
+sleep 20
+[ -s $SC/tmp/port-gap.lockpid ] && { alert "a gap is open after Basalt a - NOT restarted"; exit 1; }
+t0=$(grep 'starting work/r23/gap-basalt-a.sh' $L | tail -1 | cut -c1-19)
+[ -n "$t0" ] || { alert "no Basalt a launch line - NOT restarted"; exit 1; }
+mv $W/gap-basalt-b.sh.ready.held $W/gap-basalt-b.sh.ready || { alert "Basalt b's held .ready is missing - NOT restarted"; exit 1; }
+cp -p $F $F.before-ba-restart && cp -p $F $F.new
+sed -i 's#^STEPS=.*#STEPS=(work/r23/gap-basalt-b.sh work/ds41/gate/gap-csample.sh work/r23/gap-ud31.sh work/r23/gap-ud31-dec.sh work/r23/gap-port0211.sh)#' $F.new
+bash -n $F.new || { alert "bash -n failed on the new series - NOT restarted"; exit 1; }
+mv $F.new $F
+systemctl --user stop gap-series.service; sleep 3
+[ -s $SC/tmp/port-gap.lockpid ] && { alert "a gap opened during the stop?! - the series is NOT started again"; exit 1; }
+systemd-run --user --unit=gap-series --collect --setenv=GAP19_T0="$t0" --description="r23 gap series (Basalt b, C rerun, v3.1, v3.1 follow-up, v0.2.11 port gate)" /bin/bash $F > /dev/null 2>&1
+sleep 5
+log "series restarted (pid $(systemctl --user show -p MainPID --value gap-series)), anchored at Basalt a's launch $t0; steps: $(grep '^STEPS' $F | cut -c7-)"

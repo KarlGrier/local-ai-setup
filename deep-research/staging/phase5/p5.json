@@ -1,0 +1,40 @@
+{
+ "_comment": "Phase 5 holdout config (staged 10-29). Read by p5.py (plan / check-engine / status / packets / tally) and p5-start.sh. Every value written PLACEHOLDER must be filled in once Karl's adoption calls are made (item 7 parts, item 8, C3c, the port); p5.py plan and p5-start.sh refuse to start while one is left.",
+ "timing": {"open_min": 171, "checkable_min": 47,
+            "_from": "results/bench2/queue-plan-p4s7.json (both steps: open_min 171, checkable_min 47); p5.py plan checks they still match"},
+ "arms": [
+  {"name": "baseline", "profile": "baseline", "label": "p5",
+   "_comment": "pristine LDR 1.10.7 (run-ldr.sh LDR_PROFILE=baseline), as PLAN.md 10-18 'Phase 5 holdout ... on baseline and the final setup' and PHASE5-CHECKABLE-RULES.md item 3; runs folders <set>-baseline-p5"},
+  {"name": "final", "profile": "deep", "label": "p5final", "effort": "medium", "verify_effort": "xhigh",
+   "items": "PLACEHOLDER",
+   "_items_example": ["setup", "critic", "code", "fixes", "read", "claims"],
+   "_comment": "THE FINAL SETUP - PLACEHOLDER. items = a list from what bench2-queue.sh knows (setup critic verify2 tried notyet code fixes read claims); p4s7's list is in _items_example. An adopted item 7 part (paid search / S2), item 8 (merge) or a C3c model profile is NOT something the queue can switch today (bench2.py refuses LDR with the search fallback or S2 on; run/ldr.modelprofile is not checked) - such an item needs queue support first."}
+ ],
+ "engine": {"config": "PLACEHOLDER", "sha12": "PLACEHOLDER",
+            "_comment": "THE FINAL ENGINE - PLACEHOLDER. config = the Strata config both arms run on, as a strata-compare path (e.g. configs/P021m.json today, or the v0.2.7 port's config); sha12 = the first 12 hex digits of sha256 of that config's exe (P021m: 7b38796237f5). p5.py check-engine compares them with the server on 8080 (if up) and with the promoted config that strata-ensure.sh starts on demand (switch-model.sh's STRATA_CONFIG default)."},
+ "include_o01": false,
+ "_include_o01": "o01 is not part of the holdout (o04-o06 are its open questions; o01 is in questions-screen.jsonl, FROZEN.txt). true = add o01 with the 8 GB wording as set p5-o01 (needs results/bench2/FROZEN-p5-o01.txt, staged as o01/; Karl's call).",
+ "lines": {
+  "checkable": {"title": "checkable (25)", "expect": 25,
+                "sets": [{"set": "holdout", "kind": "checkable"}, {"set": "hard-holdout", "kind": "checkable"}]},
+  "harder": {"title": "harder checkable (4)", "expect": 4,
+             "sets": [{"set": "p5-harder", "kind": "checkable"}]},
+  "open": {"title": "open (3)", "expect": 3,
+           "sets": [{"set": "holdout", "kind": "open"}]}
+ },
+ "o01_line": {"set": "p5-o01", "kind": "open"},
+ "plan_order": ["open", "harder", "checkable"],
+ "_plan_order": "most decisive first (Phase 5 is judged on the open reports, then the harder four; the 25 are the sanity line); within a block each set runs on the baseline, then on the final setup, so the two arms of a question are close in time",
+ "needs": {"holdout": "FROZEN.txt", "hard-holdout": "FROZEN-hard.txt", "p5-harder": "FROZEN-p5-harder.txt",
+           "p5-o01": "FROZEN-p5-o01.txt"},
+ "frozen_files": ["FROZEN.txt", "FROZEN-hard.txt", "FROZEN-p5-harder.txt"],
+ "answer_files": ["answers/answers.jsonl", "answers/answers-hard.jsonl", "answers/answers-p5-harder.jsonl"],
+ "open_refs": {"o04": ["o04-moe-projects.md", 5], "o05": ["o05-qwen4-flash.md", 5], "o06": ["o06-ups.md", 7],
+               "o01": ["o01-moe-from-ram.md", 5]},
+ "open_ref_notes": {},
+ "_open_ref_notes": "optional one-line note per open question for its grader prompt, e.g. o05 if Qwen4 Flash was released after the reference (10-18) was written",
+ "blind_drop": "Setup check,Check these,Version check,Arithmetic check,Consistency check",
+ "_blind_drop": "as blind-p4s7 (BLIND_DROP); add any section a newly adopted item writes into the report",
+ "out": "results/bench2/blind-p5",
+ "checkable_batch": 5
+}

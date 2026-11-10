@@ -1,0 +1,35 @@
+[90009] Title: Niko1221/Strata@v0.2.4: src/core/device.cu lines 170-200 (source code)
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/core/device.cu#L170-L200
+
+170: }  // namespace
+171: 
+172: // #873 / #654: on some Windows setups the first hipMemGetInfo of a process fails with hipErrorInvalidValue because the ROCm
+173: // runtime has not finished initialising against the Adrenalin WDDM driver, and the first kernel launch after that
+174: // crashes (0xC0000005 in amdhip64_7.dll).  A hipFree(0) before the first query initialises the context, and one
+175: // failed query gets one retry after 250 ms.  Both happen once per process, before the DXGI budget below; any other
+176: // error, and a failure of the retry, are returned as they are (a real failure is never retried).
+177: static hipError_t first_mem_get_info(size_t* free_bytes, size_t* total_bytes) {
+178:     static std::atomic<bool> warmed{false}, retried{false};
+179:     if (!warmed.exchange(true)) (void) hipFree(nullptr);
+180:     hipError_t e = hipMemGetInfo(free_bytes, total_bytes);
+181:     if (e == hipErrorInvalidValue && !retried.exchange(true)) {
+182:         (void) hipGetLastError();
+183:         std::fprintf(stderr, "strata: hipMemGetInfo failed (%s); retrying once after 250 ms\n", hipGetErrorString(e));
+184:         Sleep(250);
+185:         e = hipMemGetInfo(free_bytes, total_bytes);
+186:         std::fprintf(stderr, "strata: hipMemGetInfo retry: %s\n", e == hipSuccess ? "ok" : hipGetErrorString(e));
+187:     }
+188:     return e;
+189: }
+190: 
+191: hipError_t mem_get_info(size_t* free_bytes, size_t* total_bytes) {
+192:     if (free_bytes == nullptr || total_bytes == nullptr) return hipMemGetInfo(free_bytes, total_bytes);
+193:     const hipError_t e = first_mem_get_info(free_bytes, total_bytes);
+194:     static const bool off = [] {
+195:         const char* v = std::getenv("STRATA_WDDM_BUDGET");
+196:         return v != nullptr && std::atoi(v) == 0;
+197:     }();
+198:     if (e != hipSuccess || off || free_bytes == nullptr || total_bytes == nullptr) return e;
+199:     int device = 0;
+200:     if (hipGetDevice(&device) != hipSuccess) {
+(src/core/device.cu has 380 lines.)

@@ -1,0 +1,3 @@
+# Frozen 2026-10-18 18:49 - 2 extra open-ended screen questions (the user's decision 10-18 18:43). Do not edit.
+# v2 2026-10-19 08:29: o07 corrected 'RTX 4060 Ti (16 GB)' -> '(8 GB)' (the PC's card is 8 GB: nvidia-smi 8188 MiB). No o07/o08 run had completed (the one attempt, 10-18 20:14, crashed and was discarded). v1 kept as questions-screen-extra.v1-4060ti-16gb.jsonl.
+2f62e5c16ac7bee9a163ecc51e14f760d3a0841190d14b9f059f810e63e93279  questions-screen-extra.jsonl

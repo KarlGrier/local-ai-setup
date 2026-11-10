@@ -1,0 +1,91 @@
+=== 2026-11-09 19:54:28 ADAPT_FETCH=2 ADOPTION (work/r23/afetch-adopt/gap-afetch-adopt.sh, Karl 11-09): configs/P028x.json -> the fetch build + STRATA_ADAPT_FETCH=2, one restart; exact7 + the short speed check
+=== 2026-11-09 19:54:28   PRIORITY CLEAR: 0 Qwen4 repo(s) in the watch, none an open Flash with weights (last poll 2026-11-09 19:45)
+=== 2026-11-09 19:54:28   PLAN OK: the switch to be added
+=== 2026-11-09 19:54:28   af_adopt.py selftest: 27 / 27 ok
+=== 2026-11-09 19:54:28   fallback: P028x.json.afetch1-1109 written (= P028x.json + engine-r23afetch + STRATA_ADAPT_FETCH=1; the gap's F1 form)
+=== 2026-11-09 19:54:28   fallback: P028x.json.afetch2-1109 written (= P028x.json + engine-r23afetch + STRATA_ADAPT_FETCH=2; the gap's F2 form)
+2026-11-09 19:54:28 port_gap4: hold set; waiting for the running research run to finish
+run-strata: not running
+2026-11-09 19:55:14 port_gap4: gap open: test lock held (pid 1123308), 8080 stopped
+=== 2026-11-09 19:55:14 8080 down: engines left: none MemAvailable 88 GB
+=== 2026-11-09 19:55:14 2 the config: backup P028x.json.before-afetch2-1109, exe engine-r23afetch/strata + env STRATA_ADAPT_FETCH=2
+=== 2026-11-09 19:55:14   edited: exe engine-r23afetch/strata, env STRATA_ADAPT_FETCH=2 added (29 env keys), backup P028x.json.before-afetch2-1109
+=== 2026-11-09 19:55:14   gate edit PASS edited: exe engine-r23afetch/strata, env STRATA_ADAPT_FETCH=2 added (29 env keys), backup P028x.json.before-afetch2-1109
+=== 2026-11-09 19:55:14   S2 = configs/P028x.json (adopted) without the picture reader = the gap's F2.json; S0 = S2 without the switch = F0.json: OK
+=== 2026-11-09 19:55:14   gate derive PASS S2 = configs/P028x.json (adopted) without the picture reader = the gap's F2.json; S0 = S2 without the switch = F0.json: OK
+=== 2026-11-09 19:55:14 3 exact7 S0 (the adopted config with the switch unset: the fetch build = P028x bitwise) at pin 2500 against P028x's stored x28h-e7a
+=== 2026-11-09 19:55:14 exact7 r23aa11091954-S0 (S0.json against x28h-e7a, pin 2500)
+engine pid 1123456: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1123989: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1124537: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1125063: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1125607: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1126001: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1126319: 28 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+r23aa11091954-S0-x-math   out 6b251415 (x28h-e7a 6b251415) =  ms/round 32.98  prompt ms 528
+r23aa11091954-S0-s-math   out 8c25c022 (x28h-e7a 8c25c022) =  ms/round 32.12  prompt ms 505
+r23aa11091954-S0-x-code   out 3585ad6f (x28h-e7a 3585ad6f) =  ms/round 24.75  prompt ms 492
+r23aa11091954-S0-s-code   out 2fe9fd9e (x28h-e7a 2fe9fd9e) =  ms/round 23.67  prompt ms 603
+r23aa11091954-S0-x-p2000  out 3e219376 (x28h-e7a 3e219376) =  ms/round 37.30  prompt ms 1109
+r23aa11091954-S0-x-32k    out 651f56c8 (x28h-e7a 651f56c8) =  ms/round 39.12  prompt ms 7214
+r23aa11091954-S0-x-112k   out a393ca0a (x28h-e7a a393ca0a) =  ms/round 32.09  prompt ms 24500
+exact7 r23aa11091954-S0: 7/7 identical to x28h-e7a
+exact7-slots r23aa11091954-S0: 3238+3300 slots (5080 + 4060 Ti); x28h-e7a: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 28 env keys as configured, STRATA_ROUTE_TAIL_SKIP=0, no other STRATA_*, harness args as expected
+exact7 r23aa11091954-S0: 7/7, slots MATCHED -> PASS
+=== 2026-11-09 19:58:33 3b exact7 S2 (the switch on) - information only: bit-identity with P028x is not expected (admissions move experts between the CPU and the GPUs)
+=== 2026-11-09 19:58:33 exact7 r23aa11091954-S2 (S2.json against x28h-e7a, pin 2500)
+engine pid 1127168: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1127697: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1128240: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1128759: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1129310: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1129562: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+engine pid 1130064: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 -> ENV OK
+r23aa11091954-S2-x-math   out 6b251415 (x28h-e7a 6b251415) =  ms/round 32.85  prompt ms 513
+r23aa11091954-S2-s-math   out 8c25c022 (x28h-e7a 8c25c022) =  ms/round 32.33  prompt ms 515
+r23aa11091954-S2-x-code   out 3585ad6f (x28h-e7a 3585ad6f) =  ms/round 24.81  prompt ms 501
+r23aa11091954-S2-s-code   out 2fe9fd9e (x28h-e7a 2fe9fd9e) =  ms/round 23.55  prompt ms 512
+r23aa11091954-S2-x-p2000  out 3e219376 (x28h-e7a 3e219376) =  ms/round 37.09  prompt ms 1097
+r23aa11091954-S2-x-32k    out 651f56c8 (x28h-e7a 651f56c8) =  ms/round 38.91  prompt ms 7203
+r23aa11091954-S2-x-112k   out a393ca0a (x28h-e7a a393ca0a) =  ms/round 32.23  prompt ms 24542
+exact7 r23aa11091954-S2: 7/7 identical to x28h-e7a
+exact7-slots r23aa11091954-S2: 3238+3300 slots (5080 + 4060 Ti); x28h-e7a: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 29 env keys as configured, STRATA_ROUTE_TAIL_SKIP=0, no other STRATA_*, harness args as expected
+exact7 r23aa11091954-S2: 7/7, slots MATCHED -> PASS
+=== 2026-11-09 20:01:52 4 the short speed check on S2 (a fresh engine each, 1 pass): pp16k, pp64k, decode
+=== 2026-11-09 20:01:53 server r23aa11091954-S2-pp16k (S2.json)
+server ready (guard pid 1130800, server pid 1130815) load_time_s 14.341360844 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23aa11091954-S2-pp16k_20261109T200154.log
+engine pid 1130821: 29 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23aa11091954-S2-pp16k pass 1 pp16k: 16676 tokens, 3975.6 tok/s engine
+=== 2026-11-09 20:02:49 server r23aa11091954-S2-pp64k (S2.json)
+server ready (guard pid 1132018, server pid 1132033) load_time_s 14.342198869 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23aa11091954-S2-pp64k_20261109T200250.log
+engine pid 1132059: 29 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23aa11091954-S2-pp64k pass 1 pp64k: 66617 tokens, 4564.8 tok/s engine
+=== 2026-11-09 20:03:56 server r23aa11091954-S2-decode (S2.json)
+server ready (guard pid 1133490, server pid 1133505) load_time_s 14.344818217 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23aa11091954-S2-decode_20261109T200357.log
+engine pid 1133511: 29 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768, --prefill auto:16384
+ENV CHECK OK
+r23aa11091954-S2-decode pass 1 conv: 1036 tokens (stop), 156.2 tok/s decode
+r23aa11091954-S2-decode pass 1 struct: 7230 tokens (stop), 234.4 tok/s decode
+r23aa11091954-S2-decode pass 1 prose: 1200 tokens (length), 145.6 tok/s decode
+  pp16k: S2 3,975.6 tok/s; vs this morning's PU 3,976.4 (-0.0 %); vs this morning's P 3,849.8 (+3.3 %); vs the U adoption's check 3,929.5 (+1.2 %)
+  pp64k: S2 4,564.8 tok/s; vs this morning's PU 4,565.3 (-0.0 %); vs this morning's P 4,365.6 (+4.6 %); vs the U adoption's check 4,566.1 (-0.0 %)
+  decode tok/s (1 pass, sampled, noise 4-7 %): conv 156.2 (gap P 146.0, +7.0 %) (gap F2 156.1, +0.1 %); struct 234.4 (gap P 225.8, +3.8 %) (gap F2 239.4, -2.1 %); prose 145.6 (gap P 136.0, +7.1 %) (gap F2 142.2, +2.4 %); geomean vs gap P +5.9 %, vs gap F2 +0.1 %
+  SPEED OK (no prompt set more than 3 % below P028x + U)
+=== 2026-11-09 20:05:49 6 port_gap4.sh end: 8080 restarts on configs/P028x.json (the fetch build + STRATA_ADAPT_FETCH=2)
+2026-11-09 20:05:54 port_gap4: memory back: MemAvailable 88 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-09 20:06:08 port_gap4: no swap-out while P028x started
+2026-11-09 20:06:08 port_gap4: served build back (153ce47d3ef0), policy on, queue released
+=== 2026-11-09 20:06:08 7 after the restart: the served engine, its switch line, the guard, one chat and its fetch line
+=== 2026-11-09 20:06:08   8080 engine pid 1135826: sha 153ce47d3ef0 (want 153ce47d3ef0); STRATA_ADAPT_FETCH=2 and STRATA_HC_UPMIX=1 in its environment: 2 of 2
+=== 2026-11-09 20:06:08   its switch line: strata serve: STRATA_ADAPT_FETCH=2: the PCIe share takes each layer's most-routed misses and admits those routed >= 1.00 and 0.50 more than a resident one; the tier's own copies are off
+  guard: a request naming deepseek-v4.1-flash -> HTTP 400 with the guard text: PASS
+  chat: HTTP 200, 25 tokens, finish stop, answer 'OK': PASS
+  SERVED PASS
+=== 2026-11-09 20:06:11   the chat's fetch line: strata serve: fetch: 1192 admissions in 8 windows (149.00 per window)
+=== 2026-11-09 20:06:11   (info) the served engine's env against configs/P028x.json: ENV CHECK OK
+=== 2026-11-09 20:06:11 RESULT: ADOPTED: 8080 = P028x on the fetch build (153ce47d3ef0) + STRATA_ADAPT_FETCH=2 (one restart; Karl's owner exception). exact7 S0 (switch unset) 7/7 MATCHED vs x28h-e7a; exact7 S2 (switch on, info): exact7 r23aa11091954-S2: 7/7, slots MATCHED -> PASS; speed (1 pass): pp16k: S2 3,975.6, PU 3,976.4 (-0.0 %), P 3,849.8 (+3.3 %); vs the U adoption's check 3,929.5 (+1.2 %);pp64k: S2 4,564.8, PU 4,565.3 (-0.0 %), P 4,365.6 (+4.6 %); vs the U adoption's check 4,566.1 (-0.0 %);decode (1 pass, sampled, noise 4-7 %): conv 156.2 (gap P 146.0, +7.0 %) (gap F2 156.1, +0.1 %); struct 234.4 (gap P 225.8, +3.8 %) (gap F2 239.4, -2.1 %); prose 145.6 (gap P 136.0, +7.1 %) (gap F2 142.2, +2.4 %); geomean vs gap P +5.9 %, vs gap F2 +0.1 %; SPEED OK (no prompt set more than 3 % below P028x + U); switch line + fetch line seen (strata serve: fetch: 1192 admissions in 8 windows (149.00 per window)); guard 400 + chat PASS. Fallback =1: configs/P028x.json.afetch1-1109. Rollback (P028x as before): /home/USER/ai-speed-testing/strata-compare/work/r23/afetch-adopt/served-afetch.sh p028x

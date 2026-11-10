@@ -1,0 +1,27 @@
+=== 2026-10-24 19:19:48 B carry-over 1: --reserve-mib 300 now that neither card drives a display (our 300 MiB VRAM guard stays) - DS4.1 arm reserve300 (/home/USER/ai-speed-testing/strata-compare/configs/DS41-tune-reserve300.json, server /home/USER/ai-speed-testing/strata-compare/strata-v024/serve/server.py, 1 passes): --max-context 32768 --eos 1 --dspark auto --dspark-conf 0.65 --tp 2 --ssd-cache 70 --prefill-chunk 2048 --reserve-mib 300 --expert-profile /home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX4060TI,GPU-UUID-RTX5080', 'STRATA_DS4_PROMPT_SKIP': '0', 'DS4_STORE_FLOOR_GB': '16', 'DS4_SPLIT': '10,30'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/reserve300-1024-1919
+=== 2026-10-24 19:19:48 cool-down before the arm: 0 s, drive 42 -> 42 C
+dropcache: 7 model files dropped from the page cache in 0.1 s
+=== 2026-10-24 19:19:49 before: MemAvailable 85.8 GB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-24 19:19:55 NOT READY: GUARD: RTX 5080 free 263 MiB < 300; last lines:
+    engine = StrataEngine(exe, engine_args(cfg) + (effort_end or []), cwd=cfg.get("cwd"), log=cfg.get("log"),
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/USER/ai-speed-testing/strata-compare/strata-v024/serve/server.py", line 1064, in __init__
+    line = ready_q.get(timeout=left)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/queue.py", line 180, in get
+    self.not_empty.wait(remaining)
+  File "/usr/lib/python3.12/threading.py", line 359, in wait
+    gotit = waiter.acquire(True, timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/USER/ai-speed-testing/strata-compare/strata-v024/serve/lifeline.py", line 289, in handler
+    request_stop(reason)
+  File "/home/USER/ai-speed-testing/strata-compare/strata-v024/serve/server.py", line 8230, in request_stop
+    raise KeyboardInterrupt
+KeyboardInterrupt
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: DSpark not loaded: the routed experts (132 GB) are far more than the GPU holds (24 GB), where its verify rounds read 3.3x a token's bytes and gain nothing (--dspark on loads it anyway)
+=== 2026-10-24 19:19:58 GUARD: RTX 5080 free 263 MiB < 300
+monitor: lowest MemAvailable 83.2 GB, peak engine RSS 3152 MB, peak VRAM used 5080 15671 MiB / 4060 Ti 7591 MiB
+=== 2026-10-24 19:19:58 kcheck clean
+nvme0 (Samsung 9100 PRO): 1 samples 19:19-19:19, composite 42-42 C (sensor 1 max 44 C), alarm bit never set; no request above 70 C
+=== 2026-10-24 19:19:58 done

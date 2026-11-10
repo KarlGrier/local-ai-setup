@@ -1,0 +1,10 @@
+[Unit]
+Description=Karl 11-06, extended 11-07: stop the Qwen4 HF watch on Tue 2026-12-01 00:05
+
+[Timer]
+OnCalendar=2026-12-01 00:05:00
+Persistent=true
+Unit=qwen4-hfwatch-stop.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,1 @@
+work/r4/with_llama.sh N-L6 -- '.venv/bin/python work/r4/needle.py ask --base http://127.0.0.1:8081 --label N-L6'

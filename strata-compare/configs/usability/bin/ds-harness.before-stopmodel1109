@@ -1,0 +1,106 @@
+#!/bin/bash
+# ds-harness - Karl 11-06: DS Harness (~/.dsh-deepseek, port 3081, both local models in its picker) as a background user
+# service: not tied to a model, not inside a terminal.
+#   ds-harness open     the "DS Harness" icon: starts the service if it isn't running, opens it in the browser
+#   ds-harness stop     the "Stop DS Harness" icon
+#   ds-harness status   running or not
+#   ds-harness check    everything the icons and the service need, with real permissions
+#   ds-harness serve    what ds-harness.service runs
+# The unit has no [Install] section: it never starts by itself, after a reboot only the icon starts it. A systemd service
+# belongs to no window, and no model switch touches it. If nothing is on 8080 (the idle stop) the icon starts Qwen, as
+# every other app icon does; it never changes a model that is running, and starts nothing while a test holds the GPUs.
+# dsh-strata (port 3080, ~/.dsh) is a separate setup and is not touched by this.
+#
+# The page's URL carries a token that is new for each start, printed only on DS Harness's output. That output goes to a
+# mode 600 file ($LOG), not to the journal. Only this script reads it, to hand the URL to the browser; never print it.
+set -u
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+BIN=$(dirname "$SELF"); SC=$(cd "$BIN/../../.." && pwd)
+HOME_DS=${DS_HARNESS_HOME:-$HOME/.dsh-deepseek}; PORT=${DS_HARNESS_PORT:-3081}; UNIT=${DS_HARNESS_UNIT:-ds-harness.service}
+LOG=$HOME_DS/service.log; PATCH=$HOME_DS/profiles/web/cordis.patch.yml; TEMPLATE=$SC/configs/usability/dsh/web.deepseek.patch.yml
+NODE_DIR=$HOME/.local/opt/node-v24.22.0/bin; DSH=$HOME/.local/opt/dsh-0.2.0-rc.2/node_modules/.bin/dsh
+OPEN=${DS_HARNESS_OPEN:-xdg-open}; WAIT_S=${DS_HARNESS_WAIT_S:-120}
+ICONS="ds-harness ds-harness-stop switch-to-deepseek back-to-qwen"
+
+notify() { notify-send -a "DS Harness" -i "${3:-applications-internet}" -u "${4:-normal}" "$1" "$2" 7>&- 2> /dev/null || true; }
+active() { systemctl --user is-active -q "$UNIT"; }
+page_url() { sed -n 's/^dsh web: \(http[^ ]*\).*/\1/p' "$LOG" 2> /dev/null | tail -1; }          # holds the token: never print
+answers() { curl -s -m 3 --noproxy '*' -o /dev/null "http://127.0.0.1:$PORT/"; }
+model_up() { curl -s -m 3 --noproxy '*' http://127.0.0.1:8080/health 2> /dev/null | grep -q '"loaded": *true'; }
+lock_free() { [ ! -e "$1" ] || flock -n "$2" "$1" true 2> /dev/null; }
+
+model_if_none() {   # as the other app icons: nothing on 8080 -> Qwen. Quietly nothing while a test holds the GPUs
+  model_up && return 0
+  lock_free "$SC/tmp/gpu-test.lock" -x && lock_free "$SC/tmp/suite/heavy.lock" -s || return 0
+  setsid -f env -u HTTP_PROXY -u HTTPS_PROXY "$BIN/strata-ensure.sh" "DS Harness" > /dev/null 2>&1 < /dev/null 7>&-
+}
+
+open_it() {
+  mkdir -p "$SC/tmp"; exec 7> "$SC/tmp/ds-harness-open.lock"
+  flock -n 7 || exit 0                   # a second click while the first is still starting it
+  if ! active; then
+    notify "Starting DS Harness" "It opens in your browser in a few seconds."
+    systemctl --user reset-failed "$UNIT" 2> /dev/null
+    systemctl --user start "$UNIT" 7>&- 2> /dev/null || { notify "DS Harness did not start" "systemctl could not start $UNIT. See ds-harness check." dialog-error critical; exit 1; }
+  fi
+  local i u=""
+  for i in $(seq $((WAIT_S * 2))); do
+    active || systemctl --user is-activating -q "$UNIT" 2> /dev/null || { notify "DS Harness stopped while starting" "See $LOG (it holds the page's token: do not paste it anywhere)." dialog-error critical; exit 1; }
+    u=$(page_url); [ -n "$u" ] && answers && break; u=""
+    sleep 0.5
+  done
+  [ -n "$u" ] || { notify "DS Harness did not answer" "No page on 127.0.0.1:$PORT after $WAIT_S s. The service keeps running; click again, or use Stop DS Harness." dialog-error critical; exit 1; }
+  model_if_none
+  setsid -f "$OPEN" "$u" > /dev/null 2>&1 < /dev/null 7>&-
+}
+
+stop_it() {
+  if ! active; then notify "DS Harness is not running" "Nothing to stop." process-stop; return 0; fi
+  systemctl --user stop "$UNIT" 2> /dev/null || { notify "DS Harness did not stop" "systemctl could not stop $UNIT." dialog-error critical; exit 1; }
+  notify "DS Harness stopped" "Your sessions are kept. The DS Harness icon starts it again; the model on 8080 was not touched." process-stop
+}
+
+serve() {
+  mkdir -p "$(dirname "$PATCH")"
+  [ -e "$PATCH" ] || cp "$TEMPLATE" "$PATCH"
+  install -m 600 /dev/null "$LOG"        # a fresh file for this start's token, readable by Karl's user only
+  exec >> "$LOG" 2>&1 < /dev/null
+  source "$BIN/offline-env.sh"
+  export PATH="$NODE_DIR:$PATH" DSH_HOME=$HOME_DS STRATA_API_KEY=local-no-key      # not a secret: Strata on 127.0.0.1 takes any key
+  export DSH_TELEMETRY_MODE=OFF DSH_TELEMETRY_OTLP_URL=http://127.0.0.1:9/         # the same settings as dsh-strata
+  exec "$DSH" --profile web --host 127.0.0.1 --port "$PORT" --no-open
+}
+
+check() {
+  local bad="" f n d e
+  [ -x "$SELF" ] || bad="$bad not-executable:ds-harness"
+  [ -x "$BIN/strata-ensure.sh" ] || bad="$bad not-executable:strata-ensure.sh"
+  [ -r "$BIN/offline-env.sh" ] || bad="$bad missing:offline-env.sh"
+  [ -x "$NODE_DIR/node" ] || bad="$bad not-executable:node"
+  [ -x "$DSH" ] || bad="$bad not-executable:dsh"
+  [ -e "$PATCH" ] || [ -f "$TEMPLATE" ] || bad="$bad missing:the-profile-patch"
+  [ -f "$HOME/.config/systemd/user/$UNIT" ] || bad="$bad not-installed:$UNIT"
+  [ "$(systemctl --user is-enabled "$UNIT" 2> /dev/null)" = static ] || bad="$bad unit-would-start-by-itself:$UNIT"
+  for n in $ICONS; do
+    for d in "$HOME/Desktop" "$HOME/.local/share/applications"; do
+      f=$d/$n.desktop
+      [ -f "$f" ] || { bad="$bad missing:$n.desktop-in-${d##*/}"; continue; }
+      e=$(sed -n 's/^Exec=//p' "$f" | head -1 | cut -d' ' -f1); [ -x "$e" ] || bad="$bad not-executable:$(basename "$e")"
+    done
+    f=$HOME/Desktop/$n.desktop
+    [ -x "$f" ] || bad="$bad not-executable:Desktop/$n.desktop"
+    gio info -a metadata::trusted "$f" 2> /dev/null | grep -q 'trusted: true' || bad="$bad not-trusted:Desktop/$n.desktop"
+  done
+  for d in "$HOME/Desktop" "$HOME/.local/share/applications"; do [ -e "$d/deepseek-harness.desktop" ] && bad="$bad old-icon-still-there:${d##*/}"; done
+  if [ -n "$bad" ]; then echo "NOT usable:$bad"; return 1; fi
+  echo "ok: DS Harness's service, script and all four icons are usable"
+}
+
+case ${1:-} in
+  open) open_it ;;
+  stop) stop_it ;;
+  serve) serve ;;
+  check) check ;;
+  status) if active; then echo "DS Harness: running on http://127.0.0.1:$PORT (pid $(systemctl --user show -p MainPID --value "$UNIT"))"; else echo "DS Harness: not running"; fi ;;
+  *) sed -n 4,8p "$SELF"; exit 2 ;;
+esac

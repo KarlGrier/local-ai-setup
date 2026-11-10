@@ -1,0 +1,38 @@
+testsite: installed package + 0007 0008 0009 applied
+test_1_record_fields (__main__.MemwatchTests.test_1_record_fields)
+record() writes one JSON line with RSS, HWM, glibc in-use / free bytes, arena heaps, threads. ... ok
+test_2_trim_gives_memory_back (__main__.MemwatchTests.test_2_trim_gives_memory_back)
+After a burst of allocations in short-lived threads is freed, trim() returns RSS to the OS and says so. ... 
+  trim after a 3 x 190 MB burst: freed 186 MB
+ok
+test_3_after_fetch_thresholds (__main__.MemwatchTests.test_3_after_fetch_thresholds)
+A big page or a PDF triggers a trim; a small page does not; two big pages within MIN_GAP_S trim once. ... ok
+test_4_research_end (__main__.MemwatchTests.test_4_research_end)
+research_end records, empties the user-file text cache and trims TRIM_DELAY_S later in a timer thread. ... ok
+test_5_switch_off (__main__.MemwatchTests.test_5_switch_off)
+LDR_MEM_TRIM=0 keeps the records and does no trim. ... ok
+test_09_clause_restored (__main__.QuoteTests.test_09_clause_restored)
+A quote cut open after a comma gets its sentence's first clause back (the AcceptMoE case). ... ok
+test_10_whole_sentences_and_abbreviations_unchanged (__main__.QuoteTests.test_10_whole_sentences_and_abbreviations_unchanged)
+A quote that starts its sentence stays as it is; "et al." / "Fig." are not sentence ends. ... ok
+test_11_end_extension_and_budget (__main__.QuoteTests.test_11_end_extension_and_budget)
+A quote cut before its sentence ends is completed; the budget caps what is added. ... ok
+test_12_paper_notes (__main__.QuoteTests.test_12_paper_notes)
+A paper page gets its caveat and setup sentences the extraction lacks; a shop page gets none. ... ok
+test_13_real_cases (__main__.QuoteTests.test_13_real_cases)
+The traced 7a / 7c / p4s8 cases (bench evidence; skipped when absent). ... ok
+test_14_switches (__main__.QuoteTests.test_14_switches)
+"papers" / "steps" are items: never switched on by "all"; the extraction rules and the writer rules exist. ... ok
+test_15_fresh_ldr_reason (__main__.RunnerTests.test_15_fresh_ldr_reason)
+Above LDR_FRESH_RSS_GB the runner restarts LDR before a job; below it, or with 0, it does not. ... ok
+test_6_old_limit_cuts_at_23 (__main__.StepTests.test_6_old_limit_cuts_at_23)
+Without the "steps" item: limit 70, GraphRecursionError at the 23rd model call, no wrap-up (the bug). ... ok
+test_7_new_limit_lets_the_wrap_up_finish (__main__.StepTests.test_7_new_limit_lets_the_wrap_up_finish)
+With "steps": limit 100; the middleware wraps up at its step limit and the subagent answers (call 30). ... ok
+test_8_salvage (__main__.StepTests.test_8_salvage)
+The backstop: a subagent that still hits the limit hands the lead its own extractions (with "steps"). ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 2.558s
+
+OK

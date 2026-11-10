@@ -1,0 +1,854 @@
+#!/bin/bash
+# gap-afetch.sh - r23 (written 2026-11-09 at the desk, NOT RUN; only --dry-run and the --mock test ran; review fixes 11-09
+# evening, the owner's rule answers set as the frozen switches): THE ADAPT_FETCH GAP (results/BACKLOG-1027.md section I;
+# Karl 11-09: "queue its gap only after the v0.2.13 shape gap"; the design and the estimate
+# results/r23/ADAPTFETCH-DESK-1109.md). P = P028x as served for tests (configs/P028x.json without the picture reader = x28h +
+# STRATA_HC_UPMIX=1) on engine-r22p028x against F1 / F2 = the same config on engine-r23afetch (153ce47d3ef0, r23-adaptfetch)
+# + STRATA_ADAPT_FETCH=1 / =2, the helper GPU on, as served. MEASUREMENTS ONLY: P028x stays served, nothing switches,
+# nothing is built, no config of the served setup changes. The rules, fixed before any run and frozen into the gap's
+# rules.txt: work/r23/afetch-gap/afetch_rules.py's docstring and its switches (B3_PROMPT_FORM, GAIN_FORM, ORDER_FORM). Started
+# by afetch-after-shape.sh (a user unit) as a snapshot copy; every path here is absolute. Usage: gap-afetch.sh [--dry-run |
+# --mock]; any other argument: nothing runs (exit 2). One instance at a time (tmp/afetch-gap.driver.pid: a second one exits
+# 9 before it touches anything).
+#   0 BEFORE THE GAP (no GPU; 8080 untouched). It REFUSES (nothing changed) - exit 1 = busy (the starter retries), exit 6 =
+#     a hard refusal (an alert), exit 8 = HELD by the priority rule (final, an alert) - unless:
+#     - the v0.2.13 shape gap has run (results/r23/port-0213/shape-gap/result.txt starts "DONE"; a kernel error, a failed
+#       end, an interruption or a refusal keep this gap waiting: Karl looks at those first) and its unit shape-gap0213 is
+#       inactive, else busy; the research queue is not held by anyone else (bench2.hold not this gap's), else busy;
+#     - THE PRIORITY RULE (Karl 11-09): the Qwen4 watch (work/qwen4-kit/hfwatch/state.json) has no open Flash repo with
+#       weights - a find HOLDS the gap (exit 8) unless tmp/afetch-priority-done has a dated reason line (the override,
+#       written only when Karl says the day-one work is done: named in the summary, the decision and the result); a
+#       missing or unreadable state file = busy (the rule cannot be checked);
+#     - no other gap, no held test lock, no model server but 8080's P028x, nothing on 8081; nvidia-smi answers within 20 s;
+#       the post-Phase-5 chain is not running; the kernel-log watcher runs and a kernel check passes;
+#     - the files are there (the rules and tools, the stored exact7 x28h-e7a (7 items), gap 16's long40 (40 logit files),
+#       gap 17's cold-M, the Basalt fixtures, the sampled harness and its spec); engine-r22p028x is f4c4f654fb24 with
+#       STRATA_HC_UPMIX and port_gap4.sh restores that sha; engine-r23afetch is 153ce47d3ef0 with STRATA_ADAPT_FETCH and
+#       _VERIFY and its SOURCE names r23-adaptfetch; >= 5 GB free;
+#     - afetch_rules.py's selftest, copycheck and forms pass; the sampled harness's sq.py selftest (SELFTEST OK),
+#       sq_client.py selftest (CLIENT SELFTEST OK) and sq.py selftest-real (SELFTEST-REAL OK) pass; `sq.py derive` of the
+#       run's spec copy passes and `sq.py rule` writes sampled/rule.txt (BEFORE any engine starts); the arm configs check
+#       out (afetch_rules.py arms + cfgcheck); the rules and the switches are frozen into rules.txt.
+#   1 port_gap4.sh begin (the research queue held after its running question, the test lock, 8080 down; it waits for a Jan
+#     job, a chat being answered, a DeepSeek session and a quiet window; GAP_MAX_MIN = the worst case below); the engines
+#     gone and MemAvailable >= 40 GB (120 s at most; engines still there: the gap ends, exit 5 - they are named, never
+#     killed); PRE = the engine processes running as the gap opened (8080's, stopping: P has the served P028x's binary):
+#     no cleanup ever stops one of them, nor any engine started before the gap opened; a kernel check; the watchdog (one
+#     critical alert if the gap is still open 20 min past the deadline); the priority rule again
+#   2 BUILD VS SWITCH: exact7 F0 (P on engine-r23afetch, switch unset) at pin 2500 vs x28h-e7a; pf_yardstick long40 F0 vs
+#     gap 16's x28h long40 (gap-basalt-speed.sh's e7 / pfy40, br e7gate / br same); afetch_rules.py exact -> build_switch.
+#     Not PASS -> nothing below runs (the decision says so).
+#   3 (ORDER_FORM vf-first, the owner's 11-09 order) THE READ-BACK START: VF (X2 + STRATA_ADAPT_FETCH_VERIFY=1 +
+#     STRATA_ADAPT_CHECKRES=1, K 2, budget 300 s), sq.py verify, its verdict read from verify-VF.json. A mismatch: speed and
+#     the sampled part do not run for either candidate (the decision says why; sq.py decide still writes its decision).
+#     Neither PASS nor FAIL (not started, voided, a foreign GPU user, a crash): tried once more at the sampled part.
+#   4 SPEED: B2 Basalt's decode fixtures (conv, struct, prose), a fresh engine per start, 3 passes; then B3 the 9-workload
+#     screen (abarm.sh), a fresh engine per arm-pass, 3 passes; both in a Latin square (P F1 F2 / F2 P F1 / F1 F2 P). A
+#     speed step starts only if it leaves the rest of the sampled part its minimum before the deadline.
+#   5 QUALITY, the sampled-distribution test (work/r23/sampled-qwen/STEPS-adaptfetch.txt): VF first if it has not run
+#     (ORDER_FORM speed-first); R1 (= P, K 8), X1 (= F1, K 8), X2 (= F2, K 8), R2 (= P again, K 4); with R1's samples: sq.py
+#     ids and the scorer (guard.py + sq.py score --max-min 25 cut to the minutes left, sq.py envwatch --kill, a watchdog);
+#     sq.py decide. The part starts only if its minimum fits; each served arm only if it and the rest fit.
+#   6 afetch_rules.py decide -> decision.txt / .json; the lock sweep (nothing of this gap may still run or hold the test
+#     lock); port_gap4.sh end (P028x back); a kernel check; result.txt, a NOTES.md line, a non-urgent ntfy note. NOTHING
+#     SWITCHES: Karl decides.
+# The priority rule is checked again before each long part (each exactness run, the read-back start, each speed pass, the
+# sampled part and each of its arms): a find stops new steps, the decision is written on what ran and the gap ends cleanly
+# (P028x back): exit 8 and an alert.
+# Every test server: no foreign GPU user before it (60 s) or during it (a 5 s watch: the start is left out; nvidia-smi not
+# answering within 20 s counts as not clear); its engine's env checked before it measures (basalt_rules envcheck +
+# afetch_rules fetchenv; the sampled arms: + sq.py envcheck); the start line (afetch_rules startline); the fatal-line check;
+# after it, however it ended, test_cleanup (the guard, server.py, the 8081 server, the monitor, this gap's engines): if
+# anything had to be stopped the start is VOIDED (left out); a kernel check. CLI jobs (exact7, pf_yardstick, the scorer):
+# their engines checked as they start by /proc/PID/exe (br envcli / sq.py envwatch --kill). Children run with 8>&- 9>&- and
+# stdin from /dev/null; processes are found by PID, pid file or exact name (pgrep -x) only.
+# TIME with 8080 down (the Basalt speed gap's measured step times of 11-09 and STEPS-adaptfetch.txt's plan): open ~2,
+# exact7 ~3.5 + long40 ~9 = ~12, VF ~5, B2 9 starts x ~1.65 = ~15, B3 9 arm-passes x ~3.7 = ~33, the rest of the sampled
+# part ~30 (R1/X1/X2 11, R2 2.2, ids 0.5, scorer ~16, decide 0.5), decide + close ~4 -> ~100 min (~1.7 h; ~1.5-2.0 h).
+# Deadline AF_MAX_MIN (default 150) minutes after the gap opens for any new step; a step starts only if its minimum fits
+# (exact7 5, long40 10, VF 7, a B2 start 3, a screen arm-pass 5, the rest of the sampled part 38: R1/X1/X2 5 each, R2 3, ids
+# 1, scorer 18, decide 1). WORST CASE ~2.9 h with 8080 down (175 min = GAP_MAX_MIN): the deadline 150 + the longest
+# overrun of a step started inside its minimum (~7: a K8 sampled arm's 600-s request budget + its start / stop against its
+# 5-min minimum; the scorer's --max-min is cut to the time left) + the decisions ~2 + the lock sweep and port_gap4.sh end
+# (<= 120 s engines + <= 180 s memory + the restart) ~8 + the open's engine wait ~2 = ~169, rounded up. The test lock goes
+# about 3 min before the restart ends, so the watchdog (open 20 min past the deadline) fires only on a real hang.
+# THE KERNEL-ERROR POLICY (Karl 11-09; the shape gap's form): any new Xid or kernel error (kwatch's tmp/r19/KERNEL_ERROR,
+# polled every 5 s inside every GPU watch: this gap's programs are killed at once, $O/kerr.seen; checked before every
+# step; or a kernel check failing) stops the gap at once: the lock sweep, port_gap4.sh end (P028x back), a critical alert
+# ("stopped at once, P028x back" or "8080 NOT back"), the result "KERNEL ERROR during the gap - stopped at once, ...",
+# exit 3. kwatch is NOT cleared.
+# Exit 0 done (the outcome is in decision.txt), 1 busy (refused, nothing changed), 2 a bad argument (nothing run), 3 a
+# kernel error / kernel check failure (stopped at once; P028x back unless the result says "8080 NOT back"), 4 port_gap4.sh
+# end failed, 5 not run: engines still running after 8080 stopped (P028x back;
+# the starter alerts), 6 hard refusal (alert), 7 stopped by a signal (alert), 8 the priority rule (held before the gap, or
+# the gap ended early; alert), 9 another instance runs (nothing touched).
+# --dry-run: the pre-gap checks (a refusal is printed and the plan goes on), afetch_rules.py's selftest / arms / priority /
+# shapecheck / forms, and the plan of every command, printed; no lock, no GPU query, no kernel check, no sampled-harness
+# command, no port_gap4; writes only under work/r23/afetch-gap/scratch/.
+# --mock: (work/r23/afetch-gap/gap-mock-test.sh only) every tool a stub under work/r23/afetch-gap/scratch/mock; the rules
+# script runs for real on the stubs' synthetic data; never kills a real process, never queries the GPU (nvidia-smi is a
+# stub), writes no NOTES.md / alert / ntfy. MOCK_* variables steer the stubs; MOCK_ORDER_FORM (mock only) overrides the
+# order.
+set -u -o pipefail
+exec 8>&- 9>&-     # no inherited lock descriptor reaches a child (this script holds none itself)
+WS=/home/USER/ai-speed-testing/strata-compare
+case ${1:-} in ""|--dry-run|--mock) ;; *) echo "usage: gap-afetch.sh [--dry-run | --mock] (got '${1:-}'): nothing run"; exit 2;; esac   # (review 11-09 #1)
+AG=$WS/work/r23/afetch-gap
+DRY=0; [ "${1:-}" = --dry-run ] && DRY=1
+MOCK=0; [ "${1:-}" = --mock ] && MOCK=1
+M=$AG/scratch/mock
+[ $MOCK = 1 ] && { [ -x $M/lib/with_server.sh ] || { echo "--mock needs work/r23/afetch-gap/gap-mock-test.sh's stubs"; exit 2; }; }
+# ---- one instance at a time (review 11-09 #2): before anything touches the output folder; the pid file is not inside it
+PIDF=$WS/tmp/afetch-gap.driver.pid; [ $MOCK = 1 ] && PIDF=$M/driver.pid
+alive_driver() { [ -n "$1" ] && kill -0 "$1" 2> /dev/null && tr '\0' ' ' < /proc/$1/cmdline 2> /dev/null | grep -q 'gap-afetch'; }
+if [ $DRY = 0 ]; then
+  for try in 1 2; do
+    ( set -o noclobber; echo $$ > $PIDF ) 2> /dev/null && break
+    op=$(cat $PIDF 2> /dev/null)
+    if alive_driver "$op"; then echo "another gap-afetch.sh (pid $op) is running: not started, nothing touched"; exit 9; fi
+    [ $try = 1 ] && rm -f $PIDF || { echo "the pid file $PIDF could not be taken: not started, nothing touched"; exit 9; }
+  done
+  [ "$(cat $PIDF 2> /dev/null)" = "$$" ] || { echo "the pid file $PIDF is not this driver's: not started, nothing touched"; exit 9; }
+  trap '[ "$(cat $PIDF 2> /dev/null)" = "$$" ] && rm -f $PIDF' EXIT
+fi
+export RB_CACHE=$WS/tmp/r23                       # (before env.sh: its tool caches and TMPDIR go there)
+[ $DRY = 1 ] && export RB_CACHE=$AG/scratch/rb-cache
+[ $MOCK = 1 ] && export RB_CACHE=$M/rb-cache
+source $WS/bringup/lib/env.sh
+unset GUARD_MEM_GIB GUARD_VRAM_MIB GUARD_SWAP_GROW_GIB GUARD_VRAM_MODE GUARD_FOLLOW_PORT LR_MAX SPEED_FILE PROF_SAMPLING EXE ENVX NSYS COLD
+for v in $(compgen -e | grep '^STRATA_'); do [ "$v" = STRATA_MON_GPU ] || unset "$v"; done   # no stray switch reaches an engine
+for v in $(compgen -e | grep '^SQ_'); do unset "$v"; done                                    # nor a stray sampled-client setting
+export PROMPT_DIR=$WS/bringup/out/r20a/prompts EVICT_GLOB="$WS/models/ISTA-GSQ-RCO/IQ3_S/*.gguf"
+P=$WS/.venv/bin/python; PY="$P -I -B"; AFR=$AG/afetch_rules.py
+FR=$WS/work/r23/basalt_fix_rules.py; KR=$WS/work/r22; LIB=$WS/bringup/lib; B90=$KR/basalt-pr90; Q=$WS/work/r23/sampled-qwen
+BPD=/home/USER/ai-speed-testing/basalt-pr90-data
+O=$WS/results/r23/adaptfetch/gap
+[ $DRY = 1 ] && O=$AG/scratch/gap-dry
+W28=$WS/strata-r22p028x; E28=$WS/engine-r22p028x; EAF=$WS/engine-r23afetch
+Y16=$WS/results/r22/gap16/pfy/x28h; E7REF=x28h-e7a; PROF=$WS/bringup/out/logs/prof; COLDM=$WS/results/r22/gap17/bp90/cold-M.jsonl
+LOCKPID=$WS/tmp/port-gap.lockpid; HOLD=/home/USER/ai/deep-research/tmp/bench2.hold
+NOTE=$WS/configs/usability/bin/ntfy-note.py
+STATE=$WS/work/qwen4-kit/hfwatch/state.json; SHAPE_RES=$WS/results/r23/port-0213/shape-gap/result.txt; SHAPE_UNIT=shape-gap0213
+PRIO_DONE=$WS/tmp/afetch-priority-done
+SPEC=$Q/spec-adaptfetch.json; SRVSH=$LIB/srv.sh; STOPMON=$WS/scripts/stopmon.sh
+P028X_SHA=f4c4f654fb24; AF_SHA=153ce47d3ef0
+MAXM=${AF_MAX_MIN:-150}
+E7_MIN=5; PFY_MIN=10; B2_MIN=3; B3_MIN=5; VF_MIN=7; SQ8_MIN=5; SQ4_MIN=3; IDS_MIN=1; SCORE_MIN=18; DEC_MIN=1
+SQ_REST=$(( 3 * SQ8_MIN + SQ4_MIN + IDS_MIN + SCORE_MIN + DEC_MIN ))   # 38: the sampled part after VF (all or nothing)
+WORST_OVER=25                                                       # the worst case past the deadline (see the header)
+NVSMI_T=20; GPUCLEAR_N=12; GPUCLEAR_S=5; GW_S=5; KGRACE_N=10; KGRACE_S=2; KTERM_S=10
+ENGNAMES="strata strata-host"; ENG28=$E28; ENGAF=$EAF; LOCKF=$WS/tmp/gpu-test.lock   # (the mock: its own names, folders, lock)
+KERR=$WS/tmp/r19/KERNEL_ERROR   # kwatch's marker of a kernel error (Karl 11-09: stop at once; never taken from the environment, never cleared here)
+ORDER=("" "P F1 F2" "F2 P F1" "F1 F2 P")                              # the Latin square of B2 and B3
+LP=r23af$(date +%m%d%H%M)
+MOCKENV=""
+if [ $MOCK = 1 ]; then   # every tool, folder and lock file under scratch/mock; the real configs and spec are only read
+  O=$M/out; LIB=$M/lib; KR=$M/kr; B90=$M/b90; Q=$M/sq; FR=$M/fr/basalt_fix_rules.py; LOCKPID=$M/lockpid; HOLD=$M/hold
+  NOTE=$M/lib/ntfy-note.py; STATE=$M/state.json; SHAPE_RES=$M/shape-result.txt; PROF=$M/prof; Y16=$M/y16; COLDM=$M/cold-M.jsonl
+  SRVSH=$M/lib/srv.sh; STOPMON=$M/lib/stopmon.sh; BPD=$M/bpd; MOCKENV=" --mock-env $M/engine-env.json"; MAXM=${AF_MAX_MIN:-150}
+  SHAPE_UNIT=afetch-mock-no-such-unit; PRIO_DONE=$M/afetch-priority-done; NVSMI_T=1; GPUCLEAR_N=2; GPUCLEAR_S=1
+  GW_S=0.3; KGRACE_N=3; KGRACE_S=0.2; KTERM_S=1; KERR=$M/kernel_error
+  ENGNAMES=afmock-eng; ENG28=$M/engines/engine-r22p028x; ENGAF=$M/engines/engine-r23afetch; LOCKF=$M/gpu-test.lock   # (fake engines: never named strata*)
+  export PATH=$M/bin:$PATH        # (nvidia-smi is a stub there)
+fi
+CF=$O/configs; S=$O/summary.txt; G=$O/gates.txt; BO=$O/bp90; SPD=$O/speed; EL=$O/englog; Y40=$O/pfy40; FG=$O/foreign
+SQO=$O/sampled
+PREV=""
+if [ $DRY = 0 ] && [ $MOCK = 0 ] && [ -n "$(find $BO $SPD $Y40 $EL -mindepth 1 -print -quit 2> /dev/null; ls -d $SQO/VF $SQO/R1 $SQO/X1 $SQO/X2 $SQO/R2 2> /dev/null)" ]; then
+  PREV=$O-prev-$(date +%m%d-%H%M%S); mv $O $PREV                                 # the rules judge only this attempt's files
+fi
+[ $DRY = 1 ] && rm -rf $O
+[ $MOCK = 1 ] && rm -rf $O
+mkdir -p $O $CF $BO $SPD $EL $Y40 $FG
+[ $DRY = 0 ] && [ $MOCK = 0 ] && mkdir -p $WS/tmp/r23 $WS/logs
+say() { echo "=== $(date '+%F %T') $*" | tee -a $S; }
+gate() { echo "$1 $2 ${*:3} [r23af $(date '+%m-%d %H:%M')]" >> $G; say "  gate $*"; }
+gst() { grep "^$1 " $G 2> /dev/null | tail -1 | cut -d' ' -f2; }   # a gate's last status ("" = not written)
+afr() { nice -n 19 $PY $AFR "$@" 8>&- 9>&- < /dev/null; }        # afetch_rules.py (CPU only)
+br() { $PY $FR br "$@" 8>&- 9>&- < /dev/null; }                   # basalt_rules.py's subcommands (through basalt_fix_rules.py)
+sq() { nice -n 19 $PY $Q/sq.py "$@" 8>&- 9>&- < /dev/null; }      # the sampled harness's CPU subcommands
+mocked() { [ $DRY = 1 ] || [ $MOCK = 1 ]; }
+alert() { mocked && { say "(dry run / mock: would alert: $1 - $2)"; return 0; }; notify-send -a "Strata gaps" -u critical "$1" "$2" 2> /dev/null || true; }
+note() { mocked && { say "(dry run / mock: would send the ntfy note: $1 - $2)"; return 0; }; $NOTE "$1" "$2" >> $S 2>&1 8>&- 9>&- < /dev/null || say "(the ntfy note did not go out)"; }
+notes_line() { mocked && { say "(dry run / mock: would add to NOTES.md: $1)"; return 0; }; printf -- '- %s ADAPT_FETCH GAP (Karl 11-09; work/r23/afetch-gap/gap-afetch.sh, results/r23/adaptfetch/gap/): %s\n' "$(date '+%m-%d %H:%M')" "$1" >> $WS/NOTES.md; }
+KFAIL=0; PRIO=0; GAPOPEN=0; ENDING=0; T0=$(date +%s); DEADLINE=$(( T0 + MAXM * 60 )); RESERVE=0; NSKIP=0; WDG=""; KILLED=0
+PRE=""; T0T=0; CLK=$(getconf CLK_TCK)   # T0T = the gap's open in clock ticks since boot (the processes' start ticks: the same clock)
+kc() { $LIB/kcheck.sh "r23af-$1" > /dev/null 8>&- 9>&- < /dev/null || { say "KERNEL CHECK FAILED after $1"; KFAIL=1; gate kfail FAIL "after $1"; return 1; }; }
+left() { echo $(( DEADLINE - $(date +%s) )); }
+kerr_check() {   # (Karl 11-09) a kernel error recorded by kwatch: no further step (end_gap then stops at once, P028x back)
+  [ -e $KERR ] && [ $KFAIL = 0 ] && { KFAIL=1; say "a kernel error is recorded ($(head -c 160 $KERR 2> /dev/null)): no further step"; gate kfail FAIL "a kernel error is recorded (kwatch not cleared)"; }
+  return 0
+}
+ok_to_go() { kerr_check; [ $KFAIL = 0 ] && [ $PRIO = 0 ] && [ $(left) -gt 0 ]; }
+fits() { ok_to_go && [ $(left) -ge $(( $1 * 60 )) ]; }   # a step starts only if its minimum ends before the deadline
+sha12() { sha256sum "$1" | cut -c1-12; }
+jget() { nice -n 19 $P -I -B -c "import json, sys; print(json.load(open(sys.argv[1]))$2)" "$1"; }
+elog() { jget "$1" "['log']"; }
+exe_of() { jget "$1" "['exe']"; }
+slog() { ls -t $WS/bringup/out/logs/server_$1_*.log 2> /dev/null | head -1; }   # the newest server log of a with_server label
+ppid_of() { local s; s=$(cat /proc/$1/stat 2> /dev/null) || return 0; s=${s##*) }; set -- $s; echo "${2:-}"; }
+memav() { awk '/^MemAvailable/ {printf "%d", $2 / 1048576}' /proc/meminfo; }
+engines_left() {
+  local x out=""
+  if [ $MOCK = 1 ]; then for x in $ENGNAMES; do pgrep -x $x > /dev/null && out="$out $x"; done; [ "${MOCK_ENGINES_LEFT:-0}" = 1 ] && out="$out strata-host"; echo $out; return 0; fi
+  for x in strata strata-host strata-vision strata-dsv41 llama-server ollama; do pgrep -x $x > /dev/null && out="$out $x"; done; echo $out
+}
+listener8080() { ss -H -ltnp "( sport = :8080 )" 2> /dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2; }
+ours() { case "$1" in $ENG28/*|$ENGAF/*) return 0;; esac; return 1; }   # this gap's binaries (P's is also the served P028x's)
+uptk() { awk -v c=$CLK '{printf "%d", $1 * c}' /proc/uptime; }                                                          # now, in ticks since boot
+ptick() { local s; s=$(cat /proc/$1/stat 2> /dev/null) || { echo 0; return 0; }; s=${s##*) }; set -- $s; echo ${20}; }   # its start, in ticks
+our_exe_pids() { find /proc/[0-9]*/exe -maxdepth 0 \( -lname "$ENG28/*" -o -lname "$ENGAF/*" \) 2> /dev/null | cut -d/ -f3 | sort -un; }
+ours_new() {   # ours_new PID EXE (review 11-09 M1): this gap's binary AND started after the gap opened (T0) AND not one of PRE
+  # (the engine processes running when the gap opened: the stopping 8080 P028x has P's binary) AND not under the 8080 listener
+  ours "$2" && [ $GAPOPEN = 1 ] && [ $T0T -gt 0 ] || return 1   # (T0T = 0: this driver never saw the gap open - nothing is ours)
+  case " $PRE " in *" $1 "*) return 1;; esac
+  [ "$(ptick $1)" -ge $T0T ] || return 1
+  under8080 $1 && return 1
+  return 0
+}
+pre_alive() { local p; for p in $PRE; do [ -e /proc/$p ] && echo "$p($(cat /proc/$p/comm 2> /dev/null), $(readlink /proc/$p/exe 2> /dev/null))"; done | tr '\n' ' '; }
+under8080() {   # under8080 PID: the process descends from the 8080 listener (the served P028x: never this gap's to stop)
+  local l q; l=$(listener8080); [ -n "$l" ] || return 1
+  q=$1; while [ -n "$q" ] && [ "$q" -gt 1 ] && [ "$q" != "$l" ]; do q=$(ppid_of $q); done; [ "$q" = "$l" ]
+}
+ours_running() {   # this gap's engines (exact names, their binary's path, ours_new): never one from before the gap
+  local p ex x
+  for p in $( { for x in $ENGNAMES; do pgrep -x $x; done; } | sort -un); do
+    ex=$(readlink /proc/$p/exe 2> /dev/null) || continue
+    ours_new $p "$ex" && echo $p
+  done
+}
+kill_ours() {   # this gap's engines still running after a run: 20 s to exit by themselves, then TERM, 10 s, KILL; KILLED =
+  # how many had to be stopped. Only inside the gap and never during port_gap4.sh end (the served P028x starting there has
+  # P's binary and is not yet under the 8080 listener)
+  local p i n=0
+  KILLED=0
+  [ $GAPOPEN = 1 ] && [ $ENDING = 0 ] || return 0
+  for i in $(seq $KGRACE_N); do [ -z "$(ours_running)" ] && return 0; sleep $KGRACE_S; done
+  for p in $(ours_running); do kill -TERM $p 2> /dev/null && n=$((n + 1)); done
+  sleep $KTERM_S
+  for p in $(ours_running); do kill -KILL $p 2> /dev/null; done
+  KILLED=$n
+  [ $n = 0 ] || say "  stopped $n engine process(es) of this gap left after its run"
+}
+CLEANED=""
+test_cleanup() {   # (the shape gap's test_cleanup, review 11-09 #4) after every test-server run, however it ended: the guard and
+  # server.py (their own sessions), a server still on 8081, the monitor, this gap's engines. 0 = nothing was left; 1 = CLEANED
+  # names what had to be stopped (the caller voids the start)
+  local lab=$1 gp c pg me sig
+  CLEANED=""
+  if [ $MOCK = 1 ]; then   # (the mock: a stub server; this gap's fake engines are found and stopped for real)
+    PORT=8081 $SRVSH stop > /dev/null 2>&1; $STOPMON $lab > /dev/null 2>&1
+    if [ -e $M/leftover ]; then rm -f $M/leftover; CLEANED="the test server's guard and its server (mock)"; say "  stopped $CLEANED, left after the run"; fi
+    kill_ours
+    [ $KILLED -gt 0 ] && CLEANED="${CLEANED:+$CLEANED, }$KILLED engine process(es)"
+    [ -z "$CLEANED" ]; return
+  fi
+  me=$(ps -o pgid= -p $$ 2> /dev/null | tr -d ' ')
+  gp=$(cat $WS/bringup/out/logs/srv.pid 2> /dev/null)
+  if [ -n "$gp" ] && kill -0 "$gp" 2> /dev/null && tr '\0' ' ' < /proc/$gp/cmdline 2> /dev/null | grep -qF "srv-$lab"; then
+    for sig in TERM KILL; do
+      for c in $(pgrep -P $gp); do
+        pg=$(ps -o pgid= -p $c 2> /dev/null | tr -d ' ')
+        [ -n "$pg" ] && [ "$pg" != "$me" ] && kill -$sig -- -$pg 2> /dev/null; kill -$sig $c 2> /dev/null
+      done
+      [ $sig = TERM ] && sleep 5
+    done
+    kill -TERM $gp 2> /dev/null; sleep 2; kill -0 $gp 2> /dev/null && kill -KILL $gp 2> /dev/null
+    CLEANED="the test server's guard ($gp) and its server"
+    say "  stopped $CLEANED, left after the run"
+  fi
+  if ss -H -ltn "( sport = :8081 )" 2> /dev/null | grep -q .; then
+    PORT=8081 $SRVSH stop 8>&- 9>&- < /dev/null > /dev/null 2>&1
+    CLEANED="${CLEANED:+$CLEANED, }a server still on 8081"; say "  stopped a server still on 8081 after the run"
+  fi
+  $STOPMON $lab 8>&- 9>&- < /dev/null > /dev/null 2>&1
+  kill_ours
+  [ $KILLED -gt 0 ] && CLEANED="${CLEANED:+$CLEANED, }$KILLED engine process(es)"
+  [ -z "$CLEANED" ]
+}
+lock_sweep() {   # (the shape gap's lock_sweep, review 11-09 #4) before port_gap4 end and in on_signal: nothing of this gap may
+  # still run or hold the test lock (strata-ensure refuses while anyone holds it): this gap's engines are killed (never one
+  # under the 8080 listener), its leftovers (monitor / guard of this gap's labels, a job naming this gap's folder) stopped,
+  # anything else holding the lock is named
+  local p ex cmd lp pp bad=""
+  [ $GAPOPEN = 1 ] && [ $ENDING = 0 ] || return 0
+  say "  lock sweep before the end"
+  lp=$(cat $LOCKPID 2> /dev/null); pp=$(ppid_of ${lp:-0})
+  for p in $(our_exe_pids); do   # (review 11-09 M1: only this gap's own, started after it opened; one from before is named, never killed)
+    [ "$p" = $$ ] && continue
+    ex=$(readlink /proc/$p/exe 2> /dev/null) || continue
+    if ours_new $p "$ex"; then kill -KILL $p 2> /dev/null; bad="$bad $p(${ex##*/}: this gap's, killed)"
+    else case " $PRE " in *" $p "*) bad="$bad $p(${ex##*/}: running since before the gap - left alone)";; esac; fi
+  done
+  for p in $(find /proc/[0-9]*/fd -maxdepth 1 -lname "$LOCKF" 2> /dev/null | cut -d/ -f3 | sort -un); do   # the test lock's holders
+    { [ "$p" = $$ ] || [ "$p" = "$lp" ] || [ "$p" = "$pp" ]; } && continue   # (the gap's own lock holder)
+    cmd=$(tr '\0' ' ' < /proc/$p/cmdline 2> /dev/null | cut -c1-400)
+    case $cmd in *monitor-$LP-*|*srv-$LP-*|*$O/*) kill -TERM $p 2> /dev/null; bad="$bad $p(this gap's leftover, stopped)";;
+      *) bad="$bad $p($(cat /proc/$p/comm 2> /dev/null) holds the test lock)";; esac
+  done
+  [ -n "$bad" ] && { say "  lock sweep before the end:$bad"; gate lock_sweep INFO "$bad"; sleep 3; }
+  return 0
+}
+wdg_stop() { local c; [ -n "$WDG" ] || return 0; for c in $(pgrep -P $WDG 2> /dev/null); do kill $c 2> /dev/null; done; kill $WDG 2> /dev/null; WDG=""; }
+
+preflight() {   # the reviewed rule (gap-u-adopt.sh): no measurement on the GPU lock, no other gap, no model server but 8080's P028x
+  local l p q apps bad=""
+  if [ -s $LOCKPID ] && kill -0 "$(cat $LOCKPID)" 2> /dev/null; then
+    refuse busy "another gap holds the test lock (tmp/port-gap.lockpid $(cat $LOCKPID))"; return 1
+  fi
+  [ $MOCK = 1 ] && return 0
+  if ! flock -n -x $WS/tmp/gpu-test.lock true 2> /dev/null; then
+    refuse busy "tmp/gpu-test.lock is held (a measurement or a test server)"; return 1
+  fi
+  l=$(listener8080)
+  apps=$(timeout -k 5 $NVSMI_T nvidia-smi --query-compute-apps=pid --format=csv,noheader 2> /dev/null) || { refuse busy "nvidia-smi did not answer within $NVSMI_T s"; return 1; }
+  for p in $( { for x in strata strata-host strata-vision strata-dsv41 llama-server ollama; do pgrep -x "$x"; done; echo "$apps"; } \
+              | tr -d ' ' | grep -E '^[0-9]+$' | sort -un); do
+    q=$p; while [ -n "$q" ] && [ "$q" -gt 1 ] && [ "$q" != "${l:-none}" ]; do q=$(ppid_of $q); done
+    if [ -n "$l" ] && [ "$q" = "$l" ]; then
+      case $(cat /proc/$p/comm 2> /dev/null) in
+        strata|strata-host) [ "$(sha12 /proc/$p/exe 2> /dev/null)" = $P028X_SHA ] || bad="$bad 8080-engine:$p($(readlink /proc/$p/exe))";;
+        strata-vision) ;;
+        *) bad="$bad 8080:$p($(cat /proc/$p/comm 2> /dev/null))";;
+      esac
+    else bad="$bad $p($(cat /proc/$p/comm 2> /dev/null))"; fi
+  done
+  ss -H -ltn "( sport = :8081 )" 2> /dev/null | grep -q . && bad="$bad listener-on-8081(a-test-server)"
+  [ -z "$bad" ] || { refuse busy "a model server other than the 8080 queue's P028x is running:$bad"; return 1; }
+}
+fatalchk() {   # fatalchk GATE ENGINE_LOG OFFSET LABEL: a fatal GPU error / stall / engine restart / non-finite in the slice
+  local L=$2 off=$3 sl hits
+  sl=$(slog $4)
+  hits=$( { tail -c +$((off + 1)) $L 2> /dev/null; [ -n "$sl" ] && cat $sl; } | grep -c -E "fatal GPU error|no progress for [0-9]+ s during a request|the engine had stopped \(exit code|became non-finite")
+  [ "$hits" = 0 ] || gate $1 FAIL "$hits line(s): fatal GPU error / stall / engine restart / non-finite ($L from byte $off; $sl)"
+}
+foreign() {   # GPU users that are not this gap's two engines: an engine process (exact names) or an NVIDIA compute process
+  # holding >= 512 MiB (or an unknown amount) whose binary is in neither engine folder; nvidia-smi not answering within
+  # NVSMI_T s = "not clear" (review 11-09 #3). (--mock: no real process is listed; nvidia-smi is the stub)
+  local p m x ex c
+  { [ $MOCK = 1 ] || for x in strata strata-host strata-vision strata-dsv41 llama-server ollama; do pgrep -x $x | sed 's/$/,engine/'; done
+    timeout -k 5 $NVSMI_T nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2> /dev/null || echo 'NVSMIFAIL,0'; } | tr -d ' ' \
+  | while IFS=, read -r p m; do
+      [ "$p" = NVSMIFAIL ] && { echo "nvidia-smi did not answer within $NVSMI_T s (taken as: not clear)"; continue; }
+      [[ $p =~ ^[0-9]+$ ]] && [ -e /proc/$p ] || continue
+      [[ $m =~ ^[0-9]+$ ]] && [ $m -lt 512 ] && continue
+      ex=$(readlink /proc/$p/exe 2> /dev/null) || ex=""; c=$(cat /proc/$p/comm 2> /dev/null)
+      case $c in strata-dsv41|llama-server|ollama) ;; *) [ -n "$ex" ] || continue; ours "$ex" && continue;; esac
+      echo "pid $p ($c, ${ex:-?}, $m$([[ $m =~ ^[0-9]+$ ]] && echo ' MiB'))"
+    done | sort -u
+}
+kerr_poll() {   # (the shape gap's; Karl 11-09: any new Xid or kernel error -> stop at once) this gap's programs are killed at
+  # once (ours_new only: never an engine from before the gap); $O/kerr.seen marks it
+  local p ex
+  [ -e $KERR ] && [ ! -e $O/kerr.seen ] || return 0
+  touch $O/kerr.seen
+  for p in $(our_exe_pids); do ex=$(readlink /proc/$p/exe 2> /dev/null) || continue; ours_new $p "$ex" && kill -KILL $p 2> /dev/null; done
+}
+gwatch() { while [ -e $1 ] && kill -0 $$ 2> /dev/null; do foreign | sed "s/^/$(date +%T) /" >> $2; kerr_poll; sleep $GW_S; done; }
+gpu_clear() {   # gpu_clear NAME: no foreign GPU user and no leftover engine of this gap before the start (up to 60 s); else
+  # foreign_NAME FAIL, not started (review 11-09 m4: this gap's own leftover counts as not clear)
+  local i f
+  for i in $(seq $GPUCLEAR_N); do
+    f=$(foreign; o_=$(ours_running | tr '\n' ' '); [ -n "$o_" ] && echo "this gap's own engine(s) still running: $o_")
+    [ -z "$f" ] && return 0; sleep $GPUCLEAR_S
+  done
+  gate foreign_$1 FAIL "not started: $(echo "$f" | head -1) still after $(( GPUCLEAR_N * GPUCLEAR_S )) s"
+  return 1
+}
+WGP=""
+wstart() { rm -f $FG/$1.foreign; touch $FG/$1.watching; gwatch $FG/$1.watching $FG/$1.foreign 8>&- 9>&- < /dev/null & WGP=$!; }
+wstop() {    # one foreign GPU user seen during the start = foreign_NAME FAIL (the start is left out)
+  rm -f $FG/$1.watching; [ -n "$WGP" ] && wait $WGP 2> /dev/null; WGP=""
+  [ -s $FG/$1.foreign ] && gate foreign_$1 FAIL "seen during $1 ($(wc -l < $FG/$1.foreign) sample(s)): $(head -1 $FG/$1.foreign | cut -c1-160) - left out"
+  return 0
+}
+watchdog() {   # watchdog JOB MINUTES NAME (gap-decpath.sh's): past MINUTES the engine in the job's own tree is stopped by PID
+  local j=$1 m=$2 n=$3 t p q
+  t=$(( $(date +%s) + m * 60 ))
+  while kill -0 $j 2> /dev/null; do
+    if [ $(date +%s) -ge $t ]; then
+      for p in $( { pgrep -x strata; pgrep -x strata-host; } | sort -un); do
+        q=$p; while [ -n "$q" ] && [ "$q" -gt 1 ] && [ "$q" != $j ]; do q=$(ppid_of $q); done
+        [ "$q" = $j ] && kill -TERM $p 2> /dev/null && echo "watchdog: $n ran past $m min - its engine (pid $p) was stopped" >> $SQO/$n.watchdog
+      done
+      return 0
+    fi
+    sleep 5
+  done
+}
+
+# ---------------------------------------------------------------- the priority rule (Karl 11-09), its override
+PRIOWHY=""
+prio_note() {   # prio_note OUTPUT: an override in force is gated (once) and named
+  case $1 in *"PRIORITY OVERRIDDEN"*)
+    [ -n "$(gst priority_override)" ] || { gate priority_override INFO "$(echo "$1" | tail -1 | cut -c1-300)"; say "  THE PRIORITY HOLD IS OVERRIDDEN (tmp/afetch-priority-done): the gap goes on"; };;
+  esac
+}
+prio() {   # prio WHERE: 0 = go on; 1 = a find (PRIO=1: no new step, the gap ends cleanly) or one already made
+  local out rc
+  [ $PRIO = 1 ] && return 1
+  out=$(afr priority --state $STATE --override $PRIO_DONE 2>&1); rc=$?
+  case $rc in
+    0) prio_note "$out"; return 0;;
+    10) PRIO=1; PRIOWHY=$(echo "$out" | tail -1 | cut -c1-300)
+        say "PRIORITY RULE before $1: $PRIOWHY - no new step; the gap ends (P028x back)"
+        gate priority FAIL "before $1: $PRIOWHY"; return 1;;
+    *) gate priority_$(echo "$1" | tr -c 'A-Za-z0-9\n' '_' | cut -c1-40) INFO "$(echo "$out" | tail -1 | cut -c1-200)"
+       say "(the priority check before $1 could not read the watch state - going on; it reads it again before the next part)"
+       return 0;;
+  esac
+}
+
+# ---------------------------------------------------------------- one test server (gap-basalt-speed.sh's srvrun)
+srvrun() {   # srvrun ARM STEP LABEL CONFIG ENGLOG CMD: a fresh test server (with_server.sh: cold page cache, the memory guard,
+  # the shared test lock), its engine's env checked, then CMD; test_cleanup (a leftover voids the start); the engine-log
+  # slice -> ENGLOG; the start line, the fatal lines, a kernel check
+  local arm=$1 st=$2 lab=$3 cfg=$4 eo=$5 cmd=$6 L off exe
+  ok_to_go || { say "skipped $lab (the deadline, a kernel check or the priority rule)"; return 1; }
+  gpu_clear ${arm}_$st || { say "$lab NOT started (a foreign GPU user, or nvidia-smi not answering)"; return 1; }
+  exe=$(exe_of $cfg); L=$(elog $cfg); touch $L; off=$(stat -c %s $L)
+  say "server $lab ($(basename $cfg))"
+  wstart ${arm}_$st
+  $LIB/with_server.sh $lab $cfg -- "$PY $FR br envcheck $exe $cfg --gate env_${arm}_$st --gates $G && $PY $AFR fetchenv $exe $cfg --gate fenv_${arm}_$st --gates $G$MOCKENV && $cmd" 8>&- 9>&- < /dev/null 2>&1 \
+    | grep -E "engine pid [0-9]+:|ENV CHECK|FETCH ENV| pass |tok/s|ready|exited|refus|Error|GUARD|Traceback" | cut -c1-300 | tee -a $S
+  wstop ${arm}_$st
+  test_cleanup $lab || gate void_${arm}_$st FAIL "the run left $CLEANED behind (stopped) - the start is left out"
+  tail -c +$((off + 1)) $L > $eo
+  fatalchk fatal_${arm}_$st $L $off $lab
+  afr startline $eo --arm $arm --gate line_${arm}_$st --gates $G | tee -a $S
+  kc $lab
+}
+left_out() { [ "$(gst foreign_$1)" = FAIL ] || [ "$(gst void_$1)" = FAIL ]; }   # left_out ARM_STEP: a foreign user or a leftover
+bprun() {   # bprun ARM PASS: B2, Basalt's decode fixtures on a fresh engine -> bp90/ARM-decode-PASS.jsonl
+  local a=$1 k=$2 out=$BO/$1-decode-$2.jsonl
+  fits $(( B2_MIN + RESERVE )) || { say "skipped B2 $a pass $k (under $(( B2_MIN + RESERVE )) min to the deadline, a kernel check or the priority rule)"; NSKIP=$((NSKIP + 1)); return 0; }
+  srvrun $a bp${k}decode $LP-bp$a-$k $CF/$a.json $EL/bp-$a-decode-$k.englog \
+    "$PY $B90/bp90_client.py http://127.0.0.1:8081 --label $LP-$a-decode-$k --sets decode --passes 1 --first-pass $k --tree $W28 --out $out" || true
+  if left_out ${a}_bp${k}decode; then mkdir -p $BO/void; [ -e $out ] && mv $out $BO/void/; fi
+  return 0
+}
+darm() {   # darm ARM PASS: B3, one screen pass on a fresh server (warm-up, W1-W3, the 2 agent turns, the 4 research replays)
+  local a=$1 k=$2 n=$1$2 cfg=$CF/$1.json L off f
+  fits $(( B3_MIN + RESERVE )) || { say "skipped screen $n (under $(( B3_MIN + RESERVE )) min to the deadline, a kernel check or the priority rule)"; NSKIP=$((NSKIP + 1)); return 0; }
+  L=$(elog $cfg); touch $L; off=$(stat -c %s $L)
+  srvrun $a scr$k $LP-scr$n $cfg $EL/scr-$n.englog "bash $KR/abarm.sh http://127.0.0.1:8081 $off $SPD $n ${n}n=normal:1:W1,W2,W3 ${n}a=agent:1 ${n}r=research4:1" || true
+  if left_out ${a}_scr$k; then
+    mkdir -p $SPD/void; for f in $SPD/${n}n.* $SPD/${n}a.* $SPD/${n}r.* $SPD/$n.*; do [ -e "$f" ] && mv "$f" $SPD/void/; done
+  fi
+  return 0
+}
+e7() {   # exact7 F0 at pin 2500 against the stored x28h-e7a, every item's engine env checked (gap-basalt-speed.sh's e7)
+  local L=$LP-F0 cfg=$CF/F0.json jp
+  fits $E7_MIN || { say "skipped exact7 $L (under $E7_MIN min to the deadline, a kernel check or the priority rule)"; return 1; }
+  say "exact7 $L (F0.json = P on engine-r23afetch, STRATA_ADAPT_FETCH unset; against $E7REF, pin 2500)"
+  ( PIN_CACHE=2500 REF=$E7REF $LIB/exact7.sh $L $cfg 2>&1 | tail -9 | tee -a $S ) 8>&- 9>&- < /dev/null &
+  jp=$!
+  br envcli $(exe_of $cfg) $cfg --job $jp --mode e7 --kill --gate env_F0_e7 --gates $G 2>&1 | tee -a $S
+  wait $jp
+  br e7gate $S $L --gate e7_F0 --gates $G | tee -a $S
+  kill_ours   # (review 11-09 m4: an exact7 engine of this gap still running)
+  kc e7-$L
+}
+pfy40() {   # pf_yardstick long40 on F0 (gap 16's / gap a's form: bare auto, fp16), its engine env checked
+  local n=F0L40 cfg=$CF/F0.json jp
+  fits $PFY_MIN || { say "skipped pf_yardstick long40 $n (under $PFY_MIN min to the deadline, a kernel check or the priority rule)"; return 1; }
+  say "pf_yardstick long40 $n (F0.json)"
+  ( $P $LIB/guard.py pfyaf-$n -- $PY $KR/pf_yardstick.py run $cfg $Y40/$n --set long40 2>&1 | grep -v "^engine:" | tail -3 | sed "s/^/pfy $n: /" | tee -a $S ) 8>&- 9>&- < /dev/null &
+  jp=$!
+  br envcli $(exe_of $cfg) $cfg --job $jp --mode pfy --kill --gate env_F0_pfy-$n --gates $G 2>&1 | tee -a $S
+  wait $jp
+  br same $Y40/$n $Y16 --gate logits_$n --gates $G | tee -a $S
+  kill_ours   # (review 11-09 m4)
+  kc pfy-$n
+}
+sqarm() {   # sqarm ARM [BUDGET_S]: one sampled arm on a fresh test server (STEPS-adaptfetch.txt 2 / 3): both env checks, the
+  # client; test_cleanup (a leftover voids the start: its folder moves to void-ARM-*, so the harness cannot use it)
+  local arm=$1 bud=${2:-} cfg=$SQO/cfg/$1.json lab=$LP-sq$1 L off exe eo=$EL/sq-$1.englog
+  ok_to_go || { say "skipped sampled $arm (the deadline, a kernel check or the priority rule)"; return 1; }
+  gpu_clear sq$arm || { say "sampled $arm NOT started (a foreign GPU user, or nvidia-smi not answering)"; return 1; }
+  exe=$(exe_of $cfg); L=$(elog $cfg); mkdir -p $(dirname $L); touch $L; off=$(stat -c %s $L)
+  say "sampled $arm: server $lab ($(basename $cfg))${bud:+, budget $bud s}"
+  wstart sq$arm
+  $LIB/with_server.sh $lab $cfg -- "$PY $FR br envcheck $exe $cfg --gate env_sq$arm --gates $G && $PY $Q/sq.py envcheck $SQO $arm && SQ_SPEC=$SQO/spec.json SQ_ARM=$arm SQ_LABEL=$lab SQ_ELOG_BASE=$off${bud:+ SQ_BUDGET_S=$bud} $PY $Q/sq_client.py http://127.0.0.1:8081 $SQO/$arm; echo \"sampled $arm chain rc \$?\"" 8>&- 9>&- < /dev/null > $SQO/$arm.with_server.txt 2>&1
+  grep -E "engine pid [0-9]+:|ENV CHECK|ready|exited|refus|Error|GUARD|Traceback|chain rc|WARNING|budget" $SQO/$arm.with_server.txt | cut -c1-300 | tee -a $S
+  wstop sq$arm
+  if ! test_cleanup $lab; then
+    gate void_sq$arm FAIL "the run left $CLEANED behind (stopped) - the start is left out"
+    [ -d $SQO/$arm ] && mv $SQO/$arm $SQO/void-$arm-$(date +%H%M%S)
+  fi
+  tail -c +$((off + 1)) $L > $eo
+  fatalchk fatal_sq$arm $L $off $lab
+  if [ -s $SQO/envcheck-$arm.txt ]; then
+    tail -1 $SQO/envcheck-$arm.txt | grep -q '^ENV CHECK OK' && gate envsq_$arm PASS "$(tail -1 $SQO/envcheck-$arm.txt | cut -c1-200)" \
+      || gate envsq_$arm FAIL "$(tail -1 $SQO/envcheck-$arm.txt | cut -c1-200)"
+  fi
+  gate run_sq$arm INFO "$(grep -o 'chain rc [0-9]*' $SQO/$arm.with_server.txt | tail -1 || echo 'no rc line')"
+  kc sq-$arm
+}
+VFV=""; VFDONE=0; VFTRIES=0
+vf_part() {   # the read-back start (STEPS 2): VF, then sq.py verify; the verdict is read from verify-VF.json (not its exit code).
+  # Neither PASS nor FAIL (not started, voided, a foreign GPU user, a crash): VFDONE=0, tried once more later (review 11-09
+  # m3 / m6: at most one retry; the first try's FAIL gates are marked RETRIED, its folder kept as void-VF-try1-*)
+  local vrc k
+  VFDONE=1; VFTRIES=$((VFTRIES + 1))
+  if [ $VFTRIES = 2 ]; then
+    for k in env_sqVF envsq_VF fatal_sqVF void_sqVF foreign_sqVF; do [ "$(gst $k)" = FAIL ] && gate $k RETRIED "try 1 FAIL; the read-back start tried again"; done
+    [ -d $SQO/VF ] && mv $SQO/VF $SQO/void-VF-try1-$(date +%H%M%S); rm -f $SQO/verify-VF.json $SQO/envcheck-VF.txt
+  fi
+  sqarm VF 300 || true
+  sq verify $SQO VF > $SQO/verify.out 2>&1; vrc=$?
+  VFV=$(jget $SQO/verify-VF.json "['verdict']" 2> /dev/null) || VFV=""
+  [ "$VFV" = PASS ] && [ "$(gst foreign_sqVF)" = FAIL ] && VFV="NOT DECIDED (a foreign GPU user during VF)"
+  say "  read-back VF (try $VFTRIES): ${VFV:-no verify-VF.json} ($(tail -1 $SQO/verify.out | cut -c1-200); sq.py verify exit $vrc)"
+  gate readback_VF $(case $VFV in PASS) echo PASS;; FAIL) echo FAIL;; *) echo NOT-DECIDED;; esac) "try $VFTRIES: verify-VF.json ${VFV:-missing}; sq.py verify exit $vrc"
+  if [ "$VFV" != PASS ] && [ "$VFV" != FAIL ] && [ $VFTRIES -lt 2 ]; then VFDONE=0; say "  the read-back start is tried once more later"; fi
+}
+sq_decide() {   # sq.py decide (CPU): the harness's own decision (it refuses a changed rule.txt)
+  local sd sdc
+  sd=$(sq decide $SQO 2>&1); sdc=$?
+  say "  sq.py decide (exit $sdc): $(echo "$sd" | tail -1 | cut -c1-300)"
+  gate sampled_decide INFO "exit $sdc: $(echo "$sd" | tail -1 | cut -c1-200)"
+}
+
+# ---------------------------------------------------------------- refusals, the signal trap, the end
+DRYREF=0
+refuse() {   # refuse busy|hard WHY - before the gap, nothing changed. busy: exit 1 (the starter retries); hard: an alert, exit 6
+  if [ $DRY = 1 ]; then DRYREF=$((DRYREF + 1)); say "DRY RUN: the real run would REFUSE ($1) here: $2"; return 1; fi
+  echo "not started ($1): $2 - nothing changed" > $O/result.txt
+  say "NOT STARTED ($1): $2 - nothing changed"
+  if [ "$1" = hard ]; then
+    notes_line "not started: $2 - nothing changed"
+    alert "ADAPT_FETCH gap not started" "$(echo "$2" | cut -c1-120); nothing changed"; exit 6
+  fi
+  exit 1
+}
+hold() {   # the priority rule before the gap: final (exit 8), an alert, nothing changed
+  if [ $DRY = 1 ]; then DRYREF=$((DRYREF + 1)); say "DRY RUN: the real run would be HELD by the priority rule here: $1"; return 1; fi
+  echo "HELD by the priority rule (Karl 11-09), before the gap: $1 - nothing changed; the day-one work goes first (override: tmp/afetch-priority-done with a dated reason line, only on Karl's word)" > $O/result.txt
+  say "HELD (priority rule): $1 - nothing changed"
+  notes_line "HELD by the priority rule before the gap: $1 - nothing changed; day-one work first"
+  alert "ADAPT_FETCH gap held" "open Qwen4 Flash weights were found: the day-one work goes first; the gap did not start"
+  exit 8
+}
+on_signal() {   # the driver stopped from outside: result.txt, the NOTES line and the alert FIRST (review 11-09 m7: a 90-s
+  # systemd stop timeout must not lose them), then the test server and this gap's leftovers (never during port_gap4.sh end;
+  # never an engine from before the gap); the gap left as it is (Karl / Claude decide); whether 8080 listens is said
+  trap - TERM INT HUP
+  say "SIGNAL: the driver was stopped"
+  wdg_stop
+  local st
+  if [ $ENDING = 1 ]; then
+    st="the driver was stopped while port_gap4.sh end was running: do NOT run end a second time blindly - check first whether 8080 serves P028x, whether tmp/port-gap.lockpid and the research-queue hold are gone"
+  elif [ $GAPOPEN = 1 ]; then
+    st="the gap may still be open (tmp/port-gap.lockpid): close it with work/r22/port_gap4.sh end"
+  else
+    st="the gap was not open"
+    # stopped inside port_gap4.sh begin: a hold this gap set is lifted again; a lock it may already have taken = "maybe open"
+    if grep -qF 'ADAPT_FETCH gap' $HOLD 2> /dev/null; then
+      if [ -s $LOCKPID ] && kill -0 "$(cat $LOCKPID)" 2> /dev/null; then st="the gap may have opened as it was stopped (lock held): close it with work/r22/port_gap4.sh end"; GAPOPEN=1
+      else rm -f $HOLD; st="the gap was not open (this gap's research-queue hold lifted)"; fi
+    fi
+  fi
+  ss -H -ltn "( sport = :8080 )" 2> /dev/null | grep -q . && st="$st; 8080 is listening" || st="$st; 8080 is NOT listening"
+  echo "INTERRUPTED: $st; nothing switched" > $O/result.txt
+  say "INTERRUPTED: $st"
+  notes_line "INTERRUPTED: $st; nothing switched"
+  alert "ADAPT_FETCH gap interrupted" "the driver was stopped; $( [ $ENDING = 1 ] && echo 'during the end: check 8080 before anything else' || { [ $GAPOPEN = 1 ] && echo 'the gap may still be open: 8080 down' || echo 'the gap was not open'; })"
+  # (only a gap this driver saw open: stopped inside begin, the lock maybe taken, PRE was never recorded - nothing is touched)
+  if [ $GAPOPEN = 1 ] && [ $ENDING = 0 ] && [ $T0T -gt 0 ]; then test_cleanup "$LP-" || true; lock_sweep; fi
+  exit 7
+}
+finish() {   # $1 = the result line, $2 = exit code
+  wdg_stop
+  echo "$1" > $O/result.txt
+  say "RESULT: $1"
+  notes_line "$1"
+  exit $2
+}
+judge() {   # afetch_rules.py decide (CPU, nice 19) -> decision.txt / .json / result-line.txt
+  afr decide $O --sampled $SQO --quiet > $O/decide.out 2>&1 || say "afetch_rules.py decide failed - rerun it by hand ($PY $AFR decide $O): $(tail -1 $O/decide.out)"
+  [ -f $O/decision.txt ] && tee -a $S < $O/decision.txt > /dev/null
+}
+end_gap() {   # the lock sweep, then port_gap4.sh end, once (P028x back on 8080: nothing of it changed)
+  [ $GAPOPEN = 1 ] || return 0
+  judge
+  if [ $KFAIL = 1 ]; then   # (the shape gap's, Karl 11-09: any new Xid or kernel error -> stop at once, P028x back, an alert; kwatch NOT cleared)
+    say "KERNEL ERROR during the gap: stopping and bringing P028x back; kwatch is not cleared"
+    [ -e $KERR ] && head -c 300 $KERR | sed 's/^/  /' | tee -a $S > /dev/null
+    lock_sweep
+    ENDING=1
+    if $KR/port_gap4.sh end 8>&- 9>&- < /dev/null 2>&1 | tee -a $S; then
+      ENDING=0; GAPOPEN=0
+      alert "ADAPT_FETCH gap stopped: kernel error" "a kernel error during the ADAPT_FETCH gap; it stopped at once and P028x is back on 8080; kwatch not cleared"
+    else
+      ENDING=0
+      alert "ADAPT_FETCH gap: kernel error, 8080 not back" "a kernel error during the ADAPT_FETCH gap and port_gap4 end failed: 8080 and the research queue need a look"
+    fi
+    finish "KERNEL ERROR during the gap - stopped at once, $([ $GAPOPEN = 0 ] && echo 'P028x back on 8080' || echo '8080 NOT back'); kwatch not cleared; partial results in decision.txt: $(cat $O/result-line.txt 2> /dev/null)" 3
+  fi
+  lock_sweep
+  say "port_gap4.sh end: P028x back on 8080 - nothing switched"
+  ENDING=1
+  if ! $KR/port_gap4.sh end 8>&- 9>&- < /dev/null 2>&1 | tee -a $S; then
+    say "port_gap4.sh end FAILED: 8080 and the research queue need a look"
+    alert "ADAPT_FETCH gap: 8080 not back" "port_gap4 end failed after the ADAPT_FETCH gap; 8080 and the research queue need a look"
+    finish "port_gap4.sh end FAILED - 8080 and the research queue need a look; the results are in decision.txt: $(cat $O/result-line.txt 2> /dev/null)" 4
+  fi
+  ENDING=0; GAPOPEN=0
+}
+
+# ================================================================ 0 before the gap (no GPU; 8080 untouched)
+: > $G
+[ -n "$PREV" ] && say "an earlier attempt's outputs moved to $PREV"
+say "ADAPT_FETCH GAP (work/r23/afetch-gap/gap-afetch.sh, Karl 11-09): P028x (P) vs the fetch build + STRATA_ADAPT_FETCH=1 / =2 (F1 / F2), helper GPU on; build vs switch, the read-back start, speed (decode), the sampled test - measurements only, nothing switches$([ $DRY = 1 ] && echo ' [DRY RUN]')$([ $MOCK = 1 ] && echo ' [MOCK RUN: every tool a stub under scratch/mock]')"
+# -- the order of the queue and the priority rule first (cheap; a hold is final)
+SH=$(afr shapecheck --result $SHAPE_RES); say "  $SH"
+case $SH in "SHAPE GAP RAN:"*) ;; *) refuse busy "the v0.2.13 shape gap must run first (Karl 11-09): $SH";; esac
+systemctl --user is-active -q $SHAPE_UNIT 2> /dev/null && refuse busy "the shape gap's unit $SHAPE_UNIT is still active"
+hold_foreign() { [ -e $HOLD ] && ! grep -qF 'ADAPT_FETCH gap' $HOLD 2> /dev/null; }   # the research queue held by someone else
+hold_foreign && refuse busy "the research queue is held by someone else (bench2.hold: $(head -c 120 $HOLD 2> /dev/null | tr '\n' ' '))"
+PR=$(afr priority --state $STATE --override $PRIO_DONE); PRC=$?; say "  $PR"
+case $PRC in 0) prio_note "$PR";; 10) hold "$(echo "$PR" | cut -c1-300)";; *) refuse busy "the priority rule cannot be checked: $PR";; esac
+if [ $MOCK = 0 ] && [ $DRY = 0 ]; then
+  systemctl --user is-active -q post-p5-chain 2> /dev/null && refuse busy "the post-Phase-5 chain is still running"
+  preflight   # (the cheap busy checks before the selftests; again right before the gap opens)
+fi
+# -- files, engines, the stored references
+if [ $MOCK = 0 ]; then
+  for f in $AFR $WS/work/r23/basalt_speed_rules.py $FR $WS/work/r23/basalt_rules.py $KR/g17_rules.py $KR/pf_yardstick.py \
+           $KR/abarm.sh $KR/port_gap4.sh $B90/bp90_client.py $LIB/with_server.sh $LIB/exact7.sh $LIB/guard.py $LIB/kcheck.sh \
+           $SRVSH $STOPMON $W28/serve/server.py $WS/configs/P028x.json $WS/configs/x28h.json $Y16/index.json $COLDM \
+           $BPD/prefill.ids /home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py /home/USER/ai-speed-testing/basalt-ab/scripts/workloads.json \
+           $Q/sq.py $Q/sq_stat.py $Q/sq_client.py $SPEC $WS/work/r23/scratch-adaptfetch/agg.py $NOTE; do
+    [ -f $f ] || refuse hard "missing: $f"
+  done
+  [ "$(ls $PROF/$E7REF-*.out 2> /dev/null | wc -l)" = 7 ] || refuse hard "P028x's stored exact7 $E7REF is incomplete"
+  [ "$(ls $Y16/first.* 2> /dev/null | wc -l)" = 40 ] || refuse hard "gap 16's stored long40 ($Y16) does not have its 40 logit files"
+  [ -x $E28/strata ] && [ "$(sha12 $E28/strata)" = $P028X_SHA ] || refuse hard "engine-r22p028x is not P028x ($P028X_SHA)"
+  $P -I -c "import sys; sys.exit(0 if b'STRATA_HC_UPMIX\0' in open(sys.argv[1], 'rb').read() else 1)" $E28/strata \
+    || refuse hard "engine-r22p028x has no STRATA_HC_UPMIX"
+  [ -x $EAF/strata ] && [ "$(sha12 $EAF/strata)" = $AF_SHA ] || refuse hard "engine-r23afetch is not the fetch build ($AF_SHA)"
+  $P -I -c "import sys; d = open(sys.argv[1], 'rb').read(); sys.exit(0 if b'STRATA_ADAPT_FETCH\0' in d and b'STRATA_ADAPT_FETCH_VERIFY\0' in d else 1)" $EAF/strata \
+    || refuse hard "engine-r23afetch has no STRATA_ADAPT_FETCH / STRATA_ADAPT_FETCH_VERIFY"
+  grep -q 'branch r23-adaptfetch' $EAF/SOURCE 2> /dev/null || refuse hard "engine-r23afetch/SOURCE does not name branch r23-adaptfetch"
+  [ "$(grep -oP '^P021_SHA=\K[0-9a-f]{12}' $KR/port_gap4.sh)" = $P028X_SHA ] || refuse hard "work/r22/port_gap4.sh does not restore P028x ($P028X_SHA)"
+  free=$(df --output=avail -B1G $WS/results | tail -1 | tr -d ' ')
+  [ "${free:-0}" -ge 5 ] || refuse hard "only ${free} GB free on results/"
+  say "  files, engines (P028x $P028X_SHA, fetch build $AF_SHA), the stored references and port_gap4.sh checked"
+fi
+# -- the rules: selftest, copycheck, the switches (synthetic data, under OUTDIR or the dry run's scratch)
+ST=$O/selftest-rules; [ $DRY = 1 ] && ST=$AG/scratch/selftest-dry
+if [ $MOCK = 0 ] || [ "${MOCK_SELFTEST:-0}" = 1 ]; then
+  afr selftest $ST > $O/selftest-rules.out 2>&1 || refuse hard "afetch_rules.py selftest failed ($(tail -1 $O/selftest-rules.out | cut -c1-160))"
+  say "  $(tail -1 $O/selftest-rules.out)"; rm -rf $ST
+fi
+CC=$(afr copycheck 2>&1); say "  $CC"
+case $CC in "COPY CHECK OK"*) ;; *) refuse hard "afetch_rules.py copycheck: $CC";; esac
+FM=$(afr forms 2>&1) || refuse hard "afetch_rules.py's switches: $(echo "$FM" | tail -1)"
+ORDER_FORM=$(echo "$FM" | sed -n 's/^ORDER_FORM=//p')
+say "  the switches (frozen into rules.txt): $(echo "$FM" | tr '\n' ' ')"
+if [ $MOCK = 1 ] && [ -n "${MOCK_ORDER_FORM:-}" ]; then ORDER_FORM=$MOCK_ORDER_FORM; gate order_form INFO "$ORDER_FORM (mock override)"; fi
+case $ORDER_FORM in speed-first|vf-first) ;; *) refuse hard "ORDER_FORM '$ORDER_FORM' is not speed-first or vf-first";; esac
+# -- the sampled harness (STEPS-adaptfetch.txt 0b-0d): its selftests, derive of the run's spec copy, the rule BEFORE any engine
+rm -rf $SQO; mkdir -p $SQO
+cp $SPEC $SQO/spec-in.json
+grep -q 'FILL-IN' $SQO/spec-in.json && refuse hard "the sampled spec still says FILL-IN"
+if [ $DRY = 1 ]; then
+  say "  (dry run: would run: sq.py selftest -> SELFTEST OK; sq_client.py selftest -> CLIENT SELFTEST OK; sq.py selftest-real -> SELFTEST-REAL OK)"
+  say "  (dry run: would run: sq.py derive $SQO/spec-in.json $SQO; sq.py rule $SQO/spec.json > $SQO/rule.txt)"
+else
+  for t in "sq.py selftest:SELFTEST OK" "sq_client.py selftest:CLIENT SELFTEST OK" "sq.py selftest-real:SELFTEST-REAL OK"; do
+    cmd=${t%%:*}; want=${t#*:}; f=$SQO/${cmd// /-}.out
+    nice -n 19 $PY $Q/$cmd 8>&- 9>&- < /dev/null > $f 2>&1; rc=$?
+    [ $rc = 0 ] && tail -1 $f | grep -qx "$want" || refuse hard "the sampled harness's $cmd failed (rc $rc: $(tail -1 $f | cut -c1-120))"
+    say "  $cmd: $(tail -1 $f)"
+  done
+  DV=$(sq derive $SQO/spec-in.json $SQO 2>&1); DRC=$?
+  say "  sq.py derive: $(echo "$DV" | head -3 | tr '\n' ' ' | cut -c1-300)"
+  [ $DRC = 0 ] || refuse hard "sq.py derive refused the spec: $(echo "$DV" | sed -n 2p | cut -c1-200)"
+  sq rule $SQO/spec.json > $SQO/rule.txt || refuse hard "sq.py rule failed"
+  [ -s $SQO/rule.txt ] || refuse hard "sq.py rule wrote nothing"
+  say "  the sampled rule frozen: sampled/rule.txt sha $(sha12 $SQO/rule.txt) (before any engine start)"
+  for a in VF R1 X1 X2 R2; do [ -s $SQO/cfg/$a.json ] || refuse hard "sq.py derive wrote no cfg/$a.json"; done
+fi
+# -- the arm configs and the rules, frozen
+AC=$(afr arms $CF --spec $SQO/spec-in.json $([ $MOCK = 1 ] && echo "--no-sha --log-dir $M/logs") --gate cfg --gates $G 2>&1 | tail -1); say "  $AC"
+[ "$(gst cfg)" = PASS ] || refuse hard "the arm configs do not check out: $AC"
+afr rules $O/rules.txt | sed 's/^/  /' | tee -a $S
+say "  estimate: ~100 min with 8080 down (open 2, build vs switch 12, VF 5, B2 15, B3 33, sampled 30, close 4); deadline $MAXM min for new steps after the gap opens; 8080 down ~2.9 h at most ($((MAXM + WORST_OVER)) min)"
+if [ $DRY = 1 ]; then
+  say "DRY RUN: would check that no other gap / test lock / model server but P028x ($P028X_SHA) / 8081 listener is there, that the kernel-log watcher runs, and a kernel check"
+  say "DRY RUN: the gap would now run (ORDER_FORM $ORDER_FORM):"
+  say "  GAP_MAX_MIN=$((MAXM + WORST_OVER)) $KR/port_gap4.sh begin \"ADAPT_FETCH gap: ...\"; the watchdog (open at deadline + 20 min: one critical alert); the priority rule; deadline $MAXM min after it opens"
+  say "  2 build vs switch: PIN_CACHE=2500 REF=$E7REF $LIB/exact7.sh $LP-F0 $CF/F0.json (+ br envcli --mode e7 --kill; br e7gate);"
+  say "    $P $LIB/guard.py pfyaf-F0L40 -- $PY $KR/pf_yardstick.py run $CF/F0.json $Y40/F0L40 --set long40 (+ br envcli --mode pfy --kill; br same $Y40/F0L40 $Y16); afetch_rules.py exact"
+  [ "$ORDER_FORM" = vf-first ] && say "  3 the read-back start: with_server.sh $LP-sqVF $SQO/cfg/VF.json -- \"br envcheck && sq.py envcheck && SQ_BUDGET_S=300 sq_client.py\"; test_cleanup; sq.py verify $SQO VF -> verify-VF.json's verdict (FAIL: no speed, no sampled part)"
+  for k in 1 2 3; do say "  4 B2 pass $k (${ORDER[$k]}): with_server.sh $LP-bpARM-$k $CF/ARM.json -- \"br envcheck && afetch_rules.py fetchenv && bp90_client.py http://127.0.0.1:8081 --sets decode --first-pass $k --tree $W28 --out $BO/ARM-decode-$k.jsonl\"; test_cleanup; startline; fatal; kcheck"; done
+  for k in 1 2 3; do say "  4 B3 pass $k (${ORDER[$k]}): with_server.sh $LP-scrARM$k $CF/ARM.json -- \"br envcheck && fetchenv && bash $KR/abarm.sh http://127.0.0.1:8081 OFF $SPD ARM$k ARM${k}n=normal:1:W1,W2,W3 ARM${k}a=agent:1 ARM${k}r=research4:1\"; test_cleanup"; done
+  say "  5 sampled: $([ "$ORDER_FORM" = speed-first ] && echo 'VF (SQ_BUDGET_S=300) + sq.py verify; ')R1 X1 X2 R2: with_server.sh $LP-sqARM $SQO/cfg/ARM.json -- \"br envcheck && sq.py envcheck $SQO ARM && SQ_SPEC=$SQO/spec.json SQ_ARM=ARM SQ_LABEL=... SQ_ELOG_BASE=OFF sq_client.py http://127.0.0.1:8081 $SQO/ARM\"; test_cleanup"
+  say "    with R1: sq.py ids $SQO R1 X1 X2 R2; ( $PY $LIB/guard.py sq-score -- $PY $Q/sq.py score $SQO R1 X1 X2 R2 --max-min <=25 ) & + sq.py envwatch JOB $SQO --kill + watchdog; sq.py decide $SQO"
+  say "  6 afetch_rules.py decide $O; the lock sweep; $KR/port_gap4.sh end; kcheck; result.txt, NOTES.md, ntfy"
+  say "DRY RUN done: $DRYREF refusal(s) would stop the real run now"
+  exit 0
+fi
+if [ $MOCK = 0 ]; then
+  preflight
+  [ -f $WS/tmp/r19/kwatch.pid ] && kill -0 "$(cat $WS/tmp/r19/kwatch.pid)" 2> /dev/null || refuse hard "the kernel-log watcher is not running"
+  $LIB/kcheck.sh r23af-pre > /dev/null 8>&- 9>&- < /dev/null || refuse hard "a kernel check fails before the gap"
+else
+  preflight
+fi
+hold_foreign && refuse busy "the research queue is held by someone else (bench2.hold: $(head -c 120 $HOLD 2> /dev/null | tr '\n' ' '))"
+PR=$(afr priority --state $STATE --override $PRIO_DONE); PRC=$?
+case $PRC in 0) prio_note "$PR";; 10) hold "$(echo "$PR" | cut -c1-300)";; *) refuse busy "the priority rule cannot be checked: $PR";; esac
+trap on_signal TERM INT HUP
+
+# ================================================================ 1 the gap
+GAP_MAX_MIN=$((MAXM + WORST_OVER)) $KR/port_gap4.sh begin "ADAPT_FETCH gap: P028x vs STRATA_ADAPT_FETCH=1 / =2 on the fetch build, helper GPU on (Karl 11-09; measurements only, nothing switches)" 8>&- 9>&- < /dev/null 2>&1 | tee -a $S
+[ -s $LOCKPID ] && kill -0 "$(cat $LOCKPID)" 2> /dev/null || { grep -qF 'ADAPT_FETCH gap' $HOLD 2> /dev/null && rm -f $HOLD; refuse busy "the gap did not open (our hold removed)"; }
+GAPOPEN=1; T0=$(date +%s); T0T=$(uptk); DEADLINE=$(( T0 + MAXM * 60 ))
+PRE=$( { for x in $ENGNAMES; do pgrep -x $x; done; } | sort -un | tr '\n' ' ')   # (review 11-09 M1: never this gap's to stop)
+echo "$T0 $(date -Is)" > $O/t0.txt
+[ -n "$PRE" ] && say "engine processes running as the gap opened (8080's, stopping; never stopped by this gap): $(pre_alive)"
+# (review 11-09 #3) the watchdog: still open 20 min past the deadline -> one critical alert (a hang the deadline cannot cut)
+if [ $MOCK = 0 ]; then
+  ( exec 8>&- 9>&- < /dev/null > /dev/null 2>&1; sleep $(( MAXM * 60 + 1200 )); kill -0 $$ 2> /dev/null && [ -s $LOCKPID ] && kill -0 "$(cat $LOCKPID)" 2> /dev/null \
+      && notify-send -a Strata -u critical "ADAPT_FETCH gap overrun" "the ADAPT_FETCH gap is still open 20 min past its deadline: 8080 may be down" ) &
+  WDG=$!
+elif [ -n "${MOCK_WDG_S:-}" ]; then   # (the mock: seconds, and a log line instead of the alert)
+  ( exec 8>&- 9>&- < /dev/null > /dev/null 2>&1; sleep $MOCK_WDG_S; kill -0 $$ 2> /dev/null && [ -s $LOCKPID ] && kill -0 "$(cat $LOCKPID)" 2> /dev/null \
+      && echo "mock watchdog: the gap is still open past its deadline" >> $M/wdg.log ) &
+  WDG=$!
+fi
+if [ $MOCK = 0 ]; then for i in $(seq 60); do [ -z "$(engines_left)" ] && [ "$(memav)" -ge 40 ] && break; sleep 2; done; fi
+say "8080 down: engines left:$(engines_left | sed 's/^/ /;s/^ $/ none/') MemAvailable $(memav) GB; deadline $(date -d @$DEADLINE '+%H:%M') ($MAXM min); ORDER_FORM $ORDER_FORM"
+kc open || { end_gap; }
+if [ -n "$(engines_left)" ]; then
+  EL5="$(engines_left)"; PA=$(pre_alive)
+  say "engine processes still running 120 s after 8080 stopped: $EL5 - nothing run; from before the gap (left alone, never killed): ${PA:-none}"
+  gate skip_speed INFO "engines left after 8080 stopped"; gate skip_sampled INFO "engines left after 8080 stopped"
+  end_gap
+  finish "not run: engines still running after 8080 stopped ($EL5; from before the gap, left alone: ${PA:-none}); nothing measured, P028x back" 5
+fi
+prio "the first step (the gap had waited in port_gap4.sh begin)"
+
+# ---- 2 build vs switch: the fetch build with the switch unset = P028x bitwise
+if [ $PRIO = 0 ] && [ $KFAIL = 0 ]; then
+  say "2 BUILD VS SWITCH: exact7 F0 vs the stored $E7REF; long40 F0 vs gap 16's stored x28h long40"
+  e7 || true
+  if [ $KFAIL = 0 ] && prio "long40 F0" && pfy40; then :; fi
+  afr exact $O --gate build_switch --gates $G > $O/exact.txt 2>&1; head -1 $O/exact.txt | tee -a $S
+fi
+BS=$(gst build_switch)
+say "build vs switch: ${BS:-not decided} - the rest $([ "$BS" = PASS ] && echo runs || echo 'does NOT run')"
+why_not() { [ "$BS" != PASS ] && { echo "build vs switch ${BS:-not decided}"; return; }; [ "$VFV" = FAIL ] && { echo "$MISMATCH"; return; }
+            [ $PRIO = 1 ] && { echo "the priority rule"; return; }; echo "a kernel check failed"; }
+MISMATCH="a read-back mismatch at VF: the speed and sampled parts do not run for either candidate"
+
+# ---- 3 (ORDER_FORM vf-first) the read-back start before the speed runs
+if [ "$ORDER_FORM" = vf-first ] && [ "$BS" = PASS ] && [ $KFAIL = 0 ] && prio "the read-back start"; then
+  if fits $VF_MIN; then
+    say "3 THE READ-BACK START FIRST (ORDER_FORM vf-first): VF = X2 + STRATA_ADAPT_FETCH_VERIFY=1 + STRATA_ADAPT_CHECKRES=1, K 2"
+    vf_part
+    [ "$VFV" = FAIL ] && say "  $MISMATCH (ORDER_FORM vf-first)"
+  else
+    say "3 the read-back start does not fit ($(( $(left) / 60 )) min left, $VF_MIN needed): it runs at the start of the sampled part"
+    gate skip_vf INFO "the deadline: $(( $(left) / 60 )) min left, $VF_MIN needed"
+  fi
+fi
+
+# ---- 4 speed: B2 then B3, 3 passes each in the Latin square; each start leaves the sampled part its minimum
+if [ "$BS" = PASS ] && [ $KFAIL = 0 ] && [ "$VFV" != FAIL ] && prio "the speed part"; then
+  RESERVE=$(( SQ_REST + (VFDONE == 1 ? 0 : VF_MIN) ))
+  say "4 SPEED (the target is decode): B2 Basalt's decode fixtures, then B3 the 9-workload screen; 3 passes each (${ORDER[1]} / ${ORDER[2]} / ${ORDER[3]}); each start leaves $RESERVE min for the sampled part"
+  for k in 1 2 3; do
+    prio "B2 pass $k" || break
+    for a in ${ORDER[$k]}; do [ $KFAIL = 1 ] && break 2; bprun $a $k; done
+  done
+  for k in 1 2 3; do
+    [ $KFAIL = 1 ] && break
+    prio "B3 pass $k" || break
+    for a in ${ORDER[$k]}; do [ $KFAIL = 1 ] && break 2; darm $a $k; done
+  done
+  [ $NSKIP -gt 0 ] && gate skip_speed INFO "the deadline cut $NSKIP speed start(s)"
+  RESERVE=0
+else
+  gate skip_speed INFO "$(why_not)"
+fi
+
+# ---- 5 quality: the sampled-distribution test (STEPS-adaptfetch.txt 2-6)
+SQNEED=$(( SQ_REST + (VFDONE == 1 ? 0 : VF_MIN) ))
+if [ "$BS" = PASS ] && [ $KFAIL = 0 ] && [ "$VFV" != FAIL ] && prio "the sampled part"; then
+  if fits $SQNEED; then
+    say "5 QUALITY: the sampled test ($([ $VFDONE = 0 ] && echo 'VF first, then ')R1 X1 X2 R2, with R1: ids and the scorer; sq.py decide)"
+    [ $VFDONE = 0 ] && vf_part
+    [ $VFDONE = 0 ] && vf_part   # (its one retry, when the first try was not decided)
+    DONE_ARMS=""
+    if [ "$VFV" = FAIL ]; then
+      say "  $MISMATCH (STEPS 2: the served arms and the scorer are skipped)"
+      gate skip_sqarms INFO "$MISMATCH"
+    else
+      rest=$SQ_REST
+      for arm in R1 X1 X2 R2; do
+        prio "sampled $arm" || break
+        fits $rest || { say "  skipped sampled $arm and later (under $rest min to the deadline, or a kernel check failed)"; gate skip_sq_$arm INFO "the deadline: $(( $(left) / 60 )) min left, $rest needed"; break; }
+        sqarm $arm || true
+        [ -s $SQO/$arm/sampled.jsonl ] && DONE_ARMS="$DONE_ARMS $arm"
+        rest=$(( rest - $([ $arm = R2 ] && echo $SQ4_MIN || echo $SQ8_MIN) ))
+      done
+      if [ $KFAIL = 0 ] && prio "the scorer"; then
+        case " $DONE_ARMS " in
+          *" R1 "*)
+            sq ids $SQO $DONE_ARMS > $SQO/ids.txt 2>&1; gate ids INFO "rc $?: $(tail -1 $SQO/ids.txt | cut -c1-160)"
+            sed 's/^/  /' $SQO/ids.txt | tee -a $S
+            if fits $SCORE_MIN; then
+              mm=$(( $(left) / 60 - 1 )); [ $mm -gt 25 ] && mm=25   # (STEPS' 25, cut to the minutes left: the deadline holds)
+              say "  the scorer: one CLI engine (x28h, the decode-path reference) over$DONE_ARMS, --max-min $mm"
+              rm -f $SQO/score.rc $SQO/sq-score.watchdog
+              ( $PY $LIB/guard.py sq-score -- $PY $Q/sq.py score $SQO $DONE_ARMS --max-min $mm > $SQO/score-run.txt 2>&1; echo $? > $SQO/score.rc ) 8>&- 9>&- < /dev/null &
+              jp=$!
+              watchdog $jp $(( mm + 10 )) sq-score 8>&- 9>&- < /dev/null &
+              wd=$!
+              $PY $Q/sq.py envwatch $jp $SQO --kill 8>&- 9>&- < /dev/null 2>&1 | tee $SQO/envwatch.txt | tee -a $S
+              EW=$(tail -1 $SQO/envwatch.txt)
+              wait $jp
+              kill $wd 2> /dev/null; wait $wd 2> /dev/null
+              [ -f $SQO/sq-score.watchdog ] && say "  $(cat $SQO/sq-score.watchdog)"
+              case $EW in "ENV CHECK OK"*) gate env_sqscore PASS "$EW";; *) gate env_sqscore FAIL "$EW";; esac
+              gate score INFO "rc $(cat $SQO/score.rc 2> /dev/null || echo none): $(grep -E '^scored|^PROBLEM' $SQO/score-run.txt | head -2 | tr '\n' ' ' | cut -c1-200)"
+              kc score
+            else
+              say "  the scorer skipped (under $SCORE_MIN min to the deadline)"; gate skip_score INFO "the deadline"
+            fi;;
+          *) say "  no R1 samples (arms with samples:${DONE_ARMS:- none}): no ids, no scorer"; gate skip_score INFO "no R1 samples (${DONE_ARMS:-none})";;
+        esac
+      fi
+    fi
+    sq_decide
+  else
+    say "5 the sampled part does not fit: $(( $(left) / 60 )) min left, $SQNEED needed"
+    gate skip_sampled INFO "the deadline: $(( $(left) / 60 )) min left, $SQNEED needed"
+  fi
+else
+  gate skip_sampled INFO "$(why_not)"
+  [ "$VFV" = FAIL ] && sq_decide   # (the read-back start found a mismatch: the harness's decision still written, both FAIL)
+fi
+
+# ---- 6 the decision, the lock sweep, P028x back
+afr fetchstats $O --sampled $SQO > $O/fetchstats.txt 2>&1
+sed 's/^/  (info) /' $O/fetchstats.txt | tee -a $S
+DOWN_WORK=$(( ($(date +%s) - T0) / 60 ))
+say "the gap's work took $DOWN_WORK min (deadline $MAXM)"
+end_gap
+DOWN=$(( ($(date +%s) - T0) / 60 ))
+KA=ok; kc after || KA=FAILED
+RL=$(cat $O/result-line.txt 2> /dev/null || echo "decision missing - rerun afetch_rules.py decide")
+say "8080 was down for about $DOWN min; kernel check after the gap: $KA"
+[ $KA = ok ] || alert "ADAPT_FETCH gap: kernel check" "the kernel check after the ADAPT_FETCH gap failed (8080 is back); see kwatch.log"
+if [ $PRIO = 1 ]; then
+  alert "ADAPT_FETCH gap stopped" "open Qwen4 Flash weights were found during the gap: it ended early, P028x is back; the day-one work goes first"
+  finish "STOPPED by the priority rule (Karl 11-09: day-one work first; $PRIOWHY); P028x back after $DOWN min, nothing switched; what ran: $RL" 8
+fi
+note "ADAPT_FETCH gap done" "Measurements only, nothing switched; 8080 back after $DOWN min. $(echo "$RL" | sed -E 's/admissions\/window [0-9./]+//g' | cut -c1-160)"
+finish "DONE (measurements only, nothing switched; 8080 down $DOWN min; kernel check after: $KA): $RL" 0

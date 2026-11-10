@@ -1,0 +1,96 @@
+v0.2.13 SWITCH-CHECK GAP - run order (written 11-10 by a helper; Claude runs these; nothing here has run for real - only
+switch_rules.py's selftest, the clients' selftests, the sampled harness's selftests, the driver's --dry-run and the --mock
+test ran). The plan: results/r23/port-0213/SWITCH-CHECKS-PLAN-1110.md. NOTHING SWITCHES: 8080 stays the daily.
+
+Files (work/r23/switch-gap/):
+  gap-switch0213.sh     the driver (exit 0 done, 1 busy, 2 a bad argument, 3 a kernel error: stopped at once, the daily
+                        back unless the result says "8080 NOT back", 4 port_gap4 end failed, 5 not run: engines left after
+                        8080 stopped, 6 hard refusal (a missing binary, a sha mismatch, a selftest ...), 7 signal, 8 the
+                        priority rule, 9 another instance). (11-10) C1's CPU parts failing no longer stop the gap: C1 FAIL,
+                        the failing tests named, the gap opens for the rest
+  switch_rules.py       the rules (frozen into results/r23/port-0213/switch-gap/rules.txt with their switches CITE_FORM
+                        tool-url, C2_NOREF_FORM differs) and the tools the driver calls (arms, cfgcheck, ctestlist,
+                        parity, servetests, nodecheck, webpath, paidcheck, render, armenv, startline, the plans, c2compare,
+                        c4judge, lost, decide)
+  c2_client.py          C2's requests (raw ids from the server's STRATA_DEBUG line)
+  c4_web.py             C4's "strata_web" requests; it first checks the test server's own environment for the hard cap
+                        (PAID_SEARCH_KIND=test, the run id, PAID_SEARCH_RUN_CAP), then counts the paid calls through the
+                        providers' own counters and stops SOFTLY at 5 per arm / 10 in all (the requests not sent: not run)
+  fixtures_client.py    C5's three chat fixtures at the standard sampling
+  spec-port0213.json    C3's sampled spec (R1 = B K 8, R2 = B K 4, X = P K 8, VF = X + read-back K 2)
+  switch-start.sh       the starter (a user unit): checks the .ready, waits for the build unit and any open gap, runs a
+                        snapshot of the driver, retries a busy refusal every 15 min for up to 6 h
+  gap-mock-test.sh      the driver and the starter against stubs (scratch/mock only)
+Changed outside this folder: work/r23/sampled-qwen/sq.py (11-10, the smallest change: an arm's check_equal may carry
+"top" - B's fetch-build exe -; selftest-real takes --spec; one new selftest check; backup sq.py.before-switch1110).
+
+0. Before (Claude checks; the driver refuses busy / hard otherwise):
+   - the build unit build-p0213-switch is inactive and logs/r23/build-p0213-switch.log ends "switchtests: build rc 0 in
+     .../build-switch at 6dd81ecd1..." (it did: 11-10 08:16);
+   - 8080 serves the daily (engine-r23afetch 153ce47d3ef0, configs/P028x.json = the fetch build + STRATA_ADAPT_FETCH=2);
+   - C4 runs on the paid path, bounded (see 6); the dry run of 11-10 09:33 read the budget: Exa $1.17 of $10 used, Tavily
+     365 of 1,000 - within the rule.
+
+1. Optional desk checks (CPU only, no lock, no GPU, write only scratch/):
+     bash /home/USER/ai-speed-testing/strata-compare/work/r23/switch-gap/gap-mock-test.sh
+        -> "gap-mock-test: N checks, ALL CHECKS PASSED" (writes only work/r23/switch-gap/scratch/mock; its fake engines are
+           copies of sleep named swmock-eng, never strata*, stopped by the test)
+     bash /home/USER/ai-speed-testing/strata-compare/work/r23/switch-gap/gap-switch0213.sh --dry-run
+        -> "DRY RUN done: 0 refusal(s) would stop the real run now" (writes only scratch/gap-dry, scratch/selftest-dry,
+           scratch/rb-cache; no lock, no ctest, no request to any port)
+     nice -n 19 /home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/work/r23/sampled-qwen/sq.py selftest-real --spec /home/USER/ai-speed-testing/strata-compare/work/r23/switch-gap/spec-port0213.json
+        -> SELFTEST-REAL OK  (without --spec it checks spec-adaptfetch.json, whose R1 is the pre-11-09 P028x: FAILED since
+           configs/P028x.json moved to the fetch build at 11-09 20:06 - expected, not a fault of the harness)
+
+2. Review, then write the .ready the starter requires: the sha256 (first 12 hex) of the driver, switch_rules.py, the
+   three clients, the spec, sq.py, sq_client.py, sq_stat.py and the starter itself. The starter refuses (exit 6, an alert) when any of them changed, and
+   when the snapshot it copied is not the reviewed driver:
+     D=/home/USER/ai-speed-testing/strata-compare/work/r23/switch-gap; Q=/home/USER/ai-speed-testing/strata-compare/work/r23/sampled-qwen
+     s() { sha256sum "$1" | cut -c1-12; }
+     echo "reviewed by Claude $(date '+%m-%d %H:%M'): <notes>; sha256 $(s $D/gap-switch0213.sh), rules $(s $D/switch_rules.py), c2 $(s $D/c2_client.py), c4 $(s $D/c4_web.py), fx $(s $D/fixtures_client.py), spec $(s $D/spec-port0213.json), sq $(s $Q/sq.py), client $(s $Q/sq_client.py), stat $(s $Q/sq_stat.py), starter $(s $D/switch-start.sh)" > $D/gap-switch0213.sh.ready
+
+3. Start the starter as a user unit (no argument):
+     systemd-run --user --unit=switch-gap0213 --description="v0.2.13 switch checks" /bin/bash /home/USER/ai-speed-testing/strata-compare/work/r23/switch-gap/switch-start.sh
+   Then confirm it runs: systemctl --user status switch-gap0213 (active, its pid) and the first line of
+   results/r23/port-0213/switch-starter.log ("start (pid N): ... waiting for the build unit ... and for no gap being open").
+   The driver's pre-gap part (8080 serving) takes ~15-20 min: the selftests (~2 min sq.py), the CPU ctest entries,
+   patch_guard_test, the server suite with node (~12 min; 11-07's took 684 s without node), node --check. A busy refusal is
+   retried every 15 min for up to 6 h; exits 5, 6, 8 and 9 are final. To stop it before the gap opens: systemctl --user
+   stop switch-gap0213 (nothing changed). After the gap opened, a stop leaves "INTERRUPTED" in result.txt with what to
+   check (the gap possibly open; whether 8080 listens; if it came during port_gap4.sh end: check 8080 first, do not run
+   end a second time blindly).
+
+4. The gap (deadline SW_MAX_MIN = 150 min for new steps; GAP_MAX_MIN 175 for port_gap4.sh; a critical alert if the gap
+   is still open 20 min past the deadline): C1's GPU parity programs (89 ctest entries of build-switch + 2 direct) before
+   any server; the read-back start VF; C2 B1 / B2 / P; C3 R1 / X / R2 + ids + the scorer + sq.py decide; C4 (only if
+   allowed by the budget); C5 the screen + the fixtures on P, the screen on B (INFO); exact7 P (INFO). Expected ~72 min with
+   8080 down (~60 when C4 is refused). A KERNEL ERROR (kwatch's tmp/r19/KERNEL_ERROR, or a kernel check failing) stops it at once: the daily
+   back, a critical alert, result "KERNEL ERROR during the gap - stopped at once, ...", exit 3; kwatch is NOT cleared.
+   An engine process still running from before the gap (8080's, the same binary as B) is named, never stopped.
+   Results: results/r23/port-0213/switch-gap/ verdict.txt (SWITCH CHECKS PASS / FAIL (named) / INCOMPLETE (named)),
+   decision.txt / decision.json (C1 parts, C2 rows, C3 D2 and band, C4 rows, C5 counts and firings, INFO), result.txt,
+   summary.txt, gates.txt, rules.txt, configs/, c1/ (cpu/, gpu/: names, ctest.log, junit.xml, results.txt;
+   servetests.txt, node-check.txt), c2/, c4/, c5/ (serverlogs.txt, fixtures), speed/, englog/, with_server/, sampled/
+   (the harness's own decision.txt / rule.txt / verify-VF.json / arm folders). The starter's log:
+   results/r23/port-0213/switch-starter.log.
+
+5. The priority-rule override (only when Karl says the Qwen4 day-one work is done): a dated reason line, e.g.
+     echo "2026-11-1X: Karl: the Qwen4 day-one work is done (<what>)" > /home/USER/ai-speed-testing/strata-compare/tmp/switch0213-priority-done
+   (this gap's own marker; the ADAPT_FETCH gap's tmp/afetch-priority-done does not count here).
+
+6. C4 (web search end to end) on the paid path, BOUNDED (coordinator 11-10, Karl's standing paid-search rule):
+   serve/websearch.py (the same file in both trees) falls back to Exa, then Tavily (deep-research
+   tools/search_fallback.py) when SearXNG errors or returns fewer than 3 results. Before the gap and again right before
+   C4, switch_rules.py paidcheck reads each provider's month use through exa_fallback.usage() / tavily_fallback.usage()
+   (no key file read): an available provider with < 25 % of its month + 10 calls left -> "C4 NOT RUN: paid budget"
+   (INCOMPLETE). THE HARD LIMIT is paid_budget.py's run cap in the C4 test servers: PAID_SEARCH_KIND=test,
+   PAID_SEARCH_RUN=switch0213/<label> (one id for both arms), PAID_SEARCH_RUN_CAP B 5 / P 10 (review M6: B never more
+   than 5, so P keeps its 5; never more than 10 in all). c4_web.py checks those three in the server's /proc/PID/environ
+   before it sends anything (gate penv_webB / penv_webP; one missing: "C4 NOT RUN (env)", nothing sent on that arm).
+   c4_web.py's own stop (the counters' delta after each request: 5 per arm, 10 in all) is the SOFT one. Every other test
+   server of the gap runs with PAID_SEARCH_KIND=test and no run id (0 paid calls). Fewer than 2 requests run on an arm ->
+   C4 NOT DECIDED; a fatal line on P's C4 start -> C4 FAIL. The decision records the paid count (per arm, and the
+   counters before / after C4 - Jan chat's own calls in that time included).
+
+7. After: tell Karl the verdict (verdict.txt, decision.txt). NOTHING SWITCHES. Not covered (the plan): the port's
+   baseline gate (CLI exactness, long40, the 3-pass screen, Basalt's speed rule) and REVIEW 4.7 (the single-card fallback).

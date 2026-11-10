@@ -1,0 +1,6 @@
+work/r8/tf.sh R9mna-1-single configs/R9m-tf3500-single-noadapt.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R9m-tf3500-single-noadapt.json'))['exe'])") long64k long28k
+work/r8/tf.sh R8mna-1-single configs/R8m-tf3500-single-noadapt.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R8m-tf3500-single-noadapt.json'))['exe'])") long64k long28k
+work/r8/tf.sh R9mna-2-single configs/R9m-tf3500-single-noadapt.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R9m-tf3500-single-noadapt.json'))['exe'])") long64k long28k
+work/r8/tf.sh R8mna-2-single configs/R8m-tf3500-single-noadapt.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R8m-tf3500-single-noadapt.json'))['exe'])") long64k long28k
+work/r8/tf.sh R9mna-3-single configs/R9m-tf3500-single-noadapt.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R9m-tf3500-single-noadapt.json'))['exe'])") long64k long28k
+work/r8/tf.sh R8mna-3-single configs/R8m-tf3500-single-noadapt.json $(.venv/bin/python -c "import json; print(json.load(open('configs/R8m-tf3500-single-noadapt.json'))['exe'])") long64k long28k

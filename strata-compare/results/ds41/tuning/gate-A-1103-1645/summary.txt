@@ -1,0 +1,29 @@
+=== 2026-11-03 16:45:18 DeepSeek gate A: A, the daily config (8/32), 3 passes - DS4.1 arm gate-A (/home/USER/ai-speed-testing/strata-compare/configs/DS41-gate-A.json, server /home/USER/ai-speed-testing/strata-compare/strata-v026/serve/server.py, 3 passes): --max-context 131072 --eos 1 --dspark auto --dspark-conf 0.65 --tp 2 --ssd-cache 68 --experts 6 --prefill-chunk 8192 --expert-profile /home/USER/ai-speed-testing/strata-compare/logs/ds41/gate/profile-arm.bin {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX4060TI,GPU-UUID-RTX5080', 'STRATA_DS4_PROMPT_SKIP': '1', 'DS4_STORE_FLOOR_GB': '14', 'DS4_SPLIT': '8,32', 'DS4_SETTLE_MS': '0', 'DS4_CACHE_DECAY': '0.8', 'DS4_ENGRAM_CACHE_MB': '16', 'STRATA_DS4_SLOT_KEEP': '1', 'STRATA_DS4_SLOT_CAP': '16', 'STRATA_DS4_SLOT_GB': '2', 'STRATA_DS4_AUTO_PIN': '1', 'STRATA_DS4_SLOT_RAM_GB': '1.7', 'STRATA_DS4_SLOT_DIR': '/home/USER/ai-speed-testing/strata-compare/logs/ds41/gate-slots/A'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/gate-A-1103-1645
+=== 2026-11-03 16:46:18 cool-down before the arm: 60 s, drive 39 -> 38 C
+dropcache: 7 model files dropped from the page cache in 0.0 s
+=== 2026-11-03 16:46:18 before: MemAvailable 84.3 GB; swap in use 1431 MB; vram 0, 16 MiB, 15918 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-11-03 16:46:30 ready after 12 s: MemAvailable 26.3 GB, engine RSS 59074 MB; vram 0, 15348 MiB, 586 MiB;1, 7301 MiB, 589 MiB;
+=== 2026-11-03 17:06:46 requests done (rc 0): 17 responses
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: DSpark not loaded: the routed experts (132 GB) are far more than the GPU holds (23 GB), where its verify rounds read 3.3x a token's bytes and gain nothing (--dspark on loads it anyway)
+ds4: RAM store: up to 6619 slots of 10.3 MB (68.0 GB), policy 0, 8 reader threads, unbuffered reads
+ds4: RAM store: 6363 of the profile's hottest experts read in (49.4 GB) in 5.4 s
+ds4: CUDA0 layers [0, 7]: weights 1.14 GB, experts 3.59 GB (451 of 3072 in VRAM), caches 0.02 GB, 590 MiB free
+ds4: CUDA1 layers [8, 39] + head: weights 4.72 GB, experts 7.83 GB (857 of 12288 in VRAM), caches 0.10 GB, 586 MiB free
+ds4: 14052 routed experts on the CPU lane (121.4 GB, in place in the model's files), 16 threads
+monitor: lowest MemAvailable 17.1 GB, peak engine RSS 70405 MB, peak VRAM used 5080 15422 MiB / 4060 Ti 7375 MiB
+swap: 2 swap-out episode(s) (a one-off push-out is logged only), 928.8 MB out, 0.4 MB in, engine VmSwap max 0 kB
+=== 2026-11-03 17:06:53 kcheck clean
+P4K: [333.4, 365.6, 338.5] tok/s (mean 345.8, spread 4.66 %), tokens [4126, 4397, 4240], SSD [56.001, 53.451, 50.454] GB per prompt
+P20K: [693.9, 685.1, 698.1] tok/s (mean 692.4, spread 0.94 %), tokens [19755, 18888, 19522], SSD [113.259, 112.0, 112.967] GB per prompt
+W1-think: decode [32.23, 32.54, 32.29] tok/s, [3072, 3072, 3072] tokens, finish ['length', 'length', 'length'], SSD [0.0338, 0.0377, 0.0379] GB/token, thinking chars [5816, 5582, 5821] / answer chars [1812, 1932, 1955]
+W2-code: decode [27.17, 27.05, 27.63] tok/s, [3072, 3072, 3072] tokens, finish ['length', 'length', 'length'], SSD [0.0638, 0.0668, 0.0609] GB/token, thinking chars [9889, 10325, 10355] / answer chars [3027, 3696, 3220]
+W3-research: decode [24.45, 24.73, 24.36] tok/s, [2048, 2048, 2048] tokens, finish ['length', 'length', 'length'], SSD [0.1341, 0.131, 0.1337] GB/token, thinking chars [5622, 4658, 5348] / answer chars [1335, 1411, 1255]
+W1-W3 decode mean 28.05 tok/s over 9 responses; pass means [27.95, 28.11, 28.09] (spread 0.28 %); SSD 0.0777 GB/token
+CUDA0 layers [0,7]: 451 experts in VRAM (3.59 GB), weights 1.14 GB, 590 MiB free
+CUDA1 layers [8,39]: 857 experts in VRAM (7.83 GB), weights 4.72 GB, 586 MiB free
+GPU clocks while decode: GPU0 SM 2812 MHz (p10 2805), util 74 %, 104.5 W; GPU1 SM 2550 MHz (p10 2550), util 26 %, 42.3 W
+GPU clocks while prompt: GPU0 SM 2816 MHz (p10 2805), util 100 %, 171.3 W; GPU1 SM 2670 MHz (p10 2550), util 100 %, 109.4 W
+lowest MemAvailable 17.1 GB, peak engine RSS 70405 MB, peak VRAM [15422, 7375] MiB
+nvme0: no temperature samples between 16:45 and 17:07 (the logger started 22:18)
+=== 2026-11-03 17:06:53 done

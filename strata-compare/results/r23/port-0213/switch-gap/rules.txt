@@ -1,0 +1,174 @@
+switch_rules.py - r23 (written 2026-11-10 at the desk, NOT RUN on real data; only its selftest ran, on synthetic data):
+the rules of THE v0.2.13 PORT'S SWITCH CHECKS (Karl 11-10; the plan results/r23/port-0213/SWITCH-CHECKS-PLAN-1110.md; the
+driver work/r23/switch-gap/gap-switch0213.sh). Written before any run; the driver freezes this text (plus the sha256 of
+every file it imports or the gap runs) into the gap's rules.txt before any engine starts, and `decide` flags a change.
+NOTHING SWITCHES: 8080 stays the daily; the verdict is a report to Karl.
+
+THE ARMS (written by `arms` into OUTDIR/configs/, checked by `cfgcheck`; each its own engine log logs/engine-r23sw-NAME.log,
+never the served engine's logs/engine-P028x.log; two GPUs, the helper cache on, adaptation on, as served):
+  B   the daily as served: configs/P028x.json in its test form (without the --vision flag and the vision / fallback /
+      model_not_running keys: sq.py's STRIP_ARGS / STRIP_KEYS, afetch_rules.py's and af_adopt.py's form) = configs/x28h.json
+      + STRATA_HC_UPMIX=1 + STRATA_ADAPT_FETCH=2 with exe engine-r23afetch/strata (sha256 153ce47d3ef0), key by key; server
+      strata-r22p028x/serve/server.py. 8080 serves this same binary: the driver never stops an engine from before the gap.
+  P   the port: configs/P0213x-af2.json in the same test form = configs/P0213x.json's test form + STRATA_ADAPT_FETCH=2, key
+      by key; exe engine-r23p0213/strata (sha256 639dfb1b7042, its SOURCE naming r23-port0213 6dd81ecd1); server
+      strata-r23p0213/serve/server.py (P's own server tree: srv.sh starts the config's "server").
+      P = B apart from: exe, server, log, _comment, the port's keys ("drafting": "mtp", "user_args": ["--kv-resident",
+      "32768"]) and the port's env pins (PORT_PINS: port0211_rules.py's 18 + STRATA_ARENA_FILE_CACHE=0); the same args,
+      sampling (T 1.0 / 0.95 / 20 / min-p 0.05), U and STRATA_ADAPT_FETCH=2 (the plan: "apart from those pins and the
+      paths, the two arms are the same config").
+  B-dbg / P-dbg  B / P + STRATA_DEBUG=1 (server.py prints each request's generated ids; neither engine binary reads
+      STRATA_DEBUG, checked): C2's arms.
+  The sampled arms (spec-port0213.json, sq.py derive): R1 = R2 = B-dbg, X = P-dbg, VF = X + STRATA_ADAPT_FETCH_VERIFY=1 +
+      STRATA_ADAPT_CHECKRES=1 (their logs under the sampled folder); cfgcheck --sampled compares them key by key.
+  EVERY START (one fresh test server on 127.0.0.1:8081 through bringup/lib/with_server.sh), its gates (TAG = the start):
+    env_TAG   port0211_rules.py envcheck --ngpu 2 --pins: the engine (by /proc/PID/exe) has the config's env exactly, none
+              of the port's pins set behind a config that lacks it, STRATA_ROUTE_TAIL_SKIP=0, 2 GPUs, --kv-resident last
+              (user_args); its PARENT is the config's server.py with the server pins as the config sets them
+    fenv_TAG  `armenv`: exactly one engine of the arm's binary, its sha256 the arm's; the STRATA_ADAPT_FETCH* keys and
+              STRATA_DEBUG exactly as the config has them, in the engine AND in its parent server.py's environment (the
+              server reads STRATA_DEBUG); the parent's command line names the config (--config) and the config's server
+    envsq_TAG (the sampled starts) sq.py envcheck
+    line_TAG  the start line "STRATA_ADAPT_FETCH=2: the PCIe share takes" and no "STRATA_ADAPT_FETCH is off" (both arms)
+    fatal_TAG a fatal GPU error / stall / engine restart / non-finite line in the start's engine-log slice or server log
+    foreign_TAG  another GPU user before (60 s) or during the start; void_TAG  the run left its test server or an engine
+              behind (stopped)
+    A FAIL in any of these: the start is NOT the arm, or not clean - what it measured does not count (its check NOT
+    DECIDED; a read-back FAIL stays FAIL; a C2 / C3 FAIL / DIFFERS on such a start becomes NOT DECIDED).
+
+C1  C++ PARITY AND UNIT TESTS for the files our patches change, and the read-back start.
+    The programs: build-port0213.sh's `switchtests` targets in strata-r23p0213/build-switch (SWITCH_TARGETS: the tests set,
+    the shape gap's GEO_TESTS at the default shape, REVIEW-1105 4.3's list). Every registered ctest entry whose program is
+    one of them (read from build-switch's CTestTestfile.cmake, its registered args, env, timeout and skip code apply; a
+    `cmake -E env ...` wrapper counts by the program it runs) - prefill_fused_iq_test without --v2 (prefill_fused_iq_test,
+    _q2n, _nt256, _f16, _ws) and with it (prefill_fused_v2_test) - plus the direct runs (no ctest entry; the shape gap's):
+    patch_guard_test on the ISTA shard 1 + the MTP layer (GPUs hidden), qsa_prompt_attn_parity, prefill_fused_iq_test
+    --edge --no-timing.
+      CPU (CPU_PROGRAMS: cost_gate_test, draft_cum_test, spec_prob_test, gated_proposal_test, q8k_quant_parity (+ _avx),
+      gguf_geometry_test, patch_guard_test): BEFORE the gap, 8080 serving, nice 19, CUDA_VISIBLE_DEVICES empty.
+      GPU (every other entry and the two other direct runs): IN the gap, before any server, both GPUs (the 5080 first), the
+      kernel-error poll and the foreign-GPU watch around them.
+    Also before the gap (CPU, nice 19): the server test suite of strata-r23p0213/serve (unittest discover -v, TMPDIR in the
+    gap's folder) with node (/home/USER/.unsloth/node/bin) first on PATH, so the node tests run (REVIEW 4.4); failures only
+    in KNOWN_SERVE_FAILS (test_hip_ordinal); `node --check serve/web/app.js`.
+    The read-back start (the fetch patch's own files, expert_source.cpp / generate.cpp, have no parity program): VF = P +
+    STRATA_ADAPT_FETCH_VERIFY=1 + STRATA_ADAPT_CHECKRES=1 (K 2 = 8 requests, sq_client.py, budget 300 s), judged by sq.py
+    verify -> verify-VF.json (PASS = no mismatch line, >= 200 admitted slots read back, every summary 0 differ, >= 4
+    requests finished; FAIL = a mismatch line or a differ > 0). Not decided on its first try: tried once more.
+    C1 PASS = every program passes (its own documented skip, rc 77 / SKIP_RETURN_CODE, allowed), the server suite has no
+    failure outside KNOWN_SERVE_FAILS, the node tests ran (no "node is not installed" skip) and `node --check` passes, AND
+    the read-back is PASS. FAIL = a program or a server / node test fails (a program's timeout is a failure), or the
+    read-back FAILs. NOT DECIDED otherwise (not run, not reached, a foreign GPU user during the parity run, VF's start
+    gates failed, and (review M4) a server suite cut by its timeout: no "Ran N tests" line = NOT DECIDED, not FAIL).
+    (coordinator 11-10) A CPU part not PASS before the gap (the CPU ctest entries / patch_guard_test, the server suite,
+    the node tests) does NOT stop the gap: it is C1 FAIL (or NOT DECIDED) with the failing tests named, and the gap opens
+    for the other checks. A missing binary, a sha mismatch or another safety check still refuses as before.
+
+C2  SERVED OUTPUTS against the daily (the server path, output for output). C2_PLAN: 4 prompts x 2 seeds (SEEDS_C2), each
+    arm's own server at the standard sampling (T 1.0, top_p 0.95, top_k 20, min_p 0.05, presence 0, frequency 0,
+    repetition 1, the fixed seed): "think" = W1-think with thinking ON, max_tokens 1536 (no budget of its own: answer_room
+    caps the thinking at 1024, server.py:6191-6199; a longer thinking ends in the wrap-up continuation, server.py:6573-6599:
+    its server line "thinking budget reached"); "code" W2-code, "conv" C-conv, "prose" C-prose thinking off, 512 tokens.
+    The generated ids from the server's STRATA_DEBUG raw-ids line ("[strata] raw ids: [...]": every id, the wrap-up's and
+    the stop token included). Arms in this order: B1 (B-dbg), B2 (B-dbg again, a fresh start), P (P-dbg).
+      B-reproducible request = B1's ids equal B2's (and both have them). Information only: a request where B differs from
+      itself.
+      EXACT     = every planned request has ids on B1, B2 and P, at least one is B-reproducible, and on every
+                  B-reproducible one P's ids equal B1's.
+      DIFFERS   = some B-reproducible request gives other ids (or another prompt length) on P. Not a fail by itself: C3
+                  decides (the "exactness or distribution" test).
+      no B-reproducible request at all (every ids pair is complete): by C2_NOREF_FORM - "differs" [the frozen form]: as
+                  DIFFERS (C3 decides; flagged), "not-decided": NOT DECIDED.
+      NOT DECIDED = otherwise: a request missing / failed on an arm, an arm's start gates failed (and no DIFFERS on clean
+                  starts).
+    INFO: the continuation seen per arm (the "think" requests' server lines), the text / reasoning hashes.
+
+C3  THE SAMPLED TEST (results/r23/SAMPLED-QWEN-DESIGN-1109.md, unchanged math; work/r23/sampled-qwen/, spec-port0213.json):
+    R1 = B (K 8 = 32 requests), X = P (K 8), R2 = B again (K 4 = 16, the noise bound); the 4 prompts W1-think, W2-code,
+    C-conv, C-prose, thinking off, 512 tokens; the x28h scorer. sq.py's own rule (sq.py rule -> sampled/rule.txt, written
+    before any engine start; sq.py decide refuses a changed rule.txt). C3 = sq.py decide's candidate verdict for X
+    (decision.json candidates.X): PASS = D2(X, R1) <= band = max(11.345, D2(R2, R1)) (with the harness's validity and power
+    rules), FAIL = above the band, else NOT DECIDED. The gap's start gates on R1 / R2 / X and the scorer's env check
+    (env_sqscore) failing: a PASS or FAIL becomes NOT DECIDED. (sq.py's "overall" X also folds in the read-back VF, which
+    is C1's: INFO here.)
+
+C4  WEB SEARCH END TO END. The server's own web search: "strata_web": true, the web page's path through run_with_mcp
+    (JSON, no Origin header: _own_page). `webpath` reads both server trees' serve/websearch.py and the arms' "web_search"
+    blocks: SEARXNG ONLY (only the local 127.0.0.1:8888) or PAID PATH (11-10 desk finding, both trees: websearch.py's
+    _fallback -> deep-research tools/search_fallback.py, Exa then Tavily, used when SearXNG errors or returns < 3
+    results). (coordinator 11-10) A PAID PATH runs C4 BOUNDED, under Karl's standing paid-search rule (<= 30 paid
+    searches a test run; 25 % of each provider's month kept for Jan chat; every caller stops at ~10 % left):
+      THE BUDGET CHECK (`paidcheck`, before the gap and again right before C4): each provider's month use and cap read
+      through the modules' own counter code (exa_fallback.usage() / tavily_fallback.usage() / available(); no key file is
+      read or printed). The cap = the provider's month budget (Exa MONTH_CREDIT_USD $10, Tavily MONTH_CREDITS 1,000 - the
+      base of paid_budget.py's 25 % / 10 % shares). An available provider (its key file present, Exa's month not closed)
+      with less than 25 % of its cap + PAID_MIN_CALLS (10) calls' worth left -> C4 NOT RUN ("C4 NOT RUN: paid budget"):
+      INFO, and the verdict cannot be PASS (INCOMPLETE, C4 named). A provider that is not available cannot be charged.
+      DURING C4 - THE HARD LIMIT (review S1) is paid_budget.py's run cap inside the test server: it runs with
+      PAID_SEARCH_KIND=test, PAID_SEARCH_RUN=<this gap's run id> (one id for both arms) and PAID_SEARCH_RUN_CAP = B 5,
+      P 10 (review M6: the 10 split 5 per arm - B can never take more than 5, so P always has its 5, and both arms
+      together never more than 10). Before anything is sent on an arm, c4_web.py checks those three in the test server's
+      own /proc/PID/environ (gate penv_webB / penv_webP); one missing -> nothing sent on that arm, "C4 NOT RUN (env)".
+      c4_web.py's own stop is the SOFT one: it counts the paid calls as the counters' delta (Exa searches + Tavily count)
+      against the baseline read right before C4 and stops sending at PAID_ARM_STOP (5) on the arm or PAID_STOP (10) in all
+      (the requests not sent: recorded not run). Every other test server of the gap runs with PAID_SEARCH_KIND=test and no
+      run id (review M7: 0 paid calls allowed). C4 then judges the requests that ran; fewer than 2 requests run on an arm
+      -> NOT DECIDED. The paid-call count (per request, per arm, the counters before / after) is in the decision.
+    C4 runs only if 127.0.0.1:8888 listens: C4_PROMPTS (3 search prompts, thinking off, max_tokens 1024
+    a round, the standard sampling, seeds SEEDS_C4) on B, then on P (B / P test forms), one fresh server each. Per request:
+    completed (a finish reason and [DONE], no error chunk, within C4_TIMEOUT_S), search rounds (web_search calls),
+    fetch_page calls and the pages they opened (result ok), the URLs the answer cites, errors (an error chunk, a failed
+    request, a tool error result, the lost-answer line, a fatal line in the request's server-log slice).
+      cited source by CITE_FORM: "tool-url" [the frozen form, coordinator 11-10] = a URL the answer cites that a
+      web_search result or a fetch_page call of this request returned; "fetch-page" = one a fetch_page call opened.
+    PASS = on P, every request that ran on both arms and completed on B also completes, with >= 1 search round, an answer
+    citing >= 1 source, and no error or fatal line; FAIL = such a request fails one of these on clean starts, or (review
+    S2) a fatal / stall / engine-restart / non-finite line on P's C4 start (fatal_webP); NOT DECIDED otherwise (B's start
+    gates failed - B's fatal line included -, P's other start gates failed, < 2 requests run on an arm, B completed none,
+    a missing record).
+
+C5  HOW OFTEN THE LOST-ANSWER GUARD (#3961) FIRES - information. Every P server log of the gap (VF, C2's P, C3's X and,
+    when C4 ran, its P; the screen's and the fixtures' P starts): the count of "[strata] a request ended without an
+    answer and without a finish reason" per log, the runs it saw (its "[strata] done:" lines) and the client requests
+    sent there; each firing named (log, line, the request around it). Our workload on P: one pass of the 9-workload screen
+    (work/r22/abarm.sh: warm-up, W1-W3, the 2 agent turns, the 4 research replays; T 1.0 / 0.95 / 20 / 0.05) and the three
+    chat fixtures (Basalt's decode fixtures conv / struct / prose, their user texts and max_tokens 1200 / 8192 / 1200,
+    sent by fixtures_client.py at the standard sampling - the driver's rule for every request; Basalt's own T 0.6 / T 0
+    is not used). A firing on the workload: a recommendation line on whether a small switch patch is worth carrying.
+
+INFO (never a verdict): the screen's speed, P against B, one pass each (decode / prompt geometric means over the 9, the
+11-07 amendment's prompt numbers; no noise estimate from one pass); the fixtures' decode tok/s on P; exact7 of P (its
+test form) at pin 2500 against the stored x28h-e7a (bit-identity is not expected with STRATA_ADAPT_FETCH=2 on).
+
+THE VERDICT (decide -> OUTDIR/verdict.txt, decision.txt / .json, result-line.txt):
+  SWITCH CHECKS PASS  = C1, C3 and C4 PASS, and C2 EXACT or DIFFERS (DIFFERS-with-C3-PASS). C5 is reported.
+  SWITCH CHECKS FAIL  = any of C1, C3 or C4 FAIL (each named; parts that could not run are listed too).
+  INCOMPLETE          = otherwise: a check could not run or decide (named), C2 NOT DECIDED included.
+  NOTHING SWITCHES either way; the port's baseline gate (exactness on the CLI path, long40, the 3-pass screen, Basalt's
+  speed rule) and REVIEW 4.7 (the single-card fallback) are not covered (the plan's "not covered").
+
+THE SWITCHES (one constant each; their values at the freeze are written into rules.txt): CITE_FORM ("tool-url" |
+"fetch-page"), C2_NOREF_FORM ("differs" | "not-decided"). Both stay implemented and selftested.
+
+Subcommands: forms, targets, arms, cfgcheck, ctestlist, parity, pstatus, servetests, nodecheck, webpath, paidcheck, render,
+armenv, startline, c2plan, c4plan, fixtures, c2compare, c4judge, lost, rules, decide, selftest. Python: .venv/bin/python -I -B at nice 19.
+
+THE SWITCHES AT THE FREEZE:
+  CITE_FORM = tool-url
+  C2_NOREF_FORM = differs
+
+This file and the files it imports, the gap runs or the harness reads (sha256, first 16 hex, at the freeze; this file's own sha covers its code, not only this text):
+  work/r23/switch-gap/switch_rules.py c83670c447b4cf0c
+  work/r23/switch-gap/gap-switch0213.sh 86ca2d957760bcc4
+  work/r23/switch-gap/c2_client.py d846c1338b8efaa9
+  work/r23/switch-gap/c4_web.py 2ad96ef09087b957
+  work/r23/switch-gap/fixtures_client.py 1ca08ce5c3c5a459
+  work/r23/switch-gap/spec-port0213.json 962739e493019394
+  work/r23/sampled-qwen/sq.py a067902a3ca291d8
+  work/r23/sampled-qwen/sq_stat.py 66166af044092eca
+  work/r23/sampled-qwen/sq_client.py 69b80e052a1eccbd
+  work/r23/port0211_rules.py 89a50605d7060ff0
+  work/r22/g17_rules.py e8c0aa7ea7344717
+  work/r23/shape-gap/shape_rules.py e88080ccff2c47d8
+  work/r23/afetch-gap/afetch_rules.py 355cac03de462a0d
+  work/r23/build-port0213.sh f95c5581033a3124

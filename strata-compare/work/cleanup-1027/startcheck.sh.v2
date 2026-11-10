@@ -1,0 +1,41 @@
+#!/bin/bash
+# startcheck.sh - Karl 10-27, after the approved deletions: "check that the served and rollback configs still start".
+# Each config goes on 8080 through switch-model.sh (stop, start, one real completion); the started config is read back
+# from run-strata.sh's log header (a fallback start would show another name); kernel-log check after each start.
+# Holds strata-compare's GPU test lock and LDR's bench lock (Jan jobs wait). Ends with 8080 on P021m (the served config)
+# through phase_end.sh ondemand keep, as the launchers start it (with the standing 8080 guard).
+# v2 (13:05): the standing guard's command line names the engine, so run-strata.sh's other-server check matched it while
+# it was still ending (it ends ~2 s after 8080 goes quiet): v1 failed all 7 at once. Wait for it as phase_end.sh does.
+# Log: work/cleanup-1027/startcheck.log
+set -u
+WS=/home/USER/ai-speed-testing/strata-compare
+LOG=$WS/work/cleanup-1027/startcheck.log
+CFGS=(P021n.json Cstar18t.json Cstar18.json Cstar18-single.json DS41-daily.json.before-128k DS41-daily.json)
+[ -n "${STARTCHECK_CFGS:-}" ] && read -r -a CFGS <<< "$STARTCHECK_CFGS"   # a subset, e.g. a re-check
+say() { echo "$(date '+%m-%d %H:%M:%S') $*" >> "$LOG"; }
+exec 8> $WS/tmp/gpu-test.lock 9> /home/USER/ai/deep-research/run/bench.lock
+flock -w 600 -x 8 || { say "GPU test lock busy - not run"; exit 1; }
+flock -w 600 -x 9 || { say "LDR bench lock busy - not run"; exit 1; }
+say "start check: ${CFGS[*]}"
+fails=0
+for c in "${CFGS[@]}"; do
+  t0=$(date +%s)
+  STRATA_PORT=8080 "$WS/run-strata.sh" stop > /dev/null 2>&1
+  for i in $(seq 60); do pgrep -f '(^|/)llama-server( |$)|/strata --serve' > /dev/null || break; sleep 1; done
+  out=$(STRATA_CONFIG=$WS/configs/$c "$WS/switch-model.sh" strata 2>&1); rc=$?
+  got=$(head -1 "$(cat $WS/logs/run/strata-8080.logpath 2>/dev/null)" 2>/dev/null | grep -o 'config=[^ ]*' | sed 's#.*/##')
+  ans=$(echo "$out" | grep -o 'a test completion came back in [0-9.]* s' | tail -1)
+  mem=$(( $(awk '/MemAvailable/{print $2}' /proc/meminfo) / 1048576 ))
+  if [ $rc -eq 0 ] && [ "$got" = "$c" ] && [ -n "$ans" ]; then r=PASS; else r=FAIL; fails=$((fails + 1)); fi
+  say "$r $c: rc $rc, started as ${got:-?}, ${ans:-no answer}, $(( $(date +%s) - t0 )) s, MemAvailable ${mem} GiB"
+  [ $r = PASS ] || echo "$out" | tail -8 | sed 's/^/    /' >> "$LOG"
+  bash $WS/bringup/lib/kcheck.sh startcheck-${c%%.json*} >> "$LOG" 2>&1 || { say "KERNEL CHECK FAILED after $c - stopping here"; exit 3; }
+done
+say "back to the served config: phase_end.sh ondemand keep"
+STRATA_PORT=8080 "$WS/run-strata.sh" stop > /dev/null 2>&1
+for i in $(seq 60); do pgrep -f '(^|/)llama-server( |$)|/strata --serve' > /dev/null || break; sleep 1; done
+bash $WS/bringup/lib/phase_end.sh ondemand keep >> "$LOG" 2>&1 || { say "FAIL: phase_end.sh ondemand keep"; fails=$((fails + 1)); }
+bash $WS/bringup/lib/kcheck.sh startcheck-P021m >> "$LOG" 2>&1 || { say "KERNEL CHECK FAILED after P021m"; exit 3; }
+say "done: $fails failure(s); 8080 on $(head -1 "$(cat $WS/logs/run/strata-8080.logpath)" | grep -o 'config=[^ ]*' | sed 's#.*/##')"
+notify-send -a "start check" "Config start check: $fails failure(s)" "work/cleanup-1027/startcheck.log" 2> /dev/null || true
+exit $fails

@@ -1,0 +1,120 @@
+# Bring-up runbook — a new model (or a new Strata release) on this PC
+
+Written in Round 13 for the day Qwen4 Flash (or any new file) appears; **refreshed 2026-10-27 for Strata v0.2.6**
+(`bringup/REFRESH-1027.md`: every change with its v0.2.6 file:line; the old page: `RUNBOOK.md.before-v026`). Everything
+here runs from this workspace, writes only into `bringup/out/<RUN>/` (downloads: `models/<name>/`), and follows the
+standing rules: no sudo, stock clocks, 127.0.0.1, one model server at a time (8080 = P021m, the rollback, stopped by you
+first - the runbook never stops a server), MemAvailable >= 12 GB (never lower on our own) and >= 300 MiB free on the
+5080 on every load, the swap rule, the kernel-log check after every GPU stage, `tmp/gpu-test.lock` held during tests,
+>= 100 GB free on the drive, model files read-only and pinned by sha256.
+
+**Lossless rule (your 2026-10-10 message, extended 10-27):** the first config of a new release / model is lossless:
+`STRATA_ROUTE_TAIL_SKIP=0` (v0.1.42's default tail skip), `STRATA_ADAPT_ASYNC=0` (v0.2.5's self-chosen asynchronous
+adaptive tier, "not bit-exact run to run" - it applies to our two-card arena setup too), `STRATA_PREFILL_CPU_SHARE=0`
+(v0.1.41's default share; P021m's explicit 0.4 below 1792 comes back only with the series), and from v0.2.7 on
+`STRATA_DEFAULTS=026` with the lossy new defaults pinned by name: `STRATA_ROUTE_PRIOR=0` (on for the 8 GB 4060 Ti),
+`STRATA_PROMPT_ATTN_IMMA=0`, `STRATA_GR_V3=0` (a series config's adopted 1 stays), `STRATA_PREFILL_LAYER_MAJOR=0`
+(two-card split) and `STRATA_PLE_AUTO_RAM=0` (the 28.8 GB PLE table would go to RAM with only 8 GiB headroom). The engine log must show
+none of them acting (`runbook.sh`'s lossless check, `patchtest.sh lossless`). Sampling 1.0 / 0.95 / 20 / min-p 0.05 and
+effort medium on every path (the config's `sampling` block + `reasoning_effort`, and its `.shared-settings.json`).
+
+```
+bringup/runbook.sh RUN summary          # the release summary's material, then STOP until RB_GO=1 (the user's go)
+bringup/runbook.sh RUN all              # phase A: summary preflight clone inspect fitplan config pack build stock screen suite
+bringup/runbook.sh RUN series-all       # phase B (after phase A and the go): series build_series patched patches calib b3table screens accept soak promote
+bringup/runbook.sh RUN inspect fitplan  # or any stages by name
+cat bringup/out/RUN/runbook.log bringup/out/RUN/times.tsv
+```
+
+Inputs go into `bringup/out/RUN/run.env` (sourced first):
+
+```
+RB_TAG=v0.2.7                                    # the release that supports the new model (default v0.2.6)
+RB_REPO=/home/USER/ai-speed-testing/strata-compare/strata   # the local mirror, fetched first (git fetch --tags origin)
+RB_GGUF=/home/USER/ai-speed-testing/strata-compare/models/<name>/<...>-00001-of-0000N.gguf   # fetch_model.py's download
+RB_MTP=/path/mtp/rt                              # qwen4exp path only: the drafter made for THIS model
+RB_GO=1                                          # only after the user's go on the release summary
+export RB_CACHE=$WS/tmp/rNN                      # every tool cache / temp dir of the run
+# optional: RB_BASECFG (configs/P021m.json), RB_PROMOTED (configs/P021m.json), RB_FIT=1 (the planner's RAM budget),
+# RB_PROFILE (an expert profile of the model's shape), RB_CONV_CACHE_GIB (8), RB_LLAMA (the pinned llama.cpp),
+# RB_VISION=1, RB_SCREEN_PROMOTED=0; phase B: RB_PATCHES or RB_SERIES_BRANCH/RB_SERIES_BASE, RB_MEAS, RB_REF, RB_SOAK=1
+```
+
+## Stages
+
+| # | stage | what it does | stops when | typical time |
+|---|---|---|---|---|
+| A1 | `summary` | no GPU: `RB_BASE_TAG..RB_TAG` on our path - files changed, new `STRATA_*` switches and engine flags, the architectures the reader knows, the pinned ggml, added lines that speak of defaults / exactness, the release notes → `summary-raw.md` | always, until `RB_GO=1` (**manual: the summary to the user, the go**) | seconds |
+| A2 | `preflight` | no GPU: disk (>= 100 GB stays free), nvcc, the GGUF is downloaded (not a head-only file), the kernel-log check, GPUs and memory logged | a check fails | seconds |
+| A3 | `clone` | a clean clone of `RB_TAG` (stock only); notes whether the release's pinned ggml (`third_party/ggml/VERSION.txt`) is the llama.cpp checkout we have | the tag does not check out | 1 min |
+| A4 | `inspect` | `bringup/inspect_model.py` (headers only, < 1 s): the engine path (qwen4exp → `strata` + pack; qwen35moe → `strata`'s own path; deepseek41 → `strata-dsv41`), roles and formats, trunk vs MTP, tokenizer / template, n-gram table, v0.2.6's geometry pins, the series' guards (P021m's tree) → `state/engine.env` | **NEEDS UPSTREAM SUPPORT** (it names exactly what); qwen4exp without `RB_MTP` | < 1 min |
+| A5 | `fitplan` | `bringup/fitplan.py`: slots per card (± 1 % on P021m's start today), RAM vs the 12 GB floor and the 20 GB relief line (conversation cache + prompt checkpoints counted), the lossless start config, `need_ram_mib`, the pack size, the disk; experts too big for RAM → `RB_FIT=1` (budget, helper kept: v0.1.45+) | – | < 1 min |
+| A6 | `config` | no GPU: `configs/stock.json` + `.shared-settings.json` - upstream flags only (ours dropped), the base's env reduced to `CUDA_VISIBLE_DEVICES CUDA_MODULE_LOADING STRATA_IO_THREADS` + the lossless block, an expert profile of the model's shape, `arch`, sampling, effort medium, `need_ram_mib` / `need_vram_mib`, vision off unless `RB_VISION=1` | no template for the family (DeepSeek); no profile of the model's shape | seconds |
+| A7 | `pack` | qwen4exp: the release's `tools/iq_pack.py` (+ `--compat-bf16` when the hyper-connection weights are not BF16; `STRATA_GGUF_PY` = the pinned checkout's gguf-py); qwen35moe: the tokenizer only; then the harness's prompts re-encoded with this tokenizer | the packer refuses a tensor; DeepSeek (own recipe) | 2–15 min |
+| A8 | `build` | `engine-stock` (sm_89 + sm_120; the family's target and options, `-DSTRATA_GGML_DIR` = the pinned checkout, <= 16 jobs at nice 5, its own memory guard: pause < 24 GB, stop < 14) | a build fails / the ggml pin differs → **manual** | 3–10 min |
+| A9 | `stock` | GPU: exact7 **twice** (qwen4exp: does the release repeat itself? slots MATCHED?), a served greedy repeat (any family), the lossless log check, upstream's server tests | not all seven outputs; a lossy default acted | 15–25 min |
+| A10 | `screen` | GPU: decode screen A B B A, stock vs `RB_PROMOTED` (speed context, not a gate) | – | ~40 min |
+| A11 | `suite` | GPU: `suite/run.sh --mode quick` at medium on the stock config → `suite/results/rb-RUN-stock-quick-medium`; then **report phase A and wait for the go** | – | hours |
+| B1 | `series` | clones `patched` (+ `twin` when `RB_MEAS`), applies `RB_PATCHES` or exports `RB_SERIES_BASE..RB_SERIES_BRANCH` (P021m: `v0.2.1..r22-port021-cont2`, 30 commits) | the series does not apply → **manual: the ledger pass** | 1 min |
+| B2 | `build_series` | `engine-patched` (+ `engine-twin`) as A8 | a build fails | 5–20 min |
+| B3 | `patched` | every local switch off: exact7 = stock 7/7 at MATCHED slots (or the repeat gate when stock does not repeat); guard line; server tests | not 7/7 / gate FAIL → bisect the series | 5–17 min |
+| B4 | `patches` | the local switches in order of measured value (`qsa_split_attn spec_exact side_mixer router_q8k gr_fork cost_gate draft_cum prefill_v2`), each with its one-command gate (`bringup/patchtest.sh NAME`); then all on vs `RB_REF`; lossless check | a gate fails → leave that switch off | 20–40 min |
+| B5 | `calib` | bounded calibration (`RB_CALIB_MIN`, 90 min): helper slots, reserve, resident KV, prompt chunk, draft floor | – (decide by hand: >= +2 % beyond the noise) | ≤ 90 min |
+| B6 | `b3table` | upstream's `mmvq_il_parity --bench --emit-table` on this card (built in `build-tests`) | the tool does not build | 5 min |
+| B7 | `screens` | LDR + decode screens A B B A, the candidate vs `RB_PROMOTED` | – | ~40 min |
+| B8 | `accept` | `bringup/acceptance.sh` (needs the twin; llama.cpp rows only for an arch our llama.cpp knows) | a FAIL row | ~1 h |
+| B9 | `soak` | 2 hours on 8080, your traffic shape (`RB_SOAK=1`) | errors, memory floor | 2 h |
+| B10 | `promote` | prints the promotion steps (launchers + a real rollback test to `configs/P021m.json`) | – (**manual**, your decision) | – |
+
+Around every GPU stage: no other model server (process names `strata` / `strata-dsv41` / `llama-server`, listeners on
+8080 / 8081 / 8085 / 8086), `bringup/lib/kcheck.sh` before and after, `MemAvailable` >= the plan's `need_ram_mib`,
+`tmp/gpu-test.lock` held shared, a 2-second watch (`state/watch-STAGE.tsv`) that ends the engine (by PID) and the run
+on MemAvailable < 12 GB, the engine's VmSwap > 0, or a swap-in / swap-out streak (5 samples, >= 4 MB; swap-outs only
+after the first episode, which is logged only).
+
+## Manual steps you should expect on day one
+
+1. **The release summary and the go** (stage `summary`): written by you from `summary-raw.md`; nothing is built or
+   measured before the user's go. Then phase A's report, and a second go before phase B.
+2. **A model the release does not run yet**: the inspector names it (architecture, a pinned key, a dense model, the
+   tokenizer's ids on the qwen35 path) - wait for the release that adds exactly that; `fitplan.py` still plans it (an
+   estimate, labelled) so the download can be decided.
+3. **Downloads**: `fetch_model.py pins → heads → plan → unit` (the printed `systemd-run --user` line is yours to run);
+   short of disk → a deletion list with sizes for the user, never a deletion by us.
+4. **The drafter and the expert profile of a new shape**: `tools/mtp_fetch.py` and `tools/make_profile.py` are
+   Qwen3.8-Flash-Next's (48 x 512); a new shape needs the release's versions (or `RB_PROFILE`). `config` stops without one.
+5. **A new ggml pin** (`third_party/ggml/VERSION.txt` ≠ `strata/third_party/llama.cpp`): fetch that commit (network)
+   into a llama.cpp checkout and set `RB_LLAMA`.
+6. **Our series on a new release** (`series` stops): `cd bringup/out/RUN/strata-patched && git am -3 ...`, or the
+   cherry-pick in ledger order (`bringup/lib/pick.sh`, `bringup/lib/resolve.py`); per row: upstream carries it → drop;
+   conflicting and neither a fix nor >= 1 % → drop; an overlap → keep ours beside upstream's switch for the A/B; then
+   `git format-patch $RB_TAG..HEAD -o <dir>` → `RB_PATCHES`. A kernel patch whose compile-time geometry no longer fits
+   (B.1 `gr_fork` N / HC / LR, B.2 `qsa_split_attn` HD / G, `prefill_v2` K = 2560 / 640) fails its `static_assert` or is
+   turned off by its guard: refit or drop.
+7. **Model-specific test inputs** (generated, not shipped): the needle documents (`bringup/lib/needle2.py build` with
+   `STRATA_TOKENIZER_DIR` = the new pack's tokenizer), the sampler near-ties, the round trip's forced tokens, the
+   prompts' chat markup (`bringup/prompts/` is Qwen's), the cost-gate and draft-length tables.
+8. **Calibration choices** and **promotion** are yours to confirm. **Do not edit `runbook.sh` while it runs.**
+
+## What each guard does if the new model is different
+
+The series engine logs one line per guard at start (`strata patch guards: N checked, M off [...]`); a mismatch turns
+that patch off and upstream's path runs (patches/LEDGER.md, column "guard"). P021m's guards: spec_exact, side_mixer,
+router_q8k, qsa_split_attn, gr_fork, draft_cum (qwen4exp's drafter table), prefill_v2 (IQ3_XXS / IQ4_NL at 2560 / 640).
+The server logs `[strata] model check: ...` for every template string it writes or parses itself that the model's
+tokenizer or template lacks.
+
+## Files
+
+| file | role |
+|---|---|
+| `bringup/runbook.sh` | the stages above |
+| `bringup/fetch_model.py` | pinned downloads: `pins`, `heads` (header-only files + `NAME.size`), `plan`, `unit`, `get` |
+| `bringup/gguf_head.py` | GGUF header reader (standard library; head-only files too) |
+| `bringup/inspect_model.py`, `bringup/fitplan.py`, `bringup/placements.py`, `bringup/synth_header.py` | inspector, fit planner, placements, synthetic headers (`--qwen4`: four Qwen4-like shapes) |
+| `bringup/patchtest.sh` | one-command test per ledger row (+ `lossless`: the config and, with `ELOG=`, its log) |
+| `bringup/acceptance.sh`, `bringup/accept_*.sh`, `bringup/lib/accept_*.py`, `bringup/lib/split_probe.py` | the acceptance suite |
+| `bringup/lib/` | the harness (engine runs, memory guard, test server, exact7, screens, soak, probes, `kcheck.sh`) |
+| `bringup/prompts/` | the harness's prompts as text (re-encoded per model by stage `pack`) |
+| `bringup/DAY-ONE.md`, `bringup/REFRESH-1027.md` | the one-page order; the 10-27 refresh (what changed, what is uncertain) |
+| `patches/LEDGER.md` | every local patch: what, where, switch, class, gate, gain, upstream PR, model assumptions, guard |

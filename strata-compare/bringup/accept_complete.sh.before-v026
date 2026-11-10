@@ -1,0 +1,20 @@
+#!/bin/bash
+# bringup/accept_complete.sh LABEL CONFIG.json TWIN.json — round 13: complete a suite run made before two fixes: the id
+# row (the test passed a tool call's arguments as a JSON string, which the template refuses) and the sampler row against
+# Strata's OWN probabilities at the near-ties (strata_logp through the twin's force hook; the llama.cpp comparison stays
+# a reported row). Then the table again.
+set -u
+WS=/home/USER/ai-speed-testing/strata-compare; cd $WS; source bringup/lib/env.sh
+L=$1 CFG=$(realpath $2) TWIN=$(realpath $3)
+O=$WS/bringup/out/accept/$L; P=$WS/.venv/bin/python; t0=$(date +%s)
+TREE=$($P -c "import json,pathlib; print(pathlib.Path(json.load(open('$CFG'))['server']).parent.parent)")
+TWTREE=$($P -c "import json,pathlib; print(pathlib.Path(json.load(open('$TWIN'))['server']).parent.parent)")
+TP=$($P -c "import json; print(json.load(open('$CFG'))['tokenizer'])")
+echo "=== $(date -Is) accept $L: completion (ids, own-probability sampler test)" | tee -a $O/steps.log
+bringup/lib/with_llama.sh $L-llama-ids -- "$P bringup/lib/accept_ids.py http://127.0.0.1:8081 $TREE $TP $O/ids.json > $O/ids.txt 2>&1" > $O/llama-ids-session.txt 2>&1
+tail -1 $O/ids.txt
+bringup/lib/with_server.sh $L-twin-spl $TWIN -- "SP_DIR=$O/sp SP_LABEL=$L STRATA_SERVE_TREE=$TWTREE $P bringup/lib/sampling_probe.py strata_logp http://127.0.0.1:8081" > $O/twin-spl.txt 2>&1
+SP_DIR=$O/sp SP_LABEL=$L STRATA_SERVE_TREE=$TWTREE $P bringup/lib/sampling_probe.py analyze > $O/sp-analyze.txt 2>&1
+SP_DIR=$O/sp SP_LABEL=$L STRATA_SERVE_TREE=$TWTREE $P bringup/lib/sampling_probe.py analyze own > $O/sp-analyze-own.txt 2>&1
+$P bringup/lib/accept_table.py $O | tee $O/table.md
+echo "completion time: $(( $(date +%s) - t0 )) s" | tee -a $O/table.md

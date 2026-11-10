@@ -1,0 +1,52 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/work/r2/pin-w12x.sh",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0111/packs/iq3_s",
+  "--native",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+  "--ple-gguf",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0111/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "4096",
+  "--spec",
+  "4",
+  "--spec-min-p",
+  "0.5",
+  "--mtp",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0111/mtp/rt",
+  "--max-context",
+  "131072",
+  "--kv",
+  "int8",
+  "--kv-resident",
+  "32768",
+  "--pcie-frac",
+  "0",
+  "--pool-workers",
+  "12",
+  "--side-stash",
+  "4096"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v0111",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/strata-v0111/packs/iq3_s/tokenizer",
+ "model_name": "qwen3.8-flash-next-iq3_s",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/r2/engine-R2-w12x.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8081,
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "host": "127.0.0.1",
+ "_comment": "C*: Strata v0.1.11 + patches/0001 (parallel n-gram reads) + 0002 (--side-stash), built from a clean checkout (engine-cstar/SHA256). Tuned flags vs setup defaults: --pcie-frac 0 --prefill 4096 --pool-workers 15 --side-stash 4096. KV int8 + streaming, 131072 ctx, MTP, prompt lookup (default) and xhigh (template default) unchanged. Experimental speed projection: off (no --control-vector args). Sampling defaults = the user's usual settings; requests that set their own sampling win (temperature 0 = greedy)."
+}

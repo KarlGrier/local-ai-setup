@@ -1,0 +1,454 @@
+2026-11-02 02:52:01 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 1610806 (engine 1610820)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-02 02:52:34 port_gap4: gap open: test lock held (pid 1829077), 8080 stopped
+=== 2026-11-02 02:52:34 1 build (scripts/build.sh)
+basalt f0bb833c49a4290fcc28529df98ed9021ac0717f (v0.2.0), built 2026-11-02 02:56:23 (CUDA 13.3, arch 120, offline)
+990692bd4e9bfa73f348d48374bee42bf42e5f4ba7536e9d1eaba3e8f7d03b88  basalt
+b95b081063e0fc80830bb77321b85ad48b4f0e24cf35b4f864ddea9c3801d05e  basalt-bench
+3e3c56dc96253861d54793530f9cd5fbb0d0baa40b49a870f721c25cb3756f14  basalt-probe
+=== 2026-11-02 02:56:26 2 watcher pid 1837586 (02:56:25 83.6 15918 0 0 0 0 0 0 0 0)
+=== 2026-11-02 02:56:26 before: MemAvailable 83.6 GiB; 0, 16 MiB, 16303 MiB;1, 15 MiB, 8188 MiB;
+=== 2026-11-02 02:56:26 step: printcmd
+printcmd rc 0
+/home/USER/ai-speed-testing/basalt-020/src/bin/basalt --serve --model /home/USER/ai-speed-testing/basalt-020/models/Qwen3.8-FN-GSQ-RCO-IQ3_S.basalt --gpu 0 --max-context 66661 --kv int8
+=== 2026-11-02 02:56:26 step: probe
+probe rc 0
+basalt-probe
+  5080 828 GB/s | PCIe 57.7 GB/s | RAM 80 GB/s
+  experts 5080 5052 / RAM rest | KV int8 | ctx 4k
+  decode cold  prose 135 conv 160 struct 205 tok/s (measured)
+  config: --kv int8
+  wall  29.0 s
+
+  Measured on this machine. Hand-tuned settings can still beat these.
+2026-11-02T02:56:56 basalt020-probe exit=0 29s min_MemAvailable=38.7GiB@16s min_5080_free=594MiB@16s max_tree_RSS=44.8GiB max_swap_used=0.00GiB min_4060Ti_free=7875MiB ok
+=== 2026-11-02 02:56:59 probe flags: (none beyond the defaults)
+=== 2026-11-02 02:56:59 step: community 1
+comm-1 rc 0
+| tg conv   |  157 |     72.1 |      2.62 |
+| tg struct |  247 |     96.2 |      6.45 |
+| tg prose  |  164 |     67.8 |      1.84 |
+community-1: prefill 16K 4486.3 t/s (3.7 s), prefill 64K 5442.2 t/s (12.2 s), decode 217.8 t/s (9630 tokens in 44.2 s), each measured cold
+      "prefill_16k_tps": 4486.3,
+      "prefill_64k_tps": 5442.2,
+      "decode_tps": 217.8
+=== 2026-11-02 02:58:34 step: community 2
+comm-2 rc 0
+| tg conv   |  156 |     70.5 |      2.27 |
+| tg struct |  247 |     95.9 |      6.66 |
+| tg prose  |  162 |     67.8 |      1.88 |
+community-1: prefill 16K 5342.6 t/s (3.1 s), prefill 64K 5438.2 t/s (12.2 s), decode 217.8 t/s (9513 tokens in 43.7 s), each measured cold
+      "prefill_16k_tps": 5342.6,
+      "prefill_64k_tps": 5438.2,
+      "decode_tps": 217.8
+=== 2026-11-02 03:00:07 step: community 3
+comm-3 rc 0
+| tg conv   |  161 |     71.8 |      2.32 |
+| tg struct |  245 |     94.4 |      6.84 |
+| tg prose  |  154 |     64.3 |      1.71 |
+community-1: prefill 16K 5361.5 t/s (3.1 s), prefill 64K 5438.6 t/s (12.2 s), decode 216.0 t/s (9503 tokens in 44.0 s), each measured cold
+      "prefill_16k_tps": 5361.5,
+      "prefill_64k_tps": 5438.6,
+      "decode_tps": 216.0
+=== 2026-11-02 03:01:41 step: manual probe 1
+man-probe-1-dec rc 0
+man-probe-1-p16 rc 0
+man-probe-1-p64 rc 0
+=== 2026-11-02 03:03:22 step: manual probe 2
+man-probe-2-dec rc 0
+man-probe-2-p16 rc 0
+man-probe-2-p64 rc 0
+=== 2026-11-02 03:05:03 step: manual probe 3
+man-probe-3-dec rc 0
+man-probe-3-p16 rc 0
+man-probe-3-p64 rc 0
+=== 2026-11-02 03:06:43 step: manual-dec spec7 1 --spec 7
+man-spec7-1-dec rc 0
+=== 2026-11-02 03:07:39 step: manual-dec spec6 1 --spec 6
+man-spec6-1-dec rc 0
+=== 2026-11-02 03:08:37 step: manual-dec spec10 1 --spec 10
+man-spec10-1-dec rc 0
+=== 2026-11-02 03:09:34 step: manual res400 1 --vram-reserve-mib 400
+--- 03:09:34 basalt manual res400: --vram-reserve-mib 400 refused - would leave about 294 MiB free on the 5080 (floor 300; the default 700 left 594)
+=== 2026-11-02 03:09:34 step: manual res256 1 --vram-reserve-mib 256
+--- 03:09:34 basalt manual res256: --vram-reserve-mib 256 refused - would leave about 150 MiB free on the 5080 (floor 300; the default 700 left 594)
+=== 2026-11-02 03:09:34 step: manual-pre pf8k 1 --prefill auto:8192
+man-pf8k-1-p16 rc 0
+man-pf8k-1-p64 rc 0
+=== 2026-11-02 03:10:17 step: manual-pre pf32k 1 --prefill auto:32768
+man-pf32k-1-p16 rc 0
+man-pf32k-1-p64 rc 0
+=== 2026-11-02 03:10:59 step: manual-dec kvfp16 1 --kv fp16
+man-kvfp16-1-dec rc 0
+=== 2026-11-02 03:11:58 step: manual-pre sh40 1 --prefill-cpu-share 0.4
+man-sh40-1-p16 rc 0
+man-sh40-1-p64 rc 0
+=== 2026-11-02 03:12:40 step: manual-pre sh80 1 --prefill-cpu-share 0.8
+man-sh80-1-p16 rc 0
+man-sh80-1-p64 rc 0
+base probe (defaults): blend -, p16 -, p64 -
+spec7 (--spec 7): no ()
+spec6 (--spec 6): no ()
+spec10 (--spec 10): no ()
+res400 (--vram-reserve-mib 400): no ()
+res256 (--vram-reserve-mib 256): no ()
+pf8k (--prefill auto:8192): no ()
+pf32k (--prefill auto:32768): no ()
+kvfp16 (--kv fp16): no ()
+sh40 (--prefill-cpu-share 0.4): no ()
+sh80 (--prefill-cpu-share 0.8): no ()
+best: (the base)
+=== 2026-11-02 03:13:23 step: serve best 3
+{"server": {"model": "/home/USER/ai-speed-testing/basalt-020/models/Qwen3.8-FN-GSQ-RCO-IQ3_S.basalt", "host": "127.0.0.1", "port": 8095, "vision": "off"},
+ "engine": {"max-context": 131072, "kv": "int8", "conversation-cache-mib": 0}}
+--- 03:13:27 basalt serve best ready after 4 s
+0, 14914 MiB, 16303 MiB
+1, 15 MiB, 8188 MiB
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+Traceback (most recent call last):
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 189, in <module>
+    main()
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 185, in main
+    make_workloads() if a.cmd == "make-workloads" else run(a)
+                                                       ^^^^^^
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 171, in run
+    one(a.base, a.arm, wl, sampling, extra, rep, out, keep_text=(a.set in ("seedcheck", "tune")))
+  File "/home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py", line 84, in one
+    with urllib.request.urlopen(req, timeout=3600) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 404: Not Found
+--- 03:13:33 basalt serve best stopped
+| run | passes | conv | struct | prose | blend | 16K prompt | 64K prompt |
+|---|---|---|---|---|---|---|---|
+| defaults | 3 | 158.0 (156.0-161.0, 3.2 %) | 246.3 (245.0-247.0, 0.8 %) | 160.0 (154.0-164.0, 6.5 %) | 217.2 (216.0-217.8, 0.8 %) | 5,063.5 (4,486.3-5,361.5, 19.5 %) | 5,439.7 (5,438.2-5,442.2, 0.1 %) |
+=== 2026-11-02 03:13:33 4 P028x back on 8080 (port_gap4.sh end)
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-02 03:13:49 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-02 03:13:49 gap done (21 min with 8080 down)
+=== 2026-11-02 03:18:10 SECOND GAP: the speed screen only (gap2.sh)
+2026-11-02 03:18:10 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 1918565 (engine 1918579)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-02 03:18:44 port_gap4: gap open: test lock held (pid 1919869), 8080 stopped
+=== 2026-11-02 03:18:47 watcher pid 1920092 (03:18:46 85.1 15918 0 0 0 0 0 0 0 0)
+=== 2026-11-02 03:18:47 before: MemAvailable 85.1 GiB; 0, 16 MiB, 16303 MiB;1, 15 MiB, 8188 MiB;
+=== 2026-11-02 03:18:47 step: serve best 3 (the defaults)
+{"server": {"model": "/home/USER/ai-speed-testing/basalt-020/models/Qwen3.8-FN-GSQ-RCO-IQ3_S.basalt", "host": "127.0.0.1", "port": 8095, "vision": "off"},
+ "engine": {"max-context": 131072, "kv": "int8", "conversation-cache-mib": 0}}
+--- 03:18:59 basalt serve best: model name Qwen3.8-Flash-Next GSQ-RCO IQ3_S
+--- 03:18:59 basalt serve best ready after 12 s
+0, 15324 MiB, 16303 MiB
+1, 15 MiB, 8188 MiB
+best1n W1-think r0: prompt 109 ttft 0.251 s, 3072 tokens, 199.11 tok/s, length
+best1n W2-code r0: prompt 125 ttft 0.272 s, 3072 tokens, 173.58 tok/s, length
+best1n W3-research r0: prompt 26728 ttft 5.01 s, 2048 tokens, 172.8 tok/s, length
+best1a A-edit r0: prompt 2678 ttft 1.025 s, 282 tokens, 158.06 tok/s, tool_calls
+best1a B-write r0: prompt 1369 ttft 0.731 s, 1056 tokens, 193.08 tok/s, tool_calls
+best1r R1-verify20k r0: prompt 24241 ttft 4.571 s, 3610 tokens, 151.88 tok/s, stop
+best1r R2-report54k r0: prompt 54071 ttft 9.973 s, 4096 tokens, 154.0 tok/s, length
+best1r R3-extract5k r0: prompt 5011 ttft 1.385 s, 1090 tokens, 173.01 tok/s, stop
+best1r R4-agent33k r0: prompt 33415 ttft 6.252 s, 226 tokens, 117.74 tok/s, tool_calls
+best2n W1-think r0: prompt 110 ttft 0.266 s, 3072 tokens, 174.51 tok/s, length
+best2n W2-code r0: prompt 126 ttft 0.285 s, 3072 tokens, 168.36 tok/s, length
+best2n W3-research r0: prompt 26727 ttft 4.861 s, 2048 tokens, 164.34 tok/s, length
+best2a A-edit r0: prompt 2676 ttft 1.008 s, 365 tokens, 159.62 tok/s, tool_calls
+best2a B-write r0: prompt 1372 ttft 0.715 s, 2686 tokens, 159.34 tok/s, tool_calls
+best2r R1-verify20k r0: prompt 24240 ttft 4.449 s, 3731 tokens, 150.8 tok/s, stop
+best2r R2-report54k r0: prompt 54071 ttft 9.9 s, 2828 tokens, 140.17 tok/s, stop
+best2r R3-extract5k r0: prompt 5012 ttft 1.352 s, 1094 tokens, 178.97 tok/s, stop
+best2r R4-agent33k r0: prompt 33416 ttft 6.141 s, 259 tokens, 137.14 tok/s, tool_calls
+best3n W1-think r0: prompt 111 ttft 0.264 s, 3072 tokens, 175.37 tok/s, length
+best3n W2-code r0: prompt 126 ttft 0.281 s, 3072 tokens, 167.62 tok/s, length
+best3n W3-research r0: prompt 26730 ttft 4.879 s, 2048 tokens, 166.29 tok/s, length
+best3a A-edit r0: prompt 2677 ttft 1.009 s, 492 tokens, 160.96 tok/s, tool_calls
+best3a B-write r0: prompt 1371 ttft 0.718 s, 4096 tokens, 165.25 tok/s, length
+best3r R1-verify20k r0: prompt 24237 ttft 4.461 s, 3678 tokens, 156.33 tok/s, stop
+best3r R2-report54k r0: prompt 54068 ttft 9.902 s, 3179 tokens, 150.17 tok/s, stop
+best3r R3-extract5k r0: prompt 5011 ttft 1.358 s, 1421 tokens, 186.0 tok/s, stop
+best3r R4-agent33k r0: prompt 33416 ttft 6.163 s, 249 tokens, 139.9 tok/s, tool_calls
+--- 03:26:36 basalt serve best stopped
+=== 2026-11-02 03:26:36 screen rc 0
+=== 2026-11-02 03:26:36 P028x back on 8080 (port_gap4.sh end)
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-02 03:26:50 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-02 03:26:50 second gap done (8 min with 8080 down)

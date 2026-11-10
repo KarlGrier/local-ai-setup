@@ -1,0 +1,52 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/ext/maya-v1.1.28-src/build/maya-ds4",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/maya-ds4",
+  "--max-context",
+  "32768",
+  "--eos",
+  "1",
+  "--dspark",
+  "none",
+  "--vision",
+  "off",
+  "--tp",
+  "2",
+  "--prefill-chunk",
+  "8192",
+  "--mmap-experts",
+  "on",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/ext/maya-v1.1.28-src",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/maya-ds4/tokenizer",
+ "model_name": "deepseek-v4.1-flash",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "host": "127.0.0.1",
+ "fit_max_tokens": true,
+ "thinking_budget": 32768,
+ "sampling": {
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/ds41/engine-maya-M2.log",
+ "env": {
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX4060TI,GPU-UUID-RTX5080",
+  "DS4_SPLIT": "10,30",
+  "MAYA_DS4_SLOT_KEEP": "0",
+  "MAYA_DS4_STREAM": "0",
+  "STRATA_SERVER_LOG": "0",
+  "DS4_CACHE_DECAY": "0.8",
+  "DS4_ENGRAM_CACHE_MB": "16",
+  "MAYA_DS4_PROMPT_SKIP": "1",
+  "DS4_LANE_CAL": "none"
+ },
+ "_comment": "PREPARED 10-25 (not run): M2 = Maya v1.1.28's own defaults minus anything lossy or nondeterministic: prompt skip mode 1 (explicit, so a STRATA_DS4_PROMPT_SKIP=0 from anywhere cannot switch it off), FAT_ROWS 64, ATTN_MMA on, auto slabs, IQ_Q8K on, cache threads 4; PCIe lane (MAYA_DS4_STREAM) off; slot keep off; chunk 8192 (= Maya's own default here: kVlRows, BORROW off on 2 GPUs); same split, card order, experts, no DSpark. Lossy switches unset. Paths are proposals until the build."
+}

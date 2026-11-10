@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Resume research
+Comment=Release the research pause: the queue starts its next question within about 10 minutes.
+Exec=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/research-pause.sh resume
+Icon=media-playback-start
+Terminal=true
+Categories=Utility;

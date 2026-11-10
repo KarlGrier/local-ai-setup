@@ -1,0 +1,14 @@
+[Unit]
+Description=LDR's SearXNG, main instance (127.0.0.1:8889; deep-research searxng/searxng.sh run) - its own service since 2026-10-21, independent of the queue and the research runner
+After=default.target
+
+[Service]
+Type=simple
+Environment=SEARXNG_INSTANCE=main
+WorkingDirectory=/home/USER/ai/deep-research/searxng
+ExecStart=/bin/bash /home/USER/ai/deep-research/searxng/searxng.sh run
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

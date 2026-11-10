@@ -1,0 +1,48 @@
+=== v0.1.24 2026-09-29T12:07:17Z main
+**Long prompts read faster: the sparse attention's selection runs on tensor cores.**
+
+For every token of a prompt, Strata picks which earlier parts of the context its attention reads (the QSA selection). At long context that choice was 18% of the prompt time. Now:
+- the scores it chooses by are computed on tensor cores, at FP32-level accuracy (3xTF32);
+- the top-k choice keeps each query's scores in registers - it picks exactly the same parts as before (also while writing answers).
+
+RTX 5070, Q2_0: a 128K-token prompt 1,608 → 1,843 tokens/s (time to first token 82.7 s → 72.3 s), a 32K prompt 1,742 → 1,797 tokens/s. The selection step itself is 3.3-3.9x faster.
+
+**Checked before the release:** needle tests 15/15 (8K, 16K, 32K at five depths); with the old selection switched on (`STRATA_SELECT_OLD=1 STRATA_TOPK_OLD=1`) the output is byte-identical to 0.1.23 on Q2_0 and the Coder, including the prompt path's internal state at 4K and 20K; a live server test of every endpoint and image requests passes; builds and runs the same on Linux. Answers can differ from 0.1.23 in the last bits of a score (another summation order), the same kind of change as 0.1.22's attention kernel.
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` (Linux: `./setup.sh`). Setup installs engine 0.1.24.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.
+
+=== v0.1.23 2026-09-29T11:50:09Z main
+**Faster decoding, llama.cpp-compatible server endpoints, and fixes for images, 8 GB cards and multi-GPU.**
+
+**Faster answers:** the verify window's per-token kernels (router, norms, RoPE, the shared-expert cast, the combine) run once for the whole window instead of once per token - bit-identical output (#109, thanks @q8atnight). On an RTX 5080 + RTX 3090 decoding went 81 → 89 tokens/s on a story and 105 → 118 on code.
+
+**Server (for other apps):**
+- `GET /models`, `/v1/models`, `/props` and `/slots` in llama.cpp's format, so clients like Pi find the model, its context and its image support (#122, thanks @hendrikp; fixes #117).
+- Replies carry `usage.prompt_tokens_details.cached_tokens` (how much of the prompt the conversation cache reused) and llama.cpp's `timings` (prompt and answer speed, draft counts), and `GET /v1/status` gives a small summary (#107, thanks @architectds; the draft counts from #83, thanks @mikicvi).
+- Image parts in tool and assistant messages are kept (#113, thanks @Yunado).
+- The web app works behind a reverse proxy under a path prefix (#82, thanks @mikicvi); the Monitor's live speed is a rate over the last seconds (#104, thanks @xyzzing).
+
+**Fixes:**
+- **Image questions honor the sampling settings** (temperature, top_p, top_k, penalties, seed). They always decoded greedily before, which could make the model loop on pictures (#75, thanks @jleaders).
+- **8 GB cards** with no room left for the expert cache start again: the prompt is read in smaller chunks, and if even those don't fit, it says what frees VRAM (#85).
+- **Two GPUs with an 8K context** (fp16 KV): the second card's prompt attention failed to launch; fixed.
+- Setup: a size that needs more RAM than the PC has is now a warning and a question instead of a stop (#125, thanks @FatheredPuma81).
+- Windows: when the model loads very slowly because Strata was started by Task Scheduler, a hint says how to fix the task (#126, thanks @Zauberio; see "Running it at startup" in docs/DETAILS.md).
+- Loading: the experts and the draft layer are read in large blocks on Windows (#89, thanks @dannychirkov); a GGUF with a duplicate tensor name is refused with its name (#91), and a missing or short model shard is named (#92, thanks @Avicennasis); RTX 30-class cards are accepted by the device check (#81, thanks @mikicvi); a CPU-only configure with tests works again (#93).
+- `--dump-routing` also records the live server's routing (#118, thanks @maedoc).
+
+**Checked before the release:** byte-identical to 0.1.22 on all five published quants (Windows), on Linux, and on one and two GPUs (RTX 5080 + RTX 3090), plus a live server test of every endpoint above and image requests.
+
+**Updating:** get the latest files (`git pull`, or download and unzip anywhere), then run `START-HERE.bat` (Linux: `./setup.sh`). Setup installs engine 0.1.23.
+
+The ready-made Strata engine for Windows (RTX 30 / 40 / 50: sm_86, sm_89, sm_120 + PTX), CUDA 13.0.
+
+You don't need to download this yourself: `START-HERE.bat` fetches it (and NVIDIA's cuBLAS from pip), so no compiler or CUDA Toolkit is needed, only an NVIDIA driver 580 or newer.
+
+Contents: `strata.exe` (the engine), `strata-vision.exe` (the optional image encoder), `BUILD.json`.

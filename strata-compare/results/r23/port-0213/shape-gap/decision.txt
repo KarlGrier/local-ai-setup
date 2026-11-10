@@ -1,0 +1,20 @@
+SHAPE GAP 11-09 (v0.2.13 port, information only: nothing switches, P028x stays served)
+
+flash_next (reference): builds build rc 0, parity programs NOT RUN
+q4_mid: builds full shape build rc 0, 4-layer build rc 0, parity programs NOT RUN, loads and answers yes
+q4_big: builds full shape build rc 0, 4-layer build rc 0, parity programs NOT RUN, loads and answers yes
+q4_deep: builds full shape build rc 0, 4-layer build rc 0, parity programs NOT RUN, loads and answers yes
+
+FAILS (each with its program):
+  none
+
+guards / manifest / env (from the smoke records):
+  q4_mid guards: GUARDS AS EXPECTED
+  q4_mid manifest: MANIFEST GDN PINS AS CONFIGURED (0 / 0)
+  q4_mid env: ENV CHECK OK
+  q4_big guards: GUARDS AS EXPECTED
+  q4_big manifest: MANIFEST GDN PINS AS CONFIGURED (0 / 0)
+  q4_big env: ENV CHECK OK
+  q4_deep guards: GUARDS AS EXPECTED
+  q4_deep manifest: MANIFEST GDN PINS AS CONFIGURED (0 / 0)
+  q4_deep env: ENV CHECK OK

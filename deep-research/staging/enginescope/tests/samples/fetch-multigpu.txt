@@ -1,0 +1,7 @@
+[90001] Title: Strata docs/MULTI_GPU.md
+URL: https://raw.githubusercontent.com/Niko1221/Strata/v0.2.4/docs/MULTI_GPU.md
+[OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them]
+
+"One model can run across several NVIDIA cards in one PC. The layers are split into contiguous ranges, one per GPU:"
+"(its first read faulted 4.2 GB in from NVMe) and there is no A/A restart. Here the page cache absorbed the 10 GB per"
+"pipelines them through the cards: see [BATCHING.md](BATCHING.md)."

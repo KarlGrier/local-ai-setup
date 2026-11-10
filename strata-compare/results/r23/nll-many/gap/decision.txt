@@ -1,0 +1,23 @@
+NLL many-positions gap - decision (2026-11-04 17:21:11; rules: work/r23/nll_rules.py, written before the gap)
+validation (score.py validate, ref arm): PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02) [nll 11-04 16:25]
+positions: 31408 in 129 blocks; NLL of ref there 3.7306; references unfused d -0.1241 (se 0.0229), cpushare d -0.0999 (se 0.0247); bound 1.10 x max |d_R| = 0.1365
+ref2       d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+v2         d -0.0489 [-0.0889, -0.0047] se 0.0216 | bound 0.1365 + margin 0.0356 (excess -0.1855 = -8.6 se) -> NLL UNDERPOWERED; KL mean 0.14281 p90 0.21736 >1 830 top-1 2905 -> KL PASS => UNDERPOWERED
+x28h       d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+x28h-nov2  d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+r28h       d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+identity ref2 = ref: d +0.000000, exactly-0 positions 1.0000, KL mean 0.00e+00; bytes: PASS 27 of 27 kept-row / window-logit files identical (ref2 vs ref)
+identity x28h-nov2 = x28h (gap 16: v2 on = off on P028x): PASS 27 of 27 kept-row / window-logit files identical (x28h-nov2 vs x28h)
+power: se 0.0000-0.0216 over v2, x28h, x28h-nov2, r28h (cap 0.01) -> UNDERPOWERED for v2: extend the texts (score.py run --max-len 65536: ~+40 % text, se x ~0.85; or add texts)
+what N buys (every 16th row: 15705 positions): se unfused 0.0232, cpushare 0.0234, ref2 0.0000, v2 0.0225, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+what N buys (every 64th row: 3927 positions): se unfused 0.0298, cpushare 0.0292, ref2 0.0000, v2 0.0274, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  1024: se unfused 0.0174, cpushare 0.0190, ref2 0.0000, v2 0.0170, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  2048: se unfused 0.0228, cpushare 0.0245, ref2 0.0000, v2 0.0213, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  4096: se unfused 0.0288, cpushare 0.0316, ref2 0.0000, v2 0.0273, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  8192: se unfused 0.0371, cpushare 0.0369, ref2 0.0000, v2 0.0370, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+block scan  text: se unfused 0.0458, cpushare 0.0420, ref2 0.0000, v2 0.0469, x28h 0.0000, x28h-nov2 0.0000, r28h 0.0000
+INFO - P028x (x28h) as the reference, its own rounding references x28h-unfused, x28h-cpushare: bound 0.1365
+  x28h-nov2  d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+  r28h       d +0.0000 [+0.0000, +0.0000] se 0.0000 | bound 0.1365 + margin 0.0000 (excess -0.1365 = se 0) -> NLL PASS; KL mean 0.00000 p90 0.00000 >1 0 top-1 0 -> KL PASS => PASS
+validate on the other arms (INFO): unfused PASS, cpushare PASS, ref2 PASS, v2 PASS, x28h PASS, x28h-nov2 PASS, r28h PASS, x28h-unfused PASS, x28h-cpushare PASS
+=> JUDGED. The new bound is ADOPTED from this gap on (Karl 11-04): ADOPTED-BOUND.json. Past verdicts stay as recorded: PAST-VERDICTS-NOTE.txt.

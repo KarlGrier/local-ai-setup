@@ -1,0 +1,821 @@
+--- /home/USER/ai/deep-research/staging/fix1b/checks.py.orig	2026-10-28 19:26:23.061640197 -0500
++++ /home/USER/ai/deep-research/staging/fix1b/checks.py	2026-10-29 10:22:56.371507590 -0500
+@@ -804,15 +804,526 @@
+     return any(d == "." or path == d or path.startswith(d + "/") for d in dirs)
+ 
+ 
++# 10-29 (Fix 1b; the 10-28 judging of the DeepSeek replays' 68 marks against the v0.2.4 code: 11 false, all settings the
++# shared launcher or server applies on the engine's path - "gpu" / "gpu_order", --model / --plan / --tune / --set,
++# STRATA_DS4_AUTO_PIN - or names the search missed: SLOT_KEEP for STRATA_DS4_SLOT_KEEP, -DSTRATA_NATIVE_EXPERTS): a hit in
++# the launcher / server's scripts is traced (the lines around it, the function it is in, where the value goes), a short
++# name is judged by its long form, a -D option by its CMake lines, and a constant of the code that is no setting at all
++# (a planner's SMALLEST_CARD_GB) is not sent to the model
++SCRIPT_EXT = (".py", ".sh", ".bash", ".bat", ".cmd", ".ps1", ".js", ".mjs", ".cjs", ".ts")
++CODE_EXT = (".py", ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".cu", ".cuh", ".js", ".mjs", ".cjs", ".ts", ".rs",
++            ".go", ".java", ".kt", ".swift", ".m", ".mm", ".metal")
++TEST_PATH_RE = re.compile(r"(^|/)(tests?|testing)/|(^|/)test_[^/]*$|_tests?\.[A-Za-z]+$|(^|/)conftest\.py$")
++# variables of the CUDA / ROCm runtimes, the OS, Python: what the server sets there is not looked for in the engine's code
++RUNTIME_ENV_RE = re.compile(r"^(CUDA|HIP|ROCR|HSA|GPU|OMP|MKL|KMP|LD|DYLD|PYTHON|HF|TRANSFORMERS|TORCH|PYTORCH|NCCL|TF|XDG|VK|"
++                            r"MESA|SYCL|ONEAPI|ZE)_|^(PATH|HOME|TMPDIR|TEMP|TMP|USER|LANG)$")
++_PASSED_RE = re.compile(r"""["'](--[a-z][a-z0-9]*(?:-[a-z0-9]+)*)["']|\benv(?:iron)?\s*(?:\[|\.setdefault\(|\.get\(|"""
++                        r"""\.pop\()\s*["']([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)["']""")
++# a line on the engine's path: its arguments, its environment, its process (strong); the engine or its family named (weak)
++_ENGINE_STRONG_RE = re.compile(r"\benv\s*\[|environ\s*\[|\b(?:args|argv|cmd)\s*(?:\+=|\.append|\.extend|\.insert)|\bargv\b|"
++                               r"""\[\s*["'](?:args|argv|env|cmd)["']\s*\]|Popen|subprocess\.""")
++_ENGINE_WEAK_RE = re.compile(r"engine|\bfamily\b|\barch\b", re.I)
++TRACE_HITS, TRACE_CANDIDATES, TRACE_USES, TRACE_CHARS = 2, 16, 2, 3000
++# a name read as a setting somewhere: quoted (getenv("X"), env["X"], "X": ...), a shell / CMake / preprocessor variable
++_SETTING_USE = (r"""["'`]{e}["'`]""", r"\$\{{?{e}\b", r"\$env:{e}\b", r"%{e}%", r"(?<![\w.]){e}=\S", r"-D{e}\b",
++                r"\boption\s*\(\s*{e}\b", r"\bif\s*\(\s*(?:NOT\s+)?{e}\b", r"#\s*(?:el)?if(?:n?def)?\b.*\b{e}\b",
++                r"\bdefined\s*\(?\s*{e}\b", r"getenv|environ")
++
++
++def _bare(n: str) -> str:
++    """'"gpu"' -> 'gpu': a config key is listed with its quotes, the model answers without them."""
++    return n[1:-1] if len(n) > 2 and n[0] == n[-1] == '"' else n
++
++
++def _whole(s: str) -> re.Pattern:
++    """s as a whole name, not a piece of a longer one (--set is not in --settings, SLOT_KEEP not in STRATA_DS4_SLOT_KEEP)."""
++    if s.startswith("-"):
++        return re.compile(r"(?<![\w-])" + re.escape(s) + r"(?![\w-])")
++    return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(s) + r"(?![A-Za-z0-9_])")
++
++
++def _cut(s: str, n: int) -> str:
++    s = re.sub(r"\s+", " ", str(s or "")).strip()
++    return s if len(s) <= n else s[:n - 3].rstrip() + "..."
++
++
++def _search_name(n: str) -> str:
++    """What the code is searched for: a -D build option without the -D (CMake and the code say STRATA_X, not -DSTRATA_X)."""
++    return n[2:] if CMAKE_RE.fullmatch(n) else n
++
++
++def _not_a_setting(hits: list[dict], name: str) -> str | None:
++    """'file:line' where the code defines `name` as a constant, when no hit reads it as a setting (no environment read,
++    no quoted key, no shell / CMake / preprocessor variable, no flag) - a planner's SMALLEST_CARD_GB = 8.0; else None."""
++    e = re.escape(name)
++    whole = _whole(name)
++    use = re.compile("|".join(p.format(e=e) for p in _SETTING_USE))
++    define = re.compile(rf"^\s*(?:[\w:<>,*&\s]*\s)?{e}\s*(?::[^=]*)?(?:=(?!=)|\{{)|^\s*#\s*define\s+{e}\b")
++    defs = []
++    for h in hits:
++        t = h.get("text") or ""
++        if not whole.search(t):
++            continue
++        if use.search(t):
++            return None
++        if h["file"].endswith(CODE_EXT) and define.search(t):
++            if re.search(r"""=\s*["'][A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+["']""", t):
++                return None                 # SH_STREAM = "STRATA_SH_STREAM": it holds a variable's name - a setting
++            defs.append(h)
++    return f"{defs[0]['file']}:{defs[0]['line']}" if defs else None
++
++
++def _long_forms(name: str, hits: list[dict], names: list[str]) -> list[str]:
++    """Longer names that end with this one (SLOT_KEEP -> STRATA_DS4_SLOT_KEEP): those in the code's hits first (the
++    report's own before the others, then by count), then those only the report names."""
++    rx = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z0-9]\w*?_" + re.escape(name) + r")(?![A-Za-z0-9_])")
++    seen: dict[str, int] = {}
++    for h in hits:
++        for m in rx.finditer(h.get("text") or ""):
++            seen[m.group(1)] = seen.get(m.group(1), 0) + 1
++    rep = [m for m in names if m != name and m.endswith("_" + name) and ENV_RE.fullmatch(m)]
++    code = sorted(seen, key=lambda k: (k not in rep, -seen[k], k))
++    return code + [m for m in rep if m not in code]
++
++
++class _Src:
++    """The shared launcher / server's files of one clone for the traces, read once per version check: their lines and,
++    for the Python files (parsed when first needed), the function and statement spans."""
++
++    def __init__(self, root: Any, dirs: list[str]):
++        self.root, self.dirs = str(root), list(dirs)
++        self._lines: dict[str, list[str]] = {}
++        self._text: dict[str, str] = {}
++        self._py: list[str] | None = None
++        self._spans: dict[str, tuple[list, list]] = {}
++        self._ns: set[str] | None = None
++
++    def namespaces(self) -> set[str]:
++        """The names the launcher / server keeps parsed command lines in: `a: argparse.Namespace` parameters and
++        `a = parser.parse_args(...)` (an attribute read on them is a flag's value)."""
++        if self._ns is None:
++            rx = re.compile(r"\b(\w+)\s*:\s*(?:argparse\.)?Namespace\b|^\s*(\w+)(?:\s*,\s*\w+)?\s*=\s*[\w.()]*?"
++                            r"\.parse_(?:known_)?(?:intermixed_)?args\(", re.M)
++            ns: set[str] = set()
++            for rel in self.py_files():
++                if rel not in self._text:
++                    self._text[rel] = "\n".join(self.lines(rel))
++                if "Namespace" in self._text[rel] or "parse_" in self._text[rel]:
++                    ns |= {m.group(1) or m.group(2) for m in rx.finditer(self._text[rel])}
++            self._ns = {x for x in ns if x and x not in ("self", "cls")}
++        return self._ns
++
++    def lines(self, rel: str) -> list[str]:
++        if rel not in self._lines:
++            p = os.path.join(self.root, rel)
++            try:
++                ok = os.path.isfile(p) and not os.path.islink(p) and os.path.getsize(p) <= 2 * 1024 * 1024
++                if ok:
++                    with open(p, encoding="utf-8", errors="replace") as fh:
++                        self._lines[rel] = fh.read().splitlines()
++                else:
++                    self._lines[rel] = []
++            except OSError:
++                self._lines[rel] = []
++        return self._lines[rel]
++
++    def py_files(self) -> list[str]:
++        """The shared folders' Python files, tests left out (at most 800)."""
++        if self._py is None:
++            out: list[str] = []
++            for d in self.dirs:
++                for r, ds, fs in os.walk(os.path.join(self.root, d)):
++                    ds[:] = sorted(x for x in ds if not x.startswith(".") and x != "__pycache__")
++                    for f in sorted(fs):
++                        rel = os.path.relpath(os.path.join(r, f), self.root)
++                        if f.endswith(".py") and rel not in out and not TEST_PATH_RE.search(rel):
++                            out.append(rel)
++                    if len(out) >= 800:
++                        break
++            self._py = out
++        return self._py
++
++    def spans(self, rel: str) -> tuple[list, list]:
++        """([(start, end, qualified name, first docstring line)], [(start, end, statement)]) of a Python file."""
++        if rel not in self._spans:
++            funcs: list = []
++            stmts: list = []
++            try:
++                tree = ast.parse("\n".join(self.lines(rel))) if rel.endswith(".py") else None
++            except (SyntaxError, ValueError, RecursionError, MemoryError):
++                tree = None
++
++            def walk(node, prefix):
++                for ch in ast.iter_child_nodes(node):
++                    if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
++                        if not isinstance(ch, ast.ClassDef):
++                            doc = (ast.get_docstring(ch) or "").strip().split("\n")[0]
++                            funcs.append((ch.lineno, ch.end_lineno or ch.lineno, prefix + ch.name, doc))
++                        walk(ch, prefix + ch.name + ".")
++                    else:
++                        if isinstance(ch, ast.stmt):
++                            stmts.append((ch.lineno, ch.end_lineno or ch.lineno, ch))
++                        walk(ch, prefix)
++            if tree is not None:
++                try:
++                    walk(tree, "")
++                except RecursionError:
++                    pass
++            self._spans[rel] = (funcs, stmts)
++        return self._spans[rel]
++
++    def func_at(self, rel: str, line: int):
++        inner = [f for f in self.spans(rel)[0] if f[0] <= line <= f[1]]
++        return max(inner, key=lambda f: f[0]) if inner else None
++
++    def stmt_at(self, rel: str, line: int):
++        inner = [s for s in self.spans(rel)[1] if s[0] <= line <= s[1]]
++        return min(inner, key=lambda s: (s[1] - s[0], -s[0]))[2] if inner else None
++
++    def find(self, rx: re.Pattern, skip: set = frozenset(), near: str | None = None, span: tuple | None = None,
++             limit: int = 12) -> list[tuple[str, int]]:
++        """Code lines matching rx in the shared Python files (not comments, def lines or docstrings), the file `near`
++        first; with span=(file, start, end) only there."""
++        files = [span[0]] if span else self.py_files()
++        if near in files:
++            files = [near] + [f for f in files if f != near]
++        out = []
++        for rel in files:
++            if rel not in self._text:
++                self._text[rel] = "\n".join(self.lines(rel))
++            if not rx.search(self._text[rel]):          # most files do not have it: one search each
++                continue
++            ls = self.lines(rel)
++            lo, hi = (span[1], span[2]) if span else (1, len(ls))
++            for i in range(lo, min(hi, len(ls)) + 1):
++                if (rel, i) in skip or not rx.search(ls[i - 1]):
++                    continue
++                s = ls[i - 1].lstrip()
++                if s.startswith(("#", "def ", "async def ", "class ", "@")):
++                    continue
++                st = self.stmt_at(rel, i)
++                if isinstance(st, ast.Expr) and isinstance(st.value, ast.Constant):
++                    continue
++                out.append((rel, i))
++                if len(out) >= limit:
++                    return out
++        return out
++
++    def where(self, rel: str, line: int) -> str:
++        f = self.func_at(rel, line) if rel.endswith(".py") else None
++        if not f:
++            return f"{rel}:{line}"
++        return f"{rel}:{line} in {f[2]}()" + (f' ("{_cut(f[3], 80)}")' if f[3] else "")
++
++    def context(self, rel: str, line: int, before: int = 1, after: int = 2, width: int = 130) -> str:
++        """The code lines around a line (inside its function), comments and blank lines left out."""
++        ls = self.lines(rel)
++        f = self.func_at(rel, line) if rel.endswith(".py") else None
++        lo, hi = max(1, line - before, f[0] + 1 if f else 1), min(len(ls), line + after, f[1] if f else len(ls))
++        py = rel.endswith(".py")
++        out = [_cut(re.sub(r"\s{2,}#\s.*$", "", ls[i - 1]) if py else ls[i - 1], width) for i in range(lo, hi + 1)
++               if ls[i - 1].strip() and not ls[i - 1].lstrip().startswith(("#", "//"))]
++        return " | ".join(out)
++
++    def engine_path(self, rel: str, line: int) -> int:
++        """0: the lines around reach the engine's arguments, environment or process; 1: they name the engine or its
++        family; 2: neither."""
++        t = self.where(rel, line) + " " + self.context(rel, line, before=1, after=2)
++        return 0 if _ENGINE_STRONG_RE.search(t) else 1 if _ENGINE_WEAK_RE.search(t) else 2
++
++    def best(self, uses: list[tuple[str, int]], n: int = TRACE_USES) -> list[tuple[str, int]]:
++        """The uses on the engine's path first, then a plain test of the value (`if a.plan:` - its body is shown)."""
++        plain = re.compile(r"^\s*(?:el)?if\s+(?:not\s+)?[\w.]+(?:\([^()]*\))?\s*:")
++        return sorted(uses, key=lambda u: (self.engine_path(*u), not plain.search(self.lines(u[0])[u[1] - 1]),
++                                           uses.index(u)))[:n]
++
++
++def _stored_in(st, needle: re.Pattern, src: _Src, rel: str, line: int, prefer: str | None = None):
++    """When `st` assigns a value that contains the needle: (label, pattern of its reads, span) of where it goes - a local
++    variable (read in the same function), an attribute (.extra) or a key (["args"]); else None."""
++    if not isinstance(st, (ast.Assign, ast.AnnAssign, ast.AugAssign)) or st.value is None:
++        return None
++    v = st.value                        # a condition (x = a.yes or not a.plan, bool(...)) does not keep the value
++    if isinstance(v, (ast.BoolOp, ast.Compare, ast.UnaryOp)) or (
++            isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id == "bool"):
++        return None
++    try:
++        if not needle.search(ast.unparse(st.value)):
++            return None
++    except Exception:  # noqa: BLE001
++        return None
++    targets = st.targets if isinstance(st, ast.Assign) else [st.target]
++    flat = []
++    for t in targets:
++        flat += list(t.elts) if isinstance(t, (ast.Tuple, ast.List)) else [t]
++    # several targets ("s.family, s.model = resolve(a.model, ...)"): the one named like the needle, else the first
++    t = (next((x for x in flat if isinstance(x, ast.Attribute) and x.attr == prefer), None)
++         or next((x for x in flat if isinstance(x, ast.Attribute) and needle.search("." + x.attr)), flat[0] if flat else None))
++    if isinstance(t, ast.Name):
++        f = src.func_at(rel, line)
++        return (t.id, re.compile(rf"(?<![\w.]){re.escape(t.id)}\b(?!\s*=[^=])"), (rel, line + 1, f[1]) if f else None)
++    if isinstance(t, ast.Attribute):
++        return ("." + t.attr, re.compile(rf"\.{re.escape(t.attr)}\b(?!\s*\()(?!\s*=[^=])"), None)
++    if isinstance(t, ast.Subscript) and isinstance(t.slice, ast.Constant) and isinstance(t.slice.value, str):
++        k = re.escape(t.slice.value)
++        return (f'["{t.slice.value}"]', re.compile(rf"""\[\s*["']{k}["']\s*\](?!\s*=[^=])|\.get\(\s*["']{k}["']"""), None)
++    return None
++
++
++def _trace(src: _Src, rel: str, line: int, q: str) -> str:
++    """One launcher / server hit: where it is (file, function and its docstring's first line), the lines around it, and
++    where the value goes - what the parsed flag or the value read is stored in and where that is read, and the callers
++    of the function that reads it (the ones on the engine's path first)."""
++    st, fn = (src.stmt_at(rel, line), src.func_at(rel, line)) if rel.endswith(".py") else (None, None)
++    if st is not None and 0 <= line - st.lineno <= 2:   # the statement itself (an add_argument call, an assignment, an
++        a = st.lineno                                   # if and the first lines of its body), not its neighbours
++        b = max(line, min(getattr(st, "end_lineno", None) or a, a + 2))
++        out = f"{src.where(rel, line)}: {src.context(rel, a, before=0, after=b - a)}"
++    else:
++        out = f"{src.where(rel, line)}: {src.context(rel, line)}"
++    if not rel.endswith(".py"):
++        return out
++    needle = re.compile(r"""["']""" + re.escape(_bare(q)) + r"""["']""")
++    steps: list[tuple[str, list]] = []
++    call = st.value if isinstance(st, ast.Expr) else None
++    if (isinstance(call, ast.Call) and getattr(call.func, "attr", "") == "add_argument" and q.startswith("-")
++            and any(isinstance(a, ast.Constant) and a.value == q for a in call.args)):
++        dest = next((k.value.value for k in call.keywords if k.arg == "dest" and isinstance(k.value, ast.Constant)), None)
++        if not isinstance(dest, str):
++            flags = [a.value for a in call.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
++            dest = next((f for f in flags if f.startswith("--")), q).lstrip("-").replace("-", "_")
++        # its reads on the parsed command line (a.tune, args.set - the launcher's Namespace names), else any .dest read
++        own = rf"\.{re.escape(dest)}\b(?!\s*\()(?!\s*=[^=])"
++        ns = sorted(src.namespaces())
++        rd = re.compile(rf"(?<![\w.])(?:{'|'.join(map(re.escape, ns))}){own}") if ns else re.compile(own)
++        uses = src.find(rd, skip={(rel, line)}, near=rel)
++        if not uses and ns:
++            rd = re.compile(own)
++            uses = src.find(rd, skip={(rel, line)}, near=rel)
++        store = None                             # where the launcher keeps it: s.tune = a.tune, s.extra = {.., a.set}
++        for r2, l2 in uses:
++            tgt = _stored_in(src.stmt_at(r2, l2), rd, src, r2, l2, prefer=dest)
++            if tgt:
++                store = (r2, l2, tgt)
++                break
++        first = [(store[0], store[1])] if store else []
++        steps.append((f"parsed into .{dest}, read at", (first + [u for u in src.best(uses, len(uses))
++                                                                  if u not in first])[:TRACE_USES]))
++        if store:
++            r2, l2, tgt = store
++            kept = [u for u in src.find(tgt[1], skip={(r2, l2)} | set(uses), span=tgt[2], limit=24)
++                    if not rd.search(src.lines(u[0])[u[1] - 1])]
++            steps.append((f"kept in {tgt[0]}, read at", src.best(kept)))
++    else:
++        tgt = _stored_in(st, needle, src, rel, line)
++        if tgt:
++            steps.append((f"stored in {tgt[0]}, read at", src.best(src.find(tgt[1], skip={(rel, line)}, near=rel,
++                                                                             span=tgt[2]))))
++        short = fn[2].split(".")[-1] if fn else ""
++        method = fn is not None and "." in fn[2]
++        if short and not short.startswith("__") and len(short) > 3 and (not method or "_" in short or len(short) >= 8):
++            name = re.escape(short)
++            callers = src.find(re.compile(rf"(?<![\w.]){name}\s*\(|\.{name}\s*\("), skip={(rel, line)}, near=rel)
++            steps.append((f"{'returned by' if isinstance(st, ast.Return) else 'used in'} {short}(), which is called at",
++                          src.best(callers)))
++    for label, uses in steps:
++        out += f"\n    {label}: " + ("; ".join(f"{src.where(r, n)}: {src.context(r, n, before=1, after=2, width=90)}"
++                                          for r, n in uses) or "nowhere else in the launcher / server")
++    return out
++
++
++def _passed_on(text: str, q: str, repo: Any, ed: list[str]) -> str:
++    """The flags and engine variables in the traced lines, with their hits in the engine's own folders (a flag the
++    server adds that the engine never parses is not passed on to any effect)."""
++    found: list[str] = []
++    for m in _PASSED_RE.finditer(text):
++        x = m.group(1) or m.group(2)
++        if x and x not in found and x != _bare(q) and x not in GENERIC and not RUNTIME_ENV_RE.search(x):
++            found.append(x)
++    rows = []
++    for x in found[:3]:
++        hits: list[dict] = []
++        for d in ed:
++            try:
++                hits += [h for h in repo.grep(x, d, fixed=True, max_hits=20)["hits"] if _whole(x).search(h["text"])]
++            except Exception:  # noqa: BLE001
++                pass
++        rows.append(f"`{x}`: " + (f"{len(hits)} hit(s): " + "; ".join(f"{h['file']}:{h['line']}: {_cut(h['text'], 120)}"
++                                                                       for h in hits[:1]) if hits else "no hits"))
++    return ("    Flags / variables in these lines, in the engine's own folders: " + " | ".join(rows)) if rows else ""
++
++
++def _engine_level(text: str) -> int:
++    """0: on the engine's path (its arguments, environment or process) and about the engine; 1: on such a path; 2: about
++    the engine or its family only; 3: neither."""
++    strong, weak = bool(_ENGINE_STRONG_RE.search(text)), bool(_ENGINE_WEAK_RE.search(text))
++    return 0 if strong and weak else 1 if strong else 2 if weak else 3
++
++
++def _command_words(sentences: list[str], q: str, project: str = "") -> set[str]:
++    """The command the report gives the flag with ("strata launch --model x --plan" -> {"launch"}): picks the parser."""
++    out: set[str] = set()
++    if not q.startswith("-"):
++        return out
++    rx = re.compile(r"([a-z][\w.-]*)\s+([a-z][\w.-]*)\s+(?:-{1,2}[\w-]+(?:[ =](?!-)\S+)?\s+)*" + re.escape(q) + r"(?![\w-])")
++    for s in sentences:
++        for m in rx.finditer(s):
++            out |= {w.lower() for w in m.groups()}
++    return {w for w in out if w != project.lower() and len(w) > 2}
++
++
++def _argparse_def(src: _Src, rel: str, line: int, q: str) -> tuple[str, str] | None:
++    """(the parser or group it is added to, its help) when the line adds the flag to an argparse parser."""
++    if not rel.endswith(".py"):
++        return None
++    st = src.stmt_at(rel, line)
++    call = st.value if isinstance(st, ast.Expr) else None
++    if not (isinstance(call, ast.Call) and getattr(call.func, "attr", "") == "add_argument"
++            and any(isinstance(a, ast.Constant) and a.value == q for a in call.args)):
++        return None
++    recv = call.func.value.id if isinstance(call.func.value, ast.Name) else ""
++    hlp = next((k.value for k in call.keywords if k.arg == "help"), None)
++    try:
++        h = hlp.value if isinstance(hlp, ast.Constant) else ast.unparse(hlp) if hlp is not None else ""
++    except Exception:  # noqa: BLE001
++        h = ""
++    return recv, str(h)
++
++
++def _launcher_use(repo: Any, src: _Src, q: str, sd: list[str], ed: list[str], inside_whole: int,
++                  inside_read: int = 0, sentences: list[str] | None = None) -> str:
++    """'Launcher / server use' of a name the shared launcher / server scripts have: a flag's parsers (with their help),
++    and up to TRACE_HITS of its places traced - for a flag the parser of the command the report gives it with first, then
++    the places whose value reaches the engine's arguments, environment or process, then those that read it."""
++    hits: list[dict] = []
++    for d in sd:
++        try:
++            hits += [h for h in repo.grep(q, d, fixed=True, max_hits=400)["hits"] if h not in hits]
++        except Exception:  # noqa: BLE001
++            pass
++    whole = _whole(q)
++    hits = [h for h in hits if h["file"].endswith(SCRIPT_EXT) and not TEST_PATH_RE.search(h["file"])
++            and whole.search(h.get("text") or "")]
++
++    if q.startswith('"'):          # a config key read at the top of a config (cfg.get("gpu"), not cfg["vision"].get("gpu"))
++        k = re.escape(_bare(q))
++        reads = re.compile(rf"""(?<![\w\])])\w+\s*(?:\.get\(\s*["']{k}["']|\[\s*["']{k}["']\s*\](?!\s*=[^=]))""")
++    else:
++        reads = re.compile(r"add_argument|getenv|environ|\.get\(|\[")
++
++    def code_text(h) -> str:                        # a Python line without its inline comment
++        t = h.get("text") or ""
++        return re.sub(r"\s{2,}#\s.*$", "", t) if h["file"].endswith(".py") else t
++
++    def is_code(h) -> bool:                         # the name in code, not in a comment or a docstring
++        t = code_text(h)
++        if not whole.search(t) or t.lstrip().startswith(("#", "//", "*", "/*")):
++            return False
++        st = src.stmt_at(h["file"], h["line"]) if h["file"].endswith(".py") else None
++        return not (isinstance(st, ast.Expr) and isinstance(st.value, ast.Constant))
++    best: dict[tuple, tuple] = {}                   # one place per function (per parser for a flag): its best line
++    for h in hits:
++        py = h["file"].endswith(".py")
++        key = (h["file"], (src.func_at(h["file"], h["line"]) or (0,))[0]) if py else (h["file"],)
++        adef = _argparse_def(src, h["file"], h["line"], q) if py and q.startswith("-") else None
++        if adef:
++            key = (h["file"], h["line"])                # each parser's own flag (launch, serve, tune ...)
++        c = (h, adef, is_code(h))
++        p = best.get(key)
++        if p is None or (not c[2], not reads.search(code_text(h)), h["line"]) < \
++                (not p[2], not reads.search(code_text(p[0])), p[0]["line"]):
++            best[key] = c
++    places = sorted(best.values(), key=lambda c: (not c[0]["file"].endswith(".py"), not c[2], c[0]["file"],
++                                                  c[0]["line"]))[:60]
++    if not places:
++        return ""
++    words = _command_words(sentences or [], q, repo.name.split("/")[-1])
++
++    def fit(h, adef) -> int:                        # the parser of the report's own command ("strata launch")
++        if not adef or not words:
++            return 0
++        toks = set(re.split(r"[/_.\-]+", h["file"].lower())) | set(adef[0].lower().split("_"))
++        return len(toks & words)
++    alone = re.compile(r"""["']""" + re.escape(q) + r"(?![\w-])") if not q.startswith('"') else re.compile(re.escape(q))
++    lvl = [_engine_level(src.where(h["file"], h["line"]) + " " + src.context(h["file"], h["line"])) for h, _, _ in places]
++
++    def rank(i):
++        h, adef, code = places[i]
++        return (not code, not alone.search(code_text(h)), -fit(h, adef), not reads.search(code_text(h)))
++    pre = sorted(range(len(places)), key=lambda i: (*rank(i), lvl[i], i))[:TRACE_CANDIDATES]
++    traced = []
++    for i in pre:
++        h, adef, code = places[i]
++        try:
++            t = _trace(src, h["file"], h["line"], q)
++        except Exception as e:  # noqa: BLE001
++            t = f"{h['file']}:{h['line']}: {_cut(h.get('text'), 130)} (not traced: {type(e).__name__})"
++        traced.append((*rank(i), min(lvl[i], _engine_level(t)), lvl[i], i, t))
++    traced.sort(key=lambda x: x[:-1])                                   # the best places first
++    pick = traced[:TRACE_HITS] if traced[0][4] <= 1 else traced[:1]   # a second one only when on the engine's path
++    text = "\n".join("  - " + t for *_, t in pick)
++    if len(text) > TRACE_CHARS:
++        text = text[:TRACE_CHARS - 4].rstrip() + " ..."
++    lines = []
++    defs = [(h, a) for h, a, _ in places if a]
++    if defs:
++        lines.append(f"Parsed as a command-line option at ({len(defs)}): " + "; ".join(
++            f"{h['file']}:{h['line']} ({a[0] or '?'}.add_argument: \"{_cut(a[1], 70)}\")" for h, a in defs[:4])
++            + (f"; ... ({len(defs) - 4} more)" if len(defs) > 4 else ""))
++    more = "+" if len(places) >= 60 else ""
++    lines += [f"Launcher / server use ({len(places)}{more} place(s) in its scripts, {len(pick)} traced: the lines around "
++              "the hit, then where the value goes):", text]
++    passed = _passed_on(text, q, repo, ed) if ed else ""
++    if passed:
++        lines.append(passed)
++    if ed and not q.startswith('"'):
++        if not inside_whole:
++            lines.append(f"    `{q}` itself has no hit in the engine's own folders: the engine's code does not parse or "
++                         "read it under this name.")
++        elif not inside_read:
++            lines.append(f"    `{q}` is in the engine's own folders only in text (no \"{q}\" the code parses or reads).")
++    return "\n".join(lines)
++
++
++def _cmake_lines(repo: Any, src: _Src, q: str, ed: list[str]) -> str:
++    """A -D build option's CMake lines: its option() line, then the lines that switch something for the engine (the
++    engine folder's name nearby) - each with the two lines after it."""
++    hits: list[dict] = []
++    for glob in ("CMakeLists.txt", "*.cmake"):
++        try:
++            hits += [h for h in repo.grep(q, ".", glob=glob, fixed=True, max_hits=80)["hits"] if h not in hits]
++        except Exception:  # noqa: BLE001
++            pass
++    if not hits:
++        return f"Build files (CMake): no `{q}`"
++    keys = {d.rstrip("/").split("/")[-1] for d in ed if d not in (".", "")}
++
++    def near_engine(h) -> bool:
++        ls = src.lines(h["file"])
++        return any(k and k in " ".join(ls[max(0, h["line"] - 2):h["line"] + 3]) for k in keys)
++    opt = re.compile(r"\boption\s*\(\s*" + re.escape(q) + r"\b")
++    depth = lambda h: (h["file"].count("/"), h["file"], h["line"])     # noqa: E731 - the top CMakeLists.txt first
++    options = sorted((h for h in hits if opt.search(h["text"])), key=depth)[:1]
++    pick = options + sorted((h for h in hits if not opt.search(h["text"])),
++                            key=lambda h: (not near_engine(h), *depth(h)))[:3 - len(options)]
++    return (f"Build files (CMake), {len(hits)} line(s) with `{q}`: "
++            + "; ".join(f"{h['file']}:{h['line']}: {src.context(h['file'], h['line'], before=0, after=2, width=120)}"
++                        for h in pick))
++
++
+ VERSION_PROMPT = VERIFY_MARK + """ A research report for the task below names the settings listed after it \
+-(command-line flags, environment variables, build options). Decide for each one, from the evidence given with it - \
+-the project's source code AT THE USER'S VERSION and the research's sources that mention it - what it is:
+-- "this-version": an option of the program or engine the task is about, at the user's version: the code in that \
+-engine's folders handles it (or the server code shown passes it to that engine);
++(command-line flags, environment variables, build options, config keys). Decide for each one, from the evidence given \
++with it - the project's source code AT THE USER'S VERSION and the research's sources that mention it - what it is:
++- "this-version": a setting of the program or engine the task is about, at the user's version: the code in that \
++engine's folders handles it; or the shared launcher / server code applies it when it runs that engine - for every \
++engine or for this one - as its "Launcher / server use" lines show: it passes the value on to that engine (in its \
++arguments, its environment or a request) and the engine's own code reads what is passed, or the launcher / server acts \
++on it itself (it picks the cards or the model, sets the engine's arguments or environment, runs a tuner, prints a plan);
+ - "other-engine": it exists in the same project at that version, but only outside the engine's folders (another \
+ engine, a tool, an app, the docs) - not an option of the engine the task is about;
+-- "launcher-only": the shared launcher or server code accepts or passes it, but the engine's own code never reads it \
+-at the user's version (it may be another engine's option the launcher also parses);
++- "launcher-only": only the shared launcher or server code (or code several engines share) has it, and the code shown \
++neither passes it on to this engine nor acts on it when this engine runs: it is only parsed or stored, it is another \
++engine's option the launcher also handles, or the engine's own code ignores, rejects or never parses what is passed on;
+ - "other-version": it appears only in another version's code or docs (newer or older), not at the user's version;
+ - "other-project": it belongs to another program (llama.cpp, vLLM, a fork, ...);
+ - "not-found": no evidence has it;
+@@ -820,8 +1331,10 @@
+ Then say how the report presents it ("use"): "recommended" - as a setting to use or try with the program the task \
+ is about, at the user's version; "described" - as part of that program, without recommending it (its default, \
+ "leave it off", "do not add", how the program works); "attributed" - clearly as another program's, engine's or \
+-version's, not this program's. A quoted name such as "gpu" is a key of a JSON config file. Code evidence outranks web \
+-pages and docs; a source marked OTHER VERSION is not evidence for the user's version.
++version's, not this program's. A quoted name such as "gpu" is a key of a JSON config file. A short name the evidence \
++gives as the end of a longer one (SLOT_KEEP of STRATA_DS4_SLOT_KEEP) is judged by the longer name; a -D build option by \
++its CMake lines and the code it switches. Code evidence outranks web pages and docs; a source marked OTHER VERSION is \
++not evidence for the user's version.
+ 
+ <task>
+ {task}
+@@ -837,6 +1350,165 @@
+ version has instead>"}}"""
+ 
+ 
++def _settle_dirs(e1: dict, e2: dict) -> dict:
++    """Two engine_dirs answers -> the engine's folders (both name them), the shared ones, the disputed ones."""
++    # two independent answers, only the folders both name (round 3: one answer took in the Qwen engine's
++    # src/program, the other did not); no overlap -> the first answer
++    both = [d for d in e1["dirs"] if d in e2["dirs"]]
++    keep = both or e1["dirs"]
++    # 10-28 (p4s6 o01, a whole-project question: one answer took only the DeepSeek engine, the other every
++    # engine and src/core, kernels, prefill; the overlap made src/core's --kv-resident "another engine"): the
++    # folders only one answer names are disputed, and a name found there is not flagged
++    # 10-29 (p4s6 o02, Fix 1b): also when the other answer calls that folder shared - src/program (the Qwen engine) was
++    # one answer's engine folder and the other's "shared", so its STRATA_SPLIT_UNIFORM read as launcher-only
++    disputed = [d for d in dict.fromkeys(e1["dirs"] + e2["dirs"]) if d not in keep]
++    shared = [d for d in dict.fromkeys(e1.get("shared", []) + e2.get("shared", [])) if d not in keep and d not in disputed]
++    return {**e1, "dirs": keep, "shared": shared, "disputed": disputed, "answers": [e1["dirs"], e2["dirs"]]}
++
++
++def _code_parts(repo: Any, q: str, e: dict, src: "_Src | None",
++                sentences: list[str] | None = None) -> tuple[list[str], bool]:
++    """The code evidence of one name, searched as q, in one clone: its hits in the engine's own folders, in the shared
++    launcher / server folders (with the launcher / server use traced), in disputed folders and elsewhere; a -D build
++    option's CMake lines. -> (lines, found in a disputed folder)"""
++    parts: list[str] = []
++    try:
++        g = repo.grep(q, ".", fixed=True, max_hits=400)      # a config key: its quoted string literal
++    except Exception as ex:  # noqa: BLE001
++        return [f"Code at {repo.name}@{repo.ref}: search failed ({ex})"], False
++    ed = e.get("dirs") or []
++    sd = e.get("shared") or []
++    dd = e.get("disputed") or []
++    where = f"the engine's own folders ({', '.join(ed)})" if ed else "the repository"
++    if not g["total"]:
++        return [f"Code at {repo.name}@{repo.ref} (the user's version): no hits anywhere"], False
++    hits = g["hits"]
++    if ed and g["more"]:
++        # 10-28 (p4s6 o01): the repository-wide search keeps its first 400 hits, and the project's bench results
++        # filled them (--expert-cache: 380 files under bench/results), so src/program's hit was lost and the
++        # engine's own option read as "another engine" - its own, the shared and the disputed folders are
++        # searched on their own
++        for d in ed + sd + dd:
++            try:
++                hits = hits + [h for h in repo.grep(q, d, fixed=True, max_hits=50)["hits"] if h not in hits]
++            except Exception:  # noqa: BLE001
++                pass
++    inside = [h for h in hits if not ed or _in_dirs(h["file"], ed)]
++    shared_hits = [h for h in hits if ed and sd and not _in_dirs(h["file"], ed) and _in_dirs(h["file"], sd)]
++    disputed_hits = [h for h in hits if ed and dd and not _in_dirs(h["file"], ed + sd) and _in_dirs(h["file"], dd)]
++    outside = [h for h in hits if ed and not _in_dirs(h["file"], ed) and h not in shared_hits and h not in disputed_hits]
++    if shared_hits:
++        parts.append(f"Shared launcher / server code ({', '.join(sd)}), which parses options for several engines: "
++                     f"{len(shared_hits)} hit(s): " + "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}"
++                                                             for h in shared_hits[:3]))
++        # 10-29 (Fix 1b): whether the launcher / server passes it on to this engine or acts on it - traced, unless the
++        # engine's own code reads the name itself ("--x" / "X" as a string it parses or reads: this version's anyway; a
++        # mention in a message or a comment is not that); a config key is always traced (the engine never reads the
++        # config file)
++        inside_whole = len([h for h in inside if _whole(q).search(h["text"])]) if ed else 0
++        quoted = re.compile(r"""["']""" + re.escape(_bare(q)) + r"""["']""")
++        inside_read = len([h for h in inside if quoted.search(h["text"])]) if ed else 0
++        if src is not None and ed and (q.startswith('"') or not inside_read):
++            use = _launcher_use(repo, src, q, sd, ed, inside_whole, inside_read, sentences)
++            if use:
++                parts.append(use)
++    disputed = bool(disputed_hits)
++    if disputed_hits:
++        parts.append(f"Folders that may also be the engine's ({', '.join(dd)}): {len(disputed_hits)} hit(s): "
++                     + "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}" for h in disputed_hits[:3]))
++    dirs: dict[str, int] = {}
++    for h in outside:
++        top = "/".join(h["file"].split("/")[:2])
++        dirs[top] = dirs.get(top, 0) + 1
++    more = "+" if g["more"] else ""
++    line_in = "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}" for h in inside[:3])
++    line_out = "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}" for h in outside[:3])
++    parts.append(f"Code at {repo.name}@{repo.ref} (the user's version) - in {where}: {len(inside)}{more} hit(s)"
++                 + (f": {line_in}" if line_in else "")
++                 + (f" | elsewhere: {len(outside)}{more} hit(s) ("
++                    + ", ".join(f"{k} {v}" for k, v in sorted(dirs.items(), key=lambda x: -x[1])[:5]) + ")"
++                    + (f": {line_out}" if line_out else "") if ed else ""))
++    return parts, disputed
++
++
++def version_evidence(names: list[str], body: str, store: Any, code: Any, eng: dict) -> dict:
++    """The evidence version_check sends for each name (no model call): {"items": [text per name sent], "sent": [names],
++    "unsettled": {names found in a disputed folder}, "constants": {name: where it is defined}, "long": {short: long}}."""
++    srcs = [(s.idx, s.title or "", s.url or "", (s.page_text or "") + "\n" + "\n".join(s.snippets[:3]))
++            for s in (store.all_sources() if store is not None else [])]
++    code = list(code or [])
++    src_of = {}
++    for repo in code:
++        e = eng.get(repo.name, {})
++        src_of[repo.name] = _Src(repo.root, e.get("shared") or []) if getattr(repo, "root", None) else None
++    items, sent, unsettled, constants, longs = [], [], set(), {}, {}
++    for n in names:
++        q = _search_name(n)
++        # 10-29 (Fix 1b): the whole-name hits of an environment-style name - a constant of the code that nothing reads
++        # as a setting is not sent; a short name that never occurs on its own is judged by its long form
++        long = None
++        if ENV_RE.fullmatch(n) and code:
++            consts, alone, sub = [], False, []
++            for repo in code:
++                try:
++                    g = repo.grep(n, ".", fixed=True, max_hits=400)
++                except Exception:  # noqa: BLE001
++                    consts.append(None)
++                    alone = True
++                    continue
++                sub += g["hits"]
++                w = [h for h in g["hits"] if _whole(n).search(h["text"])]
++                if not w and g["more"]:
++                    try:
++                        w = repo.grep(r"(^|[^A-Za-z0-9_])" + n + r"([^A-Za-z0-9_]|$)", ".", max_hits=50)["hits"]
++                    except Exception:  # noqa: BLE001
++                        w = [{"file": "?", "line": 0, "text": n}]
++                alone = alone or bool(w)
++                if w:
++                    consts.append(None if g["more"] else _not_a_setting(w, n))
++            if consts and all(consts):
++                constants[n] = consts[0]
++                continue
++            if sub and not alone:
++                # a long form the report names too, or one in the engine's, shared or disputed folders (not one only
++                # in vendored code: AVX512_BF16 is not GGML_AVX512_BF16)
++                where = [d for e in eng.values() for k in ("dirs", "shared", "disputed") for d in e.get(k) or []]
++                forms = [f for f in _long_forms(n, sub, names) if f in names or any(
++                    _in_dirs(h["file"], where) and _whole(f).search(h["text"]) for h in sub)]
++                long = forms[0] if forms else None
++                if long:
++                    longs[n] = long
++        parts = [f"### {n}"]
++        if q != n:
++            parts.append(f"Build option: searched without the -D, as `{q}` (the name CMake and the code use)")
++        if long:
++            others = forms[1:3]
++            parts.append(f"Short form: `{n}` does not occur on its own in the code at the user's version; it is the end of "
++                         f"`{long}`{' (named in the report too)' if long in names else ''}"
++                         + (f" (also of {', '.join('`' + o + '`' for o in others)})" if others else "")
++                         + f" - judge it by `{long}`. The code evidence below is for `{long}`:")
++            q = long
++        disputed = False
++        for repo in code:
++            e = eng.get(repo.name, {})
++            p, d = _code_parts(repo, q, e, src_of.get(repo.name), _sentences_with(body, n, 4))
++            parts += p
++            disputed = disputed or d
++            if q != n and CMAKE_RE.fullmatch(n) and src_of.get(repo.name) is not None:
++                parts.append(_cmake_lines(repo, src_of[repo.name], q, e.get("dirs") or []))
++        if disputed:
++            unsettled.add(n)
++        mention = [(i, t, u) for i, t, u, txt in srcs if n in txt or n in t][:5]
++        if mention:
++            parts.append("Sources mentioning it: " + "; ".join(f"[{i}] {t[:90]} ({u[:110]})" for i, t, u in mention))
++        else:
++            parts.append("Sources mentioning it: none of the research's sources")
++        parts += [f"Report: \"{s}\"" for s in _sentences_with(body, n)]
++        items.append("\n".join(parts))
++        sent.append(n)
++    return {"items": items, "sent": sent, "unsettled": unsettled, "constants": constants, "long": longs}
++
++
+ def version_check(llm: Callable[[str], str], task: str, body: str, store: Any, code: Any = None,
+                   pins: dict | None = None, max_names: int = 120) -> dict:
+     """code: (repo object with .grep) list for the pinned clones; store: the evidence store (sources mentioning a
+@@ -849,80 +1521,11 @@
+     eng = {}
+     for repo in code or []:
+         try:
+-            # two independent answers, only the folders both name (round 3: one answer took in the Qwen engine's
+-            # src/program, the other did not); no overlap -> the first answer
+-            e1, e2 = engine_dirs(llm, task, repo), engine_dirs(llm, task, repo)
+-            both = [d for d in e1["dirs"] if d in e2["dirs"]]
+-            shared = list(dict.fromkeys(e1.get("shared", []) + e2.get("shared", [])))
+-            keep = both or e1["dirs"]
+-            # 10-28 (p4s6 o01, a whole-project question: one answer took only the DeepSeek engine, the other every
+-            # engine and src/core, kernels, prefill; the overlap made src/core's --kv-resident "another engine"): the
+-            # folders only one answer names are disputed, and a name found there is not flagged
+-            eng[repo.name] = {**e1, "dirs": keep, "shared": [d for d in shared if d not in keep],
+-                              "disputed": [d for d in dict.fromkeys(e1["dirs"] + e2["dirs"]) if d not in keep and d not in shared],
+-                              "answers": [e1["dirs"], e2["dirs"]]}
++            eng[repo.name] = _settle_dirs(engine_dirs(llm, task, repo), engine_dirs(llm, task, repo))
+         except Exception as e:  # noqa: BLE001
+             eng[repo.name] = {"dirs": [], "error": str(e)[:200]}
+-    srcs = [(s.idx, s.title or "", s.url or "", (s.page_text or "") + "\n" + "\n".join(s.snippets[:3]))
+-            for s in (store.all_sources() if store is not None else [])]
+-    items, unsettled = [], set()
+-    for n in names:
+-        parts = [f"### {n}"]
+-        for repo in code or []:
+-            try:
+-                g = repo.grep(n, ".", fixed=True, max_hits=400)      # a config key: its quoted string literal
+-            except Exception as e:  # noqa: BLE001
+-                parts.append(f"Code at {repo.name}@{repo.ref}: search failed ({e})")
+-                continue
+-            ed = eng.get(repo.name, {}).get("dirs") or []
+-            sd = eng.get(repo.name, {}).get("shared") or []
+-            dd = eng.get(repo.name, {}).get("disputed") or []
+-            where = f"the engine's own folders ({', '.join(ed)})" if ed else "the repository"
+-            if not g["total"]:
+-                parts.append(f"Code at {repo.name}@{repo.ref} (the user's version): no hits anywhere")
+-                continue
+-            hits = g["hits"]
+-            if ed and g["more"]:
+-                # 10-28 (p4s6 o01): the repository-wide search keeps its first 400 hits, and the project's bench results
+-                # filled them (--expert-cache: 380 files under bench/results), so src/program's hit was lost and the
+-                # engine's own option read as "another engine" - its own, the shared and the disputed folders are
+-                # searched on their own
+-                for d in ed + sd + dd:
+-                    try:
+-                        hits = hits + [h for h in repo.grep(n, d, fixed=True, max_hits=50)["hits"] if h not in hits]
+-                    except Exception:  # noqa: BLE001
+-                        pass
+-            inside = [h for h in hits if not ed or _in_dirs(h["file"], ed)]
+-            shared_hits = [h for h in hits if ed and sd and not _in_dirs(h["file"], ed) and _in_dirs(h["file"], sd)]
+-            disputed_hits = [h for h in hits if ed and dd and not _in_dirs(h["file"], ed + sd) and _in_dirs(h["file"], dd)]
+-            outside = [h for h in hits if ed and not _in_dirs(h["file"], ed) and h not in shared_hits and h not in disputed_hits]
+-            if shared_hits:
+-                parts.append(f"Shared launcher / server code ({', '.join(sd)}), which parses options for several engines: "
+-                             f"{len(shared_hits)} hit(s): " + "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}"
+-                                                                     for h in shared_hits[:3]))
+-            if disputed_hits:
+-                unsettled.add(n)
+-                parts.append(f"Folders that may also be the engine's ({', '.join(dd)}): {len(disputed_hits)} hit(s): "
+-                             + "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}" for h in disputed_hits[:3]))
+-            dirs: dict[str, int] = {}
+-            for h in outside:
+-                top = "/".join(h["file"].split("/")[:2])
+-                dirs[top] = dirs.get(top, 0) + 1
+-            more = "+" if g["more"] else ""
+-            line_in = "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}" for h in inside[:3])
+-            line_out = "; ".join(f"{h['file']}:{h['line']}: {h['text'][:100]}" for h in outside[:3])
+-            parts.append(f"Code at {repo.name}@{repo.ref} (the user's version) - in {where}: {len(inside)}{more} hit(s)"
+-                         + (f": {line_in}" if line_in else "")
+-                         + (f" | elsewhere: {len(outside)}{more} hit(s) ("
+-                            + ", ".join(f"{k} {v}" for k, v in sorted(dirs.items(), key=lambda x: -x[1])[:5]) + ")"
+-                            + (f": {line_out}" if line_out else "") if ed else ""))
+-        mention = [(i, t, u) for i, t, u, txt in srcs if n in txt or n in t][:5]
+-        if mention:
+-            parts.append("Sources mentioning it: " + "; ".join(f"[{i}] {t[:90]} ({u[:110]})" for i, t, u in mention))
+-        else:
+-            parts.append("Sources mentioning it: none of the research's sources")
+-        parts += [f"Report: \"{s}\"" for s in _sentences_with(body, n)]
+-        items.append("\n".join(parts))
++    ev = version_evidence(names, body, store, code, eng)
++    items, unsettled = ev["items"], {_bare(n) for n in ev["unsettled"]}
+     versions = ""
+     if pins:
+         versions = "\nThe user's versions (from the task or the setup profile): " + ", ".join(
+@@ -935,7 +1538,7 @@
+             raw.append((out or "")[:2000])
+         results += [d for d in got if isinstance(d, dict) and d.get("name")]
+     for r in results:
+-        if r.get("kind") in ("other-engine", "launcher-only") and r["name"] in unsettled:
++        if r.get("kind") in ("other-engine", "launcher-only") and _bare(str(r["name"])) in unsettled:
+             r["kind"], r["was"] = "unsure", r.get("kind")      # found in a disputed folder: not flagged
+     if not any(e.get("dirs") for e in eng.values()):
+         # 10-28 (bundle write replays, no clone): with no engine folders read from the code the model took "docs only,
+@@ -943,7 +1546,12 @@
+         for r in results:
+             if r.get("kind") in ("other-engine", "launcher-only"):
+                 r["kind"], r["was"] = "unsure", r.get("kind")
+-    return {"names": names, "results": results, "raw": raw or None, "engine_dirs": eng}
++    # 10-29 (Fix 1b): constants of the code (no setting at all) were not sent; they are listed, never flagged
++    results += [{"name": n, "kind": "not-a-setting", "use": "described",
++                 "note": f"a constant of the code ({w}), not a flag, variable or config key"}
++                for n, w in ev["constants"].items()]
++    return {"names": names, "results": results, "raw": raw or None, "engine_dirs": eng,
++            "long_forms": ev["long"] or None}
+ 
+ 
+ BAD_KINDS = {"other-engine": "another engine of the same project", "other-version": "another version",

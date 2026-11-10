@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""fix-replay.py - phase 4's six fixes + the consistency pass, replayed one at a time on saved reports (the user,
+10-27: "replays per fix, then one combined full rerun and one stage 3"). Only the report stage's checks run (no
+research, no writing): deep/report.py's ReportWriter._finish_fixed with LDR_DEEP_FIX set to the fixes asked for.
+Through strata-proxy (8090), holding run/bench.lock (Jan jobs wait), one replay per process (the deep config is read
+from the environment at import).
+
+  check --fix NAMES --label L [--run RUN_DIR] [--report FILE] [--question FILE] [--verify N] [--setup] [--critic]
+        [--budget-left S]
+      NAMES: version, inline, arith, cite, baseline, budget, consist (comma list) or all.
+      --run: a finished deep run (RUN_DIR/deep/evidence.jsonl rebuilds its evidence store; the report checked is
+             RUN_DIR/deep/report-unverified.md unless --report; the question from RUN_DIR/marks.json or --question).
+      Without --run: --report is a finished report; its old check marks and check sections are taken out, and its
+             "## Sources" list becomes an evidence store of titles and URLs only (no page text).
+      --verify N: run the citation check on N key claims (default 0: off). --setup: the setup check with
+      user-setup.md. --critic: the critic. --budget-left S: the run's deadline S seconds from now (Fix 6's plan).
+      version: the code tool's clone at the version the question names (opened for the replay, deleted after).
+      -> results/bench2/fixes/replays/<label>/: report.md (with the marks), the checks' JSON files, calls.json
+  cite-all
+      Fix 4 offline (no model): every saved measurement report (results/bench2/runs/*/*/deep/report-unverified.md)
+      against its own evidence store - citations to indices that are not sources of that run
+      -> results/bench2/fixes/replays/cite-all.json + a table on stdout
+"""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import glob
+import json
+import os
+import re
+import shutil
+import sys
+import time
+from pathlib import Path
+
+WS = Path("/home/USER/ai/deep-research")
+OUT = WS / "results" / "bench2" / "fixes" / "replays"
+PROXY = "http://127.0.0.1:8090"
+OLD_SECTIONS = ("Setup check", "Fresh check", "Check these", "Citation check", "Version check", "Arithmetic check",
+                "Consistency check", "Sources", "Research Metrics")
+
+
+def bench_lock():
+    f = open(WS / "run" / "bench.lock", "w")
+    fcntl.flock(f, fcntl.LOCK_EX)
+    return f
+
+
+def proxy_up() -> None:
+    import requests
+    try:
+        requests.get(PROXY + "/health", timeout=5, proxies={"http": None, "https": None})
+        return
+    except Exception:  # noqa: BLE001
+        pass
+    os.system(f"{WS}/run-ldr.sh proxy > /dev/null 2>&1")
+    time.sleep(3)
+
+
+def model():
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI(model="strata", base_url=PROXY + "/v1", api_key="none", temperature=1.0, max_tokens=30000,
+                      streaming=True, timeout=3600, max_retries=1)
+
+
+def clean_finished(md: str) -> str:
+    """A finished report back to its text: old check sections and inline marks out."""
+    from local_deep_research.deep.checks import strip_marks
+
+    for s in OLD_SECTIONS:
+        md = re.sub(rf"(?ms)^## {re.escape(s)}\s*\n.*?(?=^## |\Z)", "", md)
+    md = re.sub(r"[ \t]*(\*{1,2})?\[(?i:setup check|fresh check)[: ][^\n]*?\](?(1)\1)", "", md)
+    return re.sub(r"\n{3,}", "\n\n", strip_marks(md)).strip() + "\n"
+
+
+def sources_store(md: str, question: str):
+    """An evidence store from a finished report's "## Sources" list (titles and URLs only)."""
+    from local_deep_research.deep.evidence import EvidenceStore
+
+    store = EvidenceStore(question, None)
+    m = re.search(r"(?ms)^## Sources\s*\n(.*?)(?=^## |\Z)", md)
+    body = m.group(1) if m else ""
+    rows = re.findall(r"(?m)^\[(\d+)\]\s*(.*?)\s*(?:\(source nr: [\d, ]+\))?\s*\n\s*URL:\s*(\S+)", body)
+    if not rows:
+        rows = [(a, b, c) for a, b, c in re.findall(r"(?m)^\[(\d+)\]\s*(.*?)\s*[—-]\s*(https?://\S+)", body)]
+    for idx, title, url in rows:
+        store.add_search("(from the report's source list)", [{"index": int(idx), "link": url, "title": title}])
+    return store, len(rows)
+
+
+def run_store(run: Path):
+    from local_deep_research.deep import seed
+    from local_deep_research.deep.evidence import EvidenceStore
+
+    sd = seed.load([str(run / "deep")])
+    q = json.loads((run / "marks.json").read_text()).get("question", "") if (run / "marks.json").exists() else ""
+    store = EvidenceStore(q, None)
+    seed.fill_store(sd, store)
+    lead = (run / "deep" / "lead_answer.md").read_text() if (run / "deep" / "lead_answer.md").exists() else ""
+    return q, store, lead
+
+
+def cmd_check(a) -> int:
+    fixes = a.fix
+    env = {"LDR_DEEP": "1", "LDR_DEEP_FIX": fixes, "LDR_DEEP_TOKENIZER_DIR": str(WS / "deep" / "tokenizer"),
+           "LDR_DEEP_REPORT_EFFORT": "medium", "LDR_DEEP_VERIFY_EFFORT": "xhigh",
+           "LDR_DEEP_VERIFY": "1" if a.verify > 0 else "0", "LDR_DEEP_VERIFY_MAX_CLAIMS": str(a.verify or 0),
+           "LDR_DEEP_CRITIC": "1" if a.critic else "", "LDR_DEEP_VERIFY2": "", "LDR_DEEP_NOTYET": "",
+           "LDR_DEEP_SETUP_PROFILE": str(WS / "user-setup.md") if a.setup else ""}
+    os.environ.update(env)
+    from local_deep_research.deep import checks, codetool, report
+    from local_deep_research.deep import setup as setup_profile
+
+    out = OUT / a.label
+    if out.exists() and any(out.iterdir()):
+        print(f"{out} exists - pick another label")
+        return 1
+    out.mkdir(parents=True, exist_ok=True)
+    question = Path(a.question).read_text(encoding="utf-8").strip() if a.question else ""
+    if a.run:
+        run = Path(a.run)
+        q, store, lead = run_store(run)
+        question = question or q
+        body = Path(a.report).read_text(encoding="utf-8") if a.report else (run / "deep" / "report-unverified.md").read_text()
+        src_note = f"evidence store of {run.name} ({len(store.all_sources())} sources)"
+    else:
+        raw = Path(a.report).read_text(encoding="utf-8")
+        store, n = sources_store(raw, question)
+        body, lead = clean_finished(raw), ""
+        src_note = f"source list of the report ({n} titles + URLs, no page text)"
+    if not question:
+        print("no question: give --question")
+        return 1
+    store.out_dir = out
+    ct = None
+    if checks.fix_on("version"):
+        prof = setup_profile.setup_facts(str(WS / "user-setup.md"))
+        pins = codetool.derive_pins(question, prof)
+        known = [m.group(1).removesuffix(".git") for m in codetool.GH_URL_RE.finditer(question + "\n" + prof)
+                 if m.group(1).split("/")[1].lower().removesuffix(".git") in pins]
+        ct = codetool.CodeTool(out / "code-tool-scratch", "replay", log_path=out / "code-tool.jsonl", pins=pins,
+                               known_repos=known)
+        store.code_tool, store.pins = ct, pins
+    lock = bench_lock()
+    proxy_up()
+    t0 = time.time()
+    try:
+        w = report.ReportWriter(question, store, model(), lead)
+        if a.budget_left:
+            w.plan = checks.TimePlan(w.plan.clock() + a.budget_left, w.plan.clock)
+        res = w._finish_fixed(body, {"title": "", "sections": []}, [], t0)
+    finally:
+        if ct is not None:
+            ct.close()
+            shutil.rmtree(out / "code-tool-scratch", ignore_errors=True)
+        lock.close()
+    (out / "report.md").write_text(res["markdown"], encoding="utf-8")
+    (out / "input.md").write_text(body, encoding="utf-8")
+    (out / "calls.json").write_text(json.dumps({"fixes": fixes, "source": src_note, "seconds": round(time.time() - t0, 1),
+                                                "calls": res["calls"], "stats": res["stats"]}, indent=1, default=str))
+    st = res["stats"]
+    print(f"{a.label}: {fixes} on {src_note}: {round(time.time() - t0)} s, {len(res['calls'])} calls; checks "
+          f"{json.dumps(st.get('checks'), default=str)[:400]}; skipped {st.get('skipped')}; notes {st.get('plan_notes')}")
+    return 0
+
+
+def cmd_cite_all(a) -> int:
+    os.environ.update({"LDR_DEEP": "1"})
+    from local_deep_research.deep.checks import cite_guard
+
+    rows = []
+    for rep in sorted(glob.glob(str(WS / "results/bench2/runs/*/*/deep/report-unverified.md"))):
+        d = Path(rep).parent
+        valid = set()
+        try:
+            for line in open(d / "evidence.jsonl", encoding="utf-8"):
+                e = json.loads(line)
+                if e.get("type") == "search":
+                    valid |= {r.get("idx") for r in e.get("results") or [] if isinstance(r, dict)}
+                elif e.get("type") == "fetch" and e.get("idx") is not None:
+                    valid.add(e["idx"])
+        except OSError:
+            continue
+        body = Path(rep).read_text(encoding="utf-8")
+        _new, res = cite_guard(body, lambda i: i in valid)
+        ans = re.search(r"(?ms)^## Answer\s*\n(.*?)(?=^## |\Z)", body)
+        _a, ares = cite_guard(ans.group(1), lambda i: i in valid) if ans else (None, {"removed": {}})
+        rows.append({"run": str(d.parent.relative_to(WS / "results/bench2/runs")), "removed": res["removed"],
+                     "marked": res["marked"], "in_answer": ares["removed"]})
+    (OUT).mkdir(parents=True, exist_ok=True)
+    (OUT / "cite-all.json").write_text(json.dumps(rows, indent=1))
+    bad = [r for r in rows if r["removed"]]
+    print(f"{len(rows)} saved reports; {len(bad)} cite indices that are not sources of their run:")
+    for r in bad:
+        print(f"  {r['run']}: {r['removed']} (statements left without a source: {r['marked']}; in the Answer: "
+              f"{r['in_answer'] or 'none'})")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+    q = sp.add_parser("check")
+    q.add_argument("--fix", required=True)
+    q.add_argument("--label", required=True)
+    q.add_argument("--run")
+    q.add_argument("--report")
+    q.add_argument("--question")
+    q.add_argument("--verify", type=int, default=0)
+    q.add_argument("--setup", action="store_true")
+    q.add_argument("--critic", action="store_true")
+    q.add_argument("--budget-left", type=float, default=0.0)
+    sp.add_parser("cite-all")
+    a = ap.parse_args()
+    return {"check": cmd_check, "cite-all": cmd_cite_all}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

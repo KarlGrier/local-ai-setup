@@ -1,0 +1,26 @@
+[90003] Title: Niko1221/Strata@v0.2.4: src/program/generate.cpp lines 2880-2900 (source code)
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/program/generate.cpp#L2880-L2900
+[OTHER ENGINE: this file is part of Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them]
+
+2880:             for (int d = 0; d < n_dev; ++d) {
+2881:                 cudaDeviceProp wp{};
+2882:                 if (cudaGetDeviceProperties(&wp, d) == cudaSuccess && wp.warpSize != 64) {
+2883:                     std::fprintf(stderr, "strata generate: this engine was built for gfx906 (wave64, STRATA_HIP_GFX906), but GPU %d "
+2884:                                          "(%s) has %d-lane waves: use the ready-made engine for that card, or hide it "
+2885:                                          "(HIP_VISIBLE_DEVICES)\n", d, wp.name, wp.warpSize);
+2886:                     return 2;
+2887:                 }
+2888:             }
+2889:         } else (void) cudaGetLastError();
+2890:     }
+2891: #endif
+2892:     strata::core::set_coupled_draft(o.coupled_draft);
+2893:     {   // --host-core / STRATA_HOST_CORE, before the pool and the session pin any thread
+2894:         std::string hc = o.host_core;
+2895:         if (hc.empty())
+2896:             if (const char* e = std::getenv("STRATA_HOST_CORE")) hc = e;
+2897:         if (hc == "last") strata::kernels::cpu::set_host_core(strata::kernels::cpu::HostCore::Last);
+2898:         if (hc == "sibling") strata::kernels::cpu::set_host_core(strata::kernels::cpu::HostCore::Sibling);
+2899:     }
+2900:     {   // --pool-cores / STRATA_POOL_CORES (experimental, off by default), before the pool is built.  A list that cannot be read is
+(src/program/generate.cpp has 17028 lines.)

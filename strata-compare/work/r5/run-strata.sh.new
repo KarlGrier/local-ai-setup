@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# run-strata.sh — Strata (tuned, "C*4") serving Qwen3.8-Flash-Next GSQ-RCO IQ3_S on http://127.0.0.1:8081/v1
+#
+#   ./run-strata.sh start     start in the background (survives closing the terminal), wait until ready
+#   ./run-strata.sh stop      graceful stop (the engine exits, VRAM is released)
+#   ./run-strata.sh status    pid, uptime, health, memory, log
+#   ./run-strata.sh logs [-f] the server + engine log
+#
+# C*4 (REPORT.md "Round 4"): Strata v0.1.15 + patches/r4/0001-0006, built from a clean checkout by
+# work/r4/build-cstar4.sh into engine-cstar4/strata (sha256 in engine-cstar4/SHA256); server and chat page from that
+# checkout (strata-cstar4/serve). Settings: configs/Cstar4.json = C*3's flags with upstream's --prefill auto and pool
+# size, CUDA_MODULE_LOADING=LAZY (keeps ~300 MiB VRAM free), 64 n-gram I/O threads, --chat-cache 6 (16 GiB);
+# sampling defaults 0.6 / 0.95 / 20 / 0.05; shared chat settings configs/Cstar4.shared-settings.json.
+# Binds 127.0.0.1 only. For the chat page on 8080 use ./switch-model.sh (it calls this script with STRATA_PORT=8080).
+# Environment overrides: STRATA_PORT (default 8081), STRATA_CONFIG (default configs/Cstar4.json; rollback:
+# configs/Cstar3.json = round 3's C*3,
+# configs/Cstar2.json = round 2's C*2 on the v0.1.11 server, configs/Cstar.json = round 1's C*).
+# The server script comes from the config's "server" key (C*2 and C* have none: the v0.1.11 server).
+set -euo pipefail
+
+WS=/home/USER/ai-speed-testing/strata-compare
+PORT=${STRATA_PORT:-8081}
+CFG=${STRATA_CONFIG:-$WS/configs/Cstar4.json}
+PY=$WS/.venv/bin/python
+SERVER=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get('server', sys.argv[2]))" "$CFG" \
+         "$WS/strata-v0111/serve/server.py" 2>/dev/null || echo "$WS/strata-v0111/serve/server.py")
+RUN=$WS/logs/run
+PIDFILE=$RUN/strata-$PORT.pid
+LOGFILE=$RUN/strata-$PORT.logpath
+# measured peak with the C* settings (see REPORT.md, resources): leave real headroom
+NEED_VRAM_MIB=${NEED_VRAM_MIB:-12000}   # less still works, with fewer experts cached on the GPU
+NEED_RAM_MIB=${NEED_RAM_MIB:-58000}     # measured peak RSS 51 GB + headroom
+mkdir -p "$RUN"
+
+die()  { echo "run-strata: $*" >&2; exit 1; }
+info() { echo "run-strata: $*"; }
+
+our_pid() {
+  [[ -f $PIDFILE ]] || return 1
+  local pid; pid=$(cat "$PIDFILE")
+  [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null && tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q "serve/server.py" && { echo "$pid"; return 0; }
+  return 1
+}
+
+engine_pid() {  # the strata engine is a child of the server
+  pgrep -P "$1" -f 'strata --serve' 2>/dev/null | head -1 || true
+}
+
+preflight() {
+  [[ -f $CFG ]] || die "config missing: $CFG"
+  local exe; exe=$("$PY" -c "import json,sys; print(json.load(open('$CFG'))['exe'])")
+  [[ -x $exe ]] || die "engine not built: $exe (run scripts/build-patched.sh)"
+  if ss -H -ltn "( sport = :$PORT )" | grep -q .; then die "port $PORT is already in use"; fi
+  if pgrep -f 'llama-server|strata --serve' >/dev/null; then
+    pgrep -af 'llama-server|strata --serve' | cut -c1-160 >&2
+    die "another model server is running (above); stop it first — two of them do not fit in RAM/VRAM together"
+  fi
+  local free_vram avail_ram
+  # the GPU the config pins (CUDA_VISIBLE_DEVICES = the RTX 5080's UUID since the 4060 Ti went in), else the first one
+  local gpu; gpu=$("$PY" -c "import json; print(json.load(open('$CFG')).get('env',{}).get('CUDA_VISIBLE_DEVICES',''))")
+  free_vram=$(nvidia-smi ${gpu:+-i "$gpu"} --query-gpu=memory.free --format=csv,noheader,nounits | head -1)
+  avail_ram=$(( $(awk '/MemAvailable/{print $2}' /proc/meminfo) / 1024 ))
+  (( free_vram >= NEED_VRAM_MIB )) || die "only $free_vram MiB VRAM free (need $NEED_VRAM_MIB): close GPU-heavy apps"
+  (( avail_ram >= NEED_RAM_MIB )) || die "only $avail_ram MiB RAM available (need $NEED_RAM_MIB): close memory-heavy apps"
+  info "preflight ok: VRAM free $free_vram MiB, RAM available $avail_ram MiB"
+}
+
+do_start() {
+  local pid log i envs=()
+  if pid=$(our_pid); then info "already running (pid $pid) on http://127.0.0.1:$PORT/v1"; return 0; fi
+  preflight
+  log=$WS/logs/run/strata_$(date +%Y%m%dT%H%M%S)_$PORT.log
+  # environment variables the tuned config asks for (e.g. STRATA_ARENA_THP=1)
+  mapfile -t envs < <("$PY" -c "import json; [print(f'{k}={v}') for k,v in json.load(open('$CFG')).get('env',{}).items()]")
+  echo "# run-strata $(date -Is) config=$CFG env=${envs[*]:-}" > "$log"
+  setsid nohup env "${envs[@]}" "$PY" "$SERVER" --engine strata --config "$CFG" --host 127.0.0.1 --port "$PORT" \
+      >> "$log" 2>&1 < /dev/null &
+  pid=$!
+  echo "$pid" > "$PIDFILE"; echo "$log" > "$LOGFILE"
+  info "starting pid $pid, log $log (loading ~50 GB of experts takes about a minute)"
+  for i in $(seq 1 900); do
+    kill -0 "$pid" 2>/dev/null || { tail -30 "$log" >&2; die "server exited during startup"; }
+    curl -sf -m 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  curl -sf -m 2 "http://127.0.0.1:$PORT/health" >/dev/null || die "not ready after 15 minutes"
+  info "ready: http://127.0.0.1:$PORT/v1   $(curl -s "http://127.0.0.1:$PORT/health")"
+  # warm-up (round 5): read one full prompt chunk now, so the prompt path's kernels and GPU memory pool are in place
+  # before another program can take the VRAM (a first long prompt would otherwise allocate them mid-request)
+  "$PY" "$WS/scripts/strata-warmup.py" "http://127.0.0.1:$PORT" || info "warning: the warm-up request failed"
+  # the chat page's Web search switch needs the local SearXNG (websearch/searxng.sh, 127.0.0.1:8888)
+  if "$PY" -c "import json,sys; sys.exit(0 if json.load(open('$CFG')).get('web_search') else 1)"; then
+    "$WS/websearch/searxng.sh" start || info "warning: SearXNG did not start; the Web search switch will say so"
+  fi
+}
+
+do_stop() {
+  local pid e i
+  pid=$(our_pid) || { info "not running"; rm -f "$PIDFILE"; return 0; }
+  e=$(engine_pid "$pid")
+  info "stopping pid $pid${e:+ (engine $e)}"
+  kill -INT "$pid" 2>/dev/null || true          # server.py: KeyboardInterrupt -> engine QUIT -> clean exit
+  for i in $(seq 1 60); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+  kill -0 "$pid" 2>/dev/null && { kill -TERM "$pid" 2>/dev/null || true; sleep 2; }
+  [[ -n $e ]] && kill -0 "$e" 2>/dev/null && { kill -TERM "$e" 2>/dev/null || true; sleep 2; }
+  for i in $(seq 1 60); do
+    [[ -n $e ]] && nvidia-smi --query-compute-apps=pid --format=csv,noheader | grep -qw "$e" || break; sleep 0.5
+  done
+  rm -f "$PIDFILE"; info "stopped"
+  "$WS/websearch/searxng.sh" status >/dev/null 2>&1 && "$WS/websearch/searxng.sh" stop >/dev/null 2>&1 && info "SearXNG stopped"
+  true
+}
+
+do_status() {
+  local pid e
+  if pid=$(our_pid); then
+    e=$(engine_pid "$pid")
+    echo "running: server pid $pid${e:+, engine pid $e}, up $(ps -o etime= -p "$pid" | tr -d ' '), http://127.0.0.1:$PORT/v1"
+    echo "health: $(curl -s -m 3 "http://127.0.0.1:$PORT/health" || echo unreachable)"
+    echo "status: $(curl -s -m 3 "http://127.0.0.1:$PORT/status" || true)"
+    [[ -n $e ]] && echo "memory: engine RSS $(( $(awk '/VmRSS/{print $2}' /proc/$e/status) / 1024 )) MiB, GPU $(nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader | awk -F', ' -v p="$e" '$1==p{print $2}'), MemAvailable $(( $(awk '/MemAvailable/{print $2}' /proc/meminfo) / 1024 )) MiB"
+    echo "log:    $(cat "$LOGFILE" 2>/dev/null)"
+    echo "search: $("$WS/websearch/searxng.sh" status 2>/dev/null | head -1)"
+  else
+    echo "not running"; return 3
+  fi
+}
+
+case ${1:-} in
+  start)  do_start;;
+  stop)   do_stop;;
+  status) do_status;;
+  logs)   l=$(cat "$LOGFILE" 2>/dev/null) || die "no log"; [[ ${2:-} == -f ]] && exec tail -f "$l" || tail -n 60 "$l";;
+  *) sed -n '2,15p' "$0"; exit 2;;
+esac

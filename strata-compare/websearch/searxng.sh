@@ -1,0 +1,62 @@
+#!/bin/bash
+# searxng.sh start|stop|status|install — the local SearXNG for the chat page's web search (127.0.0.1:8888 only).
+# Source: websearch/searxng (git clone of github.com/searxng/searxng), venv websearch/venv, settings websearch/settings.yml,
+# caches/temp in the workspace (work/r5/env.sh). Server: granian (SearXNG's production server), else Flask's.
+set -u
+WS=/home/USER/ai-speed-testing/strata-compare; D=$WS/websearch
+source $WS/work/r5/env.sh
+PIDF=$WS/logs/run/searxng.pid; LOG=$WS/logs/run/searxng.log
+export SEARXNG_SETTINGS_PATH=$D/settings.yml
+running() { [ -f $PIDF ] && kill -0 $(cat $PIDF) 2>/dev/null; }
+# 2026-10-21 (the user): 8888 is the systemd user service searxng-chat.service (`searxng.sh run`), independent of
+# run-strata.sh and the test scripts: while the unit file exists, start = systemctl --user start, stop leaves it running
+# (SEARXNG_FORCE_STOP=1 or systemctl --user stop searxng-chat.service stops it), status = the unit's state + /healthz.
+UNIT=searxng-chat.service
+unit_mode() { [ -f "$HOME/.config/systemd/user/$UNIT" ]; }
+healthy() { curl -sf -m 3 http://127.0.0.1:8888/healthz >/dev/null 2>&1; }
+case ${1:-} in
+install)
+  [ -d $D/venv ] || python3 -m venv $D/venv
+  $D/venv/bin/pip install -q -r $D/searxng/requirements.txt -r $D/searxng/requirements-server.txt && echo "installed";;
+run)   # the unit's ExecStart: granian in the foreground (systemd restarts it)
+  mkdir -p $WS/logs/run; cd $D/searxng
+  export PYTHONFAULTHANDLER=1
+  exec ${SEARXNG_VENV:-$D/venv-3.12.13}/bin/granian --interface wsgi --host 127.0.0.1 --port 8888 --workers 1 \
+    --blocking-threads 8 searx.webapp:app >> $LOG 2>&1 < /dev/null;;
+start)
+  if unit_mode; then
+    systemctl --user start $UNIT || { echo "systemctl --user start $UNIT failed"; exit 1; }
+    for i in $(seq 1 60); do healthy && { echo "searxng up ($UNIT) on http://127.0.0.1:8888"; exit 0; }; sleep 1; done
+    echo "searxng ($UNIT) did not answer on 8888; see $LOG"; tail -20 $LOG; exit 1
+  fi
+  running && { echo "searxng already running (pid $(cat $PIDF))"; exit 0; }
+  mkdir -p $WS/logs/run; cd $D/searxng
+  # 2026-10-19 (README proposal B): CPython 3.12.13 (gh-119585, the Ubuntu 3.12.3 crash when requests overlap);
+  # the old venv stays as websearch/venv for a rollback (SEARXNG_VENV=$D/venv)
+  V=${SEARXNG_VENV:-$D/venv-3.12.13}
+  if [ -x $V/bin/granian ]; then
+    PYTHONFAULTHANDLER=1 setsid nohup $V/bin/granian --interface wsgi --host 127.0.0.1 --port 8888 --workers 1 --blocking-threads 8 \
+      searx.webapp:app >> $LOG 2>&1 < /dev/null &
+  else
+    PYTHONFAULTHANDLER=1 setsid nohup $V/bin/python -m searx.webapp >> $LOG 2>&1 < /dev/null &
+  fi
+  echo $! > $PIDF
+  for i in $(seq 1 60); do curl -sf -m 2 http://127.0.0.1:8888/healthz >/dev/null 2>&1 && { echo "searxng up (pid $(cat $PIDF)) on http://127.0.0.1:8888"; exit 0; }; sleep 1; done
+  echo "searxng did not come up; see $LOG"; tail -20 $LOG; exit 1;;
+stop)
+  if unit_mode; then
+    if [ "${SEARXNG_FORCE_STOP:-0}" = 1 ]; then systemctl --user stop $UNIT; echo "stopped ($UNIT)"
+    else echo "left running: SearXNG 8888 is the user service $UNIT"; fi
+    exit 0
+  fi
+  running && { kill -TERM -$(cat $PIDF) 2>/dev/null || kill -TERM $(cat $PIDF); for i in $(seq 1 20); do running || break; sleep 0.5; done; }
+  rm -f $PIDF; echo stopped;;
+status)
+  if unit_mode; then
+    st=$(systemctl --user is-active $UNIT)
+    echo "$UNIT $st; health: $(curl -s -m 3 http://127.0.0.1:8888/healthz)"
+    [ "$st" = active ] && healthy && exit 0; exit 3
+  fi
+  if running; then echo "running pid $(cat $PIDF); health: $(curl -s -m 3 http://127.0.0.1:8888/healthz)"; ss -ltnp 2>/dev/null | grep ':8888 '; else echo "not running"; exit 3; fi;;
+*) echo "usage: $0 install|run|start|stop|status";;
+esac

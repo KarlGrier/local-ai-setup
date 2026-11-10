@@ -1,0 +1,43 @@
+work/r8/tagcheck.sh phaseA-start
+work/r8/with_server.sh A1-nsys-s configs/R8t-nsys-sampled.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/a1_client.py sampled"
+work/r8/with_server.sh A1-nsys-g configs/R8t-nsys-greedy.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/a1_client.py greedy"
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh A2-32k-a configs/R8c-helper.json 32k 16
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh A2-112k-a configs/R8c-helper.json tf-long112k.prompt 16
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh A2-32k-b configs/R8c-helper.json 32k 16
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh A2-112k-b configs/R8c-helper.json tf-long112k.prompt 16
+work/r8/with_server.sh A3-thr configs/R8c-helper.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/a3_threads.py"
+work/r8/tagcheck.sh phaseA-oracle
+work/r8/with_server.sh A4-greedy configs/R8o-greedy.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/oracle_run.py A4-greedy results/r8/oracle/R8o-greedy.txt --sets math,code,prose,websyn,doc64k,doc120k,websyn64k"
+work/r8/with_server.sh A4-coupled configs/R8o-coupled.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/oracle_run.py A4-coupled results/r8/oracle/R8o-coupled.txt --sets math,code,prose,websyn,doc64k,doc120k,websyn64k"
+work/r8/with_server.sh A4-win0 configs/R8o-win0.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/oracle_run.py A4-win0 results/r8/oracle/R8o-win0.txt --sets doc64k,doc120k,websyn64k"
+work/r8/with_server.sh A4-deep configs/R8o-deep.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/oracle_run.py A4-deep results/r8/oracle/R8o-deep.txt --sets math,code,prose,websyn"
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W2-math configs/R8c-helper.json math 768 --spec 2 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W2-code configs/R8c-helper.json code 768 --spec 2 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W3-math configs/R8c-helper.json math 768 --spec 3 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W3-code configs/R8c-helper.json code 768 --spec 3 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W4-math configs/R8c-helper.json math 768 --spec 4 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W4-code configs/R8c-helper.json code 768 --spec 4 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W5-math configs/R8c-helper.json math 768 --spec 5 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W5-code configs/R8c-helper.json code 768 --spec 5 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W6-math configs/R8c-helper.json math 768 --spec 6 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W6-code configs/R8c-helper.json code 768 --spec 6 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W7-math configs/R8c-helper.json math 768 --spec 7 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W7-code configs/R8c-helper.json code 768 --spec 7 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W8-math configs/R8c-helper.json math 768 --spec 8 --spec-min-p 0 --suffix-draft 0
+PROF_SAMPLING='--seed 21 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-W8-code configs/R8c-helper.json code 768 --spec 8 --spec-min-p 0 --suffix-draft 0
+work/r8/tagcheck.sh phaseA-feasibility-runs-done
+PROF_SAMPLING='--seed 31 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-cpl0-math-a configs/R8c-helper.json math 1024 --suffix-draft 0
+PROF_SAMPLING='--seed 31 --temperature 1.0 --top-p 0.95 --top-k 20' ENVX=STRATA_SPEC_COUPLED=1 work/r8/run.sh A4-cpl1-math-a configs/R8c-helper.json math 1024 --suffix-draft 0
+PROF_SAMPLING='--seed 31 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-cpl0-code-a configs/R8c-helper.json code 1024 --suffix-draft 0
+PROF_SAMPLING='--seed 31 --temperature 1.0 --top-p 0.95 --top-k 20' ENVX=STRATA_SPEC_COUPLED=1 work/r8/run.sh A4-cpl1-code-a configs/R8c-helper.json code 1024 --suffix-draft 0
+PROF_SAMPLING='--seed 31 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-cpl0-math-b configs/R8c-helper.json math 1024 --suffix-draft 0
+PROF_SAMPLING='--seed 31 --temperature 1.0 --top-p 0.95 --top-k 20' ENVX=STRATA_SPEC_COUPLED=1 work/r8/run.sh A4-cpl1-math-b configs/R8c-helper.json math 1024 --suffix-draft 0
+PROF_SAMPLING='--seed 31 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh A4-cpl0-code-b configs/R8c-helper.json code 1024 --suffix-draft 0
+PROF_SAMPLING='--seed 31 --temperature 1.0 --top-p 0.95 --top-k 20' ENVX=STRATA_SPEC_COUPLED=1 work/r8/run.sh A4-cpl1-code-b configs/R8c-helper.json code 1024 --suffix-draft 0
+mkdir -p tmp/r8/gdncap && EXE=$PWD/engine-r8o/strata ENVX="STRATA_GDN_CAPTURE=$PWD/tmp/r8/gdncap:10:1" work/r8/run.sh A5-cap2 configs/R8c-helper.json 32k 4; ls -la tmp/r8/gdncap
+tmp/r8/gdnbench/gdn_bench tmp/r8/gdncap 20; STRATA_GDN_PIPELINE=0 tmp/r8/gdnbench/gdn_bench tmp/r8/gdncap 20
+mkdir -p tmp/r8/home-sandbox; source work/r8/env.sh; HOME=$PWD/tmp/r8/home-sandbox .venv/bin/python work/r8/flashqla_bench.py tmp/r8/gdncap --reps 20
+tmp/r8/pdl_bench
+source work/r8/env.sh; HOME=$PWD/tmp/r8/home-sandbox .venv/bin/python work/r8/membw_gpu.py
+CUDA_VISIBLE_DEVICES=GPU-UUID-RTX5080 STRATA_EXPERTS_OLD=1 tmp/r8/pr245/pr245_parity models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf strata-v0115/packs/iq3_s/native_experts.txt tmp/r8/pr245/out-old-5080.bin > results/r8/pr245-parity-old-5080.txt; CUDA_VISIBLE_DEVICES=GPU-UUID-RTX5080 tmp/r8/pr245/pr245_parity models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf strata-v0115/packs/iq3_s/native_experts.txt tmp/r8/pr245/out-new-5080.bin > results/r8/pr245-parity-new-5080.txt; cmp tmp/r8/pr245/out-old-5080.bin tmp/r8/pr245/out-new-5080.bin && echo 'PR245 PARITY 5080: BITWISE IDENTICAL' || echo 'PR245 PARITY 5080: DIFFERENT'; tail -1 results/r8/pr245-parity-new-5080.txt
+CUDA_VISIBLE_DEVICES=GPU-UUID-RTX4060TI STRATA_EXPERTS_OLD=1 tmp/r8/pr245/pr245_parity models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf strata-v0115/packs/iq3_s/native_experts.txt tmp/r8/pr245/out-old-4060ti.bin > results/r8/pr245-parity-old-4060ti.txt; CUDA_VISIBLE_DEVICES=GPU-UUID-RTX4060TI tmp/r8/pr245/pr245_parity models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf strata-v0115/packs/iq3_s/native_experts.txt tmp/r8/pr245/out-new-4060ti.bin > results/r8/pr245-parity-new-4060ti.txt; cmp tmp/r8/pr245/out-old-4060ti.bin tmp/r8/pr245/out-new-4060ti.bin && echo 'PR245 PARITY 4060ti: BITWISE IDENTICAL' || echo 'PR245 PARITY 4060ti: DIFFERENT'; tail -1 results/r8/pr245-parity-new-4060ti.txt

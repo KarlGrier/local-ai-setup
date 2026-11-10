@@ -1,0 +1,15 @@
+work/r10/tagcheck.sh "P0.2/0.3 profile + LDR baseline"
+work/r10/basecheck.sh
+BDIR=build-trace CMAKE_EXTRA=-DCMAKE_CXX_FLAGS=-DSTRATA_NVTX work/r10/build.sh strata-v35t engine-v35t
+.venv/bin/python work/r10/buildrec.py V35t configs/V35t-nsys-math.json "trace build (v35-trace = v35-c11 + the NVTX measurement commits), measurement only"
+work/r10/ldrscreen.sh L35-a configs/V35.json
+work/r10/ldrscreen.sh L35-b configs/V35.json
+.venv/bin/python work/r10/ldr_table.py V35=L35-a,L35-b | tee results/r10/ldr-baseline-v35.md
+work/r10/with_server.sh P02-stages configs/V35-stages.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; for m in math code ldr math code ldr; do .venv/bin/python work/r10/p02_client.py \$m; done"
+work/r10/with_server.sh P02-nsys-math configs/V35t-nsys-math.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r10/p02_client.py math"
+work/r10/with_server.sh P02-nsys-ldr configs/V35t-nsys-ldr.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r10/p02_client.py ldr"
+.venv/bin/python work/r10/nsys_analyze.py nsys10-math > results/r10/nsys10-math.txt 2>&1; head -50 results/r10/nsys10-math.txt
+.venv/bin/python work/r10/nsys_analyze.py nsys10-ldr > results/r10/nsys10-ldr.txt 2>&1; head -50 results/r10/nsys10-ldr.txt
+work/r10/tagcheck.sh "P0.2 done"
+work/r10/basecheck.sh
+work/r10/phase_end.sh p0

@@ -1,0 +1,104 @@
+#!/bin/bash
+# tagcheck.sh - 2026-10-23 (the user): "make the queue and tag watch decide by what changed". Shared by deep-research
+# tools/bench2-queue.sh (before each question) and work/r21/tagwatch.sh (hourly). Compares the newest final Strata tag
+# (pre-releases ignored) with the reviewed baseline in ~/ai/deep-research/run/strata-baseline-tag:
+#   no newer tag            -> "SAME <baseline>"
+#   newer, nothing on our Qwen build's path changed
+#                           -> raises the baseline to it, adds a line to both NOTES.md files, "RAISED <old> <new>"
+#   newer, the path changed -> "PAUSE <tag> <baseline> <n> <why>": the caller pauses and sends a desktop alert;
+#                              after the review, `tagcheck.sh --accept <tag> [--why TEXT]` raises the baseline
+#   GitHub not reachable    -> "UNKNOWN <why>": carry on, the next check retries (as before 10-23)
+# The path, since 10-24 (the user: "only pause for changes in the code our served Qwen build uses (the Qwen engine
+# sources and the server paths P021m runs). DeepSeek-only changes (src/dsv41/, DeepSeek-only server defaults, its build
+# flags), installer, launcher, docs and test changes: raise the baseline automatically, log it, and keep running"):
+# work/r22/qwenpath.py decides - the files the served build was compiled from, the CMake blocks it configures, and the
+# definitions its server modules have (DeepSeek-named ones, docstrings, comments and version strings left out); its
+# report goes to logs/r21/tagcheck-<base>-<tag>.json. If qwenpath.py fails, the 10-23 rule decides: src/ serve/
+# include/ third_party/ cmake/, and CMakeLists.txt apart from its project() version line.
+#   tagcheck.sh [--max-age SECONDS] [--who NAME]      --max-age: reuse the newest tag seen that recently (no ls-remote)
+#   tagcheck.sh --accept TAG [--why TEXT]
+# Read-only towards GitHub: ls-remote, and a fetch of the two tags into the strata checkout. Log: logs/r21/tagwatch.log.
+set -u
+REPO=/home/USER/ai-speed-testing/strata-compare/strata
+BASEF=${TAGCHECK_BASE_FILE:-/home/USER/ai/deep-research/run/strata-baseline-tag}
+CACHE=${BASEF%/*}/strata-newest-tag.tagcheck
+LOG=${TAGCHECK_LOG:-/home/USER/ai-speed-testing/strata-compare/logs/r21/tagwatch.log}
+read -r -a NOTES <<< "${TAGCHECK_NOTES:-/home/USER/ai/deep-research/NOTES.md /home/USER/ai-speed-testing/strata-compare/NOTES.md}"
+ENGINE=(src serve include third_party cmake)
+MAXAGE=0; WHO=check; ACCEPT=""; WHY=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --max-age) MAXAGE=$2; shift ;;
+    --who) WHO=$2; shift ;;
+    --accept) ACCEPT=$2; shift ;;
+    --why) WHY=$2; shift ;;
+    *) echo "usage: tagcheck.sh [--max-age S] [--who NAME] | --accept TAG [--why TEXT]" >&2; exit 2 ;;
+  esac; shift
+done
+exec 9> "${BASEF%/*}/tagcheck.lock"; flock 9      # the queue and the watch never decide at the same time
+note() { local l; l="$(date '+%m-%d %H:%M') $*"; for f in "${NOTES[@]}"; do printf '\n%s\n' "$l" >> "$f"; done; }
+newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]; }   # $1 newer than $2
+BASE=$(cat "$BASEF" 2>/dev/null)
+[ -n "$BASE" ] || { echo "UNKNOWN no baseline in $BASEF"; exit 0; }
+
+if [ -n "$ACCEPT" ]; then
+  newer "$ACCEPT" "$BASE" || { echo "$ACCEPT is not newer than the baseline $BASE" >&2; exit 1; }
+  echo "$ACCEPT" > "$BASEF"
+  echo "$(date -Is) baseline $BASE -> $ACCEPT (accepted after review${WHY:+: $WHY})" >> "$LOG"
+  note "Strata release baseline $BASE -> $ACCEPT after review${WHY:+ ($WHY)} (work/r22/tagcheck.sh --accept)."
+  echo "ACCEPTED $BASE $ACCEPT"; exit 0
+fi
+
+if [ "$MAXAGE" -gt 0 ] && [ -s "$CACHE" ] && [ $(( $(date +%s) - $(stat -c %Y "$CACHE") )) -le "$MAXAGE" ]; then
+  T=$(cat "$CACHE")
+else
+  T=$(timeout 60 git -C $REPO ls-remote --tags --refs origin 2>/dev/null | awk '{print $2}' | sed 's#refs/tags/##' \
+      | grep -v -e '-' | sort -V | tail -1)
+  [ -n "$T" ] && echo "$T" > "$CACHE"
+  echo "$(date -Is) newest tag: ${T:-? (ls-remote failed)} ($WHO)" >> "$LOG"
+fi
+[ -n "$T" ] || { echo "UNKNOWN ls-remote failed"; exit 0; }
+newer "$T" "$BASE" || { echo "SAME $BASE"; exit 0; }
+
+ok=""
+for i in 1 2 3; do
+  timeout 120 git -C $REPO fetch -q --no-tags origin "+refs/tags/$BASE:refs/tags/$BASE" "+refs/tags/$T:refs/tags/$T" \
+    2>/dev/null && ok=1 && break
+  sleep 20
+done
+if [ -z "$ok" ] || ! FILES=$(git -C $REPO diff --name-only "$BASE" "$T" -- "${ENGINE[@]}") \
+   || ! CMK=$(git -C $REPO diff "$BASE" "$T" -- CMakeLists.txt) || ! ALL=$(git -C $REPO diff --name-only "$BASE" "$T"); then
+  echo "$(date -Is) $T: could not fetch or compare $BASE and $T ($WHO) - deciding at the next check" >> "$LOG"
+  echo "UNKNOWN could not compare $T with $BASE"; exit 0
+fi
+OTHER=$(grep . <<< "$ALL" | cut -d/ -f1 | sort | uniq -c | sort -rn | awk '{printf "%s%s (%d)", (NR>1?", ":""), $2, $1}')
+RPT=${LOG%/*}/tagcheck-$BASE-$T.json
+V=$(timeout 300 python3 -I "${BASH_SOURCE[0]%/*}/qwenpath.py" classify "$BASE" "$T" --report "$RPT" 2>> "$LOG")
+case "$V" in
+  PAUSE\ *)
+    echo "$(date -Is) $T changes our Qwen build's path since $BASE: ${V#PAUSE } ($WHO; $RPT)" >> "$LOG"
+    read -r _ VN VWHY <<< "$V"
+    echo "PAUSE $T $BASE $VN $VWHY"; exit 0 ;;
+  RAISE\ *)
+    echo "$T" > "$BASEF"
+    echo "$(date -Is) baseline $BASE -> $T: nothing on our Qwen build's path changed; ${V#RAISE } ($WHO; $RPT)" >> "$LOG"
+    note "Strata $T (found by the $WHO): nothing on our Qwen build's path changed since $BASE (work/r22/qwenpath.py:" \
+         "the served build's engine files, the CMake blocks it configures, its server modules' definitions;" \
+         "${V#RAISE }). Baseline raised to $T automatically; measurements carry on (work/r22/tagcheck.sh)."
+    echo "RAISED $BASE $T"; exit 0 ;;
+esac
+echo "$(date -Is) $T: qwenpath.py gave '${V:0:200}' - the 10-23 rule decides ($WHO)" >> "$LOG"
+CM=$(grep '^[-+]' <<< "$CMK" | grep -v -e '^+++' -e '^---' | grep -v -E '^[-+]project\(strata VERSION [0-9.]+ LANGUAGES CXX\)$')
+N=$(( $(grep -c . <<< "$FILES") + $([ -n "$CM" ] && echo 1 || echo 0) ))
+if [ "$N" -gt 0 ]; then
+  DIRS=$( { grep . <<< "$FILES"; [ -n "$CM" ] && echo CMakeLists.txt; } | cut -d/ -f1-2 | sort | uniq -c | sort -rn | head -6 \
+          | awk '{printf "%s%s (%d)", (NR>1?", ":""), $2, $1}')
+  echo "$(date -Is) $T changes the engine/server: $N files since $BASE - $DIRS ($WHO)" >> "$LOG"
+  echo "PAUSE $T $BASE $N engine/server files changed: $DIRS"; exit 0
+fi
+echo "$T" > "$BASEF"
+echo "$(date -Is) baseline $BASE -> $T: nothing on the engine/server path changed; other files: ${OTHER:-none} ($WHO)" >> "$LOG"
+note "Strata $T (found by the $WHO): nothing on the engine/server path changed since $BASE (src/ serve/ include/" \
+     "third_party/ cmake/, CMakeLists.txt apart from its version line; changed: ${OTHER:-nothing}). Baseline raised to" \
+     "$T automatically; measurements carry on (work/r22/tagcheck.sh)."
+echo "RAISED $BASE $T"

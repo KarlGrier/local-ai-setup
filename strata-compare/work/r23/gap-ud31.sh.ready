@@ -1,0 +1,1 @@
+reviewed by Claude 11-05 09:56: rules ud31_rules.py sha 73ffaa579750 (selftest 0 failures: the KL-rules verdict, the frozen pack-rounding rule, Karl's follow-up rule 6-of-8 / <= 1 with the scaled fallback, the rounding-cost INFO line); pipefail, lock fds closed, preflight exit 1, kcheck, exits 0/1/3/4; driver sha256 22dcecd7e68b

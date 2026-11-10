@@ -1,0 +1,6 @@
+work/r8/with_server.sh A6-slots6a configs/R8c-ours6.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots6a --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots12a configs/R8c-ours12.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots12a --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots16a configs/R8c-ours16.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots16a --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots16b configs/R8c-ours16.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots16b --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots12b configs/R8c-ours12.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots12b --engine-log \$ELOG"
+work/r8/with_server.sh A6-slots6b configs/R8c-ours6.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label A6-slots6b --engine-log \$ELOG"

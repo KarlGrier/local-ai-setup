@@ -1,0 +1,21 @@
+# Item 7's paid-search limits - staged 10-28 (not installed; the live counters serve Jan's chat)
+
+Karl's rule (10-27): <= 30 paid searches per test run, <= 100 per run of his research (both providers together);
+tests and research stop at 25 % of a provider's month left (kept for chat); every caller stops at 10 % left.
+
+- tools/paid_budget.py (new): who is asking (PAID_SEARCH_KIND / the client name / run/paid-run.json for LDR), run caps
+  in ~/.config/deep-research/paid-runs.json, the month limits.
+- tools/exa_fallback.py: tests/research stop at $7.50 of the $10 month, everyone at $9.00 (the old cap).
+- tools/tavily_fallback.py: tests/research stop at 750 of 1,000, everyone at 900 (was 950).
+- tools/search_fallback.py: unchanged copy (imports the two above).
+- tests/test_paid_budget.py: offline, a local mock server and temp files (no key, no network); passes 10-28.
+
+**Before installing (all three, together):**
+1. tools/research-runner.py must write ~/ai/deep-research/run/paid-run.json {"kind": "research", "run": <job id>} when
+   a Jan research job starts LDR work and remove it at the end. Without it, LDR's fallback ("ldr", Karl's research)
+   has no run id and is refused - Karl's research would lose its paid fallback. (Not written yet.)
+2. bench2-queue.sh / run-ldr.sh: for an item 7 run, the same file with {"kind": "test", "run": "<label>/<qid>"}; only
+   when no run is live (never edit a running bash script).
+3. Item 7's LDR search engines (7b Tavily, 7c Exa Lite, 7d Exa highlights) must call these modules, not LDR's own
+   Tavily/Exa engines, or the counters never see them.
+Install = copy the three tools over the live ones (backups *.before-item7) when no Jan job or LDR run is live.

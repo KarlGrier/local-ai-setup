@@ -1,0 +1,106 @@
+2026-10-23 10:36:26 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 167660 (engine 167675)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-10-23 10:36:59 port_gap4: gap open: test lock held (pid 169089), 8080 stopped
+0, NVIDIA GeForce RTX 5080, 15 MiB, 15919 MiB, 34
+1, NVIDIA GeForce RTX 4060 Ti, 15 MiB, 7875 MiB, 37
+=== 2026-10-23 10:36:59 1 exact7: the candidate vs the served build with pcie (r21ncandp-e7, pin 2500)
+r21ncandpm-e7-x-math   out 6b251415 (r21ncandp-e7 6b251415) =  ms/round 32.64  prompt ms 437
+r21ncandpm-e7-s-math   out 8c25c022 (r21ncandp-e7 8c25c022) =  ms/round 32.12  prompt ms 438
+r21ncandpm-e7-x-code   out 3585ad6f (r21ncandp-e7 3585ad6f) =  ms/round 24.60  prompt ms 440
+r21ncandpm-e7-s-code   out 2fe9fd9e (r21ncandp-e7 2fe9fd9e) =  ms/round 23.34  prompt ms 438
+r21ncandpm-e7-x-p2000  out 3e219376 (r21ncandp-e7 3e219376) =  ms/round 32.81  prompt ms 1060
+r21ncandpm-e7-x-32k    out 651f56c8 (r21ncandp-e7 651f56c8) =  ms/round 38.52  prompt ms 7446
+r21ncandpm-e7-x-112k   out a393ca0a (r21ncandp-e7 a393ca0a) =  ms/round 29.79  prompt ms 25468
+exact7 r21ncandpm-e7: 7/7 identical to r21ncandp-e7
+exact7-slots r21ncandpm-e7: 3238+3300 slots (5080 + 4060 Ti); r21ncandp-e7: 3238+3300 -> MATCHED
+=== 2026-10-23 10:40:12 2 needles
+[N-r21ncandpm] 32k r0: ttft 7.3 s, total 12 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 32k r1: ttft 7.1 s, total 11 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 32k r2: ttft 7.1 s, total 11 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 32k r3: ttft 7.1 s, total 13 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 64k r0: ttft 14.2 s, total 18 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 64k r1: ttft 14.2 s, total 18 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 64k r2: ttft 14.2 s, total 18 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 64k r3: ttft 14.3 s, total 17 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 120k r0: ttft 27.7 s, total 32 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 120k r1: ttft 27.8 s, total 32 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 120k r2: ttft 27.7 s, total 30 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+[N-r21ncandpm] 120k r3: ttft 27.7 s, total 33 s, finish stop, score 6/6 {'1': True, '2': True, '3': True, '4': True, '5': True, '6': True} 
+=== 2026-10-23 10:45:05 3 stop120k
+server ready (guard pid 172354, server pid 172369) load_time_s 14.327484939 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_FAIL-r21ncandpm_20261023T104506.log
+PASS  stop120k: chat A turn 1  — 1.5 s
+PASS  stop120k: 120K paste: the connection closed at 20 s (Stop)  — closed at 20.1 s, request returned at 20.1 s
+PASS  stop120k: server idle again after the cancel  — 2.0 s after the close
+PASS  stop120k: engine: the prompt read stopped (cancelled), no ERR  — ['strata serve: cumulative draft length (STRATA_DRAFT_CUM): 0 MTP windows with drafts, 0.00 drafts per MTP window; threshold 0.371 at the end (started at 0.371)', 'strata serve: KV streaming: 100.00% of 0 block reads hit VRAM, 0.0 MiB read from RAM', 'strata serve: CUDA1: 0 expert entries, 0 active layer launches, 0.0 MiB returned (0.0 MiB with full rows) in this request; host 0 ms staging+launching, 0 ms waiting for it in this request']
+PASS  stop120k: next request answers normally  — ttft 0.62 s, text '144'
+PASS  stop120k: back to chat A: resumed from the chat cache  — ttft 0.26 s; strata serve: prompt 5703 tokens = 5629 reused + 74 read in 226 ms (327.6 tok/s), 64 generated in 472 ms (135.5 tok/s), drafts accepted 40 of 65, 2 checkpoints, 25 windows, 2.60 drafts per window
+PASS  stop120k: same engine process throughout  — 172372 -> 172372
+2026-10-23T10:46:20 srv-FAIL-r21ncandpm exit=0 73s min_MemAvailable=33.6GiB@72s min_5080_free=459MiB@41s max_tree_RSS=53.5GiB max_swap_used=0.00GiB min_4060Ti_free=1287MiB ok
+=== 2026-10-23T10:46:21-05:00 FAIL-r21ncandpm done
+=== 2026-10-23 10:46:21 4 probes: follow-ups, stoptest, tooltag, copy, injection
+followup r21ncandpm plain: 14 of 14 follow-ups resumed, 0 re-read the answer
+followup r21ncandpm think: 4 of 5 follow-ups resumed, 1 re-read the answer
+stoptest r21ncandpm: ALL PASS
+FAIL stream=False run=0 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=False error= content='I will now use the web_search tool to search for information about this topic.'
+FAIL stream=False run=1 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=False error= content='I will now use the web_search tool to search.'
+FAIL stream=False run=2 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=False error= content='I will now use the web_search tool to find the boiling point of water at 2,000 m altitude.'
+FAIL stream=True run=0 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=False error= content='I will now use the web_search tool to look up this information.'
+FAIL stream=True run=1 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 m altitude"}')] tag in content=False error= content='I will now use the web_search tool to look up the boiling point of water at high altitudes'
+FAIL stream=True run=2 finish=tool_calls calls=[('web_search', '{"query":"boiling point of water at 2000 meters altitude"}')] tag in content=False error= content='I will now use the web_search tool to find the boiling point of water at that altitude.'
+r21ncandpm copy: 20/20 exact copies
+r21ncandpm forged: 0/30 followed the planted instruction
+r21ncandpm plain: 0/30 followed the planted instruction
+=== 2026-10-23 10:48:48 5 tool-call check: OpenCode, Jan and research request shapes, at their caps and at max_tokens 1024
+TOOLCALL served: 24 responses, 21 with a valid call, 3 malformed, 0 leaks, 0 errors
+TOOLCALL cand: 24 responses, 21 with a valid call, 3 malformed, 0 leaks, 0 errors
+=== 2026-10-23 10:55:19 tool calls: served 21 valid / candidate 21 valid, candidate malformed 3, leaks 0, errors 0
+=== 2026-10-23 10:55:19 NO SWITCH: tool calls: malformed / leak / error on the candidate
+=== 2026-10-23 10:55:19 6 research-call replay: R1 verify x 3 + R2 report x 2, answer_room on, strata_checkpoint false
+server ready (guard pid 184198, server pid 184213) load_time_s 14.328264323 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_RC-Cr_20261023T105520.log
+Cr R1-verify20k r0: prompt 24241 ttft 5.47 s, 3682 tokens, 125.39 tok/s, stop
+Cr R1-verify20k r1: prompt 24238 ttft 5.235 s, 3659 tokens, 129.97 tok/s, stop
+Cr R1-verify20k r2: prompt 24239 ttft 5.238 s, 3659 tokens, 127.49 tok/s, stop
+Cr R2-report54k r0: prompt 54069 ttft 11.814 s, 3536 tokens, 156.12 tok/s, stop
+Cr R2-report54k r1: prompt 54068 ttft 11.704 s, 3348 tokens, 151.08 tok/s, stop
+server ready (guard pid 186279, server pid 186294) load_time_s 14.325683799 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_RC-Mr_20261023T105906.log
+Mr R1-verify20k r0: prompt 24236 ttft 5.517 s, 3600 tokens, 154.49 tok/s, stop
+Mr R1-verify20k r1: prompt 24240 ttft 5.229 s, 3610 tokens, 162.28 tok/s, stop
+Mr R1-verify20k r2: prompt 24239 ttft 5.232 s, 3632 tokens, 159.28 tok/s, stop
+Mr R2-report54k r0: prompt 54071 ttft 11.809 s, 3136 tokens, 154.69 tok/s, stop
+Mr R2-report54k r1: prompt 54069 ttft 11.703 s, 3275 tokens, 157.79 tok/s, stop
+## Cr
+continuations: 0 hits, 3 misses
+## Mr
+continuations: 3 hits, 0 misses
+research replay candidate: 5 requests, 0 without text or with another finish: R1-verify20k stop 1337 chars, R1-verify20k stop 1430 chars, R1-verify20k stop 1616 chars, R2-report54k stop 6540 chars, R2-report54k stop 5416 chars
+=== 2026-10-23 11:02:29 7 chat-cache checks
+PASS greedy: A was restored from the chat cache
+PASS greedy: resumed output = fresh output (17 chars)
+PASS greedy: the session's STATE_HASH after it = fresh
+PASS greedy: strata_checkpoint=false gives the same output
+PASS sampled seed 7: A was restored from the chat cache
+PASS sampled seed 7: resumed output = fresh output (17 chars)
+PASS sampled seed 7: the session's STATE_HASH after it = fresh
+PASS sampled seed 7: strata_checkpoint=false gives the same output
+PASS drop: R (research) dropped
+PASS drop: A (untagged) still parked and restored after the drop
+PASS drop: R is read from scratch afterwards (not restored)
+ALL PASS
+=== 2026-10-23 11:03:32 8 NO SWITCH (tool calls: malformed / leak / error on the candidate) - P021n back on 8080
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-10-23 11:03:46 port_gap4: served build back (68befe4e03bf), policy on, queue released
+=== 2026-10-23 11:03:46 kcheck clean
+=== 2026-10-23 11:03:46 gap 10 done after 26 min
+2026-10-23 11:07:39 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 188812 (engine 188829)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-10-23 11:08:12 port_gap4: gap open: test lock held (pid 191623), 8080 stopped
+configs/P021m.json: /home/USER/ai-speed-testing/strata-compare/engine-r22p021m/strata /home/USER/ai-speed-testing/strata-compare/strata-r22p021m/serve/server.py
+switch prepared: default configs/P021m.json, engine sha 7b38796237f5; port_gap4.sh end starts it
+strata: Not started: a model server is running (pid 189131) but 8080 does not answer. phase 4 gap end was not opened.
+2026-10-23 11:08:13 port_gap4: P021 did not start
+=== 2026-10-23 11:08:13 switch logged at 2026-10-23 11:08:13 (both NOTES.md)
+=== 2026-10-23 11:08:13 kcheck clean

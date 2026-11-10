@@ -1,0 +1,25 @@
+SHAPE GAP 11-09 (v0.2.13 port, information only: nothing switches, P028x stays served)
+
+flash_next (reference): builds build rc 0, parity programs NOT RUN
+q4_mid: builds full shape build rc 0, 4-layer build rc 0, parity programs 83 pass / 1 skip / 1 fail, loads and answers no (the server did not start (server exited))
+q4_big: builds full shape build rc 0, 4-layer build rc 0, parity programs 83 pass / 1 skip / 1 fail, loads and answers no (the server did not start (server exited))
+q4_deep: builds full shape build rc 0, 4-layer build rc 0, parity programs 83 pass / 1 skip / 1 fail, loads and answers no (the server did not start (server exited))
+
+FAILS (each with its program):
+  q4_mid: gguf_geometry_test (FAIL: Failed 0.009376 s)
+  q4_mid: smoke - the server did not start (server exited)
+  q4_big: gguf_geometry_test (FAIL: Failed 0.0095704 s)
+  q4_big: smoke - the server did not start (server exited)
+  q4_deep: gguf_geometry_test (FAIL: Failed 0.00989854 s)
+  q4_deep: smoke - the server did not start (server exited)
+
+guards / manifest / env (from the smoke records):
+  q4_mid guards: GUARDS AS EXPECTED
+  q4_mid env: not checked (the server did not start)
+  q4_mid nople: with --no-ple: started no, env not OK, chat FAIL, fatal lines none
+  q4_big guards: GUARDS AS EXPECTED
+  q4_big env: not checked (the server did not start)
+  q4_big nople: with --no-ple: started no, env not OK, chat FAIL, fatal lines none
+  q4_deep guards: GUARDS AS EXPECTED
+  q4_deep env: not checked (the server did not start)
+  q4_deep nople: with --no-ple: started no, env not OK, chat FAIL, fatal lines none

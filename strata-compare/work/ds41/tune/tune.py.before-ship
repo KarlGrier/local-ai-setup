@@ -1,0 +1,755 @@
+#!/usr/bin/env python3
+"""tune.py - 10-24 DeepSeek-V4.1 tuning round, screen then confirm (the user chose it, 10-24 ~13:10; the round itself
+and both addenda in NOTES.md). Lossless only. One gap (work/r22/port_gap4.sh begin ... end, P021m back on 8080 at the end).
+
+Order (the user, 10-24): methodology first - config check, repeatability (normal vs placement frozen), one profiled
+baseline (DS4_PROF / DS4_TOKLOG / DS4_FLOW_STATS / --verbose), the full reference (the "before" numbers) - then the
+screening groups, VRAM groups first: split and card order, 5080 alone vs both, chunk size; then free VRAM, lookahead,
+read depth, prompt extras, CPU lane, store, the custom profile. Each group's winner is carried forward into the later
+groups. Then the confirm runs, then the pass/fail tests (conversation cache; prompt skip, teacher-forced).
+
+Screen = 1 pass of W1-W3 + one P4K + one P20K (tunearm.sh PASSES=1 NPROMPT=1, ~11 min). The current reference is
+screened at each group's start (unless the last screen was of it) and after every 4 settings and at the group's end; its
+screens give the noise band: half the range of its screens, pooled with the earlier references' (the largest seen), in
+% of the mean, separately for decode, P4K and P20K. Per setting (the user: "only drop a setting if it's clearly worse
+than the reference's noise band; anything inside the band that looks promising also gets a confirm run"):
+  clearly worse  decode more than 1 point below the band, or a prompt size more than 2 points below it with no gain
+                 elsewhere -> dropped (and the rest of its series skipped)
+  promising      decode above the band, a prompt size above it, or decode inside the band at +1 % or more (no prompt
+                 size clearly worse) -> a confirm run
+  otherwise      inside the band without a sign of gain -> not confirmed
+Group winner = the promising setting with the highest decode gain (> 0); if none, the one with the largest prompt gain
+above the band (decode not clearly worse); else none. Confirm runs (full protocol, 3 passes, A/B/A): A = the best
+config so far, B = it plus the candidate, A again; compare.py decides (>= 3 % decode or >= 5 % prompt beyond the noise).
+Every run starts from a fresh copy of its expert profile (tmp/ds41-profile-arm.bin; the engine writes routing counts
+back into it after every request). State: results/ds41/tuning/state.json (a rerun skips what is done).
+"""
+import json
+import os
+import re
+import statistics as stt
+import subprocess
+import sys
+import time
+
+SC = "/home/USER/ai-speed-testing/strata-compare"
+T = f"{SC}/work/ds41/tune"
+R = f"{SC}/results/ds41/tuning"
+PY = f"{SC}/.venv/bin/python"
+SUM = f"{R}/tune-summary-1024.txt"
+STATE = f"{R}/state.json"
+SHIPPED = f"{SC}/strata-v024/data/dsv41/profile-2.00.bin"
+PROF = f"{SC}/tmp/ds41-profile-arm.bin"
+BASE = f"{SC}/configs/DS41-v024-s70.json"
+DR = "/home/USER/ai/deep-research"
+ARITH = {"DS4_SPLIT", "order", "one5080", "--prefill-chunk", "--reserve-mib", "DS4_RING_MB", "DS4_SPEC_Q", "DS4_CACHE_THREADS",
+         "DS4_CACHE_MARGIN", "DS4_CACHE_INFLIGHT", "DS4_SETTLE_MS", "profile", "--tp"}   # settings that move bits (placement, chunking)
+
+
+def say(msg):
+    line = f"=== {time.strftime('%F %T')} {msg}"
+    print(line, flush=True)
+    with open(SUM, "a") as f:
+        f.write(line + "\n")
+
+
+def notify(title, body, crit=False):
+    subprocess.run(["notify-send", "-a", "DeepSeek-V4.1"] + (["-u", "critical"] if crit else []) + [title, body[:400]],
+                   stderr=subprocess.DEVNULL)
+
+
+# ---------- state ---------------------------------------------------------------------------------------------------
+def load_state():
+    try:
+        return json.load(open(STATE))
+    except (OSError, ValueError):
+        return {"steps": {}, "noise": {"decode": [], "P4K": [], "P20K": []}, "cur": {}, "cur_profile": SHIPPED,
+                "promising": [], "groups": {}}
+
+
+def save(st):
+    json.dump(st, open(STATE + ".tmp", "w"), indent=1)
+    os.replace(STATE + ".tmp", STATE)
+
+
+# ---------- configs -------------------------------------------------------------------------------------------------
+def gpu_uuids():
+    out = subprocess.run(["nvidia-smi", "--query-gpu=uuid,name", "--format=csv,noheader"], capture_output=True, text=True).stdout
+    u = {}
+    for l in out.splitlines():
+        uid, name = [x.strip() for x in l.split(",", 1)]
+        u["5080" if "5080" in name else "4060"] = uid
+    return u
+
+
+def merge(*mods):
+    out = {}
+    for m in mods:
+        for k, v in m.items():
+            if k == "unset":
+                for x in v:
+                    out.pop(x, None)
+            else:
+                out[k] = v
+    if out.get("one5080"):                       # one card: no split, no order
+        out.pop("DS4_SPLIT", None); out.pop("order", None)
+    else:
+        out.pop("DS4_LAYER_CACHE_MB", None)
+    return out
+
+
+def mkcfg(name, mods):
+    c = json.load(open(BASE))
+    a, env = c["args"], c["env"]
+    u = gpu_uuids()
+    for k, v in mods.items():
+        if k in ("profile", "label"):
+            continue
+        if k == "one5080":
+            env["CUDA_VISIBLE_DEVICES"] = u["5080"]
+            a[a.index("--tp") + 1] = "1"
+        elif k == "order":
+            env["CUDA_VISIBLE_DEVICES"] = f"{u['4060']},{u['5080']}" if v == "rev" else f"{u['5080']},{u['4060']}"
+        elif k.startswith("--"):
+            if v is None:
+                if k not in a: a.append(k)
+            elif k in a:
+                a[a.index(k) + 1] = str(v)
+            else:
+                a += [k, str(v)]
+        else:
+            env[k] = str(v)
+    if "--expert-profile" not in a:
+        a += ["--expert-profile", PROF]
+    c["_comment"] = f"10-24 DS4.1 tuning: {name} = {json.dumps({k: v for k, v in mods.items() if k != 'label'})} on DS41-v024-s70.json"
+    p = f"{SC}/configs/DS41-tune-{name}.json"
+    json.dump(c, open(p, "w"), indent=1)
+    return p
+
+
+# ---------- one run -------------------------------------------------------------------------------------------------
+def run(st, key, mods, note, mode="screen", client=None, profile=None, extra=None):
+    if key in st["steps"]:
+        return st["steps"][key]
+    # full-protocol runs print the engine's per-GPU prompt stream line (files / RAM / layer cache, the compute's wait for
+    # reads; a print after each prompt, nothing else changes): the two-card numbers for the layer-major estimate
+    cfg = mkcfg(key, dict(mods, DS4_FLOW_STATS=1) if mode == "full" else mods)
+    src = profile or mods.get("profile") or st["cur_profile"]
+    if src == "zero":
+        open(PROF, "wb").write(bytes(40 * 384 * 4))
+    else:
+        subprocess.run(["cp", src, PROF], check=True)
+    env = dict(os.environ, ARM_NOTE=note, PROFILE=PROF, COOL_MIN="0" if mode != "full" else "60",
+               PASSES="1" if mode == "screen" else "3", NPROMPT="1" if mode == "screen" else "3")
+    if client:
+        env["CLIENT"] = client
+    env.update(extra or {})
+    t0 = time.time()
+    with open(f"{SC}/logs/ds41/tune.log", "a") as lf:
+        subprocess.run(["bash", f"{T}/tunearm.sh", key, cfg], env=env, stdout=lf, stderr=lf)
+    d = open(f"{SC}/tmp/ds41-arm-out").read().strip()
+    g = open(f"{d}/GUARD").read() if os.path.exists(f"{d}/GUARD") else ""
+    s = open(f"{d}/summary.txt").read() if os.path.exists(f"{d}/summary.txt") else ""
+    if "kernel" in g.lower() or re.search(r"KCHECK FAILED|kernel check failed", s, re.I):
+        say(f"KERNEL ERROR in {key} - round stopped, 8080 left stopped (the user's rule); stressapptest before anything else")
+        notify("Kernel error in the DeepSeek tuning round", f"{key} stopped on a kernel error. 8080 is NOT restarted.", True)
+        sys.exit(1)
+    try:
+        arm = json.load(open(f"{d}/arm.json"))
+    except (OSError, ValueError):
+        arm = {}
+    res = {"dir": d, "mods": mods, "note": note, "mode": mode, "min": round((time.time() - t0) / 60, 1),
+           "guard": g.strip() or None, "softstop": os.path.exists(f"{d}/SOFTSTOP"),
+           "decode": (arm.get("decode") or {}).get("mean"), "P4K": (arm.get("P4K") or {}).get("mean"),
+           "P20K": (arm.get("P20K") or {}).get("mean"), "ssd_gb_per_token": arm.get("disk_gb_per_token"),
+           "P20K_ssd_gb": (arm.get("P20K") or {}).get("disk_gb_mean"), "lowest_mem": arm.get("lowest_memavail_gb"),
+           "vram_experts": [c["vram_experts"] for c in arm.get("cards", [])]}
+    st["steps"][key] = res
+    save(st)
+    say(f"{key} ({note}): decode {res['decode']} tok/s, P4K {res['P4K']}, P20K {res['P20K']} tok/s, SSD {res['ssd_gb_per_token']} GB/token, "
+        f"P20K SSD {res['P20K_ssd_gb']} GB, VRAM experts {res['vram_experts']}, lowest {res['lowest_mem']} GB, {res['min']} min"
+        + (f"; {res['guard']}" if res["guard"] else "") + ("; SOFT STOP" if res["softstop"] else ""))
+    return res
+
+
+# ---------- screening -----------------------------------------------------------------------------------------------
+METRICS = ("decode", "P4K", "P20K")
+
+
+def ref_screen(st, group, idx):
+    k = f"A-{group}-{idx}"
+    r = run(st, k, st["cur"], f"reference screen ({group} #{idx}): {json.dumps({x: y for x, y in st['cur'].items() if x != 'label'}) or 'the 70 GB config'}")
+    return r
+
+
+def band(st, refs, gname):
+    """mean of this reference's screens, and the noise half-width in %: the larger of its own half-range and the median
+    of the earlier references' (pooled per group), at least 1 %"""
+    out = {}
+    for m in METRICS:
+        xs = [r[m] for r in refs if r.get(m)]
+        if not xs:
+            continue
+        mean = stt.mean(xs)
+        own = 100 * (max(xs) - min(xs)) / 2 / mean if len(xs) > 1 else 0
+        if len(xs) > 1:
+            st["noise"].setdefault(m + "_by", {})[gname] = round(own, 2)
+        pooled = [v for g, v in st["noise"].get(m + "_by", {}).items() if g != gname]
+        out[m] = (mean, max([own, stt.median(pooled) if pooled else 0, 1.0]))
+    return out
+
+
+def judge(b, r):
+    v = {}
+    for m in METRICS:
+        if m in b and r.get(m):
+            mean, n = b[m]
+            v[m] = (round(100 * (r[m] / mean - 1), 2), round(n, 2))
+    if "decode" not in v:
+        return "failed", v
+    d, nd = v["decode"]
+    pw = [m for m in ("P4K", "P20K") if m in v and v[m][0] < -(v[m][1] + 2)]
+    pb = [m for m in ("P4K", "P20K") if m in v and v[m][0] > v[m][1]]
+    if d < -(nd + 1) or (pw and not pb and d <= nd):
+        return "clearly worse", v
+    if d > nd or pb or (d >= 1 and not pw):
+        return "promising", v
+    return "inside the band, no sign of gain", v
+
+
+def extra(kind):
+    """settings / tests added while the round runs (results/ds41/tuning/extra-screens.json: {"group": [[key, mods, note],
+    ...]}; extra-tests.json: [{"name", "mods", "client", "note"}]) - read when a group starts / when the tests start"""
+    try:
+        return json.load(open(f"{R}/extra-{kind}.json"))
+    except (OSError, ValueError):
+        return {} if kind == "screens" else []
+
+
+def group(st, name, settings, series=()):
+    """settings: [(key, mods, note)]; series: lists of keys - after a clearly-worse step the rest is skipped"""
+    if st["groups"].get(name, {}).get("done"):
+        return
+    have = {k for k, _, _ in settings}
+    settings = list(settings) + [tuple(x) for x in extra("screens").get(name, []) if x[0] not in have]
+    if not settings:
+        st["groups"][name] = {"done": True, "refs": [], "res": {}}; save(st)
+        return
+    say(f"group {name}: {len(settings)} settings on top of {json.dumps({k: v for k, v in st['cur'].items() if k != 'label'}) or 'the reference'}")
+    g = st["groups"].setdefault(name, {"refs": [], "res": {}})
+    if not g["refs"]:
+        last = st.get("last_ref")
+        if last and last.get("cur") == st["cur"]:
+            g["refs"].append(last["res"])
+        g["refs"].append(ref_screen(st, name, 0))
+        save(st)
+    skip, n = set(), 0
+    for key, mods, note in settings:
+        if key in skip or key in g["res"]:
+            continue
+        r = run(st, key, merge(st["cur"], mods), note)
+        g["res"][key] = {"res": r, "mods": mods, "note": note}
+        n += 1
+        if n % 4 == 0:
+            g["refs"].append(ref_screen(st, name, len(g["refs"])))
+        b = band(st, g["refs"], name)
+        verdict, v = judge(b, r)
+        if verdict == "clearly worse":
+            for s in series:
+                if key in s:
+                    skip |= set(s[s.index(key) + 1:])
+        save(st)
+    g["refs"].append(ref_screen(st, name, len(g["refs"])))
+    b = band(st, g["refs"], name)
+    best, bestp = None, None
+    lines = []
+    for key, x in g["res"].items():
+        verdict, v = judge(b, x["res"])
+        x["verdict"], x["vs_ref"] = verdict, v
+        lines.append(f"  {key}: {verdict} - " + ", ".join(f"{m} {v[m][0]:+.1f} % (band +/-{v[m][1]:.1f})" for m in v) + f" [{x['note']}]")
+        if verdict == "promising":
+            st["promising"].append({"key": key, "group": name, "mods": x["mods"], "base": dict(st["cur"]), "vs_ref": v})
+            d = v["decode"][0]
+            # 20:20 fix: a winner must pass compare.py's keep rule too (no prompt loss of 5 points beyond the band; decode
+            # not below the band) - chunk 2048 and ring 128 had been carried for decode with P20K -34 % / -6.5 %
+            pdown = [m for m in ("P4K", "P20K") if m in v and -v[m][0] - v[m][1] >= 5]
+            if d > 0 and not pdown and (best is None or d > best[1]):
+                best = (key, d)
+            pg = max([v[m][0] - v[m][1] for m in ("P4K", "P20K") if m in v] + [-99])
+            if pg > 0 and d >= -v["decode"][1] and (bestp is None or pg > bestp[1]):
+                bestp = (key, pg)
+    win = (best or bestp or (None,))[0]
+    say(f"group {name} (reference {', '.join(f'{m} {b[m][0]:.1f} +/-{b[m][1]:.1f} %' for m in b)}):\n" + "\n".join(lines)
+        + f"\n  winner carried forward: {win or 'none (the reference stays)'}")
+    if win:
+        st["cur"] = merge(st["cur"], g["res"][win]["mods"])
+        if "profile" in g["res"][win]["mods"]:
+            st["cur_profile"] = g["res"][win]["mods"]["profile"]
+        st["last_ref"] = {"cur": st["cur"], "res": g["res"][win]["res"]}
+    else:
+        st["last_ref"] = {"cur": st["cur"], "res": g["refs"][-1]}
+    g["done"] = True
+    save(st)
+
+
+# ---------- main ----------------------------------------------------------------------------------------------------
+def main():
+    os.makedirs(R, exist_ok=True)
+    st = load_state()
+    t_start = time.time()
+    if not st.get("gap_open"):
+        say("DeepSeek-V4.1 tuning round (screen, then confirm): waiting for stage 3 (h06, h08 after the user's Jan research)")
+        while True:
+            active = subprocess.run(["systemctl", "--user", "is-active", "--quiet", "deep-research-bench.service"]).returncode == 0
+            nxt = subprocess.run(["python3", "tools/bench2.py", "next"], cwd=DR, capture_output=True, text=True,
+                                 env=dict(os.environ, BENCH2_PLAN="queue-plan-p4s5.json")).stdout.strip()
+            if not active and nxt == "done":
+                break
+            time.sleep(60)
+        with open(SUM, "a") as f:
+            subprocess.run([f"{SC}/work/r22/port_gap4.sh", "begin", "DS4.1 tuning round (the user, 10-24)"], stdout=f, stderr=f, check=True)
+        subprocess.run([f"{DR}/run-ldr.sh", "stop"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["systemctl", "--user", "stop", "searxng-watch.service", "searxng-ldr.service", "searxng-ldr-baseline.service"])
+        if os.path.exists(f"{SC}/tmp/ds41-nvmetemp.stop"):
+            os.remove(f"{SC}/tmp/ds41-nvmetemp.stop")
+        if subprocess.run(["systemctl", "--user", "is-active", "--quiet", "ds41-nvmetemp.service"]).returncode:
+            subprocess.run(["systemd-run", "--user", "--unit", "ds41-nvmetemp", "--collect", "bash", f"{SC}/work/ds41/nvmetemp.sh"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pk = f"{SC}/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw"
+        if not os.path.exists(f"{pk}/expert-profile.bin.drift-1024"):
+            subprocess.run(["cp", "-p", f"{pk}/expert-profile.bin", f"{pk}/expert-profile.bin.drift-1024"])
+        subprocess.run(["cp", SHIPPED, f"{pk}/expert-profile.bin"])
+        st["gap_open"] = time.strftime("%F %T")
+        save(st)
+        say("gap open; LDR, SearXNG 8889/8890 and searxng-watch stopped for the round; NVMe logger on; the pack's drifted profile "
+            "kept as expert-profile.bin.drift-1024 and the shipped one restored")
+    # config check (static): lossless switches
+    c = json.load(open(BASE))
+    bad = [k for k in c["env"] if k.startswith("STRATA_DS4_DISK_SKIP") or k in ("DS4_STORE_ZC", "DS4_YOCO", "DS4_YOCO_KEEP")]
+    say(f"config check: STRATA_DS4_PROMPT_SKIP={c['env'].get('STRATA_DS4_PROMPT_SKIP')}, disk skip / store ZC / YOCO set: "
+        f"{bad or 'none'}; --dspark {c['args'][c['args'].index('--dspark') + 1]} (auto = not loaded here: routed experts > 1.5 x VRAM); "
+        f"device 0 = {gpu_uuids() and 'the RTX 5080 (first in CUDA_VISIBLE_DEVICES and nvidia-smi index 0)'}")
+    if bad or c["env"].get("STRATA_DS4_PROMPT_SKIP") != "0":
+        say("config check FAILED - stopping"); sys.exit(1)
+
+    # A.1 repeatability: same prompt / seed, 3 fresh engines, normal vs placement frozen
+    for variant, mods in (("normal", {}), ("frozen", {"--no-expert-cache": None})):
+        dirs = []
+        for i in (1, 2, 3):
+            r = run(st, f"rep-{variant}-{i}", mods, f"A.1 repeatability, {variant}, fresh engine {i}", mode="rep",
+                    client=f"{PY} {T}/repeat_client.py $URL $OUT", profile=SHIPPED)
+            dirs.append(r["dir"])
+        if not st.get(f"rep_{variant}"):
+            out = subprocess.run(["python3", f"{T}/repeat_compare.py"] + dirs, capture_output=True, text=True).stdout
+            st[f"rep_{variant}"] = out; save(st)
+            say(f"A.1 {variant} (W1 prompt, seed 4242, T 1.0, 320 tokens):\n{out}")
+
+    # profiled baseline (diagnostics; its speed is not compared: DS4_PROF adds event syncs)
+    run(st, "profiled", {"--verbose": None, "DS4_PROF": "1", "DS4_TOKLOG": "1", "DS4_FLOW_STATS": "1"},
+        "profiled baseline: DS4_PROF / DS4_TOKLOG / DS4_FLOW_STATS / --verbose (diagnostics)", profile=SHIPPED)
+    # Engram read time per token: only the command-line decode path logs it (DS4_TOKLOG; serve mode drops STAT lines)
+    if not st.get("cli_decode"):
+        out = subprocess.run([PY, f"{T}/skipcheck.py", "decode"], capture_output=True, text=True)
+        if out.returncode == 3:
+            say("KERNEL ERROR in the command-line decode run - round stopped"); notify("Kernel error in the DeepSeek tuning round", "cli decode", True); sys.exit(1)
+        st["cli_decode"] = (out.stdout[-2500:] + out.stderr[-500:]).strip() or f"rc {out.returncode}"
+        save(st)
+        say(f"command-line decode (W1 prompt, 256 tokens, DS4_TOKLOG=1; Engram reads per token):\n{st['cli_decode']}")
+    # the full reference: the "before" numbers and the first A of the confirm runs
+    ref = run(st, "ref-full", {}, "reference, full protocol (the 70 GB config, shipped profile, LDR/SearXNG stopped)", mode="full",
+              profile=SHIPPED)
+    st["last_ref"] = st.get("last_ref") or None
+    # initial noise: two more reference screens
+    if "init" not in st["groups"]:
+        refs = [run(st, f"A-init-{i}", {}, f"reference screen (initial #{i})", profile=SHIPPED) for i in (1, 2)]
+        band(st, refs, "init")
+        st["groups"]["init"] = {"done": True}
+        st["last_ref"] = {"cur": {}, "res": refs[-1]}
+        save(st)
+
+    # --- the screening groups, VRAM first ---
+    group(st, "split", [
+        ("s26f", {"DS4_SPLIT": "26,14"}, "B.3 split 26/14 (5080 first)"),
+        ("s28f", {"DS4_SPLIT": "28,12"}, "B.3 split 28/12 (5080 first)"),
+        ("s30f", {"DS4_SPLIT": "30,10"}, "B.3 split 30/10 (5080 first)"),
+        ("r22", {"order": "rev", "DS4_SPLIT": "18,22"}, "B.3 card order reversed (5080 last, runs the head), 22 layers on the 5080"),
+        ("r26", {"order": "rev", "DS4_SPLIT": "14,26"}, "B.3 5080 last, 26 layers on it"),
+        ("r28", {"order": "rev", "DS4_SPLIT": "12,28"}, "B.3 5080 last, 28 layers on it"),
+        ("r30", {"order": "rev", "DS4_SPLIT": "10,30"}, "B.3 5080 last, 30 layers on it"),
+    ], series=[["s26f", "s28f", "s30f"], ["r22", "r26", "r28", "r30"]])
+    # one GPU: lm_begin() sizes its layer cache to MemAvailable - 8 GB, which next to the 70 GB store would take MemAvailable
+    # to ~8 GB (our hard stop is 12): capped at 4 GB (partD-code-plan.md; DS4_LAYER_CACHE_MB, model.cu:7811-7821)
+    group(st, "gpus", [("one5080", {"one5080": True, "DS4_LAYER_CACHE_MB": 4096},
+                        "B.4a the 5080 alone (layer-major prompt path, auto chunk 1024; layer cache capped at 4 GB)")])
+    if st["cur"].get("one5080"):
+        ch = [("c2048", {"--prefill-chunk": 2048}, "B.4c prompt chunk 2048 (auto 1024 on one GPU)"),
+              ("c4096", {"--prefill-chunk": 4096}, "B.4c prompt chunk 4096"),
+              ("c8192", {"--prefill-chunk": 8192}, "B.4c prompt chunk 8192")]
+    else:
+        ch = [("c4096", {"--prefill-chunk": 4096}, "B.4c prompt chunk 4096 (auto 8192 on two GPUs)"),
+              ("c2048", {"--prefill-chunk": 2048}, "B.4c prompt chunk 2048"),
+              ("c1024", {"--prefill-chunk": 1024}, "B.4c prompt chunk 1024")]
+    group(st, "chunk", ch, series=[[k for k, _, _ in ch]])
+    group(st, "vram", [
+        ("reserve400", {"--reserve-mib": 400}, "B free VRAM: --reserve-mib 400 (600)"),
+        ("reserve300", {"--reserve-mib": 300}, "B carry-over 1: --reserve-mib 300 now that neither card drives a display (our 300 MiB VRAM guard stays)"),
+        ("ring128", {"DS4_RING_MB": 128}, "B free VRAM: prompt ring 128 MB (auto 400)"),
+        ("ring64", {"DS4_RING_MB": 64}, "B free VRAM: prompt ring 64 MB"),
+    ], series=[["ring128", "ring64"]])
+    group(st, "ahead", [
+        ("ahead1", {"DS4_AHEAD": 1}, "B.1 next-layer prefetch DS4_AHEAD=1"),
+        ("ahead2", {"DS4_AHEAD": 2}, "B.1 DS4_AHEAD=2"),
+        ("ahead1x", {"DS4_AHEAD": 1, "DS4_AHEAD_EXTRA": -2}, "B.1 DS4_AHEAD=1, DS4_AHEAD_EXTRA=-2"),
+        ("ahead2x", {"DS4_AHEAD": 2, "DS4_AHEAD_EXTRA": -2}, "B.1 DS4_AHEAD=2, DS4_AHEAD_EXTRA=-2"),
+    ])
+    group(st, "depth", [
+        ("sthr16", {"DS4_STORE_THREADS": 16}, "B.2 store reads in flight 16 (8)"),
+        ("sthr24", {"DS4_STORE_THREADS": 24}, "B.2 store reads 24"),
+        ("sthr32", {"DS4_STORE_THREADS": 32}, "B.2 store reads 32"),
+        ("rd16", {"DS4_READERS": 16}, "B.2 prompt readers per GPU 16 (8)"),
+        ("rd32", {"DS4_READERS": 32}, "B.2 prompt readers per GPU 32"),
+    ], series=[["sthr16", "sthr24", "sthr32"], ["rd16", "rd32"]])
+    group(st, "prompt", [
+        ("engram16", {"DS4_ENGRAM_CACHE_MB": 16}, "B.3b Engram with no RAM to speak of: row cache 16 MB, the minimum (auto 256 MB; LDR add-on 1d)"),
+        ("engram4g", {"DS4_ENGRAM_CACHE_MB": 4096}, "B.3b Engram row cache 4 GB (256 MB)"),
+        ("specq1", {"DS4_SPEC_Q": "1.0"}, "B.3d no early 'likely' reads (DS4_SPEC_Q=1.0)"),
+        ("settle0", {"DS4_SETTLE_MS": 0}, "B no catch-up swaps inside a long prompt's TTFT (DS4_SETTLE_MS=0)"),
+        ("settlestore0", {"DS4_SETTLE_STORE": 0}, "B no blocking store refill after a long prompt (DS4_SETTLE_STORE=0)"),
+        ("chunkmin64", {"DS4_CHUNK_MIN": 64}, "B short reads (< 64 tokens, e.g. W1's 17-token continuation, 3.7-4.3 s) in windows of 16 (DS4_CHUNK_MIN=64)"),
+    ])
+    group(st, "cpu", [
+        ("thr", {"--threads": "on"}, "B.6 a host thread per GPU for decode (--threads on)"),
+        ("cpu14", {"--cpu-threads": 14}, "B.6 CPU lane 14 workers (16)"),
+        ("cpu12", {"--cpu-threads": 12}, "B.6 CPU lane 12 workers"),
+        ("cpu8", {"--cpu-threads": 8}, "B.6 CPU lane 8 workers"),
+    ], series=[["cpu14", "cpu12", "cpu8"]])   # DS4_COPY_NUMA dropped: it only splits static copies (DS4_COPY_GB), none here
+    group(st, "store", [
+        ("lfu", {"--ssd-policy": "lfu"}, "B.7 store keeps frequent experts (lfu; lfulru runs the same code)"),
+        ("cthr2", {"DS4_CACHE_THREADS": 2}, "B.7 swap prep threads 2 (1)"),
+        ("cthr4", {"DS4_CACHE_THREADS": 4}, "B.7 swap prep threads 4"),
+        ("margin11", {"DS4_CACHE_MARGIN": "1.1"}, "B.7 swap margin 1.1 (1.25)"),
+        ("inflight4", {"DS4_CACHE_INFLIGHT": 4}, "B.7 swaps in flight 4 (8)"),
+        ("s74", {"--ssd-cache": 74}, "B.5 RAM store up to 74 GB (same 16 GiB growth floor as every arm - DS4_STORE_FLOOR_GB is whole GiB; LDR/SearXNG stopped)"),
+    ], series=[["cthr2", "cthr4"]])
+    group(st, "extra", [])                          # settings the settings check finds uncovered (extra-screens.json)
+    # B.8: a profile from chat / code / research-style traffic (not the test prompts)
+    if not st["groups"].get("profile", {}).get("done"):
+        tr = run(st, "traffic", {}, "B.8 routing counts from chat/code/research-style traffic (all-zero profile at start)", mode="rep",
+                 client=f"{PY} {T}/traffic.py $URL $OUT", profile="zero")
+        tp = f"{R}/profile-traffic.bin"
+        if os.path.exists(f"{tr['dir']}/profile-after.bin"):
+            subprocess.run(["cp", f"{tr['dir']}/profile-after.bin", tp])
+            group(st, "profile", [("prof", {"profile": tp}, "B.8 hot-expert profile from our own chat/code/research-style traffic")])
+        else:
+            say("B.8: no profile came out of the traffic run - skipped")
+    say(f"screening done after {(time.time() - t_start) / 3600:.1f} h; best so far: {json.dumps(st['cur'])}; "
+        f"{len(st['promising'])} promising settings for confirm runs")
+    save(st)
+    confirm(st, ref)
+    tests(st)
+    finish(st, t_start)
+
+
+SLOTS = {"DS4_SPLIT": "placement", "order": "placement", "one5080": "placement", "--tp": "placement", "DS4_LAYER_CACHE_MB": "placement",
+         "DS4_AHEAD": "ahead", "DS4_AHEAD_EXTRA": "ahead", "--ssd-cache": "store-size", "DS4_STORE_FLOOR_GB": "store-size"}
+GROUP_ORDER = ["split", "gpus", "chunk", "vram", "ahead", "depth", "prompt", "cpu", "store", "extra", "profile"]
+
+
+def slot(k):
+    return SLOTS.get(k, k)
+
+
+def replace_slot(best, mods):
+    """best with every setting in the candidate's slots taken out, then the candidate: alternatives replace each other"""
+    sl = {slot(k) for k in mods}
+    return merge({k: v for k, v in best.items() if slot(k) not in sl}, mods)
+
+
+def confirm(st, ref):
+    """A/B/A at the full protocol, in group order (within a group the larger screening gain first). B = the best so far
+    with the candidate in place of whatever sits in the same slot (split / card order / 5080 alone; chunk; lookahead;
+    store size; any one knob), so alternatives replace each other instead of stacking."""
+    best = {}
+    a_dir = run(st, "conf-A0", {}, "confirm (A): the reference, full protocol, right before the confirm runs", mode="full",
+                profile=SHIPPED)["dir"]
+    st.setdefault("confirmed", {})
+    order = sorted(trimmed(st["promising"]), key=lambda p: (GROUP_ORDER.index(p["group"]) if p["group"] in GROUP_ORDER else 99,
+                                                            -(p["vs_ref"].get("decode", (0, 0))[0])))
+    say("confirm list: " + ", ".join(p["key"] for p in order))
+    for p in order:
+        key = f"conf-{p['key']}"
+        if key in st["confirmed"]:
+            if st["confirmed"][key]["keep"]:
+                best = replace_slot(best, p["mods"])
+            a_dir = st["confirmed"][key]["a_next"]
+            continue
+        bm = replace_slot(best, p["mods"])
+        b = run(st, key, bm, f"confirm (B): {p['key']} in the best config so far ({json.dumps(bm)})", mode="full",
+                profile=bm.get("profile", SHIPPED))
+        a2 = run(st, f"{key}-A", best, "confirm (A again): the best so far", mode="full",
+                 profile=best.get("profile", SHIPPED))
+        # A/B/A: B against both A runs; the decision uses compare.py against each and needs both to agree
+        v1 = json.loads(subprocess.run(["python3", f"{T}/compare.py", a_dir, b["dir"]], capture_output=True, text=True).stdout)
+        v2 = json.loads(subprocess.run(["python3", f"{T}/compare.py", a2["dir"], b["dir"]], capture_output=True, text=True).stdout)
+        keep = v1.get("keep") and v2.get("keep")
+        st["confirmed"][key] = {"keep": bool(keep), "vs_A1": v1, "vs_A2": v2, "a_next": b["dir"] if keep else a2["dir"]}
+        say(f"confirm {p['key']}: {'KEPT' if keep else 'not kept'} - vs A1 {json.dumps(v1)}; vs A2 {json.dumps(v2)}")
+        if p["key"] == "c2048":
+            followup(st, key, bm, best)
+        if keep:
+            best = bm
+            a_dir = b["dir"]
+        else:
+            a_dir = a2["dir"]
+        save(st)
+    st["final"] = best
+    save(st)
+    say(f"confirmed best config: {json.dumps(best) or 'the reference (nothing kept)'}")
+    frozen_cost(st, best, a_dir)
+
+
+def trimmed(promising):
+    """10-24 20:45 (proposed to the user, kept by their 'no schedule change'): alternatives in one slot that screened well
+    below the slot's best cost an hour each and cannot win - the top two per slot by screening decode; the chunk sizes only
+    as the 2048 trade-off measurement"""
+    by = {}
+    for p in promising:
+        if p["group"] == "chunk" and p["key"] != "c2048":
+            continue
+        s = tuple(sorted({slot(k) for k in p["mods"]}))
+        if s == ("placement",):                       # the split: the best of each card order (as proposed)
+            s = ("placement", p["mods"].get("order", "fwd"))
+        by.setdefault(s, []).append(p)
+    return [p for s, ps in by.items() for p in sorted(ps, key=lambda p: -(p["vs_ref"].get("decode", (0, 0))[0]))
+            [:1 if s[0] == "placement" else 2]]
+
+
+def followup(st, key, bm, best):
+    """the user (10-24): "Chunk 2048 confirm: also measure a follow-up turn that reuses the saved chat (new turn only)" -
+    a ~20K start and three follow-ups in one engine (followup.py), chunk 2048 (B) then the best without it (A)"""
+    log = json.load(open(BASE))["log"]
+    for k, m in ((f"{key}-chat", bm), (f"{key}-chat-A", best)):
+        r = run(st, k, m, f"chat follow-ups ({'chunk 2048' if m is bm else 'the best so far'}): a ~20K start, then 3 follow-ups",
+                mode="rep", client=f"{PY} {T}/followup.py $URL $OUT {log}", profile=m.get("profile", SHIPPED))
+        say(f"{k}: " + ("".join(l for l in open(f"{r['dir']}/client.out") if l.startswith("follow-ups"))
+                        if os.path.exists(f"{r['dir']}/client.out") else "no output"))
+
+
+def frozen_cost(st, best, a_dir):
+    """the user (10-24): "report its speed cost next to the 2/3 vs 3/3 repeatability result, so [the user] can pick the daily
+    default" - frozen placement (--no-expert-cache) on the confirmed best: the screen's number if the cost is clear (5 %+),
+    else a measured B + A again at the full protocol (not a keep decision)"""
+    if st.get("frozen_cost"):
+        return
+    sc = st["groups"].get("extra", {}).get("res", {}).get("nocache", {})
+    d = (sc.get("vs_ref") or {}).get("decode", (None, None))[0]
+    line = f"frozen placement (--no-expert-cache), screen: decode {d:+.1f} %" if d is not None else "frozen placement: no screen"
+    if d is None or abs(d) < 5:
+        bm = merge(best, {"--no-expert-cache": None})
+        b = run(st, "conf-nocache", bm, "frozen placement on the confirmed best (measured, not a keep decision)", mode="full",
+                profile=best.get("profile", SHIPPED))
+        a2 = run(st, "conf-nocache-A", best, "confirm (A again): the confirmed best", mode="full", profile=best.get("profile", SHIPPED))
+        vs = [json.loads(subprocess.run(["python3", f"{T}/compare.py", a, b["dir"]], capture_output=True, text=True).stdout)
+              for a in (a_dir, a2["dir"])]
+        line += "; measured on the confirmed best: " + "; ".join(
+            f"vs A{i + 1} decode {v['decode']['gain_pct']:+.1f} % (noise {v['decode']['noise_pct']:.1f}), P4K "
+            f"{v.get('P4K', {}).get('gain_pct', 0):+.1f} %, P20K {v.get('P20K', {}).get('gain_pct', 0):+.1f} %" for i, v in enumerate(vs))
+    st["frozen_cost"] = line + (f"\n  repeatability (A.1, fresh engines, same seed): normal {st.get('rep_normal', '')[:160]} ... "
+                                f"frozen: {st.get('rep_frozen', '')[:120]}")
+    save(st)
+    say(st["frozen_cost"])
+
+
+def tests(st):
+    """the separate pass/fail tests, once each (the user, 10-24)"""
+    final = st.get("final", {})
+    prof = final.get("profile", SHIPPED)
+    # conversation cache: a ~20K conversation, another one, back to the first (300-token follow-up), then after a restart
+    if not st.get("test_conv"):
+        log = json.load(open(BASE))["log"]
+        slots = os.path.join(os.path.dirname(log), "ds4-slots")
+        if os.path.isdir(slots) and slots.startswith(f"{SC}/logs/ds41/"):
+            subprocess.run(["rm", "-rf", slots])
+        # LDR add-on 1a: the smallest slot size that holds one long chat (a ~20K conversation is ~50 MB by the docs'
+        # 17 MB per 6.5K tokens) - 1 GB, the smallest whole-GB cap; the report's 16 GB figure is not used
+        mods = merge(final, {"STRATA_DS4_SLOT_KEEP": "1", "STRATA_DS4_AUTO_PIN": "1", "STRATA_DS4_SLOT_GB": "1"})
+        sf = f"{R}/conv-A.json"
+        c1 = run(st, "conv1", mods, "conversation cache, engine run 1: A to ~20K tokens, B, back to A", mode="rep",
+                 client=f"{PY} {T}/conv.py 1 $URL $OUT {log} {slots} {sf}", profile=prof,
+                 extra={"SERVER_ENV": "STRATA_DS4_AUTO_PIN=1"})    # the server reads AUTO_PIN from its own environment
+        exit_mb = round(sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(slots) for f in fs) / 1e6, 1) if os.path.isdir(slots) else 0
+        c2 = run(st, "conv2", mods, "conversation cache, engine run 2 (after a restart): back to A from the disk slot", mode="rep",
+                 client=f"{PY} {T}/conv.py 2 $URL $OUT {log} {slots} {sf}", profile=prof, extra={"SERVER_ENV": "STRATA_DS4_AUTO_PIN=1"})
+        c3 = run(st, "conv3", merge(final, {"STRATA_DS4_SLOT_KEEP": "0", "STRATA_DS4_AUTO_PIN": "0"}),
+                 "conversation cache, engine run 3: slots off - the same follow-up as a fresh prefill; then C.10 thinking", mode="rep",
+                 client=f"{PY} {T}/conv.py 3 $URL $OUT {log} {slots}-off {sf}", profile=prof, extra={"SERVER_ENV": "STRATA_DS4_AUTO_PIN=0"})
+        rows = []
+        for d in (c1["dir"], c2["dir"], c3["dir"]):
+            if os.path.exists(f"{d}/conv.jsonl"):
+                rows += [json.loads(l) for l in open(f"{d}/conv.jsonl")]
+        def reuse_ok(label):
+            r = next((x for x in rows if x["turn"].startswith(label)), None)
+            return bool(r and r.get("reused") is not None and r.get("prompt_tokens") and r["reused"] >= 0.9 * r["prompt_tokens"]), r
+        ok6, r6 = reuse_ok("A6")
+        ok7, r7 = reuse_ok("A7")
+        inner = all((x.get("read") or 0) <= 0.5 * (x.get("prompt_tokens") or 1) for x in rows if x["turn"] in ("A2", "A3", "A4", "A5"))
+        lines = [f"  {x['turn']}: prompt {x['prompt_tokens']} = {x['reused']} reused + {x['read']} read, TTFT {x['ttft_s']} s, "
+                 f"engine wrote {x['engine_write_mb']} MB, slot folder {x['slot_dir_mb']} MB" for x in rows]
+        verdict = "PASS" if ok6 and ok7 and inner else "FAIL"
+        a7 = next((x for x in rows if x["turn"].startswith("A7 (")), {})
+        a7f = next((x for x in rows if x["turn"].startswith("A7 fresh")), {})
+        ta, tb = a7.get("text") or "", a7f.get("text") or ""
+        if ta and ta == tb:
+            exact = "the resumed and the fresh-prefill answers are identical (same seed, first request of each engine)"
+        elif ta and tb:
+            i = next((k for k in range(min(len(ta), len(tb))) if ta[k] != tb[k]), min(len(ta), len(tb)))
+            exact = f"the resumed and the fresh-prefill answers part at character {i} of {len(ta)} (rounding of a resumed vs a re-read state)"
+        else:
+            exact = "no texts to compare"
+        lines.append(f"  exact match: {exact}; TTFT resumed from the disk slot {a7.get('ttft_s')} s vs fresh prefill {a7f.get('ttft_s')} s")
+        st["test_conv"] = (f"conversation cache: {verdict} (follow-up turns read only the new text: {inner}; back to A after B "
+                           f"from the RAM slot: {ok6}; back to A after an engine restart from the disk slot: {ok7}); "
+                           f"slot folder after engine run 1 exited: {exit_mb} MB\n" + "\n".join(lines))
+        save(st)
+        say(st["test_conv"])
+        if os.path.exists(f"{c2['dir']}/client.out"):
+            say("C.10 thinking at the default effort (high = 75), 8,192 tokens:\n" +
+                "".join(l for l in open(f"{c2['dir']}/client.out") if l.startswith("C.10")))
+    # the daily store size (the user, 10-24 21:55: "the largest size where the lowest free memory stays at or above 14 GB
+    # with everything up (Jan, browser, LDR and both of its SearXNG instances). The 12 GB floor stays. If the largest size
+    # that fits with everything stopped beats that size by more than ~3% decode, report the gap"). Up: Jan, the browser and
+    # SearXNG 8888 as they are (up all round), SearXNG 8889/8890 started, LDR's RAM held by ballast.py at its largest RSS in
+    # the RAM-dip records (3.54 GiB; run-ldr.sh start needs 8080) plus SearXNG 8889's growth to its largest (1.74 GiB) from
+    # a fresh start. Stopped: LDR + SearXNG 8889/8890 down (Jan and the browser are the user's apps: their RSS is reported,
+    # not closed). Screens at --ssd-cache N in 2 GB steps, the store's growth floor 14 GiB, the arm's soft stop 14 (the hard
+    # stop stays 12); pass = lowest MemAvailable >= 14 GB and no stop.
+    if not st.get("test_dailymem"):
+        mf = f"{R}/svcmem.jsonl"
+        got = {}
+
+        def size_run(cond, n):
+            k = f"daily-{cond}-{n}"
+            r = run(st, k, merge(final, {"--ssd-cache": n, "DS4_STORE_FLOOR_GB": 14}), f"daily store size, {cond}: --ssd-cache "
+                    f"{n}, growth floor 14 GiB, soft stop 14 GB", profile=prof, extra={"SOFT_GB": "14"})
+            subprocess.run([PY, f"{T}/svcmem.py", f"{k} after the run", mf])
+            ok = r["decode"] is not None and not r["guard"] and not r["softstop"] and (r["lowest_mem"] or 0) >= 14.0
+            got[(cond, n)] = (ok, r)
+            say(f"  {k}: {'fits' if ok else 'does not fit'} (lowest {r['lowest_mem']} GB, decode {r['decode']})")
+            return ok
+
+        def search(cond, start, lo, hi):
+            n = start
+            if size_run(cond, n):
+                while n + 2 <= hi and size_run(cond, n + 2):
+                    n += 2
+                return n
+            while n - 2 >= lo:
+                n -= 2
+                if size_run(cond, n):
+                    return n
+            return None
+
+        subprocess.run([PY, f"{T}/svcmem.py", "the round (LDR, SearXNG 8889/8890 down)", mf])
+        subprocess.run(["systemctl", "--user", "start", "searxng-ldr.service", "searxng-ldr-baseline.service"])
+        time.sleep(60)
+        sx = json.loads(subprocess.run([PY, f"{T}/svcmem.py", "SearXNG 8889/8890 started", mf], capture_output=True,
+                                       text=True).stdout or "{}").get("rss_gib", {}).get("SearXNG 8889 (LDR)", 0) or 0
+        hold = round(3.54 + max(0.0, 1.74 - sx), 2)
+        bal = subprocess.Popen([PY, f"{T}/ballast.py", str(hold)], stdout=subprocess.DEVNULL)
+        try:
+            time.sleep(30)
+            subprocess.run([PY, f"{T}/svcmem.py", f"everything up (held {hold} GiB: LDR 3.54 + SearXNG 8889 to 1.74)", mf])
+            n_up = search("up", 66, 56, 78)
+        finally:
+            bal.kill()
+            bal.wait()
+            subprocess.run(["systemctl", "--user", "stop", "searxng-ldr.service", "searxng-ldr-baseline.service"])
+        time.sleep(30)
+        subprocess.run([PY, f"{T}/svcmem.py", "LDR + SearXNG 8889/8890 stopped", mf])
+        n_dn = search("stopped", (n_up or 60) + 6, n_up or 56, 86)
+        lines = [f"daily store size (lowest MemAvailable >= 14 GB, growth floor 14 GiB): everything up {n_up} GB; "
+                 f"LDR + SearXNG 8889/8890 stopped {n_dn} GB"]
+        if n_up and n_dn and n_dn > n_up:
+            du, dd = got[("up", n_up)][1]["decode"], got[("stopped", n_dn)][1]["decode"]
+            gap = 100 * (dd / du - 1)
+            lines.append(f"  decode (screens): {du} tok/s at {n_up} GB vs {dd} at {n_dn} GB = {gap:+.1f} %")
+            if 1.5 <= gap <= 5:   # near the user's ~3 % line: both sizes at the full protocol, the same services (size only)
+                b = run(st, f"daily-full-{n_dn}", merge(final, {"--ssd-cache": n_dn, "DS4_STORE_FLOOR_GB": 14}),
+                        f"daily store size, full protocol: {n_dn} GB", mode="full", profile=prof, extra={"SOFT_GB": "14"})
+                a = run(st, f"daily-full-{n_up}", merge(final, {"--ssd-cache": n_up, "DS4_STORE_FLOOR_GB": 14}),
+                        f"daily store size, full protocol: {n_up} GB", mode="full", profile=prof, extra={"SOFT_GB": "14"})
+                v = json.loads(subprocess.run(["python3", f"{T}/compare.py", a["dir"], b["dir"]], capture_output=True,
+                                              text=True).stdout or "{}")
+                gap = (v.get("decode") or {}).get("gain_pct", gap)
+                lines.append(f"  full protocol: {n_dn} GB vs {n_up} GB decode {gap:+.1f} % (noise "
+                             f"{(v.get('decode') or {}).get('noise_pct')} %), P4K {(v.get('P4K') or {}).get('gain_pct')} %, "
+                             f"P20K {(v.get('P20K') or {}).get('gain_pct')} %")
+            lines.append("  -> " + (f"the stopped size beats it by {gap:.1f} % (> ~3 %): the user decides whether to stop "
+                                    f"services while DeepSeek runs" if gap > 3 else f"gap {gap:.1f} % (<= ~3 %): the "
+                                    f"everything-up size is the daily one"))
+        lines += ["  " + l for l in open(mf).read().strip().splitlines()[-12:]]
+        st["test_dailymem"] = "\n".join(lines)
+        save(st)
+        say(st["test_dailymem"])
+    # the 5080 alone with the engine's prompt stream line (the user, 10-24: "say whether layer-major prompt reuse was
+    # actually active"): the line names the layer cache when the run is layer-major; prompts only (one P4K, one P20K)
+    if not st.get("test_lmflow"):
+        r = run(st, "one5080-flow", {"one5080": True, "DS4_LAYER_CACHE_MB": 4096, "DS4_FLOW_STATS": 1},
+                "the 5080 alone, prompt stream statistics (layer-major or not)", mode="rep",
+                client=f"{PY} {T}/speed3.py $URL $OUT 0 1", profile=SHIPPED)
+        el = f"{r['dir']}/engine-run.log"
+        st["test_lmflow"] = "".join(l for l in open(el) if l.startswith("ds4 prompt stream") and "tokens in" in l)[-2500:] \
+            if os.path.exists(el) else "no engine log"
+        save(st)
+        say("the 5080 alone, prompt streams:\n" + st["test_lmflow"])
+    # the command-line decode again (Engram reads and the CPU lane's share of a token), the reference and the final config
+    for name, mods in (("cli-decode-ref", {}), ("cli-decode-final", final)):
+        if st.get(f"test_{name}") or (name == "cli-decode-final" and not final):
+            continue
+        out = subprocess.run([PY, f"{T}/skipcheck.py", "decode", json.dumps(dict(mods, profile=prof) if mods else {}), name, "512"],
+                             capture_output=True, text=True)
+        if out.returncode == 3:
+            say(f"KERNEL ERROR in {name} - round stopped, 8080 left stopped")
+            notify("Kernel error in the DeepSeek tuning round", f"{name} stopped on a kernel error. 8080 is NOT restarted.", True)
+            sys.exit(1)
+        st[f"test_{name}"] = (out.stdout[-2500:] + out.stderr[-500:]).strip() or f"rc {out.returncode}"
+        save(st)
+        say(f"{name} (rc {out.returncode}):\n{st[f'test_{name}']}")
+    # tests added while the round runs (extra-tests.json): each a run with its own client
+    for x in extra("tests"):
+        k = f"test-{x['name']}"
+        if st.get(k):
+            continue
+        r = run(st, x["name"], merge(final, x.get("mods", {})), x["note"], mode="rep",
+                client=x["client"].replace("{PY}", PY).replace("{T}", T).replace("{R}", R), profile=x.get("profile", prof))
+        st[k] = open(f"{r['dir']}/client.out").read()[-3000:] if os.path.exists(f"{r['dir']}/client.out") else "no output"
+        save(st)
+        say(f"{x['name']} ({x['note']}):\n{st[k]}")
+    # prompt skip (one GPU), teacher-forced against our rounding references
+    for name, args, cond in (("skipcheck", ["skip"], True),
+                             ("finalkl", ["final", json.dumps(final)], any(k in ARITH for k in final))):
+        if st.get(f"test_{name}") or not cond:
+            continue
+        out = subprocess.run([PY, f"{T}/skipcheck.py"] + args, capture_output=True, text=True)
+        if out.returncode == 3:
+            say(f"KERNEL ERROR in {name} - round stopped, 8080 left stopped")
+            notify("Kernel error in the DeepSeek tuning round", f"{name} stopped on a kernel error. 8080 is NOT restarted.", True)
+            sys.exit(1)
+        st[f"test_{name}"] = (out.stdout[-3000:] + out.stderr[-800:]).strip() or f"rc {out.returncode}"
+        save(st)
+        say(f"{name} (rc {out.returncode}):\n{st[f'test_{name}']}")
+
+
+def finish(st, t_start):
+    with open(SUM, "a") as f:
+        rc = subprocess.run([f"{SC}/work/r22/port_gap4.sh", "end"], stdout=f, stderr=f).returncode
+    say("8080 back on P021m" if rc == 0 else "port_gap4 end FAILED - check 8080")
+    subprocess.run(["systemctl", "--user", "start", "searxng-ldr.service", "searxng-ldr-baseline.service", "searxng-watch.service"])
+    open(f"{SC}/tmp/ds41-nvmetemp.stop", "w").close()
+    k = subprocess.run(["bash", f"{SC}/bringup/lib/kcheck.sh", "ds41-tune-after"]).returncode
+    say(("kcheck clean" if k == 0 else "KCHECK FAILED after the round") + f"; round finished after {(time.time() - t_start) / 3600:.1f} h")
+    notify("DeepSeek tuning round done", f"best: {json.dumps(st.get('final', {}))}; 8080 {'back on P021m' if rc == 0 else 'NOT restored'}")
+
+
+if __name__ == "__main__":
+    main()

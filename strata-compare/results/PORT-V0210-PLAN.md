@@ -1,0 +1,149 @@
+# Gap 17: the port to Strata v0.2.10 (Karl 11-02; replaces the v0.2.9 port, so we port once)
+
+**Status:** plan only. v0.2.10 (ffa80d73, 2026-11-02; 708 commits after v0.2.9, mostly the new all-cards split engine,
+which our mismatched cards do not use) was flagged by the tag watch 11-02 17:46 (68 files on our Qwen path since v0.2.9).
+Release rule (Karl 10-31): nothing pauses; reviewed read-only in parallel (results/r22/port-0210-review.md); only
+installing or switching waits for Karl. The served build stays P028x (v0.2.8 port); **nothing switches until item 7 is
+done** (Karl 11-02), gap 17 runs as a test with its gates and pricing.
+
+**When:** after 7e, after the Basalt follow-up gap and the upgrade-pricing sweep; the port code is written read-only
+first, the build only with no LDR run live.
+
+## What is gated (Karl 11-02) - everything else new stays pinned OFF unless gated
+
+0. v0.2.9's two GDN prompt paths: GDN_TC and GDN_CONVL2 - gated and priced on the 16K / 64K cold prompts (Karl 10-31).
+1. **Prompt-lookup windows up to 12** (`--lookup-max-t`, on by default for one-GPU CUDA serve; upstream: +11-14 % decode on
+   file rewrites and agent edit turns, A6000 / IQ3_S, prose and code within 1 %):
+   - whether it applies with our helper GPU at all;
+   - how it interacts with our drafting patches: exact sampling (STRATA_SPEC_EXACT), STRATA_DRAFT_CUM, the cost gate, and
+     the existing prompt-lookup / suffix drafts - the exactness and distribution checks must pass as for our own drafts;
+   - priced on the 9-workload screen plus an **edit-turn workload** (a file rewrite / agent edit turn; to be added to the
+     frozen workloads before the gap).
+2. **STRATA_GR_V3_PF=133** (new default on sm_120: a register-blocked down kernel, said to be bitwise; upstream +1.2-1.4 %
+   at spec 6-8): checked against GR_FORK and our GR_V3 setup with exact7 (+ byte-identical logits).
+3. **STRATA_PF_GROUP_SCRATCH / STRATA_PF_HC_REGION** (same bits; frees 0.3-0.5 GiB of borrowed slots for bigger prompt
+   chunks): bit-identical check + one quick screen.
+4. Optional, only if VRAM allows: re-screen **DFlash2 with the new Q4_0 selector** (174 MiB less VRAM) against our MTP
+   setup - only if that saving could change the earlier result.
+
+The usual gates for every switch: exact7 at matched slots, byte-identical logits or the KL rule (kernel_rule2 + 3, the NLL
+check), the T1 check-(2) reference, the speculative-path checks, then the speed screen (and Basalt's cold fixtures).
+
+## Notes for later (Karl 11-02, no action now)
+- DeepSeek: if our daily config has pictures on, v0.2.10 keeps the vision tower in RAM between pictures (~320 MiB more
+  VRAM for experts) - check in the next DeepSeek round.
+- The ISTA DeepSeek-V4.1 Coder set (pruned, IQ2_XXS, shares our Engram) is now supported.
+- The all-cards split engine: worth a look only if Karl ever runs two big Blackwell cards.
+
+## The read-only review (11-02; results/r22/port-0210-review.md, its section 0 = the pin list)
+
+- **STRATA_DEFAULTS=026 does not cover most new 0.2.9 / 0.2.10 defaults:** the port needs ~14 more env pins
+  (e.g. GDN_TC=0, GDN_CONVL2=0, LOOKUP_MAX_T=0, GR_R2=0, QSA_FUSE_NR=0, IL_PAD=0, DF_PDL=0, PCIE_START=old,
+  ARENA_RAM_FALLBACK=0, MTP_KEEP=1, PENALTY_PROMPT=1, SPILL_OFF=1 - the review's section 0 has the full list) and 2
+  config keys: `"drafting": "mtp"` (the app's Auto now means DFlash2 where the engine has it) and `"user_args":
+  ["--kv-resident", "32768"]` (the new fit_start could lower it, priced from the first card NVML lists).
+- **GDN_TC / GDN_CONVL2:** off in the engine, turned on by v0.2.10's serve/server.py (setdefault - the config env wins);
+  KL-class (upstream KL mean 0.0019, max 0.0125), not bitwise -> the full KL rule, as planned.
+- **Gate 1, lookup windows up to 12: it WOULD be on for P028x** (checked in v0.2.10: lookup_default.hpp needs serve, the
+  8-row build, suffix drafts on, spec >= 2 and no multi-GPU - and multi_gpu comes only from --split-device, so the helper
+  does not count). New 9- and 12-row windows (CUDA graphs ~20-35 MiB each); prompt tokens read through verify windows
+  group up to 12 too. Review: SPEC_EXACT stays exact (lookup rows are point masses; the choice is made before the draws),
+  DRAFT_CUM ignores lookup windows, the cost gate is not involved - to be confirmed by our exactness and distribution
+  checks in the gap.
+- **Gate 2, GR_V3_PF=133:** bitwise against the plain v3 kernels; already 0 under our 026 pin (checked:
+  bw_dense_defaults.hpp), and with GR_FORK=1 never reached (the fork runs before v3); not on the sm_89 helper. So it can
+  only matter in an arm with GR_FORK=0 - the gap tests GR_FORK=1 + PF=133 (expected identical) and GR_FORK=0 + PF=133
+  vs GR_FORK=0 (exact7, speed). Its sibling STRATA_GR_R2 (default 2) is not covered by 026: pinned 0.
+- **Gate 3:** PF_GROUP_SCRATCH never applies to our fused layout; PF_HC_REGION would, so with it PREFILL_V2 needs a
+  parity run - bit-identical check + the one quick screen on HC_REGION only.
+- **Gate 4 (optional), DFlash2 Q4_0:** 715 MiB vs 890 (bf16) vs our MTP drafter 1,082 MiB (~188 more 5080 slots than
+  MTP); but DFlash2 drops the MTP layer and with it our exact sampling, DRAFT_CUM and the cost gate - the 174 MiB saving
+  cannot fix that, so no re-screen unless Karl wants one.
+- **The all-cards split engine cannot start for us** (only `strata-split-*` executables; mismatched cards, untested
+  sm_89, experts not fitting).
+- **Rebase forecast** (trial apply on scratch copies): of our 28 patches 15 apply as they are, 6 fail on context only
+  (ROUTER_Q8K x4, GR_FORK, PREFILL_V2), 7 need hand work (SPEC_EXACT, COST_GATE x2, DRAFT_CUM, the continuation fix,
+  the fork scratch, the think-fence) - mostly upstream moving the window-size logic into window_rule.hpp choose_window.
+  Upstream's serve_stop_bound (#4677) is our #652 commit bound but HIP-only and without our think-cap: keep ours on CUDA.
+  The think-fence patch must use the parser's five new state fields; #2794 is still open upstream.
+
+## Karl's answers (11-02, on the review: "approved as written")
+- **GR_V3_PF=133:** NO fork-off arms. Only the GR_FORK=1 + PF=133 identity check (exact7 + speed). Fork-off with and
+  without PF=133 only if GR_FORK fails its gates on v0.2.10 and the fallback is needed.
+- **DFlash2 Q4_0:** no re-screen.
+- **The port applies** the ~14 new environment pins (review section 0) and the two config keys ("drafting": "mtp" and a
+  fixed --kv-resident 32768).
+- **Gap 17 gates as planned:** the lookup windows (up to 12), PF_HC_REGION, and the GDN paths (GDN_TC, GDN_CONVL2).
+
+## Decision (Karl, 11-04)
+
+v0.2.10: **no gain** - stay on P028x (gap 17, results/r22/gap17/decision.txt). Keep branch r22-port0210 (fdd2fffa8) as the base for the next port.
+Follow-up (a later gap, ~30 min): stock v0.2.10 on the same KL check with the two GDN paths on vs off, plus the HC region
+switch on vs off (upstream says same bits; ours changed greedy output). Stock fails the same way -> upstream's: draft an
+issue for Karl's OK (numbers, sm_120, build, repro; post nothing). Stock fine -> our port: record which patches interact,
+for the next port. No lookup-window rerun.
+
+## Next port's list - additions (Karl 11-05, from the v0.2.11 release)
+
+- **Serve fix c30aa647 (#4463):** a stream that ends without its end event is an error that restarts the engine. Port it
+  into our serve layer at the next port (details and whether ours has the old behaviour: results/r22/port-0211-review.md).
+- **From the v0.2.11 review (results/r22/port-0211-review.md, 11-05):**
+  - c30aa647's stream part is upstream #3961 (#4463 is its activity-lease part); port it together with its two follow-ups
+    a8767488c and 74f390538. Our served server.py and the port base both have the old behaviour (review section 2(d)).
+  - Pins to add: engine `STRATA_PCIE_SHARE_MAX=0.60`, `STRATA_PCIE_K_RULE=0` (off under STRATA_DEFAULTS=026 anyway; pin for
+    clarity); server process (launcher env, not the config env) `STRATA_STREAM_WRITE_TIMEOUT_S=0`,
+    `STRATA_BLOCKING_CONSOLE=1` - unless Karl accepts them as serve fixes; keep `"drafting": "mtp"` (it now also blocks a new
+    "out of VRAM: restart with no drafter" retry). The three new engine defaults (PCIe share rule, the 32768 chunk ceiling
+    for a bare `--prefill auto`, `STRATA_MMQ_KQ=1`) stay off under 026.
+  - The Q5_0 expert-dot fix (our old dot: served iq_kernels.cu:464, port base :466) - needed for any file with Q5_0 experts
+    (UD-IQ2_XS layer 4, UD-IQ4_XS-v31, UD-Q3_K_XL); not for our IQ3_S or UD-IQ3_XXS.
+  - The picture-format whitelist in the serve layer (pairs with the Pillow 13.0.0 update).
+  - Rebase forecast: 1 textual conflict of 10 shared files - serve/web/app.js (our web-search patch vs upstream's #4221 fix
+    that stops `/?q=` sending on its own).
+
+## Next port's list - additions (Karl 11-07, from the v0.2.12 release; desk notes only, nothing installed, no pause)
+
+v0.2.12 = 146df3c46 (98 commits after v0.2.11). The next port is the Qwen4 day-one port on base r23-port0211 (see
+results/r23/port-0211/PORT.md, "Gate result").
+- **Tool-call fixes + the parser fix for long calls** - serve-layer fixes, ported as they are (not pinned), gated by the live
+  tool-call test (port spurious <= P028x's, lost <= P028x's) and fence4:
+  - b1541ab24 (#5409, #5276): the prefixed-name and misspelt-opener checks look only at the end of the buffer (new text +
+    256 characters), so a long call is no longer rescanned with every token;
+  - 63fd75922 (#5276) misspelt openers (`<toolcall>`, `<tool-call>`) + a declared `<function=NAME>` open the call;
+  - 68ab15ddc (#5409) `<function=tools NAME>` = tool NAME; a bare `<function=tools>` = the one tool taking those parameters;
+  - 05506f953 (#5281) a namespaced MCP tool written by its last segment is that tool when exactly one declared tool matches;
+  - PR #4832 (95381770f) Anthropic tool results put back in call order by tool_use_id before the template pairs them;
+  - PR #4828 (d7e555bdb) tool_choice "required" with several tools writes only `<tool_call>\n`.
+  - Rebase forecast: all six change `serve/frontend.py`, where we carry 54 lines (our think-fence hold next to #4701's
+    `_close_verdict` hold) - expect conflicts there; keep the new upstream tests (test_tool_opener_misspelt,
+    test_tool_name_prefix, test_tool_name_mcp_member, test_anthropic_tool_results) passing beside ours.
+- **AVX-512 CPU rows** (55dc17697, 6368dc68a): IQ4_XS gate/up and Q5_0 down in 512-bit lanes on AVX-512 CPUs, "bit-identical
+  to the code they replace" (IQ4_NL down went back to 256-bit). Our 9950X3D has AVX-512 incl. VBMI/VNNI, so they run here by
+  default. **Verify the bit-identity claim on our CPU at the port**: CPU-expert parity and exact7 with the rows on vs the
+  AVX-2 rows (check whether `STRATA_CPU_YMM`, src/kernels/cpu/expert.cpp:152, turns them off for the A/B), on a file that has
+  these types on the CPU path (our IQ3_S: check its tensor types first; UD-IQ4_XS-v31 has Q5_0 down in 33 of 48 layers).
+  Not the VNNI tier below VBMI (f000d4a45 / 7e3fae57c): opt-in `STRATA_VNNI_TIER=1`, it rounds differently - stays off.
+- **STRATA_MANIFEST=<file>** (89f4fa18e, "run manifest lite"): JSON of the selected fast paths, fallback reasons, tensor
+  formats, engine choice and budgets. Use it in every gate arm (one manifest per arm start) to check which paths actually
+  run - the kind of check that would have caught the Basalt switch problem. First check it is output-neutral (exact7 with
+  and without it).
+- **Anthropic route, any model name** (c49f198c7, #5312): a test of existing behaviour - `/v1/messages` serves the loaded model
+  whatever name the request carries. Our mismatch guard (work/ds-launcher/model-guard/apply_guard.py) must still win for
+  the other model's exact id: it checks `/v1/messages` (with chat/completions and responses) before routing, and refuses only
+  the ids under `model_not_running`, so upstream's claude-5-5-sonnet test should still pass. At the port: apply the guard,
+  run test_model_mismatch.py (incl. test_anthropic_dialect) and upstream's new test together.
+- **STRATA_ADAPT_FETCH (24c6c2f68): dropped for now (Karl 11-07).** It refuses beside a helper GPU cache, which P028x
+  always runs. Parked as a Qwen4-day idea (results/BACKLOG-1027.md E7: revisit after Qwen4's cache hit rate is measured;
+  if tested, our placement-variant KL band, no new rule).
+- **force_check.py / STRATA_FOLLOW (65909b2d0, d486fbe7d, + cae562fa0 for the fault self-test): an INFO line only, never a
+  gate (Karl 11-07).** If the v0.2.12 port comes first it brings it; otherwise the ~45-line backport onto the measurement
+  twin for the next decode or port gap. No gap of its own (results/r23/FORCECHECK-REVIEW-1107.md).
+- **The 1.4 % hunt (11-07, desk; results/r23/port-0211/HUNT-1107.md): no pin to add for the Qwen4 port.**
+  - R3's loss is our own chat-cache park of R2's 54K conversation, which lands inside R3's prompt timer: B 104-106 ms, P
+    125-126 ms. R3's prefill without it is equal: 1287-1289 vs 1287-1291 ms.
+  - That park has two cost levels on every build (stored gaps: 44 at 100-114 ms, 75 at 120-139 ms). B drew the fast one,
+    P the slow one.
+  - R4's -0.3 % is a ~15 ms pause outside the engine timer that moved from R1 to R4.
+  - No upstream default or switch is involved.
+  - For the next port's gate: the screen's per-workload prompt numbers should not count the park, as the measurement
+    rule now does. That rule change is Karl's call.

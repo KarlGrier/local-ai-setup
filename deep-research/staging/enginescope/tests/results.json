@@ -1,0 +1,845 @@
+{
+ "started": "2026-10-29 14:54:13",
+ "checks": [
+  {
+   "check": "the 10-24 question -> Strata's DeepSeek engine",
+   "ok": true,
+   "detail": {
+    "strata": "dsv41"
+   }
+  },
+  {
+   "check": "a Strata task naming no engine -> no scope",
+   "ok": true,
+   "detail": {}
+  },
+  {
+   "check": "a task naming both engines -> no scope",
+   "ok": true,
+   "detail": {}
+  },
+  {
+   "check": "a Qwen task -> Strata's Qwen engine",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "an unrelated project (llama.cpp) with DeepSeek named -> no scope",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "no engine in the task, one in the profile -> the profile's",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "no engine in the task, two in the profile -> no scope",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "the task's engine wins over the profile's",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "prompt rule only with a scope",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "v0.2.4: Qwen engine folders -> OTHER ENGINE (file)",
+   "ok": true,
+   "detail": {
+    "src/program/generate.cpp": true,
+    "src/qwen35/q36_engine.cu": true,
+    "include/strata/program/split_ring.hpp": true,
+    "src/spec/controller.cpp": true,
+    "tools/qwen35/": true
+   }
+  },
+  {
+   "check": "v0.2.4: src/core, src/platform, src/prefill, src/ngram (+ include/strata/), sycl/src/platform, tests/platform -> OTHER ENGINE 'at v0.2.4'",
+   "ok": true,
+   "detail": {
+    "src/core/expert_cache.cpp": [
+     true,
+     "v0.2.4"
+    ],
+    "include/strata/core/device.hpp": [
+     true,
+     "v0.2.4"
+    ],
+    "src/platform/direct_file.cpp": [
+     true,
+     "v0.2.4"
+    ],
+    "include/strata/platform/direct_file.hpp": [
+     true,
+     "v0.2.4"
+    ],
+    "src/prefill/gemm.cu": [
+     true,
+     "v0.2.4"
+    ],
+    "src/ngram/ple_reader.cpp": [
+     true,
+     "v0.2.4"
+    ],
+    "sycl/src/platform/direct_file.cpp": [
+     true,
+     "v0.2.4"
+    ],
+    "tests/platform/direct_file_async.cpp": [
+     true,
+     "v0.2.4"
+    ]
+   }
+  },
+  {
+   "check": "v0.2.4: DeepSeek engine folders / doc -> no label",
+   "ok": true,
+   "detail": {
+    "src/dsv41/ds4_model.cu": false,
+    "include/strata/dsv41/exl3.hpp": false,
+    "tools/dsv41/compare.py": false,
+    "docs/DEEPSEEK41.md": false,
+    "data/dsv41/profile-2.00.bin": false,
+    "tools/dsv41_lab/ds4_lab.cu": false
+   }
+  },
+  {
+   "check": "v0.2.4: shared (device.cu, hip_compat, kernels, serve, launcher, setup, tools/) -> no label",
+   "ok": true,
+   "detail": {
+    "src/core/device.cu": false,
+    "include/strata/hip_compat/cuda_runtime.h": false,
+    "src/kernels/cpu/iq_avx512.cpp": false,
+    "include/strata/kernels/cpu/iq_avx2.hpp": false,
+    "serve/server.py": false,
+    "strata_control/gpu_roles.py": false,
+    "strata_cli/launch/__init__.py": false,
+    "setup.py": false,
+    "CMakeLists.txt": false,
+    "tools/needle_bench.py": false
+   }
+  },
+  {
+   "check": "no pin: the conservative map - src/core, src/platform, src/prefill, src/ngram shared; the Qwen folders still labelled",
+   "ok": true,
+   "detail": {
+    "src/core/expert_cache.cpp": false,
+    "include/strata/core/device.hpp": false,
+    "src/platform/direct_file.cpp": false,
+    "include/strata/platform/direct_file.hpp": false,
+    "src/prefill/gemm.cu": false,
+    "src/ngram/ple_reader.cpp": false,
+    "sycl/src/platform/direct_file.cpp": false,
+    "tests/platform/direct_file_async.cpp": false
+   }
+  },
+  {
+   "check": "version rule: the newest entry at or below; below every entry / unpinned / unparseable -> base",
+   "ok": true,
+   "detail": {
+    "v0.2.3": "base",
+    "v0.2.4": "v0.2.4",
+    "v0.2.4.2": "v0.2.4",
+    "v0.2.5": "v0.2.4",
+    "0.2.6": "v0.2.6",
+    "v0.2.6": "v0.2.6",
+    "v0.2.7": "v0.2.7",
+    "v0.2.7.1": "v0.2.7",
+    "v0.3.0": "v0.2.7",
+    "main": "base",
+    "null": "base"
+   }
+  },
+  {
+   "check": "every folder / file of the table exists at v0.2.4",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "every src/ and include/strata/ folder of v0.2.4 is in the table (base and v0.2.4 maps)",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "v0.2.4: no folder the DeepSeek engine links or includes is called the Qwen engine's",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "v0.2.6: no folder the DeepSeek engine links or includes is called the Qwen engine's",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "v0.2.7: no folder the DeepSeek engine links or includes is called the Qwen engine's",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "v0.2.6: the clone shows src/core and src/platform NOT linked into strata-dsv41 (outside Windows HIP)",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "v0.2.7: the clone shows strata_prefill linked -> core / platform / prefill / ngram shared from v0.2.7",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "v0.2.7 map: sycl/src/platform stays shared (as found)",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "a v0.2.4 and a v0.2.6 task label src/core (the clone: Qwen-only there); a v0.2.7 task and an unpinned one keep it shared",
+   "ok": true,
+   "detail": {
+    "v0.2.4": "OTHER ENGINE: this file is part of Strata's Qwen engine at v0.2.4; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them",
+    "v0.2.6": "OTHER ENGINE: this file is part of Strata's Qwen engine at v0.2.6; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them",
+    "v0.2.7": "",
+    "null": ""
+   }
+  },
+  {
+   "check": "MULTI_GPU.md and the community bench results are labelled (all their reads)",
+   "ok": true,
+   "detail": {
+    "4388": true,
+    "7735": true,
+    "7737": true,
+    "7738": true,
+    "7736": true
+   }
+  },
+  {
+   "check": "DEEPSEEK41.md, src/dsv41, tools/dsv41 and the 0.2.4 release notes are not labelled",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "no source of another project is labelled (Xolotl, Abyss, project-maya, llama.cpp, papers ...)",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "forks / related repos are another project (no label)",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "GitHub search pages (lists of repos) are not labelled",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "code tool (whole file) and writer (evidence) agree on all 38 Strata v0.2.4 reads",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "no source labelled for a task with no engine named",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "no source labelled for a task with unrelated project",
+   "ok": true,
+   "detail": []
+  },
+  {
+   "check": "README.md is mixed -> PARTLY (not the whole page)",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "README.md: the Qwen model sections are labelled",
+   "ok": true,
+   "detail": [
+    "",
+    "### Low on memory? Try Gyro",
+    "### The other sizes",
+    "## How fast is it?",
+    "## Build from source",
+    "## Credits and license"
+   ]
+  },
+  {
+   "check": "README.md: the DeepSeek section is not",
+   "ok": true,
+   "detail": [
+    "",
+    "### Low on memory? Try Gyro",
+    "### The other sizes",
+    "## How fast is it?",
+    "## Build from source",
+    "## Credits and license"
+   ]
+  },
+  {
+   "check": "README.md: a line in the DeepSeek section is in no labelled part",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "quotes: the Qwen-section quote is marked, the DeepSeek one is not",
+   "ok": true,
+   "detail": "- [OTHER ENGINE: Strata's Qwen engine] \"<source media=\"(prefers-color-scheme: dark)\" srcset=\"apps/host/public/brand/strata-lockup-dark.svg\">\" (undated)\n- \"[DeepSeek V4.1-Flash](https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF) is a different, much bigger model. ISTA-DASLab made the three sets below. Strata runs them on a PC with one 12 GB graphics card and 46 to 64 GB of RAM, and reads the rest from your SSD. It runs on NVIDIA RTX 30 to 50 cards and on the Radeon AI PRO R9700. It uses its own engine package, `strata-dsv41`, which `strata launch` downloads when you pick DeepSeek. The desktop app does not offer it yet.\" (undated)"
+  },
+  {
+   "check": "the repo root page as read (4393) -> PARTLY, its DeepSeek section unlabelled",
+   "ok": true,
+   "detail": [
+    "# GitHub - Niko1221/Strata: Qwen3.8-Flash-Next on any consumer hardware: one-click",
+    "## **Qwen3.8-Flash-Next**"
+   ]
+  },
+  {
+   "check": "DEEPSEEK41.md (59 DeepSeek / 2 Qwen markers) -> no label at all",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "newreleases.io v0.2.4 notes (a DeepSeek release) -> no label",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "fetch bench: labelled under the URL line, the rest as installed",
+   "ok": true,
+   "detail": "[90001] Title: Strata bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md\n[OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek en"
+  },
+  {
+   "check": "fetch multigpu: labelled under the URL line, the rest as installed",
+   "ok": true,
+   "detail": "[90001] Title: Strata docs/MULTI_GPU.md\nURL: https://raw.githubusercontent.com/Niko1221/Strata/v0.2.4/docs/MULTI_GPU.md\n[OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's "
+  },
+  {
+   "check": "fetch readme: PARTLY note, the Qwen-section quote marked, the DeepSeek one not",
+   "ok": true,
+   "detail": "[90001] Title: Strata README.md\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/README.md\n[PARTLY OTHER ENGINE: the parts lines 1-37, \"### Low on memory? Try Gyro\", \"### The other sizes\", \"## How fast is it?\", \"## Build from source\", \"## Credits and license\" of this page describe Strata's Qwen engine; the task is about its DeepSeek engine - flags, settings and numbers from those parts are not the DeepSeek engine's unless that engine's code shows them; quotes from them are marked [OTHER ENGINE]]\n\n[OTHER ENGINE: Strata's Qwen engine] \"[Gyro](https://huggingface.co/agentionai/Qwen3.8-Flash-Ne"
+  },
+  {
+   "check": "fetch deepseek41: no label, byte-identical to the installed tool",
+   "ok": true,
+   "detail": "[90001] Title: Strata docs/DEEPSEEK41.md\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/docs/DEEPSEEK41.md\n\n\"DeepSeek-V4.1-Flash is a large mixture-of-experts model: 40 layers, 384 experts in eac"
+  },
+  {
+   "check": "fetch unrelated: no label, byte-identical to the installed tool",
+   "ok": true,
+   "detail": "[90001] Title: llama.cpp MoE offload\nURL: https://example.org/llama-cpp-moe-offload\n\n\"llama.cpp runs Qwen3.8-Flash-Next and Qwen3.6 with --n-cpu-moe; the Qwen models use MTP drafts. Strata is mentione"
+  },
+  {
+   "check": "fetch (full mode): labelled too",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "fetch: no label when LDR_DEEP_FIX lacks 'version'",
+   "ok": true,
+   "detail": "[90001] Title: b\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md\n\n\"x y z some quote here ok\""
+  },
+  {
+   "check": "code_read docs/MULTI_GPU.md:190-240: OTHER ENGINE (page); the lines as installed",
+   "ok": true,
+   "detail": "[90001] Title: Niko1221/Strata@v0.2.4: docs/MULTI_GPU.md lines 190-240 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/docs/MULTI_GPU.md#L190-L240\n[OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are no"
+  },
+  {
+   "check": "code_read bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md:108-121: OTHER ENGINE (page); the lines as installed",
+   "ok": true,
+   "detail": "[90002] Title: Niko1221/Strata@v0.2.4: bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md lines 108-121 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md#L108-L121\n[OTHER ENGINE: this page describes "
+  },
+  {
+   "check": "code_read src/program/generate.cpp:2880-2900: OTHER ENGINE (file); the lines as installed",
+   "ok": true,
+   "detail": "[90003] Title: Niko1221/Strata@v0.2.4: src/program/generate.cpp lines 2880-2900 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/program/generate.cpp#L2880-L2900\n[OTHER ENGINE: this file is part of Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings"
+  },
+  {
+   "check": "code_read README.md:140-200: PARTLY, start / end marks around the Qwen part",
+   "ok": true,
+   "detail": "[90004] Title: Niko1221/Strata@v0.2.4: README.md lines 140-200 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/README.md#L140-L200\n[PARTLY OTHER ENGINE: the parts \"### Low on memory? Try Gyro\" (lines 154-165), \"### The other sizes\" (lines 166-190) of this page describe Strata's Qwen engine; the task is about its DeepSeek engine - flags, settings and numbers from those parts are not the DeepSeek engine's unless that engine's code shows them; quotes from them are marked [OTHER EN"
+  },
+  {
+   "check": "code_read docs/DEEPSEEK41.md:1-60: no label, byte-identical to the installed tool",
+   "ok": true,
+   "detail": "[90005] Title: Niko1221/Strata@v0.2.4: docs/DEEPSEEK41.md lines 1-60 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/docs/DEEPSEEK41.md#L1-L60\n\n1: # DeepSeek-V4.1-Flash\n2: \n3: DeepSe"
+  },
+  {
+   "check": "code_read src/dsv41/ds4_main.cpp:60-100: no label, byte-identical to the installed tool",
+   "ok": true,
+   "detail": "[90006] Title: Niko1221/Strata@v0.2.4: src/dsv41/ds4_main.cpp lines 60-100 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/dsv41/ds4_main.cpp#L60-L100\n\n60:     char line[128];\n61"
+  },
+  {
+   "check": "code_read src/core/expert_cache.cpp:1-30: OTHER ENGINE (file); the lines as installed",
+   "ok": true,
+   "detail": "[90007] Title: Niko1221/Strata@v0.2.4: src/core/expert_cache.cpp lines 1-30 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/core/expert_cache.cpp#L1-L30\n[OTHER ENGINE: this file is part of Strata's Qwen engine at v0.2.4; the task is about its DeepSeek engine - its flags, settin"
+  },
+  {
+   "check": "code_read src/platform/direct_file.cpp:1-30: OTHER ENGINE (file); the lines as installed",
+   "ok": true,
+   "detail": "[90008] Title: Niko1221/Strata@v0.2.4: src/platform/direct_file.cpp lines 1-30 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/platform/direct_file.cpp#L1-L30\n[OTHER ENGINE: this file is part of Strata's Qwen engine at v0.2.4; the task is about its DeepSeek engine - its flags, "
+  },
+  {
+   "check": "code_read src/core/device.cu:170-200: no label, byte-identical to the installed tool",
+   "ok": true,
+   "detail": "[90009] Title: Niko1221/Strata@v0.2.4: src/core/device.cu lines 170-200 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/core/device.cu#L170-L200\n\n170: }  // namespace\n171: \n172: "
+  },
+  {
+   "check": "code_read serve/server.py:1-30: no label, byte-identical to the installed tool",
+   "ok": true,
+   "detail": "[90010] Title: Niko1221/Strata@v0.2.4: serve/server.py lines 1-30 (source code)\nURL: https://github.com/Niko1221/Strata/blob/v0.2.4/serve/server.py#L1-L30\n\n1: \"\"\"serve/server.py - plan v0.3 P8: OpenAI"
+  },
+  {
+   "check": "code_search: Qwen engine files / docs marked, legend line added, shared files (serve, launcher) unmarked",
+   "ok": true,
+   "detail": [
+    "strata_control/tune_knobs.py",
+    "tools/batch_test.py"
+   ]
+  },
+  {
+   "check": "code_search: without the marks and the legend, identical to the installed output",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "code_search for a DeepSeek-only name: unchanged",
+   "ok": true,
+   "detail": "2 hit(s) for /DS4_RING_MB/ in Niko1221/Strata@v0.2.4:\nsrc/dsv41/ds4_model.cu:2873: if (stride > 0) {   // DS4_RING_MB (400) of slots in kParts batches\nsrc/dsv41/ds4_model.cu:2874: const size_t mb = st"
+  },
+  {
+   "check": "code tool with no engine named: every read / search byte-identical to the installed tool",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "codetool.py still loads on its own (code-mcp.py); enginescope found next to it; Repo.read works",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "section prompt carries the engine rule",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "writer label: MULTI_GPU.md and the 5080 bench (lines 108-121) say OTHER ENGINE ahead of the title",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "writer label: DEEPSEEK41.md, src/dsv41 and Xolotl unlabelled",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "section evidence: OTHER ENGINE ahead of the Qwen pages' titles, PARTLY on the root page, none on DEEPSEEK41",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "section evidence: the root page's Qwen-section passages / quotes carry [OTHER ENGINE: Strata's Qwen engine]",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "citation check: the Qwen page's block says OTHER ENGINE, the DeepSeek doc's does not",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "writer with no engine named: section rules, section prompt and outline digest identical to installed",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "writer with LDR_DEEP_FIX lacking 'version': identical to installed (switch off)",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "at least the 4 names from MULTI_GPU.md / the 5080 bench are only in labelled reads",
+   "ok": true,
+   "detail": [
+    {
+     "name": "--pcie-frac",
+     "read_sources": 3,
+     "read_labelled": 3,
+     "snippets": 0,
+     "snippets_labelled": 0,
+     "grep_hit_lines": 71,
+     "grep_labelled": 65,
+     "only_in_labelled_reads": true,
+     "only_in_labelled_incl_grep": false,
+     "unlabelled_in": [
+      "strata_control/calibration.py",
+      "strata_control/tune_knobs.py",
+      "strata_control/tuning.py",
+      "tools/batch_test.py"
+     ]
+    },
+    {
+     "name": "--adapt-every",
+     "read_sources": 1,
+     "read_labelled": 1,
+     "snippets": 0,
+     "snippets_labelled": 0,
+     "grep_hit_lines": 56,
+     "grep_labelled": 53,
+     "only_in_labelled_reads": true,
+     "only_in_labelled_incl_grep": false,
+     "unlabelled_in": [
+      "bench/results/exchange-rotation-ab.json",
+      "strata_control/tune_knobs.py",
+      "tools/batch_test.py"
+     ]
+    },
+    {
+     "name": "--trim-stage-weights",
+     "read_sources": 0,
+     "read_labelled": 0,
+     "snippets": 0,
+     "snippets_labelled": 0,
+     "grep_hit_lines": 45,
+     "grep_labelled": 42,
+     "only_in_labelled_reads": false,
+     "only_in_labelled_incl_grep": false,
+     "unlabelled_in": [
+      "strata_control/tune_knobs.py",
+      "tools/batch_test.py"
+     ]
+    },
+    {
+     "name": "--vram-reserve-mib",
+     "read_sources": 4,
+     "read_labelled": 3,
+     "snippets": 0,
+     "snippets_labelled": 0,
+     "grep_hit_lines": 106,
+     "grep_labelled": 65,
+     "only_in_labelled_reads": false,
+     "only_in_labelled_incl_grep": false,
+     "unlabelled_in": [
+      "https://github.com/mw00/project-maya",
+      "apps/host/server/native-control.mjs",
+      "apps/host/server/native-resources.mjs",
+      "apps/host/server/native-settings.mjs",
+      "bench/results/exchange-rotation-ab.json",
+      "serve/runconfig.py",
+      "serve/server.py",
+      "serve/test_runconfig.py"
+     ]
+    },
+    {
+     "name": "STRATA_IO_THREADS",
+     "read_sources": 1,
+     "read_labelled": 1,
+     "snippets": 0,
+     "snippets_labelled": 0,
+     "grep_hit_lines": 70,
+     "grep_labelled": 70,
+     "only_in_labelled_reads": true,
+     "only_in_labelled_incl_grep": true,
+     "unlabelled_in": []
+    },
+    {
+     "name": "STRATA_UNBUFFERED_LOAD",
+     "read_sources": 1,
+     "read_labelled": 1,
+     "snippets": 0,
+     "snippets_labelled": 0,
+     "grep_hit_lines": 40,
+     "grep_labelled": 40,
+     "only_in_labelled_reads": true,
+     "only_in_labelled_incl_grep": true,
+     "unlabelled_in": []
+    },
+    {
+     "name": "--layer-split",
+     "read_sources": 8,
+     "read_labelled": 2,
+     "snippets": 0,
+     "snippets_labelled": 0,
+     "grep_hit_lines": 63,
+     "grep_labelled": 58,
+     "only_in_labelled_reads": false,
+     "only_in_labelled_incl_grep": false,
+     "unlabelled_in": [
+      "https://github.com/zephel01/Abyss",
+      "https://github.com/Indras-Mirror/Xolotl",
+      "https://github.com/Indras-Mirror/Xolotl",
+      "https://github.com/zephel01/Abyss",
+      "https://github.com/Indras-Mirror/Xolotl",
+      "https://github.com/zephel01/Abyss",
+      "apps/host/server/native-user-args.mjs",
+      "bench/results/2026-09-29-layer-split-limits/data/pp-lim-cv-pp-x2.json"
+     ]
+    }
+   ]
+  },
+  {
+   "check": "search titles: Qwen engine code / doc file / a Strata page about Qwen marked; DeepSeek doc and llama.cpp not",
+   "ok": true,
+   "detail": [
+    "1",
+    "2",
+    "4"
+   ]
+  },
+  {
+   "check": "search titles: the inputs are not changed (the collector keeps plain titles)",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "search titles: unchanged with no engine named",
+   "ok": true,
+   "detail": null
+  },
+  {
+   "check": "strategy: the rule line goes into the lead's system prompt and the subagents' prompt",
+   "ok": true,
+   "detail": null
+  }
+ ],
+ "shown": {
+  "prompt_rule": "\n\nENGINE SCOPE: the task is about Strata's DeepSeek engine. Tool results mark pages, files, search hits and quoted parts that describe another engine of Strata (its Qwen engine) with [OTHER ENGINE ...] or [PARTLY OTHER ENGINE ...]: their flags, environment variables, defaults and measured numbers are not the DeepSeek engine's - do not report them as the DeepSeek engine's options unless the DeepSeek engine's own code or docs show them, and say which engine they belong to when you mention them.",
+  "folders_v0.2.4": {
+   "include/strata/artifact/": "shared",
+   "include/strata/core/": "qwen",
+   "include/strata/dsv41/": "dsv41",
+   "include/strata/hip_compat/": "shared",
+   "include/strata/kernels/": "shared",
+   "include/strata/ngram/": "qwen",
+   "include/strata/plan/": "shared",
+   "include/strata/platform/": "qwen",
+   "include/strata/prefill/": "qwen",
+   "include/strata/program/": "qwen",
+   "include/strata/qwen35/": "qwen",
+   "include/strata/spec/": "qwen",
+   "src/artifact/": "shared",
+   "src/core/": "qwen",
+   "src/dsv41/": "dsv41",
+   "src/kernels/": "shared",
+   "src/ngram/": "qwen",
+   "src/plan/": "shared",
+   "src/platform/": "qwen",
+   "src/prefill/": "qwen",
+   "src/program/": "qwen",
+   "src/qwen35/": "qwen",
+   "src/spec/": "qwen"
+  },
+  "folders_base": {
+   "include/strata/artifact/": "shared",
+   "include/strata/core/": "shared",
+   "include/strata/dsv41/": "dsv41",
+   "include/strata/hip_compat/": "shared",
+   "include/strata/kernels/": "shared",
+   "include/strata/ngram/": "shared",
+   "include/strata/plan/": "shared",
+   "include/strata/platform/": "shared",
+   "include/strata/prefill/": "shared",
+   "include/strata/program/": "qwen",
+   "include/strata/qwen35/": "qwen",
+   "include/strata/spec/": "qwen",
+   "src/artifact/": "shared",
+   "src/core/": "shared",
+   "src/dsv41/": "dsv41",
+   "src/kernels/": "shared",
+   "src/ngram/": "shared",
+   "src/plan/": "shared",
+   "src/platform/": "shared",
+   "src/prefill/": "shared",
+   "src/program/": "qwen",
+   "src/qwen35/": "qwen",
+   "src/spec/": "qwen"
+  },
+  "clone_per_tag": {
+   "v0.2.4": {
+    "links (not only on Windows HIP)": [],
+    "includes strata/": [
+     "dsv41",
+     "kernels"
+    ],
+    "qwen at this tag": [
+     "src/core/",
+     "include/strata/core/",
+     "src/platform/",
+     "include/strata/platform/",
+     "src/prefill/",
+     "include/strata/prefill/",
+     "src/ngram/",
+     "include/strata/ngram/",
+     "sycl/src/platform/",
+     "tests/platform/"
+    ],
+    "conflicts": []
+   },
+   "v0.2.6": {
+    "links (not only on Windows HIP)": [],
+    "includes strata/": [
+     "dsv41",
+     "kernels"
+    ],
+    "qwen at this tag": [
+     "src/core/",
+     "include/strata/core/",
+     "src/platform/",
+     "include/strata/platform/",
+     "src/prefill/",
+     "include/strata/prefill/",
+     "src/ngram/",
+     "include/strata/ngram/",
+     "sycl/src/platform/",
+     "tests/platform/"
+    ],
+    "conflicts": []
+   },
+   "v0.2.7": {
+    "links (not only on Windows HIP)": [
+     "strata_prefill"
+    ],
+    "includes strata/": [
+     "dsv41",
+     "kernels"
+    ],
+    "qwen at this tag": [],
+    "conflicts": []
+   }
+  },
+  "labelled_sources": [
+   "[4387] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/docs/PREFILL_HEAD_ALIAS.md#L1-L100",
+   "[4388] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/docs/MULTI_GPU.md#L1-L120",
+   "[4393] PARTS (sections) https://github.com/Niko1221/Strata",
+   "[7735] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/docs/MULTI_GPU.md#L190-L240",
+   "[7736] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-4x-rx-7900-xt/README.md#L1-L120",
+   "[7737] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md#L1-L110",
+   "[7738] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md#L108-L121"
+  ],
+  "names": [
+   {
+    "name": "--pcie-frac",
+    "read_sources": 3,
+    "read_labelled": 3,
+    "snippets": 0,
+    "snippets_labelled": 0,
+    "grep_hit_lines": 71,
+    "grep_labelled": 65,
+    "only_in_labelled_reads": true,
+    "only_in_labelled_incl_grep": false,
+    "unlabelled_in": [
+     "strata_control/calibration.py",
+     "strata_control/tune_knobs.py",
+     "strata_control/tuning.py",
+     "tools/batch_test.py"
+    ]
+   },
+   {
+    "name": "--adapt-every",
+    "read_sources": 1,
+    "read_labelled": 1,
+    "snippets": 0,
+    "snippets_labelled": 0,
+    "grep_hit_lines": 56,
+    "grep_labelled": 53,
+    "only_in_labelled_reads": true,
+    "only_in_labelled_incl_grep": false,
+    "unlabelled_in": [
+     "bench/results/exchange-rotation-ab.json",
+     "strata_control/tune_knobs.py",
+     "tools/batch_test.py"
+    ]
+   },
+   {
+    "name": "--trim-stage-weights",
+    "read_sources": 0,
+    "read_labelled": 0,
+    "snippets": 0,
+    "snippets_labelled": 0,
+    "grep_hit_lines": 45,
+    "grep_labelled": 42,
+    "only_in_labelled_reads": false,
+    "only_in_labelled_incl_grep": false,
+    "unlabelled_in": [
+     "strata_control/tune_knobs.py",
+     "tools/batch_test.py"
+    ]
+   },
+   {
+    "name": "--vram-reserve-mib",
+    "read_sources": 4,
+    "read_labelled": 3,
+    "snippets": 0,
+    "snippets_labelled": 0,
+    "grep_hit_lines": 106,
+    "grep_labelled": 65,
+    "only_in_labelled_reads": false,
+    "only_in_labelled_incl_grep": false,
+    "unlabelled_in": [
+     "https://github.com/mw00/project-maya",
+     "apps/host/server/native-control.mjs",
+     "apps/host/server/native-resources.mjs",
+     "apps/host/server/native-settings.mjs",
+     "bench/results/exchange-rotation-ab.json",
+     "serve/runconfig.py",
+     "serve/server.py",
+     "serve/test_runconfig.py"
+    ]
+   },
+   {
+    "name": "STRATA_IO_THREADS",
+    "read_sources": 1,
+    "read_labelled": 1,
+    "snippets": 0,
+    "snippets_labelled": 0,
+    "grep_hit_lines": 70,
+    "grep_labelled": 70,
+    "only_in_labelled_reads": true,
+    "only_in_labelled_incl_grep": true,
+    "unlabelled_in": []
+   },
+   {
+    "name": "STRATA_UNBUFFERED_LOAD",
+    "read_sources": 1,
+    "read_labelled": 1,
+    "snippets": 0,
+    "snippets_labelled": 0,
+    "grep_hit_lines": 40,
+    "grep_labelled": 40,
+    "only_in_labelled_reads": true,
+    "only_in_labelled_incl_grep": true,
+    "unlabelled_in": []
+   },
+   {
+    "name": "--layer-split",
+    "read_sources": 8,
+    "read_labelled": 2,
+    "snippets": 0,
+    "snippets_labelled": 0,
+    "grep_hit_lines": 63,
+    "grep_labelled": 58,
+    "only_in_labelled_reads": false,
+    "only_in_labelled_incl_grep": false,
+    "unlabelled_in": [
+     "https://github.com/zephel01/Abyss",
+     "https://github.com/Indras-Mirror/Xolotl",
+     "https://github.com/Indras-Mirror/Xolotl",
+     "https://github.com/zephel01/Abyss",
+     "https://github.com/Indras-Mirror/Xolotl",
+     "https://github.com/zephel01/Abyss",
+     "apps/host/server/native-user-args.mjs",
+     "bench/results/2026-09-29-layer-split-limits/data/pp-lim-cv-pp-x2.json"
+    ]
+   }
+  ],
+  "names_only_labelled_reads": 4,
+  "names_only_labelled_incl_grep": 2
+ },
+ "variant": "installed",
+ "seconds": 30.7
+}

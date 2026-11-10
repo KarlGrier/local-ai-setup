@@ -1,0 +1,62 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-cstar3/strata",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0111/packs/iq3_s",
+  "--native",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+  "--ple-gguf",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0111/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "8192",
+  "--spec",
+  "4",
+  "--spec-min-p",
+  "0.5",
+  "--mtp",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0111/mtp/rt",
+  "--max-context",
+  "131072",
+  "--kv",
+  "int8",
+  "--kv-resident",
+  "32768",
+  "--pcie-frac",
+  "0",
+  "--pool-workers",
+  "15",
+  "--ple-inflight",
+  "128",
+  "--vram-reserve-mib",
+  "800",
+  "--chat-cache",
+  "6",
+  "--chat-cache-mib",
+  "16384"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v0111",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/strata-v0111/packs/iq3_s/tokenizer",
+ "model_name": "strata-qwen3.8-flash-next-iq3s",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-Cstar3.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8081,
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "host": "127.0.0.1",
+ "_comment": "C*3 (round 3): Strata v0.1.12 + patches/r3/0001-0008 (Linux parallel n-gram reads; side-stash helpers; batched layer-1 PLE in the prompt path; next-chunk n-gram prefetch; only the CPU's expert rows over PCIe; multi-token BF16 MMVF for router/indexer; --chat-cache; web app with several chats), clean build engine-cstar3/strata (sha256 in engine-cstar3/SHA256), server + chat page from strata-cstar3/serve. Flags = C*2's (prefill 8192, 64 n-gram I/O threads via env, --ple-inflight 128, VRAM reserve 800 MiB, pcie-frac 0, 15 pool workers, spec 4 / min-p 0.5, int8 KV + streaming, 131072 ctx, MTP) minus --side-stash plus --chat-cache 6 --chat-cache-mib 16384. Sampling defaults = your settings 0.6/0.95/20/0.05 (the chat page sends no min_p; it comes from here). Shared chat settings: configs/Cstar3.shared-settings.json. Speed projection off. See REPORT.md \"Round 3\".",
+ "env": {
+  "STRATA_PLE_IO_THREADS": "64"
+ },
+ "server": "/home/USER/ai-speed-testing/strata-compare/strata-cstar3/serve/server.py"
+}

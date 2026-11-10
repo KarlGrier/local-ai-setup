@@ -1,0 +1,147 @@
+#!/bin/bash
+# port_gap4.sh begin "WHAT" | end  -  a gap in the phase 4 research queue for builds and checks (the v0.2.2 port, the
+# Basalt A/B builds), 2026-10-21. Phase 4's version of port_gap.sh: the same hold and lock, but the switch-back is to
+# P021 with the chat-cache parking policy left ON (phase 4 runs with it). The user, 10-21: P021 stays on 8080 for all of
+# phase 4 (its baselines are the "without" arm of stages 2 and 3); the 0.2.2 port is built and checked, never switched.
+#
+#   begin  the queue holds (deep-research tmp/bench2.hold; the stage 1 runner waits on it too), the running research run
+#          finishes, then this takes the measurement lock (tmp/gpu-test.lock, shared) and stops P021 on 8080.
+#          Test servers run on their own ports (never 8080).
+#   end    the test server is stopped (by its PID file), P021 is started on 8080 again and checked (engine SHA-256 and
+#          the parking policy on), the switch-back is logged in deep-research NOTES.md, the lock is released and the
+#          queue resumes.
+set -euo pipefail
+SC=/home/USER/ai-speed-testing/strata-compare
+DR=/home/USER/ai/deep-research
+HOLD=$DR/tmp/bench2.hold
+LOCKPID=$SC/tmp/port-gap.lockpid
+NOTES=$DR/NOTES.md
+P021_SHA=f4c4f654fb24                          # engine-r22p028x/strata (P028x, served since the gap 16 switch; P021m = 7b38796237f5 is the rollback)
+PORT_PIDFILE=$SC/tmp/port-test-server.pid      # written by whatever starts a test server
+say() { echo "$(date '+%F %T') port_gap4: $*"; }
+
+engine_sha() {   # the 8080 engine's binary, first 12 hex of its SHA-256 ("" if none)
+  local pid lp
+  # 11-05 (audit AUDIT-1105.md #10): the engine = the strata / strata-host child of the 8080 listener (server.py); the
+  # engine's own cmdline has no port, so the old filter fell back to the lowest-PID engine - a test engine still exiting
+  lp=$(ss -ltnpH 'sport = :8080' 2> /dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+  pid=$( { [ -n "$lp" ] && pgrep -P "$lp" -x "strata|strata-host"; } | head -1)
+  [ -n "$pid" ] || pid=$(pgrep -x "strata|strata-host" | while read -r p; do tr '\0' ' ' < /proc/$p/cmdline | grep -q -- "--port 8080\|:8080" && echo $p; done | head -1)
+  [ -z "$pid" ] && pid=$(pgrep -x "strata|strata-host" | head -1)   # v0.2.8 names its engine process strata-host
+  [ -n "$pid" ] && sha256sum "/proc/$pid/exe" | cut -c1-12 || true
+}
+
+case ${1:-} in
+begin)
+  what=${2:?say what the gap is for}
+  # Karl 11-06: a quiet window (tmp/quiet-window: "YYYY-MM-DD HH:MM YYYY-MM-DD HH:MM" = start end, his own PC use) - a
+  # gap may OPEN only if it would also END (open + GAP_MAX_MIN, default 190 min = the longest remaining driver) before
+  # the window starts, or after the window ends. While it waits the research queue is NOT held (the chain goes on); the
+  # check is made again where the gap would open (after the running question), and a hold set too early is lifted
+  QW=$SC/tmp/quiet-window
+  in_quiet() { [ -s "$QW" ] || return 1; local a b c d s e now
+    read -r a b c d < "$QW" || return 1; s=$(date -d "$a $b" +%s 2> /dev/null) || return 1; e=$(date -d "$c $d" +%s 2> /dev/null) || return 1
+    now=${QW_NOW:-$(date +%s)}; [ "$now" -lt "$e" ] && [ $(( now + ${GAP_MAX_MIN:-190} * 60 )) -gt "$s" ]; }
+  # 11-06 (Karl, the DeepSeek launcher): no gap opens during a DeepSeek session (tmp/ds-session of this boot,
+  # configs/usability/bin/deepseek-session.sh): it waits as for the quiet window, and leaves the session's hold alone
+  ds_session() { grep -qsF "boot $(cat /proc/sys/kernel/random/boot_id)" "$SC/tmp/ds-session"; }
+  while :; do
+    if ds_session; then say "a DeepSeek session holds the GPUs - the gap waits for Back to Qwen"
+      while ds_session; do sleep 30; done; say "the DeepSeek session is over - going on"; fi
+    if in_quiet; then say "quiet window ($(cat "$QW")): no gap may open until it ends (or end before it starts) - the research queue is NOT held meanwhile"
+      while in_quiet; do sleep 60; done; say "quiet window over - going on"; continue; fi
+    echo "phase 4 gap: $what (since $(date '+%F %T'))" > "$HOLD"
+    say "hold set; waiting for the running research run to finish"
+    # 11-05 (audit #6): bench.lock must be free at two looks 45 s apart - the queue logs a question's ": running" line
+    # a few seconds before bench2.py takes the lock, so one free look can land in that window and stop 8080 under it
+    while :; do
+      while ! flock -n "$DR/run/bench.lock" true; do sleep 20; done
+      sleep 45
+      flock -n "$DR/run/bench.lock" true && break
+      say "a research run took run/bench.lock meanwhile - waiting for it"
+    done
+    if ds_session; then say "a DeepSeek session asked for the GPUs first - the gap waits"; continue; fi
+    if in_quiet; then rm -f "$HOLD"; say "the running question ended too close to the quiet window - hold lifted (the queue goes on)"; continue; fi
+    # (11-06: a session cancelled meanwhile removed the hold: set it again and look again before opening)
+    [ -e "$HOLD" ] || { say "the hold went away meanwhile - setting it again"; continue; }
+    grep -qF 'DeepSeek session' "$HOLD" 2> /dev/null && { rm -f "$HOLD"; continue; }
+    # Karl 11-05: a gap waits for an active Jan job (research_common's ACTIVE states: starting / running / paused); the
+    # marker lets the weekend watcher alert after 2 h of waiting (it never starts the gap)
+    jan_active() { /usr/bin/python3 -I -c "import sys; sys.path.insert(0, '$DR/tools'); import research_common as rc; sys.exit(0 if any(j.get('state') in rc.ACTIVE for j in rc.all_jobs()) else 1)" 2> /dev/null; }
+    if jan_active; then
+      echo "$(date '+%F %T') $what" > "$SC/tmp/gap-waiting-jan"; say "a Jan job is active - the gap waits for it"
+      while jan_active; do sleep 30; done
+      rm -f "$SC/tmp/gap-waiting-jan"; say "no Jan job active any more - going on"
+      continue   # (11-06: look again - a question, a quiet window or a DeepSeek session may have come in meanwhile)
+    fi
+    # Karl 11-06: nor mid-answer, whichever app asked: chat-busy.py asks the server, so Jan, DS Harness and any other client
+    # count (a request running or queued, or one finished under 2 min ago: a multi-step turn's next call). The same
+    # marker and the same 2-h alert as a Jan job; the watcher never starts the gap
+    chat_busy() { /usr/bin/python3 -I "$SC/configs/usability/bin/chat-busy.py" > /dev/null 2>&1; }
+    if chat_busy; then
+      echo "$(date '+%F %T') $what" > "$SC/tmp/gap-waiting-jan"; say "a chat is being answered on 8080, or a request just finished - the gap waits for it"
+      while chat_busy; do sleep 30; done
+      rm -f "$SC/tmp/gap-waiting-jan"; say "no chat being answered any more - going on"
+      continue
+    fi
+    break
+  done
+  mkdir -p "$SC/tmp"
+  setsid bash -c "exec flock -s '$SC/tmp/gpu-test.lock' bash -c 'echo \$\$ > \"$LOCKPID\"; exec sleep infinity'" < /dev/null > /dev/null 2>&1 &
+  for _ in $(seq 30); do [ -s "$LOCKPID" ] && break; sleep 1; done
+  [ -s "$LOCKPID" ] || { say "could not take tmp/gpu-test.lock"; exit 1; }
+  (cd "$SC" && STRATA_PORT=8080 ./run-strata.sh stop) || true
+  printf '\n* %s phase 4 gap BEGIN (%s): queue held after its run, test lock taken, P021 on 8080 stopped.\n' \
+    "$(date '+%F %H:%M')" "$what" >> "$NOTES"
+  say "gap open: test lock held (pid $(cat "$LOCKPID")), 8080 stopped"
+  ;;
+end)
+  if [ -s "$PORT_PIDFILE" ] && kill -0 "$(cat "$PORT_PIDFILE")" 2> /dev/null; then
+    kill "$(cat "$PORT_PIDFILE")"; for _ in $(seq 60); do kill -0 "$(cat "$PORT_PIDFILE")" 2> /dev/null || break; sleep 1; done
+  fi
+  rm -f "$PORT_PIDFILE"
+  # 11-04 (Karl): wait for the gap's engines to exit and their memory to come back before P028x loads - on 11-04 10:00
+  # P028x started 6 s after the DeepSeek engine (58 GB) stopped and got a one-off swap push-out (785 + 140 MB VmSwap)
+  memav() { awk '/^MemAvailable/ {printf "%d", $2 / 1048576}' /proc/meminfo; }
+  for _ in $(seq 60); do
+    left=""; for n in strata strata-host strata-vision strata-dsv41; do pgrep -x "$n" > /dev/null && left="$left $n"; done
+    [ -z "$left" ] && break; sleep 2
+  done
+  [ -n "$left" ] && say "engine processes still running after 120 s:$left (starting anyway)"
+  t0=$(date +%s); prev=$(memav)
+  while :; do
+    sleep 5; cur=$(memav)
+    [ "$cur" -ge "${GAP_END_MEMAV_GB:-70}" ] && [ $(( cur - prev )) -le 1 ] && [ $(( prev - cur )) -le 1 ] && break
+    [ $(( $(date +%s) - t0 )) -ge 180 ] && { say "MemAvailable ${cur} GB after 180 s (want >= ${GAP_END_MEMAV_GB:-70} and steady): starting anyway"; break; }
+    prev=$cur
+  done
+  # 11-05 18:4x (audit AUDIT-1105.md #7): the test lock is released only now, after the gap's engines exited and the
+  # memory came back - released before, an on-demand P028x start (proxy / Jan) could load into the dying gap's memory
+  if [ -s "$LOCKPID" ]; then kill "$(cat "$LOCKPID")" 2> /dev/null || true; rm -f "$LOCKPID"; fi
+  # 10-21 11:09: strata-ensure ran before the killed lock holder had exited ("a measurement holds tmp/gpu-test.lock")
+  for _ in $(seq 30); do flock -n -x "$SC/tmp/gpu-test.lock" true 2> /dev/null && break; sleep 1; done
+  so0=$(awk '/^pswpout/ {print $2}' /proc/vmstat)
+  say "memory back: MemAvailable $(memav) GB, no engine left; starting P028x"
+  env -u HTTP_PROXY -u HTTPS_PROXY "$SC/configs/usability/bin/strata-ensure.sh" "phase 4 gap end" || { say "P021 did not start"; exit 1; }
+  so1=$(awk '/^pswpout/ {print $2}' /proc/vmstat)
+  [ "$so1" -gt "$so0" ] && say "WARNING: $(( (so1 - so0) * 4 / 1024 )) MB swapped out while P028x started" || say "no swap-out while P028x started"
+  sha=$(engine_sha)
+  pol=$(python3 -c "import json; print('on' if json.load(open('$DR/run/chat-cache-policy.json')).get('enabled') else 'off')")
+  if [ "$sha" != "$P021_SHA" ] || [ "$pol" != on ]; then
+    say "8080 engine sha '$sha' (want $P021_SHA) or policy '$pol' (want on): NOT resuming the queue"; exit 1
+  fi
+  printf '* %s phase 4 gap END: the served build (configs default, P028x since 10-30) back on 8080 (engine sha %s), chat-cache parking policy on; queue resumes.\n' \
+    "$(date '+%F %H:%M')" "$sha" >> "$NOTES"
+  # 11-05 (Karl): when the gap series' next step runs straight after this gap, it leaves tmp/gap-keep-hold - keep the
+  # research queue held (8080 serves again; only the bench queue waits) until that step re-sets the hold itself
+  if [ -s "$SC/tmp/gap-keep-hold" ]; then
+    echo "phase 4 gap: held for the next series step ($(head -c 200 "$SC/tmp/gap-keep-hold")) (since $(date '+%F %T'))" > "$HOLD"
+    rm -f "$SC/tmp/gap-keep-hold"
+    say "served build back ($sha), policy on, queue KEPT HELD for the next series step"
+  else
+    rm -f "$HOLD"
+    say "served build back ($sha), policy on, queue released"
+  fi
+  ;;
+*) sed -n 2,13p "$0"; exit 2 ;;
+esac

@@ -1,0 +1,32 @@
+test_1_teamgroup_gzip_stopped_at_cap (__main__.FetchGuardTests.test_1_teamgroup_gzip_stopped_at_cap)
+The 11-03 page (5.5 MB gzip -> 264 MB): download stops at 16 MiB decompressed, skipped, logged, counted. ...   WARNING: [FETCH-GUARD] skipped http://127.0.0.1:41169/tg.gz: page larger than the 16.0 MB cap (download stopped), 16.1 MB, 0.0 s
+ok
+test_2_teamgroup_content_length_refused_unread (__main__.FetchGuardTests.test_2_teamgroup_content_length_refused_unread) ...   WARNING: [FETCH-GUARD] skipped http://127.0.0.1:41169/tg.cl: Content-Length 251.4 MB > 16.0 MB cap (not downloaded), 251.4 MB, 0.0 s
+ok
+test_3_normal_pages_unchanged (__main__.FetchGuardTests.test_3_normal_pages_unchanged)
+G.Skill QVL page and a 4 MiB prefix (under both caps): byte-identical text to pristine LDR, a page record. ... ok
+test_4_tag_cap_before_parsing (__main__.FetchGuardTests.test_4_tag_cap_before_parsing)
+A page under the byte cap but over the tag cap is refused before any parser runs. ...   WARNING: [FETCH-GUARD] skipped http://127.0.0.1:41169/tg4: 15564 tags > 10000 cap (not parsed), 2.9 MB, 15564 tags
+ok
+test_5_direct_pipeline_callers (__main__.FetchGuardTests.test_5_direct_pipeline_callers)
+extract_content / extract_content_with_metadata (Wayback, full-content search) return None over the cap. ...   WARNING: [FETCH-GUARD] skipped http://example.test/big: 60004 tags > 50000 cap (not parsed), 0.2 MB, 60004 tags
+  WARNING: [FETCH-GUARD] skipped (extract_content_with_metadata): 60004 tags > 50000 cap (not parsed), 0.2 MB, 60004 tags
+ok
+test_6_watchdog_logs_and_counts_slow_page (__main__.FetchGuardTests.test_6_watchdog_logs_and_counts_slow_page) ...   WARNING: [FETCH-GUARD] still extracting http://127.0.0.1:41169/tg4 after 0 s (2.9 MB, 15564 tags); it holds the fetch lock, other fetches wait
+  WARNING: [FETCH-GUARD] slow page http://127.0.0.1:41169/tg4: extraction took 1.1 s (2.9 MB, 15564 tags)
+ok
+test_7_switch_off (__main__.FetchGuardTests.test_7_switch_off)
+LDR_FETCH_GUARD=0 (ENABLED False): no cap; the G.Skill page still comes through unchanged. ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 7.131s
+
+OK
+
+  teamgroup gzip: 0.02 s, peak +28 MB, reason: [FETCH-GUARD] skipped: page larger than the 16.0 MB cap (download stopped) (16.1 MB, 0.0 s)
+
+  teamgroup Content-Length: 0.00 s, reason: [FETCH-GUARD] skipped: Content-Length 251.4 MB > 16.0 MB cap (not downloaded) (251.4 MB, 0.0 s)
+
+  /gskill: 9239 bytes of text, identical; page record {'t': 1793769329.594, 'pid': 3842342, 'kind': 'page', 'host': '127.0.0.1:41169', 'bytes': 66426, 'tags': 2446, 's': 1.426}
+
+  /tg4: 62979 bytes of text, identical; page record {'t': 1793769331.722, 'pid': 3842342, 'kind': 'page', 'host': '127.0.0.1:41169', 'bytes': 3067490, 'tags': 15564, 's': 1.975}

@@ -1,0 +1,35 @@
+[90008] Title: Niko1221/Strata@v0.2.4: src/platform/direct_file.cpp lines 1-30 (source code)
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/src/platform/direct_file.cpp#L1-L30
+[OTHER ENGINE: this file is part of Strata's Qwen engine at v0.2.4; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them]
+
+1: // src/platform/direct_file.cpp - see include/strata/platform/direct_file.hpp.
+2: #include "strata/platform/direct_file.hpp"
+3: #include "strata/platform/aux_cpus.hpp"
+4: 
+5: #include <algorithm>
+6: #include <chrono>
+7: #include <condition_variable>
+8: #include <cstdlib>
+9: #include <cstring>
+10: #include <deque>
+11: #include <mutex>
+12: #include <thread>
+13: #include <vector>
+14: 
+15: #if defined(_WIN32)
+16: #define WIN32_LEAN_AND_MEAN
+17: #define NOMINMAX
+18: #include <windows.h>
+19: #else
+20: #include <fcntl.h>
+21: #include <sys/stat.h>
+22: #include <unistd.h>
+23: #endif
+24: 
+25: namespace strata::platform {
+26: 
+27: double now_us() {
+28:     using namespace std::chrono;
+29:     return (double) duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count() / 1000.0;
+30: }
+(src/platform/direct_file.cpp has 371 lines.)

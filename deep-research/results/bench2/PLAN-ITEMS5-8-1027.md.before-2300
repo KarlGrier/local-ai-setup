@@ -1,0 +1,108 @@
+# Plan: items 5-8, the v0.2.7 port, Phase 5 - compressed (v2, 10-27 21:30)
+
+Karl, 10-27 evening: the PC runs 24/7. GPU tests run back to back around the clock, and coding and grading overlap the
+runs. Target about 2 weeks. The 4-week version is kept as PLAN-ITEMS5-8-1027.v1-4weeks.md.
+
+**Rules:**
+- The GPU pauses only for Jan jobs or when Karl needs the PC. Normal chats share 8080 while a run goes; the research
+  clock pauses for them.
+- Each result goes to Karl when it is in. I go on unless it is bad or mixed; then I stop and ask.
+- While Karl decides, the GPU keeps running only steps that do not build on the open result (for example the port's
+  gates).
+- Every timed run holds the GPU test lock and gets the kernel check and the swap rule.
+- No compiling or other CPU-heavy work during LDR runs, because the CPU also runs the model's experts. Port builds go
+  in the gaps.
+
+**Order:** items 5 + 6 bundle (with the six-fix follow-ups) -> the v0.2.7 port + a fresh baseline -> item 7 in parts ->
+item 8 -> C3c -> Phase 5. Opus 4.5 inside 11-01..11-24 once Karl confirms the credits. The Sonnet experiment last.
+
+## Dates (targets; Jan jobs and correction rounds can push them by hours)
+
+| when | GPU | me, at the same time |
+|---|---|---|
+| **Tue 10-27 21:00 - Wed 10-28 ~09:30** | Stage 3 p4s6 (six fixes, 171 / 47 min) | Grade the six-fix rerun; analyse the follow-ups (Fix 1's misses, K4); write the bundle code in a staging copy (installed LDR untouched while runs are live); item 7's credit ledger and paid-search rule; item 8's merge tool; 7e's product questions to Karl; port rebase onto v0.2.7 (no compiling) |
+| **Wed 10-28 ~09:30 - ~13:00** | Port: compile, repeat-run gate, the series with every 0.2.7 default off | Grade stage 3 p4s6, one fresh grader per question in parallel. **Six-fix result to Karl (the gate for the bundle).** |
+| **Wed ~13:00 - ~21:00** | Bundle installed; replays: the follow-ups, item 5's claim stores, item 6's unread-page pass; a correction round in place | Corrections, replay grading |
+| **Wed ~21:00 - Thu 10-29 ~13:30** | One chain: the combined rerun (10-24 question, 240 min, vs tonight's rerun), then stage 3 (vs p4s6) | Grade the rerun while stage 3 runs |
+| **Thu ~13:30 - ~21:00** | Port: KL gate + speed A/B per switch (`GR_UP_WIDE`, `MMVQ_IL_89`, `--mtp-draft-vocab`, layer-major prefill) | Grade the bundle's stage 3. **Bundle result to Karl (Thu evening).** |
+| **Thu ~21:00 - Fri 10-30 ~10:30** | 8080 -> the port (if the gates pass; P021m stays as the rollback). 7d's extraction replay (~1 h, ~30 Exa). Fresh stage 3 baseline: new engine + final build. **Port result to Karl.** | Grade 7d's replay |
+| **Fri 10-30 ~10:30 - Sun 11-01 ~12:00** | Item 7, one side after another: 7a Semantic Scholar, 7b Tavily, 7c Exa Lite, 7d Exa highlights (if its replay passes) | Grade each side while the next one runs; **each part's result to Karl**. Ask Karl about the Opus 4.5 credits (~10-31). |
+| **Sun 11-01 ~12:00 - Mon 11-02 ~03:00** | 7e Exa shopping: "without" + "with" on 3-5 product questions (needs Karl's OK on the questions by ~10-30) | Grading |
+| **Mon 11-02 ~03:00 - Tue 11-03 ~01:00** | Item 8: merge test (~3 h); if it looks good, short runs at stage 2 (~5.7 h), then stage 3 (~12.5 h) | Grading; C3b profile files (code only) |
+| **Tue 11-03 ~01:00 - ~18:00** | C3c: bigger sizes at 131K (report replays + research runs, ~12 h), then 256K only if that helps (~4 h) | Grading. **Item 8 and C3c results to Karl.** |
+| **Tue 11-03 - Wed 11-04** | Gap for Karl's adoption calls (which item 7 parts, item 8, C3c go into the final build) | |
+| **Wed 11-04 - Thu 11-05** | **Phase 5 holdout** on the final build and engine (~17-20 h) | Grading; Phase 5 result |
+| **after Phase 5 (~11-06)** | - (API only) | Sonnet 5.5 experiment (C4, $60 stop), if November's $100 still covers it after Opus 4.5; else December |
+| **11-01 .. 11-24** | - (API only) | Opus 4.5 hard-set run, at 09:00 on the first day after Karl's OK |
+
+**Summary:**
+- Runs end about **11-05**. With a correction round per step and Jan jobs, **11-07 to 11-10** is realistic, about 2 weeks.
+- The GPU is busy about 180 of the next ~213 hours (tonight's stage 3 included).
+- The gaps are the grading waits at the gates, mostly filled with port work.
+
+## 1. Items 5 + 6 bundle, with the six-fix follow-ups
+
+Unchanged from v1 except the timing.
+
+**Item 6 leads: every cited source must have been fetched and read.** This is enforced in code:
+- A source becomes citable only after its page is read.
+- When an agent cites an unread source, the page is fetched and read at once.
+- The report writer gets only read sources.
+- Fix 4's citation guard removes or marks a citation to an unread source.
+- A page that can't be read can't be cited.
+
+**Then:**
+- Link following, one step deep, to primary sources.
+- Item 5's claims, with quotes checked word for word in code.
+
+**The follow-ups:**
+- Fix 1's missed kinds.
+- Fix 5 checks against the question's own setup.
+- Why the consistency pass missed K4.
+
+The follow-ups are analysed and coded in the staging copy during p4s6 and installed only after p4s6 is graded. Each
+change is replayed on saved reports before the combined rerun.
+
+## 2. Strata v0.2.7 port (Qwen)
+
+As in results/PORT-V027-PLAN.md, now split across three GPU gaps:
+1. Wed morning: compile, the repeat-run gate, and the series with the 0.2.7 defaults pinned off.
+2. Thu afternoon: a gate + A/B per switch.
+3. Thu night: the switch to the port and a fresh baseline.
+
+## 3. Item 7 (credit rule confirmed by Karl)
+
+**The rule:**
+- At most 30 paid searches per test run, and 100 per run of Karl's research.
+- Test runs and Karl's research stop at 25 % of a month left; all paid search stops at 10 % left.
+- Credits are tracked per calendar month in the existing counters, which gain these limits for every caller before any
+  paid test search.
+
+**Credits:**
+- October is almost unused: Exa 7 searches, Tavily 2.
+- So 7b, 7c and 7d use October's credits before they reset.
+- 7e uses November's: ≤ 150 Exa.
+- All of item 7 needs at most ~240 Tavily and ~660 Exa searches over the two months, well inside the limits. Only
+  Karl's own heavy use could push a part into the next month.
+
+**Judging the parts:** each part is a stage 3 side (≤ 240 paid searches) against the fresh baseline.
+- A part with no gain is dropped and I go on.
+- A part that makes things worse, or a mixed result, means I stop and ask. The other parts keep running, since none
+  builds on another.
+
+## 4. Item 8
+
+The merge test needs no new research runs, but ~3 GPU h to write the merged reports on the local model.
+- o01-o03's saved full runs are merged into one store per question.
+- Each merged report is graded blind against the fresh baseline's reports.
+- If it looks good: short runs at stage 2, then stage 3.
+
+## Not in Karl's message
+
+- **C3c (bigger sizes)** goes before Phase 5, so Phase 5 measures the final build.
+- **C3b (profile files, no change in behaviour)** is coded during item 7 and 8's runs; it is needed for the Sonnet arm.
+
+## Totals
+
+About 33-48 code hours, all overlapped with runs, and ~145-175 GPU h. The GPU sum is the same as v1; only the idle time
+between steps is gone.

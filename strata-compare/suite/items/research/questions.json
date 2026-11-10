@@ -1,0 +1,41 @@
+{
+ "note": "Research with web search: web_search + fetch_page (the same loop for every model, at most 10 tool calls, one user turn), backed by the local SearXNG (127.0.0.1:8888) and the shared cache suite/webcache. {hardware} is filled from items/freshness/hardware.txt. Scored by key.json (script) plus your 1-5 rating on the blind page.",
+ "format_intro": "You can use the tools web_search and fetch_page, at most 10 tool calls in total. Cite the URLs you used. End your reply with one fenced ```json code block holding exactly this object (fill in the values):",
+ "questions": [
+  {
+   "id": "r01_best_gpu",
+   "prompt": "What is the best GPU for running local LLMs right now?",
+   "json": "{\"top_pick\": \"<GPU name>\", \"vram_gb\": <integer>, \"price_usd\": <integer: its typical price new right now>, \"alternatives\": [\"<GPU name>\", \"...\"]}"
+  },
+  {
+   "id": "r02_best_model",
+   "prompt": "What is the best model I can run on this hardware: {hardware}? Pick a model and a quantization that fit this machine's memory, and say how fast you expect it to run.",
+   "json": "{\"top_pick\": {\"model\": \"<model name>\", \"quant\": \"<quantization>\", \"size_gib\": <number>, \"expected_tok_s\": <number or null>}, \"alternatives\": [{\"model\": \"...\", \"quant\": \"...\", \"size_gib\": <number>, \"expected_tok_s\": <number or null>}], \"avoid\": [{\"model\": \"...\", \"reason\": \"...\"}]}"
+  },
+  {
+   "id": "r03_coding_model",
+   "prompt": "Which open-weights model is the best for coding that fits this machine's memory today, and at which quantization? The machine: {hardware}.",
+   "json": "{\"top_pick\": {\"model\": \"<model name>\", \"quant\": \"<quantization>\", \"size_gib\": <number>}, \"alternatives\": [{\"model\": \"...\", \"quant\": \"...\", \"size_gib\": <number>}]}"
+  },
+  {
+   "id": "r04_strata_release",
+   "prompt": "What changed in the latest release of Strata, the local LLM inference engine at https://github.com/Niko1221/Strata ? Give the version number, its release date and the main changes.",
+   "json": "{\"version\": \"<version>\", \"release_date\": \"YYYY-MM-DD\", \"changes\": [\"<change>\", \"...\"]}"
+  },
+  {
+   "id": "r05_gpu_price",
+   "prompt": "What is the current price range for a new NVIDIA GeForce RTX 5090 graphics card in the US?",
+   "json": "{\"gpu\": \"NVIDIA GeForce RTX 5090\", \"low_usd\": <integer>, \"high_usd\": <integer>}"
+  },
+  {
+   "id": "r06_linux_kernel",
+   "prompt": "What is the latest stable Linux kernel version listed on kernel.org right now, and when was it released?",
+   "json": "{\"version\": \"<version>\", \"release_date\": \"YYYY-MM-DD\"}"
+  },
+  {
+   "id": "r07_qwen4_flash",
+   "prompt": "Has Alibaba released Qwen4 Flash yet? If so, when? If not, what is the newest model in that Flash line, and what has been announced about Qwen4?",
+   "json": "{\"qwen4_flash_released\": <true or false>, \"release_date\": \"YYYY-MM-DD or null\", \"newest_flash_model\": \"<model name>\"}"
+  }
+ ]
+}

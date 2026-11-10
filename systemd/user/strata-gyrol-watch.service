@@ -1,0 +1,15 @@
+[Unit]
+Description=Hourly check of new Strata tags for Gyro-L support (strata-compare work/r21/gyrol_watch.sh; read-only)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/USER/ai-speed-testing/strata-compare
+ExecStart=/bin/bash /home/USER/ai-speed-testing/strata-compare/work/r21/gyrol_watch.sh
+StandardOutput=append:/home/USER/ai-speed-testing/strata-compare/logs/r21/gyrol_watch.out
+StandardError=append:/home/USER/ai-speed-testing/strata-compare/logs/r21/gyrol_watch.out
+# it exits on purpose when a tag has Gyro-L (the line is in gyrol_watch.out): the test is planned, then restarted
+Restart=no
+
+[Install]
+WantedBy=default.target

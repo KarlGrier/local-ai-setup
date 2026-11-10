@@ -1,0 +1,44 @@
+work/r10/tagcheck.sh "v0.1.38 port start"
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v38 engine-v38c; ls -la engine-v38c/strata
+BDIR=build work/r10/build.sh strata-v38m engine-v38m; ls -la engine-v38m/strata
+.venv/bin/python work/r10/buildrec.py V38 configs/V38.json "v0.1.38 port of C*12 (v38-c12: C*11's 15 + A.2 + 3 verify-window ports; pointer-mode MMQ dropped; #453 / #413 upstream)"
+.venv/bin/python work/r10/buildrec.py V38m configs/V38m-tf-helper.json "v0.1.38 port's twin (v38-c12-meas)"
+work/r10/servertests.sh /home/USER/ai-speed-testing/strata-compare/strata-v38
+work/r10/with_server.sh HOST38 configs/V38.json -- "work/r10/hostcheck.sh"
+work/r10/startcheck.sh V38s configs/V38.json
+work/r10/exact7.sh c12full configs/C12.json
+work/r10/exact7.sh v38full configs/V38.json
+work/r10/tf.sh V38mtf-helper configs/V38m-tf-helper.json engine-v38m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r10/tf.sh V38mtf-single configs/V38m-tf-single.json engine-v38m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r10/tf_compare9.py V38mtf-helper=C12mtf-helper V38mtf-single=C12mtf-single | tee results/r10/tf-v38-vs-c12.txt
+.venv/bin/python work/r10/tf_vs_ref.py V36mfp16tf-helper C12mtf-helper V38mtf-helper | tee results/r10/tf-v38-vs-fp16.md
+.venv/bin/python work/r10/tf_vs_ref.py V36mfp16tf-single C12mtf-single V38mtf-single | tee -a results/r10/tf-v38-vs-fp16.md
+work/r10/with_server.sh N38 configs/V38n.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label S38 --temperature 1.0"
+work/r10/with_server.sh RT38-direct configs/V38m-rt.json -- ".venv/bin/python work/r10/roundtrip.py direct small r38-direct1"
+work/r10/with_server.sh RT38-direct configs/V38m-rt.json -- ".venv/bin/python work/r10/roundtrip.py direct small r38-direct2"
+work/r10/with_server.sh RT38-park configs/V38m-rt.json -- ".venv/bin/python work/r10/roundtrip.py park small r38-park"
+work/r10/with_server.sh RT38-editref configs/V38m-rt.json -- ".venv/bin/python work/r10/roundtrip.py editref small r38-editref"
+.venv/bin/python work/r10/rt_compare.py r38 > results/r10/roundtrip-v38.md; cat results/r10/roundtrip-v38.md
+work/r10/with_server.sh FAIL38 configs/V38.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r10/repeat3.sh rep-v38 configs/V38.json
+work/r10/tagcheck.sh "v0.1.38 gates done"
+work/r10/screen.sh S38-a configs/V38.json
+work/r10/screen.sh S12-a configs/C12.json
+work/r10/screen.sh S12-b configs/C12.json
+work/r10/screen.sh S38-b configs/V38.json
+.venv/bin/python work/r10/ab_table.py C12=S12-a,S12-b V38=S38-a,S38-b | tee results/r10/ab-v38-vs-c12.md
+work/r10/ldrscreen.sh L38-a configs/V38.json
+work/r10/ldrscreen.sh L12-a configs/C12.json
+work/r10/ldrscreen.sh L12-b configs/C12.json
+work/r10/ldrscreen.sh L38-b configs/V38.json
+.venv/bin/python work/r10/ldr_table.py C12=L12-a,L12-b V38=L38-a,L38-b | tee results/r10/ldr-v38-vs-c12.md
+work/r10/ldrscreen.sh L38d-a configs/V38-landdef.json
+work/r10/ldrscreen.sh L38l-a configs/V38.json
+work/r10/ldrscreen.sh L38l-b configs/V38.json
+work/r10/ldrscreen.sh L38d-b configs/V38-landdef.json
+.venv/bin/python work/r10/ldr_table.py ourland=L38l-a,L38l-b upstream463=L38d-a,L38d-b | tee results/r10/ldr-v38-landing.md
+WEB=1 work/r10/with_server.sh BR38 configs/BR38.json -- ".venv/bin/python work/r5/browser_test.py --engine-log \$ELOG --tag b38 --web"
+work/r10/tagcheck.sh "v0.1.38 measured"
+work/r10/phase_end.sh p38 keep
+work/r10/hold.sh v38

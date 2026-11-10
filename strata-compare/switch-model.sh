@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# switch-model.sh — put one model server on 127.0.0.1:8080 (Strata's chat page http://127.0.0.1:8080, API /v1):
+#
+#   ./switch-model.sh strata   stop whatever serves 8080, start Strata (tuned) there   model id: strata-qwen3.8-flash-next-iq3s
+#   ./switch-model.sh deepseek stop whatever serves 8080, start DeepSeek-V4.1-Flash there (configs/DS41-daily.json,
+#                              Strata v0.2.6 + the ship config, 2026-10-26)              model id: deepseek-v4.1-flash
+#   ./switch-model.sh status   what is on 8080 (and any other model server), health, memory
+#
+# Strata = engine + settings from configs/Cstar18t.json (C*18t = C*18 + the think-fence fix, 2026-10-16; see REPORT.md, "Round 20": C*18 = v0.1.44.1 + our series, with our exact sampling and cost gate), started through run-strata.sh
+# with STRATA_PORT=8080. (11-06, Karl: the old signal-next choice (signal-3.8-opus, llama.cpp days) was removed; backup
+# switch-model.sh.before-signal-removal-1106.)
+# GPU: C*13 uses the RTX 5080 and, as a helper holding 3,300 more experts, the RTX 4060 Ti (both by UUID in the config;
+# run-strata.sh falls back to the 5080 alone if the 4060 Ti is short of memory).
+# Only 127.0.0.1 is used. It never kills a process it did not start through run-strata.sh: if something else
+# holds 8080, or another model server is running elsewhere (they do not fit in RAM/VRAM together), it stops and says so.
+# Overrides: STRATA_CONFIG (default configs/Cstar18t.json = C*18t (C*18 + the think-fence fix in serve/, 2026-10-16); rollback: STRATA_CONFIG=configs/Cstar18.json = C*18 (v0.1.44.1, round 20), configs/Cstar171.json = C*17.1, configs/Cstar17.json = C*17, configs/Cstar161.json = C*16.1, configs/Cstar16.json = C*16, configs/Cstar15.json = C*15, configs/Cstar14.json = C*14, configs/Cstar131.json = C*13.1, configs/Cstar13.json = C*13, configs/Cstar121.json = C*12.1 (v0.1.38),
+# configs/Cstar12.json = C*12 (v0.1.36),
+# configs/Cstar11.json = C*11 (v0.1.34),
+# configs/Cstar10.json = C*10 (v0.1.31),
+# configs/Cstar9.json = C*9, or configs/Cstar13-single.json = C*13 on the 5080 alone; configs/Cstar13-262k.json = C*13 at a
+# 262,144-token context). A running Strata is kept as it
+# is whatever STRATA_CONFIG says: stop it first (STRATA_PORT=8080 ./run-strata.sh stop).
+set -euo pipefail
+
+WS=/home/USER/ai-speed-testing/strata-compare
+PORT=8080
+STRATA_CFG=${STRATA_CONFIG:-$WS/configs/P028x.json}   # 10-30: P028x (the v0.2.8 port, gap 16) promoted; rollback STRATA_CONFIG=$WS/configs/P021m.json
+PY=$WS/.venv/bin/python
+GPU_UUID=${STRATA_GPU_UUID:-GPU-UUID-RTX5080}   # the RTX 5080 (nvidia-smi -L)
+
+DS_CFG=$WS/configs/DS41-daily.json
+die()  { echo "switch-model: $*" >&2; exit 1; }
+running_cfg() {  # the config the Strata on $PORT was started with (run-strata.sh's log header)
+  head -1 "$(cat "$WS/logs/run/strata-$PORT.logpath" 2>/dev/null)" 2>/dev/null | grep -o 'config=[^ ]*' | cut -d= -f2 || true
+}
+info() { echo "switch-model: $*"; }
+
+listener_pid() {  # pid listening on $1 (empty if none)
+  ss -H -ltnp "( sport = :$1 )" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2 || true
+}
+
+kind_of() {  # strata | other
+  local pid=$1 cmd exe
+  cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+  exe=$(readlink "/proc/$pid/exe" 2>/dev/null || true)
+  if [[ $cmd == *serve/server.py*"--engine strata"* ]]; then echo strata
+  else echo other; fi
+}
+
+model_ids() {
+  curl -s -m 5 "http://127.0.0.1:$1/v1/models" 2>/dev/null |
+    "$PY" -c "import json,sys; print(', '.join(m['id'] for m in json.load(sys.stdin)['data']))" 2>/dev/null || echo "?"
+}
+
+other_model_servers() {  # model servers not listening on 8080, as "pid port cmd"
+  local p port
+  for p in $(pgrep -f 'llama-server|serve/server.py --engine strata' || true); do
+    port=$(ss -H -ltnp 2>/dev/null | grep "pid=$p," | awk '{print $4}' | sed 's/.*://' | head -1)
+    [[ $port == "$PORT" ]] && continue
+    [[ -n $port ]] || continue   # a strata engine child has no socket; its server.py parent is listed instead
+    echo "$p port $port: $(tr '\0' ' ' < /proc/$p/cmdline | cut -c1-120)"
+  done
+}
+
+stop_8080() {
+  local pid kind
+  pid=$(listener_pid $PORT)
+  [[ -z $pid ]] && { info "port $PORT is free"; return 0; }
+  kind=$(kind_of "$pid")
+  case $kind in
+    strata) info "stopping Strata (pid $pid)"; STRATA_PORT=$PORT "$WS/run-strata.sh" stop;;
+    *) die "port $PORT is held by pid $pid ($(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null | cut -c1-120)), not started by run-strata.sh — stop it yourself";;
+  esac
+  local i; for i in $(seq 1 60); do [[ -z $(listener_pid $PORT) ]] && break; sleep 0.5; done
+  [[ -z $(listener_pid $PORT) ]] || die "port $PORT still in use after stopping pid $pid"
+}
+
+smoke() {  # one real completion (1 token), so "ready" means it generates, not only that /health answers
+  local id=$1 t0 out
+  t0=$(date +%s.%N)
+  out=$(curl -s -m 120 "http://127.0.0.1:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+        -d "{\"model\":\"$id\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with OK.\"}],\"max_tokens\":1,\"stream\":false}")
+  if echo "$out" | "$PY" -c "import json,sys; d=json.load(sys.stdin); assert d['choices'][0]['finish_reason']" 2>/dev/null; then
+    info "answers: a test completion came back in $(printf %.1f "$(echo "$(date +%s.%N) - $t0" | bc)") s"
+  else
+    die "the server is up but a test completion failed: $(echo "$out" | cut -c1-300)"
+  fi
+}
+
+do_status() {
+  local pid kind o
+  pid=$(listener_pid $PORT)
+  if [[ -z $pid ]]; then
+    echo "port $PORT: nothing listening"
+  else
+    kind=$(kind_of "$pid")
+    echo "port $PORT: $kind (pid $pid), model id(s): $(model_ids $PORT), health: $(curl -s -m 3 "http://127.0.0.1:$PORT/health" || echo unreachable)"
+    case $kind in
+      strata) STRATA_PORT=$PORT "$WS/run-strata.sh" status 2>/dev/null | grep -E '^(running|memory|log)' || true
+              echo "config: $(head -1 "$(cat "$WS/logs/run/strata-$PORT.logpath" 2>/dev/null)" 2>/dev/null | grep -o 'config=[^ ]*' | cut -d= -f2)";;
+    esac
+  fi
+  o=$(other_model_servers)
+  [[ -n $o ]] && { echo "other model servers running (they share RAM/VRAM with 8080):"; echo "$o" | sed 's/^/  /'; }
+  echo "VRAM free (RTX 5080): $(nvidia-smi -i "$GPU_UUID" --query-gpu=memory.free --format=csv,noheader), MemAvailable: $(( $(awk '/MemAvailable/{print $2}' /proc/meminfo) / 1024 )) MiB"
+}
+
+do_switch() {
+  local want=$1 pid kind o id
+  pid=$(listener_pid $PORT)
+  if [[ -n $pid && $(kind_of "$pid") == "$want" && ( $want != strata || $(running_cfg) == "$STRATA_CFG" ) ]]; then
+    info "$want is already serving http://127.0.0.1:$PORT/v1"; do_status; return 0
+  fi
+  o=$(other_model_servers)
+  [[ -z $o ]] || die "another model server is running (both do not fit in memory); stop it first:
+$o
+  (Strata on 8081: ./run-strata.sh stop)"
+  stop_8080
+  case $want in
+    strata)
+      [[ -f $STRATA_CFG ]] || die "missing $STRATA_CFG"
+      id=$("$PY" -c "import json; print(json.load(open('$STRATA_CFG'))['model_name'])")
+      STRATA_PORT=$PORT STRATA_CONFIG=$STRATA_CFG "$WS/run-strata.sh" start;;
+  esac
+  smoke "$id"
+  do_status
+}
+
+case ${1:-} in
+  strata) do_switch "$1";;
+  deepseek) STRATA_CFG=$DS_CFG; do_switch strata;;
+  status) do_status;;
+  *) sed -n '2,13p' "$0"; exit 2;;
+esac

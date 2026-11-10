@@ -1,0 +1,247 @@
+# DeepSeek-V4.1-Flash round report (10-24 to 10-26) - DRAFT
+
+Status: draft, written while the IQ_Q8K test runs. Sections marked PENDING are filled when their runs finish.
+
+## What ships (so far)
+
+| | Setting |
+|---|---|
+| Engine | Strata v0.2.6 + the #343 port (prompt skip across the layer split), local build `engine-v026p343-ds41` (c9e5ade48ed4); IQ_Q8K and BORROW not included |
+| Experts per word | 6 (5 is lossy here, see below) |
+| GPUs / split | 4060 Ti first (order rev), layers 8 / 32 (was 10 / 30; kept 10-26, P20K +16 %) |
+| Cache | decay 0.8, settle 0, Engram cache 16 MB |
+| Prompts | chunk 8192, STRATA_DS4_PROMPT_SKIP=1 |
+| RAM store | 68 GB daily (everything up), 70 GB in the measurement runs |
+| Sampling | T 1.0 / top-p 0.95 / top-k 20 / min-p 0.05 |
+
+## 1. Tuning and end tests (all on B = exactly what ships, v0.2.6)
+
+- Ship stage: B (decay 0.8 + settle 0 + Engram cache 16 MB) beat the base twice (decode +3.8 / +4.8 %, P4K +19 %, P20K
+  +4 %). C (decay 0.8 alone) over B: decode +2.3 % (noise 2.5), P4K -16.6 %, P20K -4.3 % -> B unchanged. Follow-ups vs
+  the base: decode +8.5 %, time to first token -4.5 %.
+- Engine A/B: v0.2.6 vs v0.2.4 on the ship config: decode 27.43 vs 26.72 / 26.26 (+2.7 % noise 1.3; +4.5 % noise 0.8),
+  prompts level (310 / 515). Short-prompt time to first token: v0.2.4 cold 2.92 s / warm 2.63 s; v0.2.6 2.07 s / 1.17 s.
+  Teacher-forced: byte-identical (KL 0 at all 2,040 positions). Three fresh v0.2.6 engines give byte-identical text
+  (v0.2.4 differed from character 391). -> v0.2.6.
+- Rounding check on what ships (B vs the engine defaults): mean 0.00622 (refs 0.00719 / 0.00609), top-1 2015 (2010 /
+  2011), KL>1 1 (1 / 0), p90 0.01376 vs 0.01358 / 0.01265 -> failed the old p90 rule by 1.3 %.
+  **Rule change (10-26 02:30):** the p90 check now uses the same spread-based bound as the mean (p90 <= 1.10 x the larger
+  reference's p90), because a rounding-only change failed the old one about 1 time in 3. B passes (0.01376 vs 0.01494);
+  the ship config's own references reach 0.01401. Applied from then on (skipcheck.py, h2h.py, ports.py).
+  **Later the same day (Karl, 16:40 / 16:55)** the top-1 check got a spread-based bound too, and a fifth check on the
+  text's NLL was added (section 4). All gates of the round were re-judged from their stored scores under the final rule;
+  no verdict changed (results/ds41/after/gates-rejudged-1655.txt):
+
+  | Gate | Changed top-1 picks (refs; bound) | Text NLL above the base (bound) | Verdict |
+  |---|---|---|---|
+  | v0.2.6 vs v0.2.4 engine (byte-identical) | 0 (30 / 28; 33.0) | +0.0000 (0.0049) | PASS |
+  | B shipped vs stock v0.2.6 | 25 (30 / 29; 33.0) | +0.0031 (0.0111) | PASS |
+  | Prompt skip, 5080 alone | 15 (33 / 38; 41.8) | -0.0017 (0.0064) | PASS |
+  | 5 vs 6 experts (report only) | 38 (30 / 28; 33.0) | -0.0151 (0.0049) | FAIL (mean, p90, top-1) |
+  | #343 vs the ship config | 17 (30 / 28; 33.0) | +0.0048 (0.0049) | PASS, narrowly |
+  | IQ_Q8K, 8-token windows | 361 (328 / 368; 404.8) | +0.0004 (0.0045) | PASS (dropped on placement) |
+  | Final config (#343 + 8/32) vs stock | 32 (30 / 29; 33.0) | +0.0013 (0.0111) | PASS |
+- Daily store size: everything up 68 GB (lowest MemAvailable 14.0 GB), services stopped 74 GB; decode 27.69 vs 27.99
+  (-1.1 %, within the 3 % allowance) -> 68 GB daily. Everything-up costs 5.17 GiB more (LDR 3.54, SearXNG 8889 ~1.7).
+- 5080 alone (prompt streams): P20K 403.7 tok/s; a 20K prompt streams 64.8 GB from the drive at 1.42 GB/s and compute
+  waits 18.9 s. Prompt skip on the 5080 alone: KL mean 0.00085, p90 0.00164 (far inside the references).
+- CLI decode (512 tokens): reference 25.30 tok/s (CPU lane 41,360 of 122,640 expert uses) vs final 29.60 (28,777).
+- Slots: cap 4 - after 9 one-off chats the 4 kept chats all came back from the folder (~14 MB written per request);
+  cap 16 - all from RAM, 0.12 MB written per request; time to first token similar (1.7-4.0 s).
+- 5 vs 6 experts (report only): decode +14.6 % / +13.4 %, prompts level, but KL fails (mean 0.01313 vs 0.00663 /
+  0.00620, p90 0.03117, top-1 2002 vs 2010) -> 5 is lossy here; 6 ships.
+- Thinking at effort high (75), 8,192 tokens: all three prompts hit the length (thinking 15,992 / 24,200 / 18,740
+  characters).
+- Follow-up reads: with slot keep off, a follow-up after a two-pass answer re-reads ~7.7K tokens (0 of 6 ok, 19.5 s) on
+  v0.2.4 and v0.2.6; with slot keep on it passes (14/14, 12/12). Cause: upstream commit fa3252ad (the line-835
+  condition). The one-line fix: PENDING (built and tested in the follow-up block; the upstream draft stays unposted).
+- Pinpoint (report only): the step that moves the KL most is the placement (GPU order + layer split): p90 0.01299, mean
+  0.00771 against the step before; the expert profile alone 0.01289 / 0.00598; decay 0.00252 / 0.00200; settle + Engram
+  0.00748 / 0.00437. The last step is byte-identical to what ships. Details: tuning/pinpoint.md.
+
+Harness slips this round (results right, the check misread):
+- Conversation cache: the harness said FAIL only because its "reads <= 50 % of the prompt" test tripped on a turn whose new
+  message is over half its prompt (5,006 of 9,210). Every turn reused the previous prompt and read exactly the new text;
+  back to chat A from RAM 571 tokens read in 6.69 s, from the disk slot after a restart 554 in 6.88 s (fresh 49.17 s).
+- C.10 thinking: the summary read the wrong run's client output; the numbers above are from the right one.
+- Exact continuations: 4 hits / 0 misses but no pair identical in one engine (fresh engines are identical). Something
+  carried over between requests changes the path - PENDING: the REUSE=0 pair with a fixed seed; the code shows the
+  sampler does not reset per request (ds4_main.cpp:327).
+
+Swap during the round: x5-B grew swap 437 -> 929 MB and x5-A to 979 MB (engine memory never swapped, 767 swap-in pages
+in 19 min, no streak). Under the guard installed 10-26 08:11 (below) both x5 runs would count as "failed: memory"
+(later swap-out bursts); they were report-only runs, so nothing that ships depends on them.
+
+## 2. Maya v1.1.28 head-to-head - Maya FAILED on this PC
+
+| Arm | decode | P4K | P20K | GB read per 20K prompt | Result |
+|---|---|---|---|---|---|
+| S1 Strata (ship config) | 27.64 | 308.2 | 514.1 | 172.3 | clean |
+| M1 Maya (default, in place) | - | 399.2 | 693.2 | 136.1 | failed: its own memory swapped (1,089 MB) |
+| M2 Maya (its own tuned) | - | 480.5 | 899.5 | 88.5 | failed: its own memory swapped (544 MB) |
+| Mcheck Maya (copy capped at 50 GB) | - | 377.6 | 688.9 | 116.3 | failed: its own memory swapped (163 MB) |
+
+Maya has no store like Strata's O_DIRECT RAM store, only `--mmap-experts on/off/auto` and a static copy (DS4_COPY_GB).
+In every mode the kernel swapped Maya's engine memory while it read experts through the page cache, with ~34 GB still
+free - which points to swappiness (vm.swappiness = 60, read only, not changed), not a real RAM shortage. Maya is a
+fallback only; Karl may lower swappiness later and retry the 10-minute check.
+
+## 3. Ports into v0.2.6
+
+### #343 - prompt skip across the layer split: KEPT
+- What: on a long prompt the later layers (20-39, all on the 5080) compute only the last 2,668 rows; the early rows go to
+  the KV cache only. Our port lets the skip run with a layer split (the skip layer and all later layers on one GPU).
+- Engine line: "prompt skip: layers 20-39 from CUDA1, 9332 early rows KV-only, 2668 kept".
+- Rounding check: KL mean 0.00331, p90 0.00633, KL>1 0, top-1 2023 vs references 0.00663 / 0.01278 / 1 / 2010 and
+  0.00620 / 0.01401 / 1 / 2012 -> PASS.
+- Re-judged under the 16:55 rule (five checks): PASS, **narrowly on the text-NLL check** - NLL 0.6672 vs the ship
+  config's 0.6624, +0.0048 against a bound of 0.0049 (1.10 x 0.0045, the larger reference's distance; margin 0.00013).
+  Changed top-1 picks 17 (bound 33). Against stock v0.2.6, the final config with #343 and 8/32 is +0.0013 (bound 0.0111).
+- A/B/A (3 passes): B decode 28.19, P4K 332.7, P20K 600.5, 110 GB read per 20K prompt.
+  vs A2: decode +2.7 % (noise 0.7), P4K +6.6 %, P20K +16.2 %; vs A3: +2.9 % (0.7), +8.0 %, +16.8 %. A1 failed the swap
+  rule (a second swap-out burst of 4 MB) and was replaced by A3.
+
+### BORROW - dropped this round (the next round's main item)
+- Its layout marker is the one Maya uses for every GGUF in-place expert layout; porting it means re-laying out the expert
+  slots, the tail region and the cache (~1.5-2 days). Karl: drop it now, make it the next DeepSeek round's main item.
+- Strata upstream may port it first (Niko has been pulling Maya changes within days): the Saturday release check watches
+  for it.
+
+### IQ_Q8K - GPU experts' activations rounded like the CPU lane's: DROPPED
+- What: Maya's change rounds the low-bit experts' activations on the GPU the way the CPU lane does (Q8_K, per 256 values)
+  instead of q8_1 (per 32), so an expert gives the same sums wherever placement or the cache puts it.
+- Maya's own evidence: KL against FP8 0.162 with Q8_K vs 0.171 without.
+- Where it acts in Strata: only decode (one token at a time) and windows of up to 8 tokens (DSpark verify windows, the
+  async expert path, DS4_ASYNC_T = 8). Prompts of 96 tokens and up take the prompt path (F32 / F16 activations, no int8
+  rounding), and windows of 9-16 tokens take a synchronous path through generic matrix-vector kernels. So the usual gate
+  (128-token windows) and the first re-test (16-token windows) both gave output byte-identical to stock - they never
+  reached it. The test that counts runs in 8-token windows.
+- Rounding gate (8-token windows, short8, 16,376 positions): PASS - mean 0.01088, p90 0.01679, KL>1 18, top-1 16,015 vs
+  references 0.00848 / 0.01544 / 9 / 16,048 (4-token windows) and 0.01064 / 0.01811 / 19 / 16,008 (CPU share). Switched
+  off (DS4_IQ_Q8K=0) it is byte-identical to stock.
+- Placement test (the pinpoint steps with and without it, KL against the step before, mean / p90): expert profile
+  0.00888 / 0.01615 -> 0.00870 / 0.01542; order + split 0.01045 / 0.01753 -> 0.00888 / 0.01670; decay 0.00638 /
+  0.00929 -> 0.00566 / 0.00844. 2-15 % less, not the halving the bar asked for.
+- Decode check (Karl, before dropping it): 3 prompts (106-123 tokens), 100 tokens each, seed 4242, Strata's stock
+  profile vs ours, IQ_Q8K on and off; same-placement controls 100 of 100 both ways. Tokens matching before the first
+  divergence (p1 / p2 / p3): as served - with 3 / 24 / 29, without 29 / 24 / 29; prompt in 8-token windows (report only)
+  - with 45 / 25 / 20, without 27 / 20 / 36. No prompt matches throughout either way; IQ_Q8K does not raise the count.
+- Verdict: dropped (Karl's rule); the combined A/B/A was not run. Reading: on this engine the GPU/CPU activation
+  rounding is a small part of why placement changes the answers - the prompt path (F32 / F16 on the GPU, Q8_K on the CPU
+  lane), summation order and batching move them as much. Maya's FP8 comparison (0.162 with Q8_K vs 0.171) is a
+  quality-vs-reference gain, not a consistency one, and our gate shows IQ_Q8K within rounding of stock - consistent.
+- Lesson (cost one invalid run): the engine rewrites its --expert-profile file at exit (CLI decode and serve modes);
+  every run must get its own copy. Strata's stock profile file was rewritten for ~10 minutes and restored from git.
+
+### Strata + #343 vs Maya
+- Strata+#343: P4K 332.7, P20K 600.5, 110 GB per 20K prompt. Maya M1: 399.2 / 693.2 / 136 GB; M2: 480.5 / 899.5 / 88.5 GB.
+- Maya M1 reads more than Strata+#343 but runs 15 % faster on 20K prompts (~4.9 vs ~3.4 GB/s effective): Strata is no
+  longer drive-bound - the 4060 Ti sets the pace (per 20K prompt it streams 76 GB over its PCIe x4 link, 40 GB of it
+  from the drive at ~1 GB/s, and waits 9.4 s of 38 s).
+- How much of the gap BORROW and bigger chunks explain: none of the measured gap - Maya ran with neither. What they would
+  add on top for Strata is the next round's question (BORROW: more VRAM experts on both cards, fewer bytes over the x4
+  link).
+
+### Re-rank of Maya's prompt-compute changes (the 4060 Ti is the pace now)
+1. Fewer layers on the 4060 Ti (8/32): P20K +10-20 % estimated, zero code - screened this round (PENDING).
+2. Earlier / larger read share for the 4060 Ti's pipeline (Strata-side): +10-15 % if its 9.4 s of waits halve.
+3. Tensor-core prompt attention (ATTN_MMA): +5-8 %.
+4. Leaner expert tiles + FP16 rows + router rows: +3-6 %, exact.
+5. Wider attention slabs: ~0 on an 8 GB card.
+6. FAT_ROWS: <= 1 %.
+#360 (copies during the routing wait) is already in v0.2.6. Details: maya-catchup.md.
+
+## 4. Split screen: 8/32 KEPT
+
+| Run | decode | P4K | P20K | VRAM experts (4060 Ti, 5080) |
+|---|---|---|---|---|
+| screen 10/30 | 28.05 | 319.1 | 605.5 | 415, 901 |
+| screen 8/32 | 28.83 | 341.5 | 705.3 | 460, 870 |
+| A1 10/30 | 27.97 | 332.1 | 601.4 | 415, 901 |
+| B 8/32 | 28.56 | 357.9 | 698.8 | 460, 870 |
+| A2 10/30 | 28.13 | 334.7 | 599.2 | 415, 901 |
+
+- Screen: P20K +16.5 %, decode +2.8 % (Karl's bar for the A/B/A: P20K beyond 0.9 %, decode >= -1 %).
+- A/B/A: vs A1 decode +2.1 % (noise 1.8), P4K +7.8 %, P20K +16.2 % (noise 1.7); vs A2 decode +1.5 % (noise 0.5), P4K
+  +6.9 %, P20K +16.6 % -> kept. The drive reads the same (~109 GB per 20K prompt): the gain is the 4060 Ti's share - two
+  fewer layers over its x4 link and more VRAM experts per layer (460 for 8 layers vs 415 for 10).
+- Rounding check on exactly the final config (v0.2.6 + #343 + 8/32, store 68) vs stock v0.2.6, the round's stored base
+  and references (Karl, 16:00): mean 0.00621 (refs 0.00719 / 0.00609), p90 0.01329 (0.01358 / 0.01265), KL>1 1 (1 / 0)
+  ok; top-1 agreement 2,008 vs the old bound 2,009 -> failed by one position; the daily config went on hold (16:28).
+  At the changed picks stock's top two were near-ties, as at the references' (median log-margin 0.19 vs 0.21 / 0.17;
+  17 of 32 also changed by a reference); against the real text the final config fits better than both references.
+- **Rule changes (Karl, 16:40 and 16:55):** changed top-1 picks must be at most 1.10 x the larger reference's
+  (rounding-level variants range 2,005-2,015 agreements, so a margin of 1 was a coin flip); and a fifth check on the
+  text: the candidate's mean NLL may exceed the base's by at most 1.10 x the larger reference's distance from the base.
+  (A first, no-margin version - no worse than the worse reference's - failed a byte-identical candidate whenever both
+  references fit the text better than the base, e.g. the engine check v0.2.6 vs v0.2.4; replaced at 16:55.) Under these
+  rules the final config passes: 32 changed picks (bound 33.0); NLL 0.6606 vs the base's 0.6593, +0.0013 (bound
+  0.0111). The daily config came off hold after its end tests passed (section 4b).
+- Open for Karl (ship rule "B = exactly what ships; all end tests on it"): the final config is now B + #343 + 8/32. The
+  daily memory check (slots filled), the graded set and the context cost run on it; the round's other end tests
+  (conversation cache, follow-up reads, continuations, slots at cap 4) ran on B.
+
+## 4b. Daily end tests on the final config (Karl, 16:00): PASS - daily config released 16:44
+
+Slot keep on, cap 16, store 68 (the slot-keep-off and cap-4 variants not repeated: their decisions are made).
+- Conversation cache: each follow-up turn reused the whole previous prompt and read only its new text (4.9-5.3K tokens);
+  back to chat A after chat B from RAM: 617 tokens read, first token 6.2 s; after an engine restart from the disk slot:
+  554 read, 6.5 s. Engine writes 0.07-0.13 MB per request.
+- Follow-up reads (Jan's format): 11 of 11 read only the last answer plus the new message - 5/5 after a two-pass
+  (budget-hit) answer, the case that fails with slot keep off; 6/6 after a normal answer; first token 3.8 / 4.4 s.
+
+## 5. Graded set (Qwen P021m medium vs DeepSeek effort 50 / 75) - grades PENDING
+
+Run times: Qwen P021m (daily settings, effort medium, 8085) - the full quick set, 111 answers, 25 min of answering
+(15:56:53-16:21:59; 25.6 min with the server start and stop). DeepSeek effort 50 (final config, daily store) - 51
+answers in 57 min. Both with thinking budget 8,192 + room for the full answer; no answer cut off at effort 50.
+
+Waiting time on the same 51 prompts (seconds per answer; "first answer" = time to the first answer token, after the
+thinking; research items run several search steps and have no single first-answer time):
+
+| Category | n | Qwen avg | Qwen worst | Qwen first answer | DeepSeek e50 avg | DeepSeek e50 worst | DeepSeek e50 first answer |
+|---|---|---|---|---|---|---|---|
+| coding | 10 | 19.4 | 38.6 | 16.4 | 104.4 | 291.9 | 89.7 |
+| math | 8 | 16.9 | 50.6 | 13.2 | 68.9 | 234.2 | 66.9 |
+| instruct | 10 | 3.8 | 11.1 | 3.6 | 15.3 | 53.5 | 14.3 |
+| tools | 10 | 1.3 | 2.1 | 0.9 | 10.5 | 15.8 | 7.6 |
+| honesty | 10 | 2.8 | 6.3 | 2.2 | 100.8 | 285.7 | 100.2 |
+| research | 3 | 20.1 | 21.7 | - | 185.9 | 223.3 | - |
+| all | 51 | 9.2 | 50.6 | 7.0 | 67.0 | 291.9 | 55.3 |
+
+Totals on these prompts: Qwen 7.8 min, DeepSeek e50 57.0 min (7.3x). The gap is mostly decode speed (median 164.8 vs
+28.0 tok/s): on coding, math, instruct and tools DeepSeek thinks slightly less than Qwen (mean thinking tokens 2,438 vs
+2,739; 2,232 vs 2,466; 372 vs 643; 51 vs 73). Two exceptions where it also thinks much longer: honesty (2,866 vs 302 -
+avg 100 s vs Qwen's 2.8 s before saying it does not know) and research (2,383 vs 1,013).
+
+## 6. The rest of the block
+
+- **The upstream one-line follow-up fix** (`if (!continued) m.pin();`, built offline on v0.2.6, slot keep off): 12 of 12
+  follow-ups read only the last answer plus the new message - 6 / 6 after a two-pass answer (read 141 = needed, first
+  token 2.9 s; stock: 0 / 6, ~7.7K re-read, 19.5 s), 6 / 6 after a one-pass answer. The issue draft (pr-drafts/47) now
+  says built and tested; not posted.
+- **Repeatability with a fixed seed** (four request pairs, seed 4242, expert placement frozen, DSpark on as shipped):
+  - stock v0.2.6 with STRATA_DS4_REUSE=0: no pair identical -> the reuse path is not the cause.
+  - with the sampler counter reset per seeded request (a test build; the code never resets it): still no pair identical
+    with reuse off, though the pairs come much closer (the same length and tool calls); with reuse on, 1 of 4 identical.
+  - the first request of every fresh engine is identical across all three runs.
+  - So the counter is part of it and something else carries over between requests; the next step to isolate it would
+    be the same pairs with DSpark off (not run).
+- Resumed vs fresh KL against the rounding references - PENDING
+- Decode and VRAM experts at 32K / 64K / 128K context - PENDING
+
+## 7. Swap guard history
+- Through 10-25: a run failed on a swap-in streak or engine swap; one-off growth was logged.
+- 10-26 07:10 (the user): fail if swap-ins or swap-outs keep happening or any engine memory is swapped; a single push-out
+  of other programs' idle pages is logged only.
+- 10-26 08:11 (Karl), installed: a swap-in streak fails a run only with >= 4 MB of swap-ins in it; a swap-out burst over
+  4 MB fails a run (the first burst is logged only); any swapped engine memory fails a run.
+- Replayed over the round's 72 swap logs: x5-A and x5-B fail, the other 70 pass. Runs failed under it since: h2h S1's
+  first try (a later 12 MB burst), Maya M1 / M2 / Mcheck (engine swap), #343's A1 (a second 4 MB burst; replaced).
+- About 1.7-2.0 GB stays in swap from the idle desktop, the web UI and Chrome; swappiness 60.
+
+## 8. Daily launcher - PENDING
+`./switch-model.sh deepseek` -> configs/DS41-daily.json: slot keep on, cap 16, 68 GB store (steps down per the daily-size
+rule), 6 experts, the final engine and settings, effort default from the graded set.
+
+Measured and drafted with Claude Code.

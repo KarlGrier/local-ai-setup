@@ -1,0 +1,6 @@
+[90001] Title: Strata docs/DEEPSEEK41.md
+URL: https://github.com/Niko1221/Strata/blob/v0.2.4/docs/DEEPSEEK41.md
+
+"DeepSeek-V4.1-Flash is a large mixture-of-experts model: 40 layers, 384 experts in each (6 are used for every word), and a 203 GB"
+"- Thinking is on by default, as the model's template has it. `reasoning_effort: "none"` or `chat_template_kwargs.enable_thinking: false` turns it off."
+"The encode is plain error (no rotation, no activation weights). The tests are `ds4_tq_test` (device and CPU lane against a double"

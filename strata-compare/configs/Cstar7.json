@@ -1,0 +1,72 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-cstar7/strata",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/packs/iq3_s",
+  "--native",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+  "--ple-gguf",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "auto",
+  "--spec",
+  "4",
+  "--spec-min-p",
+  "0.5",
+  "--mtp",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt",
+  "--max-context",
+  "131072",
+  "--kv",
+  "int8",
+  "--kv-resident",
+  "32768",
+  "--pcie-frac",
+  "0",
+  "--ple-inflight",
+  "128",
+  "--vram-reserve-mib",
+  "800",
+  "--chat-cache",
+  "6",
+  "--chat-cache-mib",
+  "16384",
+  "--expert-cache-device1",
+  "3300"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v0115",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/strata-v0115/packs/iq3_s/tokenizer",
+ "model_name": "strata-qwen3.8-flash-next-iq3s",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-Cstar7.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8081,
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "host": "127.0.0.1",
+ "_comment": "C*7 (round 7 candidate): Strata v0.1.27 (a790805) + patches/r7/0001-0012 (= C*6's 12 patches ported; 0009 merged with upstream's Turing chunking), built from a clean clone by work/r7/build-cstar7.sh (sm_89 + sm_120, engine-cstar7/SHA256). Flags = C*6 (the RTX 4060 Ti helper with 3,300 experts; 'fallback' = the 5080 alone). MTP folder = strata-v0115/mtp/rt (the English-era draft vocab: 0.1.27's CJK vocab measured -1..-2 % on English decode). Rollback: configs/Cstar6.json.",
+ "env": {
+  "STRATA_IO_THREADS": "64",
+  "CUDA_MODULE_LOADING": "LAZY",
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX5080,GPU-UUID-RTX4060TI"
+ },
+ "server": "/home/USER/ai-speed-testing/strata-compare/strata-cstar7/serve/server.py",
+ "web_search": {
+  "searxng": "http://127.0.0.1:8888",
+  "max_results": 6,
+  "max_page_chars": 12000,
+  "timeout_s": 20,
+  "max_rounds": 6
+ },
+ "fallback": "/home/USER/ai-speed-testing/strata-compare/configs/Cstar7-single.json"
+}

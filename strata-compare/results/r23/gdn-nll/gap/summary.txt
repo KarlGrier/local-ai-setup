@@ -1,0 +1,141 @@
+=== 2026-11-04 17:21:12 GDN PATHS ON vs OFF ON STOCK v0.2.10, MANY POSITIONS (work/r23/gap-gdn-nll.sh): score.py at the NLL gap's settings - measurements only, P028x stays served, nothing switches (Karl 11-04)
+=== 2026-11-04 17:21:12   gate pre PASS PRE OK: the NLL gap validated the scorer (JUDGED, validate_ref PASS: offline head AGREES with the engine's window rows (mean KL <; ADOPTED-BOUND.json); borrowable band 0.1365 (P028x's own rounding pair) | s0210-h.json -> s0210-h-gdn.json: only STRATA_GDN_TC 0 -> 1, STRATA_GDN_CONVL2 0 -> 2 (= stock server.py's GDN_STACK_CUDA); engine-v0210stock; tail skip 0 | s0210-h.json: --native = score.py's GGUF, --pack = r20a; output.weight Q6_K served natively; the pack's output_hc_norm a31d120f, output_hc_down 7d215ea2, output_hc_up 19b34c5c = the GGUF's bytes (score.py's Head reads those) | s0210-h-gdn
+2026-11-04 17:21:12 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 495133 (engine 495156)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-04 19:55:46 port_gap4: gap open: test lock held (pid 621693), 8080 stopped
+=== 2026-11-04 19:55:46 8080 down: engines left: none, MemAvailable 85 GB
+=== 2026-11-04 19:55:46 1 arms s210 (s0210-h: both GDN paths off) and s210gdn (s0210-h-gdn: TC=1 + CONVL2=2, as stock's server.py sets them)
+=== 2026-11-04 19:55:46 arm s210 (s0210-h.json)
+engine pid 621900: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 36 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  s210: 32k-32768: 32768 tokens, 4096 rows, 42 s
+  s210: tf-long28k-28672: 28672 tokens, 3584 rows, 68 s
+  s210: tf-long40k-32768: 32768 tokens, 4096 rows, 97 s
+  s210: tf-long64k-32768: 32768 tokens, 4096 rows, 126 s
+  s210: tf-long112k-32768: 32768 tokens, 4096 rows, 156 s
+  s210: pp4k-4096: 4096 tokens, 512 rows, 159 s
+  s210: ldrsyn20k-16110: 16110 tokens, 2014 rows, 174 s
+  s210: rep9k-9010: 9010 tokens, 1127 rows, 182 s
+  s210: pp32k-32768: 32768 tokens, 4096 rows, 211 s
+  s210: tf-long96k-32768: 32768 tokens, 4096 rows, 241 s
+  s210: pp8k-8019: 8019 tokens, 1003 rows, 248 s
+  s210: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 20:00:21   gate run_s210 PASS score.py run rc 0: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 20:00:21 arm s210gdn (s0210-h-gdn.json)
+engine pid 623339: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 36 env keys as configured (+ pf_yardstick's fixed env), no other STRATA_*, score.py's engine args
+  s210gdn: 32k-32768: 32768 tokens, 4096 rows, 42 s
+  s210gdn: tf-long28k-28672: 28672 tokens, 3584 rows, 68 s
+  s210gdn: tf-long40k-32768: 32768 tokens, 4096 rows, 97 s
+  s210gdn: tf-long64k-32768: 32768 tokens, 4096 rows, 126 s
+  s210gdn: tf-long112k-32768: 32768 tokens, 4096 rows, 156 s
+  s210gdn: pp4k-4096: 4096 tokens, 512 rows, 159 s
+  s210gdn: ldrsyn20k-16110: 16110 tokens, 2014 rows, 174 s
+  s210gdn: rep9k-9010: 9010 tokens, 1127 rows, 182 s
+  s210gdn: pp32k-32768: 32768 tokens, 4096 rows, 211 s
+  s210gdn: tf-long96k-32768: 32768 tokens, 4096 rows, 240 s
+  s210gdn: pp8k-8019: 8019 tokens, 1003 rows, 248 s
+  s210gdn: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 20:04:56   gate run_s210gdn PASS score.py run rc 0: 32816 rows from 11 texts in 274 s
+=== 2026-11-04 20:04:56 2 optional: the stock build's own rounding pair (25 min to the deadline)
+=== 2026-11-04 20:04:56 arm s210unf (s0210-h.json; --env STRATA_PF_FUSED=0)
+engine pid 624770: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 36 env keys as configured (+ pf_yardstick's fixed env, STRATA_PF_FUSED=0), no other STRATA_*, score.py's engine args
+  s210unf: 32k-32768: 32768 tokens, 4096 rows, 42 s
+  s210unf: tf-long28k-28672: 28672 tokens, 3584 rows, 68 s
+  s210unf: tf-long40k-32768: 32768 tokens, 4096 rows, 98 s
+  s210unf: tf-long64k-32768: 32768 tokens, 4096 rows, 127 s
+  s210unf: tf-long112k-32768: 32768 tokens, 4096 rows, 157 s
+  s210unf: pp4k-4096: 4096 tokens, 512 rows, 160 s
+  s210unf: ldrsyn20k-16110: 16110 tokens, 2014 rows, 175 s
+  s210unf: rep9k-9010: 9010 tokens, 1127 rows, 183 s
+  s210unf: pp32k-32768: 32768 tokens, 4096 rows, 212 s
+  s210unf: tf-long96k-32768: 32768 tokens, 4096 rows, 242 s
+  s210unf: pp8k-8019: 8019 tokens, 1003 rows, 249 s
+  s210unf: 32816 rows from 11 texts in 275 s
+=== 2026-11-04 20:09:32   gate run_s210unf PASS score.py run rc 0: 32816 rows from 11 texts in 275 s
+=== 2026-11-04 20:09:33 arm s210cpu (s0210-h.json; --env STRATA_PREFILL_CPU_SHARE=0.4)
+engine pid 626182: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s) -> ENV OK
+ENV CHECK OK: 1 engine start(s), 36 env keys as configured (+ pf_yardstick's fixed env, STRATA_PREFILL_CPU_SHARE=0.4), no other STRATA_*, score.py's engine args
+  s210cpu: 32k-32768: 32768 tokens, 4096 rows, 37 s
+  s210cpu: tf-long28k-28672: 28672 tokens, 3584 rows, 59 s
+  s210cpu: tf-long40k-32768: 32768 tokens, 4096 rows, 84 s
+  s210cpu: tf-long64k-32768: 32768 tokens, 4096 rows, 108 s
+  s210cpu: tf-long112k-32768: 32768 tokens, 4096 rows, 133 s
+  s210cpu: pp4k-4096: 4096 tokens, 512 rows, 136 s
+  s210cpu: ldrsyn20k-16110: 16110 tokens, 2014 rows, 148 s
+  s210cpu: rep9k-9010: 9010 tokens, 1127 rows, 152 s
+  s210cpu: pp32k-32768: 32768 tokens, 4096 rows, 177 s
+  s210cpu: tf-long96k-32768: 32768 tokens, 4096 rows, 201 s
+  s210cpu: pp8k-8019: 8019 tokens, 1003 rows, 207 s
+  s210cpu: 32816 rows from 11 texts in 228 s
+=== 2026-11-04 20:13:21   gate run_s210cpu PASS score.py run rc 0: 32816 rows from 11 texts in 228 s
+=== 2026-11-04 20:13:21 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-04 20:13:26 port_gap4: memory back: MemAvailable 86 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-04 20:13:39 port_gap4: no swap-out while P028x started
+2026-11-04 20:13:39 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-04 20:13:39 GDN NLL gap: 17 min with 8080 down
+=== 2026-11-04 20:13:39 after the gap (CPU, nice 19, 4 BLAS threads): validate, compare, decide
+  validate s210: check-32k-2049                   KL(window || offline head) 0.00003  top-1 same  NLL window 5.1659 head 5.2672
+  validate s210: check-tf-long28k-4097            KL(window || offline head) 0.00728  top-1 same  NLL window 6.1080 head 6.2460
+  validate s210: check-ldrsyn20k-8193             KL(window || offline head) 0.07418  top-1 same  NLL window 5.1470 head 5.2249
+  validate s210: check-tf-long64k-12289           KL(window || offline head) 0.00840  top-1 DIFFERS  NLL window 2.6019 head 2.6243
+  validate s210: check-pp4k-2049                  KL(window || offline head) 0.00681  top-1 DIFFERS  NLL window 2.1627 head 2.1559
+=== 2026-11-04 20:13:56   gate validate_s210 PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate s210gdn: check-32k-2049                   KL(window || offline head) 0.00021  top-1 same  NLL window 3.8668 head 4.0026
+  validate s210gdn: check-tf-long28k-4097            KL(window || offline head) 0.00564  top-1 same  NLL window 4.7080 head 4.6638
+  validate s210gdn: check-ldrsyn20k-8193             KL(window || offline head) 0.14579  top-1 DIFFERS  NLL window 5.3232 head 6.7990
+  validate s210gdn: check-tf-long64k-12289           KL(window || offline head) 0.03592  top-1 DIFFERS  NLL window 2.6494 head 2.6579
+  validate s210gdn: check-pp4k-2049                  KL(window || offline head) 0.00512  top-1 DIFFERS  NLL window 2.2723 head 2.1642
+=== 2026-11-04 20:13:58   gate validate_s210gdn PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate s210unf: check-32k-2049                   KL(window || offline head) 0.00016  top-1 same  NLL window 3.9337 head 3.8135
+  validate s210unf: check-tf-long28k-4097            KL(window || offline head) 0.00850  top-1 same  NLL window 5.0732 head 5.2105
+  validate s210unf: check-ldrsyn20k-8193             KL(window || offline head) 0.05893  top-1 DIFFERS  NLL window 4.4266 head 4.8337
+  validate s210unf: check-tf-long64k-12289           KL(window || offline head) 0.05224  top-1 same  NLL window 2.4368 head 2.2138
+  validate s210unf: check-pp4k-2049                  KL(window || offline head) 0.00310  top-1 same  NLL window 2.2643 head 2.2842
+=== 2026-11-04 20:14:01   gate validate_s210unf PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+  validate s210cpu: check-32k-2049                   KL(window || offline head) 0.00002  top-1 same  NLL window 3.9849 head 3.9575
+  validate s210cpu: check-tf-long28k-4097            KL(window || offline head) 0.00896  top-1 same  NLL window 5.4181 head 5.5946
+  validate s210cpu: check-ldrsyn20k-8193             KL(window || offline head) 0.02721  top-1 DIFFERS  NLL window 6.8217 head 7.0095
+  validate s210cpu: check-tf-long64k-12289           KL(window || offline head) 0.03828  top-1 same  NLL window 2.6379 head 2.7313
+  validate s210cpu: check-pp4k-2049                  KL(window || offline head) 0.00097  top-1 same  NLL window 2.3055 head 2.2809
+=== 2026-11-04 20:14:04   gate validate_s210cpu PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02)
+=== 2026-11-04 20:14:04 compare: s210gdn (+ the stock pair where it ran) against s210, the adopted bound's statistics (~31K positions)
+  ldrsyn20k-16110: 1886 positions
+  rep9k-9010: 999 positions
+  pp32k-32768: 3968 positions
+  tf-long96k-32768: 3968 positions
+  pp8k-8019: 875 positions
+positions 31408 in 129 blocks (dump rows (offline head), positions >= 1024, every 8th row; blocks: 2048 tokens); NLL of s210 3.7306; bootstrap 10000 (seed 20261104; /home/USER/ai-speed-testing/strata-compare/results/r23/nll-many/gap/ADOPTED-BOUND.json)
+  s210gdn  d -0.1844 [-0.2288, -0.1400] se 0.0227 mean|d| 0.5230 exact0 0.000 | KL mean 0.180333 p90 0.343350 >1 1046 top-1 3495
+  s210unf  d -0.1241 [-0.1680, -0.0781] se 0.0229 mean|d| 0.4849 exact0 0.000 | KL mean 0.147783 p90 0.254088 >1 886 top-1 3115
+  s210cpu  d -0.0999 [-0.1484, -0.0516] se 0.0247 mean|d| 0.4931 exact0 0.000 | KL mean 0.152831 p90 0.260940 >1 842 top-1 3120
+  block scan  1024 (246 blocks): se s210gdn 0.0181, s210unf 0.0174, s210cpu 0.0190
+  block scan  4096 (65 blocks): se s210gdn 0.0294, s210unf 0.0288, s210cpu 0.0316
+  block scan  text (11 blocks): se s210gdn 0.0389, s210unf 0.0458, s210cpu 0.0420
+GDN prompt paths ON vs OFF on STOCK v0.2.10 at many positions - decision (2026-11-04 20:19:18; rules: work/r23/gdn_nll_rules.py, written before the gap)
+  arms: s210 = configs/s0210-h.json (both paths off), s210gdn = configs/s0210-h-gdn.json (STRATA_GDN_TC=1 + STRATA_GDN_CONVL2=2, as stock server.py sets them); engine-v0210stock c8fe72abe45a
+  pre-gap checks: PASS PRE OK: the NLL gap validated the scorer (JUDGED, validate_ref PASS: offline head AGREES with the engine's window rows (mean KL <; ADOPTED-BOUND.json); borrowable band 0.1365 (P028x's own rounding pair) | s0210-h.json -> s0210-h-gdn.json: only STRATA_GDN_TC 0 -> 1, STRATA_GDN_CONVL2 0 -> 2 (= stock 
+  validation (score.py's own head on the stock build, arm s210): PASS offline head AGREES with the engine's window rows (mean KL <= 0.05, each <= 0.5; rounding level between the batched and the window path is ~0.01-0.02) [gdn 11-04 20:13]
+positions: 31408 in 129 blocks (dump rows (offline head), positions >= 1024, every 8th row; blocks: 2048 tokens); NLL of s210 there 3.7306; statistics /home/USER/ai-speed-testing/strata-compare/results/r23/nll-many/gap/ADOPTED-BOUND.json (z 1.645, se cap 0.01, bootstrap 10000, seed 20261104)
+band: 0.1365 nats/token = 1.10 x max(|d s210unf| 0.1241, |d s210cpu| 0.0999): the stock build's own rounding pair (s210 + STRATA_PF_FUSED=0, s210 + STRATA_PREFILL_CPU_SHARE=0.4); KL bounds mean <= 0.168114, p90 <= 0.287034, KL>1 rows <= 887, changed top-1 <= 3432.0 (at 31408 positions)
+NLL  s210gdn d -0.1844 [-0.2288, -0.1400] se 0.0227; band 0.1365 + margin 0.0373 -> OUTSIDE (lower NLL)
+KL   KL(s210 || s210gdn) mean 0.180333 p90 0.343350 KL>1 1046 changed top-1 3495 of 31408 -> OUTSIDE (mean, p90, KL>1 rows, top-1)
+=> the GDN paths' distance is OUTSIDE the rounding band (NLL lower with the paths ON: d -0.1844 vs band 0.1365 + margin 0.0373; KL mean, p90, KL>1 rows, top-1)
+INFO with the borrowed band (0.1365; borrowed from the NLL gap: P028x's own rounding pair (x28h vs x28h-unfused, x28h-cpushare)): NLL OUTSIDE (lower NLL), KL OUTSIDE (mean, p90, KL>1 rows, top-1) -> OUTSIDE
+INFO the adopted gate rule (nll-many 11-04, one-sided) on s210gdn as a candidate against s210: FAIL
+INFO mean |per-position NLL difference|: s210gdn 0.5230; the band's references s210unf 0.4849, s210cpu 0.4931
+INFO s210unf: d -0.1241 se 0.0229, KL mean 0.147783 p90 0.254088 >1 886 top-1 3115, exactly-0 positions 0.000
+INFO s210cpu: d -0.0999 se 0.0247, KL mean 0.152831 p90 0.260940 >1 842 top-1 3120, exactly-0 positions 0.000
+INFO per text: 32k-32768 n 3968 d -0.2894 KL 0.2166 top-1 568; tf-long28k-28672 n 3456 d -0.1884 KL 0.2572 top-1 401; tf-long40k-32768 n 3968 d -0.1459 KL 0.1558 top-1 347; tf-long64k-32768 n 3968 d -0.2451 KL 0.1562 top-1 412; tf-long112k-32768 n 3968 d -0.1979 KL 0.1377 top-1 374; pp4k-4096 n 384 d +0.4543 KL 0.1748 top-1 58; ldrsyn20k-16110 n 1886 d -0.0016 KL 0.2178 top-1 231; rep9k-9010 n 999 d +0.5971 KL 0.0001 top-1 0; pp32k-32768 n 3968 d -0.2894 KL 0.2166 top-1 568; tf-long96k-32768 n 3968 d -0.2451 KL 0.1562 top-1 412; pp8k-8019 n 875 d -0.3455 KL 0.1993 top-1 124
+INFO per range: 1-4K n 4224 d -0.1410 KL 0.1470 top-1 502; 4-16K n 13360 d -0.2660 KL 0.1903 top-1 1550; 16-32K n 13824 d -0.1188 KL 0.1809 top-1 1443
+INFO block scan  1024 (246 blocks): se s210gdn 0.0181, s210unf 0.0174, s210cpu 0.0190
+INFO block scan  4096 (65 blocks): se s210gdn 0.0294, s210unf 0.0288, s210cpu 0.0316
+INFO block scan  text (11 blocks): se s210gdn 0.0389, s210unf 0.0458, s210cpu 0.0420
+INFO gap 19 (pf_yardstick long40, results/r22/gap19/decision.txt), stock ON against stock OFF: KL mean 0.648253, p90 1.031009, KL>1 4, changed top-1 4/40, NLL -0.3055 (36 positions with a next token)
+INFO validate on the other arms: s210gdn PASS, s210unf PASS, s210cpu PASS
+NOTHING SWITCHES: P028x stays served; what goes upstream is Karl's call.
+=== 2026-11-04 20:19:18 GDN NLL gap done

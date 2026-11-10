@@ -1,0 +1,52 @@
+Unsloth Dynamic v3.1 gap - decision (2026-11-06 08:46:37; rules work/r23/ud31_rules.py (written 11-04, revised 11-05 before the gap))
+ARMS: P = P028x (configs/x28h.json, STRATA_HC_Q8 off as served); U = UD-IQ3_XXS v3.1 as shipped, STRATA_HC_Q8=1; S = v3.1's routed experts spliced into our ISTA file (off); R = UD-Q4_K_XL (HF cache), the KL reference, STRATA_HC_Q8=1
+  rules INFO the rule text at the gap's start (ud31_rules.py's docstring, incl. the frozen pack-rounding rule): gap/rules.txt sha 6c68d8b69d6c [ud31 11-06 06:58]
+  dl_sha PASS 4 shards re-hashed in 25 s: sha256 = the pinned oids [ud31 11-06 07:28]
+  pack_U PASS rc 0: index.txt: 1079 tensors, 303 served natively, 0 in extra.bin, arena 1.38 GiB conversions.json: 460 tensors converted to the engine's form (264 e
+  hcforms_U INFO pack-u (compat_bf16 True): hc conversions 192 down/up Q8_0->BF16 rounded, 96 inject F32->BF16 exact, 2 output down/up Q8_0->BF16 rounded [ud31 11-06 0
+  splice PASS wrote /home/USER/ai-speed-testing/strata-compare/models/unsloth-v31/splice-S/Qwen3.8-Flash-Next-UD31x-GSQ-RCO-IQ3_S-00001-of-00002.gguf: 51.04 GiB of 
+  splice_verify PASS VERIFY OK: 1223 tensors in our order, 144 experts with the expert shards' types, the rest ours; split keys {'split.no': 0, 'split.count': 2, 'split.te
+  dirty PASS Dirty + Writeback 0 MiB after 0 s (want <= 256); MemAvailable 85 GiB, swap used 3543 MiB [ud31 11-06 07:29]
+  pack_S PASS rc 0: index.txt: 1079 tensors, 302 served natively, 0 in extra.bin, arena 1.43 GiB  [ud31 11-06 07:29]
+  pack_S_dense PASS pack-s dense.bin and index rows = P028x's bringup/out/r20a/pack byte for byte (the dense path is P028x's) [ud31 11-06 07:29]
+  pack_R PASS rc 0: index.txt: 1079 tensors, 303 served natively, 0 in extra.bin, arena 1.38 GiB conversions.json: 460 tensors converted to the engine's form (264 e
+  hcforms_R INFO pack-r (compat_bf16 True): hc conversions 192 down/up Q8_0->BF16 rounded, 96 inject F32->BF16 exact, 2 output down/up Q8_0->BF16 rounded [ud31 11-06 0
+  tok_U PASS tokenizer = P028x's (bringup/out/r20a/pack/tokenizer) [ud31 11-06 07:28]
+  tok_S PASS tokenizer = P028x's (bringup/out/r20a/pack/tokenizer) [ud31 11-06 07:29]
+  tok_R PASS tokenizer = P028x's (bringup/out/r20a/pack/tokenizer) [ud31 11-06 07:29]
+EXACTNESS (repeatability: new weights cannot be bit-identical to P028x)
+  U: REPEATABLE. e7_U1 (vs P028x's x28h-e7a, INFO): exact7 u31-11060658-U1: 0/7 vs x28h-e7a, slots DIFFER (3240+3300 slots (5080 + 4060 Ti); x; e7_U2: PASS exact7 u31-11060658-U2: 7/7 vs u31-11060658-U1, slots MATCHED (3240+3300 slots (5080 + 406; lossless_U_cfg PASS, lossless_U_log PASS, start_U PASS, hcq8_scr_U PASS
+  S: REPEATABLE. e7_S1 (vs P028x's x28h-e7a, INFO): exact7 u31-11060658-S1: 0/7 vs x28h-e7a, slots DIFFER (3240+3300 slots (5080 + 4060 Ti); x; e7_S2: PASS exact7 u31-11060658-S2: 7/7 vs u31-11060658-S1, slots MATCHED (3240+3300 slots (5080 + 406; lossless_S_cfg PASS, lossless_S_log PASS, start_S PASS, hcq8_scr_S PASS, splice_verify PASS, pack_S_dense PASS
+QUALITY - A QUANT COMPARISON, NOT A LOSSLESS GATE, judged by the KL RULES AGAINST R AT THE TEXT LEVEL (11-05; the many-positions NLL bound is revoked, text NLL is INFO): lower KL against R is better
+  texts: 8 distinct (32k, tf-long28k, tf-long40k, tf-long64k, tf-long112k, pp4k, ldrsyn20k, rep9k; dropped as duplicates: pp32k, pp8k, tf-long96k), 22597 positions (every 8th row from 1,024)
+  rule (written before the gap): per text X vs P worse if X > 1.10 x P (+ 1 for the counts), better if P > 1.10 x X (+ 1); per metric WORSE / BETTER = >= 6 of the texts on that side and <= 1 on the other; X WORSE THAN P if any metric WORSE; BETTER if the mean BETTER and none WORSE; else INSIDE THE MARGIN (ABOVE / AT OR BELOW P by the pooled mean)
+  PACK ROUNDING (frozen rule, Karl 11-05): U's and R's prompt rows read their files' Q8_0 hyper-connections rounded to BF16 (pack time); P's and S's are BF16 in the file (unrounded)
+  KL vs R per arm, pooled (lower is better): P mean 0.71669 p90 2.08020 >1 4281 top-1 changed 5292 of 22597; U mean 0.73378 p90 2.10209 >1 4506 top-1 changed 5492 of 22597; S mean 0.88920 p90 2.70887 >1 5349 top-1 changed 6016 of 22597
+  KL rules, U vs P, text level -> INSIDE THE MARGIN, ABOVE P; RECORDED AS INCLUDES PACK ROUNDING (inside the margin (ABOVE P by the pooled mean KL)) - includes pack rounding (the prompt path reads U's Q8_0 HC projections as BF16 from the pack); not a verdict on the file
+    mean  INSIDE THE MARGIN texts worse 4, better 3, inside 0 (+ 1 below the floor, inside); pooled U 0.7338 vs P 0.7167; per text 32k:w tf-long28k:w tf-long40k:b tf-long64k:w tf-long112k:b pp4k:w ldrsyn20k:b rep9k:f
+    p90   INSIDE THE MARGIN texts worse 3, better 3, inside 1 (+ 1 below the floor, inside); pooled U 2.1021 vs P 2.0802; per text 32k:i tf-long28k:w tf-long40k:b tf-long64k:w tf-long112k:b pp4k:w ldrsyn20k:b rep9k:f
+    high  INSIDE THE MARGIN texts worse 4, better 3, inside 0 (+ 1 below the floor, inside); pooled U 4506 vs P 4281; per text 32k:w tf-long28k:w tf-long40k:b tf-long64k:w tf-long112k:b pp4k:w ldrsyn20k:b rep9k:f
+    flips INSIDE THE MARGIN texts worse 4, better 2, inside 1 (+ 1 below the floor, inside); pooled U 5492 vs P 5292; per text 32k:w tf-long28k:w tf-long40k:b tf-long64k:w tf-long112k:i pp4k:w ldrsyn20k:b rep9k:f
+    pooled ratio mean KL(R || U) / KL(R || P) 1.024: whole-text bootstrap se 0.066 CI [0.889, 1.145] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.034 CI [0.959, 1.093], 93 blocks]
+  KL rules, S vs P, text level -> INSIDE THE MARGIN, ABOVE P
+    mean  INSIDE THE MARGIN texts worse 5, better 0, inside 2 (+ 1 below the floor, inside); pooled S 0.8892 vs P 0.7167; per text 32k:w tf-long28k:i tf-long40k:w tf-long64k:w tf-long112k:w pp4k:w ldrsyn20k:i rep9k:f
+    p90   INSIDE THE MARGIN texts worse 5, better 0, inside 2 (+ 1 below the floor, inside); pooled S 2.7089 vs P 2.0802; per text 32k:w tf-long28k:i tf-long40k:w tf-long64k:w tf-long112k:w pp4k:w ldrsyn20k:i rep9k:f
+    high  INSIDE THE MARGIN texts worse 5, better 0, inside 2 (+ 1 below the floor, inside); pooled S 5349 vs P 4281; per text 32k:w tf-long28k:i tf-long40k:w tf-long64k:w tf-long112k:w pp4k:w ldrsyn20k:i rep9k:f
+    flips INSIDE THE MARGIN texts worse 4, better 0, inside 3 (+ 1 below the floor, inside); pooled S 6016 vs P 5292; per text 32k:w tf-long28k:i tf-long40k:w tf-long64k:i tf-long112k:w pp4k:w ldrsyn20k:i rep9k:f
+    pooled ratio mean KL(R || S) / KL(R || P) 1.241: whole-text bootstrap se 0.102 CI [1.085, 1.473] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.059 CI [1.134, 1.365], 93 blocks]
+  INFO U vs S (the whole file vs its experts in our file), the same rule: INSIDE THE MARGIN, AT OR BELOW S; mean: texts worse 0, better 5; pooled ratio 0.825: whole-text bootstrap se 0.098 CI [0.629, 1.008] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.040 CI [0.746, 0.903], 93 blocks]
+  TEXT NLL - INFO ONLY (the many-positions NLL bound is revoked 11-05; whole-text uncertainty first, the 2,048-token-block figure beside it, labelled):
+    per arm, pooled NLL (nats/token): P 3.7915, U 3.7237, S 3.7828, R 3.5861
+    U vs P: d -0.0677: whole-text bootstrap se 0.1841 CI [-0.5274, +0.1928] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.0801 CI [-0.2326, +0.0793], 93 blocks]; texts lower 3, higher 5; 32k:+0.048 tf-long28k:+0.116 tf-long40k:+0.093 tf-long64k:+0.385 tf-long112k:-0.278 pp4k:+0.235 ldrsyn20k:-0.005 rep9k:-3.002 [includes pack rounding (the prompt path reads U's Q8_0 HC projections as BF16 from the pack)]
+    S vs P: d -0.0087: whole-text bootstrap se 0.1774 CI [-0.4234, +0.2687] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.0771 CI [-0.1653, +0.1393], 93 blocks]; texts lower 3, higher 5; 32k:+0.304 tf-long28k:+0.052 tf-long40k:-0.478 tf-long64k:+0.426 tf-long112k:+0.212 pp4k:+0.336 ldrsyn20k:-0.028 rep9k:-2.295
+    R vs P: d -0.2054: whole-text bootstrap se 0.2798 CI [-0.6685, +0.3916] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.1084 CI [-0.4055, +0.0192], 93 blocks]; texts lower 6, higher 2; 32k:-0.374 tf-long28k:-0.601 tf-long40k:+1.130 tf-long64k:-0.650 tf-long112k:-0.490 pp4k:-0.191 ldrsyn20k:+0.455 rep9k:-1.828 [R: the reference quant; its hc rounded at pack time too]
+=> U DECODE-PATH FOLLOW-UP: WANTED (U's KL verdict INSIDE THE MARGIN, ABOVE P: inside the margin (ABOVE P by the pooled mean KL); work/r23/gap-ud31-dec.sh scores U's decode path with STRATA_HC_Q8=1 against the decode-path gap's P rows -> results/r23/ud31/dec/decision.txt decides)
+SPEED (Karl's no-loss rule: no workload slower beyond its noise; U and S vs P, the 9-workload screen x3)
+  U: NO LOSS: per-workload no-loss: none of the 9 slower beyond its noise; screen geomeans vs P: decode +1.95 % prompt +0.45 % (3 / 3 complete passes)
+  S: NO LOSS: per-workload no-loss: none of the 9 slower beyond its noise; screen geomeans vs P: decode +3.01 % prompt +0.96 % (3 / 3 complete passes)
+  INFO slots: 5080 + 4060 Ti slots at start (auto fill): P 4585+1
+SUMMARY
+  U: exactness REPEATABLE; KL rules vs P (text level) INCLUDES PACK ROUNDING; text NLL vs P (INFO) d -0.0677 (whole-text se 0.1841); speed NO LOSS [class INSIDE THE MARGIN, ABOVE P; includes pack rounding (the prompt path reads U's Q8_0 HC projections as BF16 from the pack)]
+  S: exactness REPEATABLE; KL rules vs P (text level) INSIDE THE MARGIN, ABOVE P; text NLL vs P (INFO) d -0.0087 (whole-text se 0.1774); speed NO LOSS
+  U DECODE-PATH FOLLOW-UP: WANTED
+NOTHING SWITCHES: P028x stays served; any use of v3.1 is Karl's call.

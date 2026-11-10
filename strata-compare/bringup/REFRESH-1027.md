@@ -1,0 +1,140 @@
+# Day-one scripts refreshed for Strata v0.2.6 (2026-10-27)
+
+Code only, for the expected Qwen4 news. Nothing was built, started or run on a GPU. The backups are `bringup/*.before-v026`
+(copied with `cp -p`, so they keep their timestamps). Line references are into `strata-v026/` (tag v0.2.6, 4b9e05a2)
+unless a path says otherwise.
+
+## What changed and why
+
+| file | change | v0.2.6 reference / lesson |
+|---|---|---|
+| `gguf_head.py` | NVFP4 (40), Q1_0 (41) and Gyro's trellis types 143-146 added. A short read raises `truncated header`. A head-only file reads its real size from `NAME.size`. `Model.file_bytes()` returns the model's size. | `tools/gguf_reader.py:22-53`; `strata/third_party/llama.cpp/ggml/src/ggml-common.h:180-227` (the pinned ggml calls 41 `Q1_0`; gguf_reader.py still says `Q4_0_8_8`) |
+| `inspect_model.py` | Picks the engine path per architecture: `qwen4exp` uses `strata` with a pack, `qwen35moe` uses the own path in `strata`, `deepseek41` uses `strata-dsv41`. Unknown architectures get a shape summary that names the closest path. The geometry pins and required keys now follow v0.2.6. Format lists are read from the tree. Q6_K and K-quant experts need no `-D` flag any more. The series guards come from P021m's tree and gain `draft_cum` and `prefill_v2`. New checks: `--turn-token`, and the qwen35 path's hard-coded EOS ids. | `include/strata/artifact/model_family.hpp:21-25, 51-54`; `src/program/generate.cpp:2399-2411` (family switch); `include/strata/core/geometry.hpp:23-60`; `include/strata/artifact/gguf_reader.hpp:626` (qwen35moe guard), `:658` (`read_geometry`: 6 required keys), `:786` (`geometry_unsupported`: the pins; `expert_count` is free); `CMakeLists.txt:91, 95` (both ON), `:794` (QWEN35), `:800, 809` (DSV41); `src/kernels/cuda/iq_kernels.cu:3239-3246, 4178, 4328-4333`; `native_mmvq.cu:2887`; `src/qwen35/q36_engine.cu:3072` (`is_eos` 248044/248046); `generate.cpp:931` (`--turn-token` 248045); `strata-r22p021m/src/core/patch_guard.cpp:163-245` |
+| `fitplan.py` | Floors: test floor 12 GB, serve margin 20 GB (the relief-restart line). Overhead and helper constants refit on P021m's own log of today (9.53 GiB free, 4,585 slots, predicted 4,588; 7.56 GiB free on CUDA1). In budget mode the helper is kept. Counts upstream's conversation cache (8 GiB) and its 6 prompt checkpoints (0.66 GiB). The start config is lossless: no `--pcie-frac 0`, `--spec 7`, the conversation cache set explicitly with a 12 GB floor, and a `start_env` block. New outputs: `need_ram_mib` / `need_vram_mib`, the pack size, the download/disk check (100 GB must stay free) and the note for more than 60 GiB page-locked. Plans for qwen35moe, dense and deepseek41 models. It plans even when the inspector says NEEDS UPSTREAM, and labels the result. | `generate.cpp:3057-3060` (helper beside the RAM budget, since v0.1.45), `:2772-2776` (budget implies the mmap'd resident mode); `:894-899` (`--prompt-cache` 6 x ~118 MB, `--conversation-cache-mib` up to 8192 by default, `--conversation-cache-min-free-mib` 2560 by default); `setup.py:7533-7536, 7777` (own path: 32K context on 16 GB, `--expert-vram` = VRAM - 3 - reserve); `logs/engine-P021m.log` (10-27 07:25 start) |
+| `placements.py` | B is now "both cards + RAM budget"; the old one-card B is B1. Floor 12. Lookup shares and lookups per token come from the header. Dense models are refused. | `generate.cpp:3057-3060` |
+| `synth_header.py` | `--qwen4 SRC OUT` writes 4 head-only split test shapes from parameters (see Tests below). | - |
+| `fetch_model.py` (new) | Subcommands `pins` (repo at a commit, size + sha256 per file), `heads` (only each GGUF header, by range requests; it needs a 206 and the Content-Range it asked for), `plan` (keep 100 GB free), `unit` (prints the `systemd-run --user ... -p MemoryHigh=2G` line), and `get`, which runs only inside a unit, checks sha256 while writing, drops the page cache, caps the rate, refuses `~/.cache`, and never deletes. | `tools/hf_pin_fetch.py:23-34` (the API listing); `tools/mtp_fetch.py:14-17` (#327: a mirror can ignore Range); `work/ds41/download.py` (10-23) |
+| `runbook.sh` | Two phases in the user's order (below). The lossless stock config is generated, not copied from P021m. Builds use the pinned ggml (`third_party/ggml/VERSION.txt`), the target and `-D` flags per family, at most 16 jobs at nice 5, and their own memory guard, because `work/r22/build_memguard.sh` only watches fixed folders. Around every GPU stage: no other server, `kcheck.sh` before and after, the shared `tmp/gpu-test.lock`, a watch for the 12 GB floor and the 10-27 swap rule, and the lossless log check. Also: a served repeat check for any family, the decode screen, the quick suite at medium, the expert profile matched to the model's shape, `mmvq_il_parity --bench --emit-table`, and phase B exported from branch `r22-port021-cont2`. | `third_party/ggml/VERSION.txt` (3cf03257); `CMakeLists.txt:1658, 1099`; `iq_pack.py:596-604` + `setup.py:8476-8479` (pack call, `STRATA_GGUF_PY`); `tools/strata_tokenizer.py:101` + `serve/server.py:8318-8329` (Tokenizer takes `pre` / special ids); `serve/server.py:3837/4490` (config `reasoning_effort`), `:7750` (shared keys: no `min_p`, the `sampling` block carries it), `:8449` (config `arch`), `:8601` (shared-settings path) |
+| `patchtest.sh` | P021m defaults, slot pin 2500, the pinned ggml for v0.2.x tools, new rows `draft_cum` (greedy pair), `prefill_v2` (tf + yardstick note) and `lossless` (checks the config, no GPU; `ELOG=` also checks a log). A tf row without a twin says SKIPPED. | exact7 slot pin (10-22) |
+| `acceptance.sh`, `accept_*.sh` | The reference llama.cpp runs the config's own GGUF, and only for architectures in `ACCEPT_LLAMA_ARCHS` (default `qwen4exp`). The spec-test build takes the pinned ggml. | - |
+
+**The lossless block.** These are the three switches, where v0.2.6 defines each, and how to confirm in the engine log that it did not act:
+
+- **`STRATA_ROUTE_TAIL_SKIP=0`.** The default is on for CUDA (`generate.cpp:10006-10050`). The log must show neither an `... is ON` line nor a `route tail skip: N` line.
+- **`STRATA_ADAPT_ASYNC=0`.** v0.2.5 made the engine try the asynchronous tier by itself on CUDA + serve + arena with no layer split. A helper cache does not stop it, so the condition matches **our two-card setup**. Defined in `include/strata/core/adapt_async_default.hpp:10-11, 35-56` and `generate.cpp:8083-8101`. Its log lines are at `:10579, 10583, 15241-15245, 15601`.
+- **`STRATA_PREFILL_CPU_SHARE=0`.** The default has been on since 0.1.41 (`src/prefill/prefill.cpp:198-202`). The log line to watch for is `prefill.cpp:2423`.
+
+**Added 10-27 ~11:30 for v0.2.7** (the user: port target v0.2.7; its new defaults off unless they pass the gate). Every rule
+is in `include/strata/core/sm120_series.hpp`, `defaults_026.hpp` and `ple_residency.hpp` of v0.2.7; `STRATA_DEFAULTS=026`
+turns all of them back to 0.2.6, and a variable set by name wins over it. What acts on our two cards (5080 sm_120 16 GB,
+4060 Ti sm_89 8 GB), and what the scripts now do:
+
+| v0.2.7 default | on our PC | output | pinned |
+|---|---|---|---|
+| `STRATA_ROUTE_PRIOR=1.5` (residency-biased routing; per card, discrete NVIDIA <= 13 GiB) | the 4060 Ti's layers | changes experts (lossy) | `=0`; log line `residency-biased routing is on by default` checked |
+| `STRATA_PROMPT_ATTN_IMMA` (int8 prompt attention, cc >= 8.0) | both cards | rounding level; failed the user's gate before | `=0` (no log line; config check) |
+| `STRATA_GR_V3` (split HC read; sm_120 > 13 GiB) | the 5080 | not bitwise | `=0` (a series config's adopted `1` stays: P021m has it) |
+| `STRATA_GR_UP_WIDE` (wide HC up read; sm_120) | the 5080 | bitwise per upstream | via `026` (port A/B arm) |
+| `STRATA_MMVQ_IL_89` (Ada row tables) | the 4060 Ti | bitwise | via `026` (port speed A/B) |
+| `STRATA_PREFILL_LAYER_MAJOR` (layer-major prefill, CUDA layer split of 2+ cards) | yes | other summation order (KL-checked upstream) | `=0`; log lines `layer-major prefill is on` / `layer-major (layers` checked |
+| `STRATA_PLE_AUTO_RAM` (PLE table to RAM if table + expert arena + 8 GiB fit) | possible at a quiet start | lossless (same md5 upstream), but RAM | `=0`; log line `chosen by the residency policy` checked |
+| pipelined two-card batch (`STRATA_BATCH_GROUPS_NV_SERIAL`) | only with `--batch` slots (not ours) | exact per slot | via `026` |
+| sm_80 tables, gfx12 switches | no | - | - |
+
+`fitplan.py`'s `LOSSLESS_ENV` and `runbook.sh`'s `LOSSLESS_ENV` carry the six (the stock phase); the series phase sets
+them only where the series config has no value of its own. `patchtest.sh lossless` now fails a config that leaves
+ROUTE_PRIOR / PROMPT_ATTN_IMMA / GR_V3 / PREFILL_LAYER_MAJOR unset, or neither sets `STRATA_PLE_AUTO_RAM` nor passes
+`--ple-io`. Tested: P021m's config fails with exactly those (plus TAIL_SKIP / ADAPT_ASYNC); a copy with the pins passes;
+the log pattern catches the four lossy start lines of a sample log and passes `layer-major off for this prompt` and the
+PLE probe line. Older engines ignore the names they do not know. Backups: `*.before-v027`.
+
+**Effort and sampling.** Reasoning effort is medium in the config and in `.shared-settings.json`. Sampling is 1.0 / 0.95 / 20 / min-p 0.05 in the config's `sampling` block.
+
+**Finding: P021m is not lossless on v0.2.5 or later.** `patchtest.sh lossless` on `configs/P021m.json` fails, because it sets neither `TAIL_SKIP=0` nor `ADAPT_ASYNC=0`. That is fine on its v0.2.1 engine: the tail skip does not act with a helper, and adapt-async is not there yet. It matters for any later port. The runbook adds both switches to every series config.
+
+## Still uncertain until the real model exists
+
+- **Which architecture name Qwen4 ships under.**
+  - `qwen4exp` with the same geometry: runs on v0.2.6.
+  - `qwen4exp` with more experts: runs, because `expert_count` is free.
+  - Anything else: the inspector says NEEDS UPSTREAM and names the closest path, and we wait for the release that runs it.
+  - A Qwen3.6-like small MoE under `qwen35moe`: runs on the own path, but only with the Qwen tokenizer, since the EOS ids are hard-coded.
+- **Expert profile and drafter.** Our tools are Flash-Next-specific:
+  - `tools/make_profile.py` writes 24,576 pairs (48 x 512).
+  - `tools/mtp_fetch.py` reads Qwen3.8-Flash-Next's checkpoint only.
+  - A new shape needs both from the release; the runbook stops at `config` without a matching profile.
+- **Fit constants.** The overhead (2.11 GiB) and the 4060 Ti's 7.56 GiB were measured on P021m (engine 0.1.46). v0.2.6's own numbers and a new model's dense/KV sizes need one start to check. All synthetic numbers are model-based estimates.
+- **Unverified engine behaviour:**
+  - Whether the v0.2.6 CLI (exact7 runs) accepts the serve-only `--conversation-cache-*` flags. If it refuses, drop them for exact7 with `RB_DROP`.
+  - Whether stock v0.2.6 repeats itself at all with the lossless block. The 0.2.2 / 0.2.3 notes report near-tie differences. Phase A measures this.
+- **Both cards + a RAM budget** (placement B) is allowed since v0.1.45 but has never been measured here.
+- **Harness inputs are Qwen-tokenized:** the harness prompts (`bringup/prompts/` uses Qwen chat markup), the needle documents, the near-tie cases, the cost-gate table (`configs/r12-cost-gate.txt`) and Basalt's draft table. A new tokenizer or template needs them rebuilt.
+- **Outside `bringup/`, left unedited:**
+  - `run-strata.sh`'s helper check assumes 1.93 MiB per expert.
+  - `work/r22/build_memguard.sh` watches fixed folders; `runbook.sh` has its own guard.
+- **Untested paths.** `fetch_model.py`'s network paths (`pins`, HTTP `heads`, `get`) were not run. Only the local-file range path, `plan`, `unit` and the refusals were.
+
+## Day-one checklist (in order)
+
+1. **Release summary first** (no GPU).
+   - Run `git -C strata fetch --tags origin`.
+   - Write `bringup/out/RUN/run.env`: `RB_TAG=<tag>`, `RB_GGUF=<shard 1>`, `RB_MTP=<drafter>` for qwen4exp, `export RB_CACHE=$WS/tmp/RUN`.
+   - Run `bringup/runbook.sh RUN summary`. It writes `summary-raw.md` and stops.
+   - Send the user the summary: what changed on our path, new defaults, anything not bit-exact, concurrency. **Wait for the go.**
+2. **Headers before the download** (minutes, a few MB).
+   - `python3 strata-<tag>/tools/strata_inspect.py hf:<org>/<repo> <variant>`
+   - `python3 bringup/fetch_model.py pins --repo <org>/<repo> --revision <commit> --match '<variant>*' --out bringup/out/RUN/pins.json`. Edit the file down to the exact files.
+   - `python3 bringup/fetch_model.py heads --pins bringup/out/RUN/pins.json --dest models/<name>`
+   - `python3 bringup/inspect_model.py models/<name>/heads/<shard1>.gguf --tree strata-<tag>`
+   - `python3 bringup/fitplan.py models/<name>/heads/<shard1>.gguf --tree strata-<tag>`
+   - `python3 bringup/placements.py models/<name>/heads/<shard1>.gguf`
+   - NEEDS UPSTREAM means wait for the release that adds exactly what it names.
+3. **Disk.** Run `python3 bringup/fetch_model.py plan --pins ... --dest models/<name>`. At least 100 GB must stay free. If space is short, give the user a deletion list with sizes and **delete nothing yourself**.
+4. **Download as a user unit.**
+   - `python3 bringup/fetch_model.py unit --pins ... --dest models/<name> --name qwen4-download` prints the `systemd-run --user` line. Run that line.
+   - Follow it with `journalctl --user -u qwen4-download -f`. `models/<name>/fetch-done` means every sha256 matched its pin.
+   - The drafter (qwen4exp path) and the expert profile must also exist for the new shape.
+5. **Phase A, the release alone** (GPU).
+   - 8080 is stopped first, by the user's decision: `STRATA_PORT=8080 ./run-strata.sh stop`.
+   - Run `RB_GO=1 bringup/runbook.sh RUN summary preflight clone inspect fitplan config` and **read `configs/stock.json`**.
+   - Then `bringup/runbook.sh RUN pack build stock screen suite`.
+   - Checks applied:
+     - the build goes to its own folder, at most 16 jobs, under the memory guard; P021m and `engine-r22p021m` stay as the rollback;
+     - `kcheck.sh` runs before and after every GPU stage;
+     - the 12 GB floor is never lowered;
+     - the swap rule;
+     - `stressapptest` once if `fitplan` prints the more-than-60-GiB-locked note.
+   - Afterwards put P021m back on 8080 with `./switch-model.sh strata`.
+6. **Report phase A** to the user:
+   - the decode screen against P021m;
+   - whether exact7 and the served greedy run repeat;
+   - the lossless check;
+   - the quick suite at medium (`suite/results/rb-RUN-stock-quick-medium`);
+   - the lowest memory and any swap events.
+   **Wait for the go.**
+7. **Phase B: our series, only after the go.**
+   - Run `bringup/runbook.sh RUN series`. It stops at conflicts; do the ledger pass by hand (`bringup/lib/pick.sh`, `resolve.py`) and refit the model-specific patches (`patches/LEDGER.md`, the guards in `inspect.txt`).
+   - Then run `bringup/runbook.sh RUN series-all`.
+   - Promotion is the user's decision, with a real rollback test to `configs/P021m.json`.
+
+## Tests run (offline; header reads only)
+
+| file | inspector | plan |
+|---|---|---|
+| Qwen3.8-Flash-Next IQ3_S (real) | RUNS (strata, Qwen4Exp) | 5080: 4,588 slots (8.75 GiB); helper: up to 3,748; RAM: 57.2 GiB with the stock 8 GiB conversation cache (62.2 at P021m's 12 GiB chat cache + vision); pack: 1.44 GiB (real `dense.bin` is 1.54 GB) |
+| DeepSeek-V4.1 IQ2_XXS (real) | RUNS (strata-dsv41, `-DSTRATA_BUILD_DSV41=ON`) | not planned here (`DS41-daily.json`) |
+| `SYNTH-q4x768` (qwen4exp, 768 experts) | RUNS | 74.7 GiB of experts. Budget mode with the helper: `--resident-budget-gib 60`, needs 69.5 GiB. 114 GB download. `config` stops: no 48 x 768 profile |
+| `SYNTH-q4flash300` (`qwen4`, 3072 wide x 64 layers) | NEEDS UPSTREAM (closest: qwen4exp) | 127.5 GiB of experts, 5080 1,152 slots, budget 57 GiB, 174 GB download |
+| `SYNTH-q4a3b` (qwen35moe 35B-A3B) | RUNS (own path) | 18.6 GiB of experts, `--expert-vram 12.2` (hybrid), 20.6 GiB RAM |
+| `SYNTH-q4dense27` (`qwen4`, dense) | NEEDS UPSTREAM (no routed experts) | 16.0 GiB of weights: fits both cards, not the 5080 alone |
+
+**Head-only reads match full reads.** `fetch_model.py heads` reads only the header range from local files: 11.0 MB for IQ3_S shard 1, 5.3 MB for DeepSeek's. The inspector gives identical results on these head-only copies and on the full files. Outputs are in `bringup/out/synth-v026/` and in the test runs `bringup/out/t1027*`.
+
+**Runbook stages tested.** Only the stages that use no GPU were run: `summary` (it stops without `RB_GO`), `inspect`, `fitplan` and `config`, plus the head-only refusal in `preflight`. The test runs used a link to `strata-v026` as their stock tree; the links were removed afterwards, and `build_tree` now refuses a tree outside `bringup/out`.
+
+**Classic synthetic cases on v0.2.6.**
+- `mtp1` / `mtp2` / `mtp_undeclared`: NEEDS UPSTREAM. Stock v0.2.6 pins `block_count` to 48 and does not read `nextn_predict_layers` on the qwen4exp path, so a qwen4exp file with an in-file MTP block is refused.
+- `hidden3072`: NEEDS UPSTREAM.
+- `embd_q4_0`: now RUNS, because v0.2.6's `is_iq()` takes Q4_0.
+
+**Disk.** The free space on the drive is read live. It was 126 GB at the start of this work and 276-296 GB during the tests; this refresh did not cause the change.

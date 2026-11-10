@@ -1,0 +1,63 @@
+# SearXNG for Local Deep Research (its own instance; the chat page's SearXNG on 8888 is separate and untouched).
+# 127.0.0.1:8889 only, JSON API on, no limiter (single local client).
+use_default_settings: true
+general:
+  instance_name: "local search (ldr)"
+  enable_metrics: false
+server:
+  bind_address: "127.0.0.1"
+  port: 8889
+  secret_key: "<generate: openssl rand -hex 32>"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+  suspended_times:
+    SearxEngineTooManyRequests: 120   # default 3600; PubMed's keyless API allows 3 req/s and LDR runs parallel searches
+valkey:
+  url: false
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 12.0
+  pool_connections: 50
+  pool_maxsize: 10
+engines:
+  # --- measured from this machine's address on 2026-09-30 (logs/engine-survey.json) ---
+  # general web: these returned results for all three test queries (google 2/3)
+  - {name: google, disabled: false, weight: 1.0}
+  - {name: duckduckgo, disabled: false, weight: 1.0}
+  - {name: startpage, disabled: false, inactive: false, weight: 1.0}
+  - {name: bing, disabled: false, weight: 0.5}          # sometimes off-topic (a bank, a dictionary for a history query)
+  - {name: yahoo, disabled: false, weight: 0.8}
+  - {name: yandex, disabled: false, weight: 0.8}
+  - {name: yep, disabled: false, weight: 0.8}
+  - {name: seznam, disabled: false, weight: 0.5}
+  - {name: mwmbl, disabled: false, weight: 0.5}
+  - {name: wikipedia, disabled: false}
+  - {name: wikidata, disabled: false}
+  # returned nothing here: suspended (too many requests / access denied / CAPTCHA)
+  - {name: brave, disabled: true}
+  - {name: google cse, disabled: true}
+  - {name: mojeek, disabled: true}
+  - {name: qwant, disabled: true}
+  - {name: duckduckgo web, disabled: true}                # same backend as duckduckgo
+  # academic (category "science"; LDR queries general + science, or !science / !arxiv / !pubmed / !gos / !se)
+  - {name: arxiv, disabled: false}
+  - {name: semantic scholar, disabled: false}
+  - {name: pubmed, disabled: false}
+  - {name: europepmc, disabled: false}
+  - {name: google scholar, disabled: false}
+  - {name: crossref, disabled: false, weight: 0.5}       # includes low-quality venues
+  - {name: openalex, disabled: true}                     # HTTP error from here
+  - {name: openairedatasets, disabled: true}
+  - {name: openairepublications, disabled: true}
+  - {name: pdbe, disabled: true}
+  - {name: ahmia, inactive: true}
+  - {name: torch, inactive: true}

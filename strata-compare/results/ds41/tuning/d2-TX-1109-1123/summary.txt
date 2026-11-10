@@ -1,0 +1,17 @@
+=== 2026-11-09 11:23:02 DeepSeek gap D2 TX: thinking-on INFO arm TX = C2, effort low - DS4.1 arm d2-TX (/home/USER/ai-speed-testing/strata-compare/results/ds41/gate-1109-1050-csampled/cfg-TX.json, server /home/USER/ai-speed-testing/strata-compare/strata-v026/serve/server.py, 3 passes): --max-context 131072 --eos 1 --dspark on --dspark-conf 0.65 --tp 2 --ssd-cache 68 --experts 6 --prefill-chunk 8192 --expert-profile /home/USER/ai-speed-testing/strata-compare/logs/ds41/gate/profile-arm.bin --dspark-block 2 --vram-experts 1.0 {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX4060TI,GPU-UUID-RTX5080', 'STRATA_DS4_PROMPT_SKIP': '1', 'DS4_STORE_FLOOR_GB': '14', 'DS4_SPLIT': '0,40', 'DS4_SETTLE_MS': '0', 'DS4_CACHE_DECAY': '0.8', 'DS4_ENGRAM_CACHE_MB': '16', 'STRATA_DS4_SLOT_KEEP': '1', 'STRATA_DS4_SLOT_CAP': '16', 'STRATA_DS4_SLOT_GB': '2', 'STRATA_DS4_AUTO_PIN': '1', 'STRATA_DS4_SLOT_RAM_GB': '1.7', 'STRATA_DS4_SLOT_DIR': '/home/USER/ai-speed-testing/strata-compare/logs/ds41/gate-slots/csTX'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/d2-TX-1109-1123
+=== 2026-11-09 11:23:12 cool-down before the arm: 10 s, drive 39 -> 38 C
+dropcache: 7 model files dropped from the page cache in 0.2 s
+=== 2026-11-09 11:23:13 before: MemAvailable 86.7 GB; swap in use 3342 MB; vram 0, 17 MiB, 15917 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-11-09 11:23:25 ready after 12 s: MemAvailable 29.8 GB, engine RSS 58230 MB; vram 0, 15363 MiB, 571 MiB;1, 6747 MiB, 1143 MiB;
+=== 2026-11-09 11:25:04 requests done (rc 0): 8 responses
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: RAM store: up to 6619 slots of 10.3 MB (68.0 GB), policy 0, 8 reader threads, unbuffered reads
+ds4: RAM store: 6363 of the profile's hottest experts read in (49.4 GB) in 5.4 s
+ds4: CUDA0 layers [40, 42]: weights 0.34 GB, experts 4.47 GB (384 of 384 in VRAM), caches 0.00 GB, 1144 MiB free
+ds4: CUDA1 layers [0, 39] + head: weights 5.99 GB, experts 6.31 GB (693 of 15360 in VRAM), caches 0.12 GB, 571 MiB free
+ds4: 14667 routed experts on the CPU lane (126.5 GB, in place in the model's files), 16 threads
+monitor: lowest MemAvailable 22.6 GB, peak engine RSS 65869 MB, peak VRAM used 5080 15437 MiB / 4060 Ti 6747 MiB
+swap: 0 swap-out episode(s) (a one-off push-out is logged only), 0.0 MB out, 0.1 MB in, engine VmSwap max 0 kB
+=== 2026-11-09 11:25:09 kcheck clean
+nvme0: no temperature samples between 11:23 and 11:25 (the logger started 22:18)
+=== 2026-11-09 11:25:09 done

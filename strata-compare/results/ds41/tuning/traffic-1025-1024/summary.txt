@@ -1,0 +1,16 @@
+=== 2026-10-25 10:24:51 B.8 routing counts from chat/code/research-style traffic (all-zero profile at start) - DS4.1 arm traffic (/home/USER/ai-speed-testing/strata-compare/configs/DS41-tune-traffic.json, server /home/USER/ai-speed-testing/strata-compare/strata-v024/serve/server.py, 3 passes): --max-context 32768 --eos 1 --dspark auto --dspark-conf 0.65 --tp 2 --ssd-cache 70 --expert-profile /home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX5080,GPU-UUID-RTX4060TI', 'STRATA_DS4_PROMPT_SKIP': '0', 'DS4_STORE_FLOOR_GB': '16'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/traffic-1025-1024
+=== 2026-10-25 10:24:51 cool-down before the arm: 0 s, drive 38 -> 38 C
+dropcache: 7 model files dropped from the page cache in 0.1 s
+=== 2026-10-25 10:24:51 before: MemAvailable 86.3 GB; swap in use 300 MB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-25 10:24:57 ready after 6 s: MemAvailable 79.9 GB, engine RSS 6429 MB; vram 0, 15359 MiB, 575 MiB;1, 7299 MiB, 591 MiB;
+=== 2026-10-25 10:37:33 requests done (rc 0): 23 responses
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: DSpark not loaded: the routed experts (132 GB) are far more than the GPU holds (23 GB), where its verify rounds read 3.3x a token's bytes and gain nothing (--dspark on loads it anyway)
+ds4: RAM store: up to 6814 slots of 10.3 MB (70.0 GB), policy 0, 8 reader threads, unbuffered reads
+ds4: CUDA0 layers [0, 21]: weights 3.08 GB, experts 9.67 GB (1156 of 8448 in VRAM), caches 0.03 GB, 574 MiB free
+ds4: CUDA1 layers [22, 39] + head: weights 2.78 GB, experts 2.00 GB (201 of 6912 in VRAM), caches 0.01 GB, 590 MiB free
+ds4: 14003 routed experts on the CPU lane (121.1 GB, in place in the model's files), 16 threads
+monitor: lowest MemAvailable 15.9 GB, peak engine RSS 71921 MB, peak VRAM used 5080 15433 MiB / 4060 Ti 7375 MiB
+=== 2026-10-25 10:37:40 kcheck clean
+nvme0: no temperature samples between 10:24 and 10:38 (the logger started 22:18)
+=== 2026-10-25 10:37:40 done

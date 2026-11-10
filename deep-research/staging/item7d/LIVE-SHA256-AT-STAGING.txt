@@ -1,0 +1,4 @@
+b2014dc373275dae139e088ab1f63f7b1464bb12cc9aee66ff4aed44022635c4  /home/USER/ai/deep-research/tools/search_route.py
+f9db8451697e97a7acbe0a342f89fe27f88b73210af472fbd983a1425e039cce  /home/USER/ai/deep-research/tools/paid_search.py
+ff1fc050c2dbf68ac7048240c8f4cfa618c3c8adcab76ddc5fad3c73c3d1a94a  /home/USER/ai/deep-research/tools/paid-route.json
+e3fd7dacbc5a695be67446bea7060eaf710bcebb6583927eb270f1a74091a82d  /home/USER/ai/deep-research/tools/s2_search.py

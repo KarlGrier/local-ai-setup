@@ -1,0 +1,119 @@
+"""bp90_report.py DIR - the Basalt PR #90 check's table (Markdown) from DIR/{cold,warm}-{M,H}.jsonl (bp90_client.py).
+
+Per build and method: decode tok/s per fixture (mean, min-max and spread over the passes = the 3-pass decode check),
+Basalt's blend (all generated tokens / all decode time of the three fixtures, per pass), and the 16K / 64K prompt rate
+(prompt_n / prompt_ms, Basalt's "engine t/s"; plus prompt / time to the first token, its "wall t/s"). Warm = passes 2-4
+of the warm session (pass 1 shown apart). Compared with PR #90's row (RTX 5080, PCIe 4.0 x16, Basalt b2fe96bf30)."""
+import json
+import statistics as st
+import sys
+from pathlib import Path
+
+D = Path(sys.argv[1])
+ROW = {"pp16k": 4876.9, "pp64k": 4961.0, "blend": 186.8}
+NAMES = {"M": "P021m (served)", "H": "v0.2.8 port (r28h)"}
+FIX = ("conv", "struct", "prose")
+
+
+def load(name):
+    p = D / f"{name}.jsonl"
+    return [json.loads(l) for l in p.read_text().splitlines() if l.strip()] if p.exists() else []
+
+
+def stats(xs):
+    xs = [x for x in xs if x is not None]
+    if not xs:
+        return None
+    m = st.mean(xs)
+    return m, min(xs), max(xs), (100 * (max(xs) - min(xs)) / m if m else 0.0), len(xs)
+
+
+def fmt(s, ref=None):
+    if s is None:
+        return "-"
+    m, lo, hi, spread, n = s
+    t = f"{m:,.1f} ({lo:,.1f}-{hi:,.1f}, {spread:.1f} %)" if n > 1 else f"{m:,.1f}"
+    if ref:
+        t += f" {100 * (m / ref - 1):+.1f} %"
+    return t
+
+
+def table(recs, passes):
+    by = {}
+    for r in recs:
+        if r["pass"] in passes:
+            by.setdefault(r["test"], []).append(r)
+    out = {}
+    for t in FIX:
+        out[t] = stats([r["decode_tps"] for r in by.get(t, [])])
+    blends = []
+    for p in passes:
+        rs = [r for r in recs if r["pass"] == p and r["test"] in FIX]
+        if len(rs) == 3 and all(r.get("predicted_ms") for r in rs):
+            blends.append(sum(r["predicted_n"] for r in rs) / (sum(r["predicted_ms"] for r in rs) / 1000))
+    out["blend"] = stats(blends)
+    for t in ("pp16k", "pp64k"):
+        out[t] = stats([r["prompt_tps"] for r in by.get(t, [])])
+        out[t + "w"] = stats([r["prompt_tokens"] / r["first_token_s"] for r in by.get(t, []) if r.get("first_token_s")])
+    out["tokens"] = {t: [r["completion_tokens"] for r in by.get(t, [])] for t in FIX}
+    out["finish"] = {t: sorted({str(r["finish"]) for r in by.get(t, [])}) for t in FIX}
+    return out
+
+
+lines = ["# Basalt PR #90 check: Basalt's community-1 prompts on our builds", "",
+         "Prompts: Basalt b2fe96bf30 data/bench/*.ids (identical ids with our tokenizer + template). Decode: conv 1200 "
+         "tokens T 0.6, struct 8192 T 0, prose 1200 T 0.6, top_p 0.95, top_k 20, min_p 0, no penalties, thinking off; "
+         "prefill 16,676 / 66,617 tokens with 4 random ids after \"Document:\\n\". Our KV is int8 (P021m's --kv int8, "
+         "as Basalt's preset). Rates are the engine's (prompt_n / prompt_ms; generated / decode ms), as Basalt's.", "",
+         f"PR #90 row (RTX 5080 on PCIe 4.0 x16, 9950X3D, 64 GB, Basalt b2fe96bf30): prefill 16K {ROW['pp16k']:,} / "
+         f"64K {ROW['pp64k']:,} tok/s, decode blend {ROW['blend']} tok/s. Ours: RTX 5080 on PCIe 5.0 x16 + RTX 4060 Ti "
+         "(P021m holds experts on both cards; Basalt runs Blackwell only), 96 GB DDR5-6000.", "",
+         "Cells: mean (min-max, spread over the passes) and the difference from the PR row.", ""]
+problems = []
+for mode in ("cold", "warm"):
+    lines += [f"## {mode}" + (" (a fresh engine per measurement, Basalt's method; 3 passes)" if mode == "cold"
+                              else " (one engine; passes 2-4 - pass 1 below)"), "",
+              "| build | conv | struct | prose | blend | 16K prompt | 64K prompt | 16K wall | 64K wall |",
+              "|---|---|---|---|---|---|---|---|---|"]
+    for b in ("M", "H"):
+        recs = load(f"{mode}-{b}")
+        if not recs:
+            lines.append(f"| {NAMES[b]} | (no data) |||||||| ")
+            continue
+        for r in recs:
+            if r["prompt_tokens"] != r["prompt_ids_expected"]:
+                problems.append(f"{mode}-{b} pass {r['pass']} {r['test']}: prompt_tokens {r['prompt_tokens']} != {r['prompt_ids_expected']}")
+            if r["test"].startswith("pp") and (r.get("cached") or 0) > 6:
+                problems.append(f"{mode}-{b} pass {r['pass']} {r['test']}: {r['cached']} prompt tokens came from the cache")
+            if r["test"].startswith("pp") and r.get("exact_roundtrip") is False:
+                problems.append(f"{mode}-{b} pass {r['pass']} {r['test']}: the random ids did not round-trip exactly")
+        passes = [1, 2, 3] if mode == "cold" else [2, 3, 4]
+        t = table(recs, passes)
+        lines.append(f"| {NAMES[b]} | {fmt(t['conv'])} | {fmt(t['struct'])} | {fmt(t['prose'])} | {fmt(t['blend'], ROW['blend'])} | "
+                     f"{fmt(t['pp16k'], ROW['pp16k'])} | {fmt(t['pp64k'], ROW['pp64k'])} | {fmt(t['pp16kw'])} | {fmt(t['pp64kw'])} |")
+        if mode == "warm":
+            t1 = table(recs, [1])
+            lines.append(f"| {NAMES[b]}, pass 1 | {fmt(t1['conv'])} | {fmt(t1['struct'])} | {fmt(t1['prose'])} | "
+                         f"{fmt(t1['blend'], ROW['blend'])} | {fmt(t1['pp16k'], ROW['pp16k'])} | {fmt(t1['pp64k'], ROW['pp64k'])} | "
+                         f"{fmt(t1['pp16kw'])} | {fmt(t1['pp64kw'])} |")
+        tk = ", ".join(f"{k} {v}" for k, v in t["tokens"].items())
+        fin = ", ".join(f"{k} {'/'.join(v)}" for k, v in t["finish"].items())
+        lines.append(f"| | tokens: {tk}; finish: {fin} ||||||||")
+    lines.append("")
+lines += ["## checks", ""] + ([f"- {p}" for p in problems] or ["- every prompt had the expected token count, no prefill "
+                                                                "reused more than the 6-token lead-in, every random-id draw "
+                                                                "round-tripped"]) + [""]
+# the decision lines (Karl's rule: prompt more than ~15 % behind, or conv / prose decode looking behind -> the plan)
+lines += ["## against the go-further rule", ""]
+for b in ("M", "H"):
+    t = table(load(f"cold-{b}"), [1, 2, 3]) if load(f"cold-{b}") else None
+    if not t or not t["pp16k"]:
+        continue
+    d16, d64 = 100 * (t["pp16k"][0] / ROW["pp16k"] - 1), 100 * (t["pp64k"][0] / ROW["pp64k"] - 1) if t["pp64k"] else None
+    db = 100 * (t["blend"][0] / ROW["blend"] - 1) if t["blend"] else None
+    lines.append(f"- {NAMES[b]}, cold: 16K prompt {d16:+.1f} %, 64K prompt "
+                 f"{'-' if d64 is None else f'{d64:+.1f} %'}, decode blend {'-' if db is None else f'{db:+.1f} %'}"
+                 f"{' - PROMPT MORE THAN 15 % BEHIND' if min(d16, d64 if d64 is not None else 0) < -15 else ''}")
+lines.append("- the row gives only the blend (struct is about three quarters of its tokens), so conv / prose are judged "
+             "against our own struct rate and the blend, not against Basalt's per-fixture numbers")
+print("\n".join(lines))

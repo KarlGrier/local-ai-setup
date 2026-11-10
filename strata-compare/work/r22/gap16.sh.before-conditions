@@ -1,0 +1,150 @@
+#!/bin/bash
+# gap16.sh - round 22 gap 16 (10-30): both switches back on the v0.2.8 port, after the code studies
+# (results/r22/switch-diag/: prefill-v2.md, gr-fork.md, decode-loss.md). Karl 10-30: P021m keeps 8080; switch only if
+# the studies restore PREFILL_V2 and GR_FORK on the new base and they pass the gates.
+#   PREFILL_V2  no port defect: two rounding-level steps (0.2.1 -> 0.2.7 and v2) stacked past the KL rule. Fix: v2 takes
+#               the current kernels' term (branch r22-port028x, 8f7a48aa) - v2 on must equal v2 off bit for bit.
+#   GR_FORK     no port defect found: check (2) compares 1-token-window sampling with a 3-token-window forced reference,
+#               and the engine is not bitwise window-invariant (gap 14 STATE_HASH, fork on AND off). Measurement fix,
+#               twin only: STRATA_FORCE_T1=1 scores in 1-token windows; the PCIe share pinned at 0.35 in the check arms.
+#               GR_FORK also carries the decode loss (decode-loss.md: ~3.5 % per step).
+#   conversation cache  0.2.3's automatic one (8 GiB, parks synchronously: 40-126 ms a request) pinned off in x28h
+#               (--conversation-cache-mib 0; P021m has none); x28h-conv keeps it, to price it.
+# Steps: 1 builds (build-port028x.sh, + twin), 2 tests (the tightened v2 unit test: bit-identical H and down rows),
+# 3 exact7: x28h-nov2, then x28h against it (v2 exactness, 7/7) and x28h twice (repeat gate), 4 lossless cfg, 5 KL:
+# pf_yardstick long40 on x28h and x28h-nov2 - every logit file byte-identical, kernel_rule2, 6 speed: P021m test form
+# (M) vs x28h (X) vs x28h-conv (Xc), 2 passes in turned order, 7 check (2) with the 1-token reference on fork on and
+# fork off + the STATE_HASH pairing (work/r22/switch-diag/hashpair.py when present), then checks (1) + (2) on the
+# speculative arm x28t-ess. Nothing switches; 8080 gets P021m back at the end. Output: results/r22/gap16/ (summary.txt).
+set -u -o pipefail
+WS=/home/USER/ai-speed-testing/strata-compare; cd $WS; source bringup/lib/env.sh
+unset GUARD_MEM_GIB GUARD_VRAM_MIB GUARD_SWAP_GROW_GIB GUARD_VRAM_MODE GUARD_FOLLOW_PORT LR_MAX SPEED_FILE
+export PROMPT_DIR=$WS/bringup/out/r20a/prompts RB_CACHE=$WS/tmp/r22 EVICT_GLOB="$WS/models/ISTA-GSQ-RCO/IQ3_S/*.gguf $WS/models/vision-r22/*.gguf"
+P=.venv/bin/python; BA=/home/USER/ai-speed-testing/basalt-ab; O=$WS/results/r22/gap16; S=$O/summary.txt; C=$WS/configs
+Y8=$WS/results/r22/gap8/pfy; Y=$O/pfy; mkdir -p $O $Y logs/r22 tmp/r22
+say() { echo "=== $(date '+%F %T') $*" | tee -a $S; }
+kc() { bringup/lib/kcheck.sh "r22g16-$1" || { say "KERNEL CHECK FAILED after $1 - stopped; the gap stays open (8080 down)"; exit 3; }; }
+elog() { $P -c "import json; print(json.load(open('$1'))['log'])"; }
+e7() { grep -a -E "^exact7 $1: " $S | tail -1 | grep -oE '[0-9]+/7' | cut -d/ -f1; }
+starts() {   # starts NAME CONFIG - the start lines that show the switches are on
+  local L; L=$(elog $2)
+  say "  start lines $1: exact $(grep -c 'EXACT speculative sampling on' $L 2>/dev/null), v2 $(grep -c 'STRATA_PREFILL_V2' $L 2>/dev/null), fork $(grep -c -i 'GR_FORK' $L 2>/dev/null)"
+}
+end_gap() { PORT=8081 bringup/lib/srv.sh stop > /dev/null 2>&1; work/r22/port_gap4.sh end 2>&1 | tee -a $S; }
+X=$C/x28h.json; XN=$C/x28h-nov2.json; XC=$C/x28h-conv.json; M=$C/r21n-candpm.json
+TN=$C/x28t-hnospec.json; TF=$C/x28t-hnospec-nofork.json; TE=$C/x28t-ess.json
+
+# ---- 0 the gap
+work/r22/port_gap4.sh begin "gap 16: both switches back on the v0.2.8 port (exact v2, GR_FORK with the 1-token check reference)" 2>&1 | tee -a $S
+[ -s tmp/port-gap.lockpid ] || { rm -f /home/USER/ai/deep-research/tmp/bench2.hold; say "the gap did not open (hold removed)"; exit 1; }
+T0=$(date +%s)
+kc open
+
+# ---- 1 builds
+say "1 build: work/r22/build-port028x.sh"
+if ! work/r22/build-port028x.sh 2>&1 | tail -4 | tee -a $S || [ ! -x engine-r22p028x/strata ] || ! grep -q 'v0.2.8 + 28 commits' engine-r22p028x/SOURCE; then
+  say "BUILD FAILED (strata-r22p028x/build.log) - the gap ends, P021m back"; end_gap; exit 1
+fi
+kc build
+say "1b twin build: work/r22/build-port028x.sh twin (tests ON)"
+TWIN_OK=1
+if ! work/r22/build-port028x.sh twin 2>&1 | tail -2 | tee -a $S || [ ! -x engine-r22p028xm/strata ] || ! grep -q 'v0.2.8 + 33 commits' engine-r22p028xm/SOURCE; then
+  say "TWIN BUILD FAILED (strata-r22p028xm/build-twin.log) - 2 and 7 skipped"; TWIN_OK=0
+fi
+kc twin
+
+# ---- 2 tests (the tightened v2 unit test decides v2 first)
+V2_UNIT=skip
+if [ $TWIN_OK = 1 ]; then
+  say "2 tests (strata-r22p028xm/build-twin): ours, then the v2 unit test that now wants bit-identical H and down rows"
+  for t in patch_guard_test cost_gate_test draft_cum_test; do
+    a=""; [ $t = patch_guard_test ] && a="$WS/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf $WS/strata-v0115/mtp/rt"
+    timeout 900 $P bringup/lib/guard.py g16-$t -- strata-r22p028xm/build-twin/$t $a > $O/$t.txt 2>&1
+    say "  $t rc $?: $(grep -v '^\s*$' $O/$t.txt | tail -1 | cut -c1-160)"
+  done
+  timeout 1800 $P bringup/lib/guard.py g16-v2test -- strata-r22p028xm/build-twin/prefill_fused_iq_test --v2 --no-timing > $O/prefill_fused_v2_test.txt 2>&1
+  rc=$?; V2_UNIT=$([ $rc = 0 ] && echo pass || echo "FAIL rc $rc")
+  say "  prefill_fused_iq_test --v2 (bit-identical) rc $rc: $(grep -v '^\s*$' $O/prefill_fused_v2_test.txt | tail -1 | cut -c1-160)"
+  grep -E 'v2 part|mode 3|bit for bit' $O/prefill_fused_v2_test.txt | head -8 | cut -c1-200 | tee -a $S
+  kc tests
+fi
+
+# ---- 3 exact7: v2 exactness across the switch, then the repeat gate
+say "3 exact7 at pin 2500: x28h-nov2, x28h against it (v2 exact: want 7/7), x28h again (repeat: want 7/7)"
+PIN_CACHE=2500 bringup/lib/exact7.sh x28h-nov2-e7 $XN 2>&1 | tail -9 | tee -a $S; kc e7n
+PIN_CACHE=2500 REF=x28h-nov2-e7 bringup/lib/exact7.sh x28h-e7a $X 2>&1 | tail -9 | tee -a $S; kc e7a
+PIN_CACHE=2500 REF=x28h-e7a bringup/lib/exact7.sh x28h-e7b $X 2>&1 | tail -9 | tee -a $S; kc e7b
+say "exact7: v2 on vs off $(e7 x28h-e7a)/7, repeat $(e7 x28h-e7b)/7 (want 7/7 MATCHED both)"
+
+# ---- 4 lossless
+say "4 lossless: patchtest.sh lossless on x28h"
+CFG=$X TREE=strata-r22p028x bringup/patchtest.sh lossless 2>&1 | grep -E "PASS|FAIL" | tail -6 | tee -a $S
+
+# ---- 5 KL: byte-identical logits with v2 on and off, and the rule against gap 8's references
+say "5 KL: pf_yardstick long40 on x28h and x28h-nov2"
+for x in ref unfused cpushare; do [ -e $Y/$x ] || ln -s $Y8/$x $Y/$x; done
+for c in x28h x28h-nov2; do
+  $P bringup/lib/guard.py pfy16-$c -- $P -I work/r22/pf_yardstick.py run $C/$c.json $Y/$c --set long40 2>&1 | grep -v "^engine:" | tail -3 | sed "s/^/pfy $c: /" | tee -a $S
+  kc pfy-$c
+done
+nd=0; nf=0
+for f in $Y/x28h-nov2/*; do b=$(basename $f); nf=$((nf + 1)); cmp -s $f $Y/x28h/$b || nd=$((nd + 1)); done
+say "  logit files v2 on vs off: $nd of $nf differ (want 0)"
+$P work/r22/kernel_rule2.py $Y --ref ref --refs unfused,cpushare --cands x28h,x28h-nov2 2>&1 | tee $O/kl.txt | tee -a $S
+
+# ---- 6 speed screen
+say "6 speed screen: P021m test form (M) vs x28h (X) vs x28h-conv (Xc), 2 passes in turned order"
+R=$O/speed; mkdir -p $R
+darm() {   # darm ARM CONFIG PASS
+  local n=$1 cfg=$2 k=$3 L; L=$(elog $cfg); touch $L; local off=$(stat -c %s $L)
+  say "arm $n pass $k ($(basename $cfg))"
+  bringup/lib/with_server.sh g16-$n$k $cfg -- "bash $WS/work/r22/abarm.sh http://127.0.0.1:8081 $off $R $n$k ${n}${k}n=normal:1:W1,W2,W3 ${n}${k}a=agent:1 ${n}${k}r=research4:1" 2>&1 \
+    | grep -E "tok/s|ready|exited|refus|Error|GUARD" | tee -a $S
+  kc g16-$n$k
+}
+for k in 1 2; do
+  if [ $k = 1 ]; then order="M X Xc"; else order="Xc X M"; fi
+  for n in $order; do
+    case $n in M) cfg=$M;; X) cfg=$X;; Xc) cfg=$XC;; esac
+    darm $n $cfg $k
+  done
+done
+$P $BA/scripts/abreport.py --dir $R M1n M2n X1n X2n Xc1n Xc2n M1a M2a X1a X2a Xc1a Xc2a M1r M2r X1r X2r Xc1r Xc2r > $O/speed-table.md 2>&1
+tail -40 $O/speed-table.md | tee -a $S > /dev/null
+
+# ---- 7 the distribution checks with the 1-token reference
+if [ $TWIN_OK = 1 ]; then
+  say "7 check (2): arith-j3 T 0.6, 4,000, speculation off, vs own probabilities scored in 1-token windows (STRATA_FORCE_T1); fork on and fork off"
+  SPO=$O/sp; mkdir -p $SPO; cp results/r20/sp-batch/sp-cases.json results/r20/sp-batch/sp-llama.json $SPO/
+  HP=$WS/work/r22/switch-diag/hashpair.py
+  for a in hnospec hnospec-nofork; do
+    L=g16-$a; rm -f $SPO/sp-strata-$L.jsonl
+    case $a in hnospec) cfg=$TN;; hnospec-nofork) cfg=$TF;; esac
+    EL=$(elog $cfg); touch $EL; off=$(stat -c %s $EL)
+    bringup/lib/with_server.sh g16-sp-$a $cfg -- "SP_DIR=$SPO SP_LABEL=$L STRATA_SERVE_TREE=$WS/strata-r22p028xm $P bringup/lib/sampling_probe.py strata http://127.0.0.1:8081 4000 0.6 arith-j3 > $SPO/strata-$a.txt 2>&1; SP_DIR=$SPO SP_LABEL=$L STRATA_SERVE_TREE=$WS/strata-r22p028xm $P bringup/lib/sampling_probe.py strata_logp http://127.0.0.1:8081 > $SPO/logp-$a.txt 2>&1" 2>&1 \
+      | grep -E "ready|exited|refus|Error|GUARD" | tee -a $S
+    tail -c +$((off + 1)) $EL > $SPO/englog-$a.txt
+    starts $a $cfg
+    kc g16-sp-$a
+    SP_DIR=$SPO SP_LABEL=$L STRATA_SERVE_TREE=$WS/strata-r22p028xm $P bringup/lib/sampling_probe.py analyze own > $SPO/analyze-own-$a.txt 2>&1
+    say "  check (2), $a: $(grep arith-j3 $SPO/analyze-own-$a.txt | head -1 | cut -c1-170)"
+    if [ -f $HP ]; then
+      python3 -I $HP $SPO/englog-$a.txt --jsonl $SPO/sp-strata-$L.jsonl > $SPO/hashpair-$a.txt 2>&1
+      say "  STATE_HASH sampled vs forced (T = 1), $a: rc $? $(grep -E 'MATCH|DIFFER' $SPO/hashpair-$a.txt | tail -1 | cut -c1-120)"
+    fi
+  done
+  say "7b checks (1) + (2) on the speculative path x28t-ess (both switches on), 4,000"
+  L=g16-ess; rm -f $SPO/sp-strata-$L.jsonl
+  bringup/lib/with_server.sh g16-sp-ess $TE -- "SP_DIR=$SPO SP_LABEL=$L STRATA_SERVE_TREE=$WS/strata-r22p028xm $P bringup/lib/sampling_probe.py strata http://127.0.0.1:8081 4000 0.6 arith-j3 > $SPO/strata-ess.txt 2>&1" 2>&1 \
+    | grep -E "ready|exited|refus|Error|GUARD" | tee -a $S
+  starts ess $TE
+  kc g16-sp-ess
+  cp $SPO/sp-strata-logp-g16-hnospec.json $SPO/sp-strata-logp-g16-ess.json 2>/dev/null
+  SP_DIR=$SPO SP_LABEL=g16-ess STRATA_SERVE_TREE=$WS/strata-r22p028xm $P bringup/lib/sampling_probe.py analyze own > $SPO/analyze-own-ess.txt 2>&1
+  say "  check (2), ess (vs the fork-on arm's 1-token reference): $(grep arith-j3 $SPO/analyze-own-ess.txt | head -1 | cut -c1-170)"
+  $P -I work/r22/neartie_compare.py $SPO g16-hnospec g16-ess 2>&1 | tee $SPO/compare.txt | tail -1 | sed 's/^/  check (1): /' | tee -a $S
+fi
+
+end_gap
+bringup/lib/kcheck.sh r22g16-end && say "kcheck clean" || say "KCHECK FAILED at the end"
+say "gap 16 done after $(( ($(date +%s) - T0) / 60 )) min - v2 unit $V2_UNIT; Karl's rule: KL PASS and every p >= 0.05; nothing switches without Karl"

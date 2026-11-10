@@ -1,0 +1,8 @@
+# Frozen 2026-10-18 14:46 - hard checkable set (phase 3 screen + phase 5 holdout), sha256. Do not edit.
+# Built 10-18 by the user's rules: kept only if the answer is in none of the top-10 snippets of one plain search for
+# the question (SearXNG 127.0.0.1:8889, hard-build/snippet-checks.jsonl); each answer confirmed on two pages
+# (sources-hard/); split 10/10 at random (SystemRandom). Two number hits were coincidences, judged by hand and
+# kept: d02 '27' = the date 'Jul 27, 2026'; d62 '13th' = inside '113th edition'.
+6cc4b155bccb53c45f68d2ed94e68c1d2f1c45dfd0c4610d5102b2c76facb590  questions-hard-screen.jsonl
+c67a6704958f65a5569e8ef40fb9e0f0dfa79d2849852d65a7f88603934095b7  questions-hard-holdout.jsonl
+ef9c819d259de5b670ccc036a3db19f79b73ff7bf6a4cfda306c82f2318cd365  answers/answers-hard.jsonl

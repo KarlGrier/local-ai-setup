@@ -1,0 +1,364 @@
+# Hunt for the v0.2.11 port's prompt-speed fail (R3 -1.4 %, R4 -0.3 %), desk only, 2026-11-07
+
+## AMENDMENT 2026-11-07 (Karl) - it applies from now on, not to finished gates
+
+Karl, 11-07, on this file:
+> "1. Measurement rule: yes, as a dated amendment applying from now on. Per-workload prompt numbers exclude the
+> chat-cache save. Time the save as its own line in every screen, and judge it separately against its own noise, taking
+> its two-speed pattern into account, so a real regression in saving still shows.
+> 2. Port verdict: put the 'fail for serving' on hold. Run the 25-minute confirmation gap (B vs P, each also with the
+> chat cache off) after Phase 5's queue. If it confirms the artifact, record the port's baseline check as passed under
+> the amended rule. Passing doesn't mean switching: the before-switch requirements in the port plan still apply."
+
+**Where it is implemented.** The shared code is in `work/r22/g17_rules.py`, in its new section "11-07 park amendment";
+the same text sits at the top of each file below. Every file was backed up to `<file>.before-park-amend`.
+- **Code changes:** `work/r22/g17_rules.py`, `work/r23/port0211_rules.py`, `work/r23/basalt_rules.py`,
+  `work/r23/ud31_rules.py`, `work/qwen4-kit/q4_rules.py`.
+- **Notice only, code unchanged (finished gates' own screen code):** `work/r23/decode_rules.py`,
+  `work/r23/decpath_rules.py`, `work/r23/screen_rerun_rules.py`, `work/r22/g18_rules.py`, `work/r22/g16_rules.py`.
+
+**Which gates it applies to.** A gate that started before 2026-11-07 14:00 keeps the rules it ran under, including
+port-0211's own gate (its BASELINE FAIL is now ON HOLD). The date comes from the gate's `summary.txt`, else its oldest
+screen file. Screen data without engine logs also keeps the old rules.
+
+**What it does:**
+- **Per-workload prompt** (Karl 11-03's no-loss rule, and g16's "no workload more than 3 % below"): prompt tokens /
+  (the engine's prompt ms minus the `chat cache: parked ... in N ms` logged just before that request).
+- **Aggregate screen prompt** (g16's geometric-mean rule): the client clock minus the same save, i.e. prompt tokens /
+  (TTFT minus the save).
+- **INFO:** per-workload client-minus-save losses beyond their noise are listed, so the server's own time stays visible.
+- **Strict pairing:** each request is matched to its engine-log line by prompt tokens. A record that cannot be matched
+  makes the screen NOT DECIDED; it is never judged on fewer passes.
+
+**The chat-cache save line** (`g17.save_rule`, one per screen, judged on its own):
+- **Stored band:** `PARK_REF_1107` is built from the 872 stored r22/r23 saves. Only the 1238 MiB save has two levels
+  (102-113 / 123-137 ms); every other size has one.
+- **Save index:** each save is divided by the stored median of its level, using the sizes whose levels are 20 ms or
+  more. The index is the geometric mean per pass, then over the passes.
+- **PASS / FAIL:** FAIL when the arm's index is above the base's by more than the larger pass spread (at least 2 %),
+  or when the arm has saves above the stored band (z > 6 over the top level) in 2 or more passes and more of them than
+  the base. The level mix (fast / slow) is INFO and never judged.
+- **A size with no stored band** (a new model's): it is compared with the base arm's median in that screen. A shift
+  there is NOT DECIDED, never PASS or FAIL, because without a band a real slowdown cannot be told apart from a
+  two-level draw.
+- **NOT JUDGED (INFO):** a screen without saves, e.g. chat cache off.
+
+**Checks:**
+- On every stored screen: 971 client records in 13 speed folders all matched their engine-log lines. The pre-11-07
+  outputs of the finished gates are byte-identical (baseline_speed, wl_noloss, noloss on gap 17 and port-0211).
+- **port-0211's own screen, forced under the amendment:** g16 rule PASS (prompt +0.70 %); per-workload no-loss PASS
+  (INFO: R4's client clock minus the save -0.29 %); save line PASS (P -0.2 % vs B; B fast 3/3, P slow 3/3, mix INFO).
+- **Gap 17 forced under the amendment:** all three PASS.
+
+**Selftests run (synthetic data and imports only):**
+- `g17_rules.py park-selftest`: 23 checks, 0 failures. They include:
+  - B-fast vs P-slow saves with equal prefill -> PASS;
+  - a real +15 % prefill slowdown -> per-workload FAIL;
+  - a real +15 % save slowdown on both levels -> the save line FAILs;
+  - P's 1238 MiB save at 175 ms in 3 passes -> FAIL;
+  - a one-off 81 ms 578 MiB save -> PASS;
+  - new-model sizes and a pairing failure.
+- `port0211_rules.py selftest`: 0 failures, with 5 new 11-07 cases.
+- `ud31_rules.py`, `decode_rules.py`, `screen_rerun_rules.py` and `q4_rules.py` selftests: 0 failures.
+- Extra import checks of `basalt_rules.screen()` and `q4_rules.py speeddecide` with the save line: 0 failures.
+- `decpath_rules.py selftest`: 1 failure, "configs: written and checked: exe engine-r22p028xm/strata missing". The
+  backup copy from before the edit fails the same way, so it is not caused by the amendment.
+
+**The confirmation gap: written, NOT run, not queued, no `.ready` file.**
+- Driver: `work/r23/gap-confirm0211.sh`. Rules: `work/r23/confirm0211_rules.py`, whose docstring is the rule text,
+  frozen into the gap's `rules.txt`. Output: `results/r23/port-0211/confirm/`.
+- The design is section 3:
+  - B vs P with the chat cache on, B P P B B P P B;
+  - Boff vs Poff with `--chat-cache 0`, B P P B order;
+  - R2, R3, R2, R3 per start;
+  - about 25 min with 8080 down.
+- It refuses while `deep-research-bench.service` (Phase 5) is active, unless `C0211_AFTER_P5=1` is set.
+- Its decision reads "BASELINE PASS under the 11-07 amended rule (switch requirements in the port plan still apply)"
+  only when all of these hold:
+  - the prefill is equal with the cache off and, net of the save, with it on;
+  - the save line passes;
+  - the stored port-0211 gate re-judged under the amendment passes (its other gates and Basalt as recorded).
+- A dry run (`C0211_DRY=1`, into scratch) passed its pre-gap checks and opened nothing.
+
+
+Scope: gap-port0211's screen (results/r23/port-0211/gap/speed/, B = x28h = P028x, P = P0211x-h), gap 17 and earlier
+gaps' stored speed files, both worktrees and the shared repo, read-only. Nothing was built, run on a GPU, installed or
+switched. Scratch: work/r23/scratch-hunt/ (`pair.py`, `rule_alt.py`, `server.diff`, `req.diff`, `prefill.diff`,
+`env-v0.2.8.txt` / `env-v0.2.11.txt` / `env-new.txt`).
+
+**Result.** The prefill did not get slower. With our own chat-cache park taken out of the timed window, R3 is -0.04 %
+(noise 0.27 %) and R4 is -0.07 % (noise 0.08 %), and all 9 workloads pass the per-workload rule.
+- **R3's -1.45 %:** the R3 request first parks R2's 54K conversation (our `--chat-cache`), inside R3's prompt timer.
+  That park took 104-106 ms on B and 125-126 ms on P. Its cost has two levels on every build we have measured.
+- **R4's -0.29 %:** most of it (16.7 of 22 ms) is outside the engine's prompt timer. A one-off pause of about 15 ms,
+  which B pays on R1, lands on R4 with the v0.2.11 port.
+- **Pins:** no upstream switch or unpinned default explains either loss. There is no pin to add for the Qwen4 port.
+
+## 0. What the gate's prompt number contains
+
+- **What the gate times.** The gate's prompt tok/s is `prompt_tokens / client TTFT`. TTFT runs from the request's send
+  to the first delta with reasoning, content or a tool call (basalt-ab/scripts/abrun.py:88-130).
+- **What the engine's line covers.** `strata serve: prompt N tokens ... read in X ms` (generate.cpp:19909) spans r0
+  (generate.cpp:16066) to `prompt_ms` (:18161).
+- **The park is inside that span.** Our chat cache's `park()` is called at :16675 / :16691, between those two points.
+  The P028x tree has the same layout: r0 :14310, park :14876 / :14892, prompt_ms :16162.
+- **What else is in the TTFT.** The server's render and tokenize step, the engine before r0, and the first window up
+  to a visible delta.
+
+Per workload, means of 3 passes, P minus B (ms; work/r23/scratch-hunt/pair.py over gap/speed/{B,P}{1,2,3}{n,a,r}):
+
+| workload | TTFT | engine prompt ms | park B / P | engine minus park | client minus engine B / P |
+|---|---:|---:|---:|---:|---:|
+| R3-extract5k (5,011) | **+21.0** | +21.3 | **105.0 / 125.7** | **+0.7** | 24.0 / 23.7 |
+| R4-agent33k (33,417) | **+22.0** | +5.3 | 10.0 / 10.0 | +5.3 | **44.7 / 61.3** |
+| R1-verify20k (24,240) | -8.3 | +5.3 | 3.3 / 3.0 | +5.7 | **58.7 / 45.0** |
+| R2-report54k | +2.0 | +2.7 | 48.3 / 49.0 | +2.0 | 49.3 / 48.7 |
+| W3-research (26,729) | +1.0 | +0.7 | - | +0.7 | 42.0 / 42.3 |
+| A-edit / B-write | -2.0 / -29.3 | -2.7 / -29.7 | 54 / 6 both | -3.3 / -29.3 | 30 / 15 both |
+
+Karl 11-03's per-workload rule (port0211_rules.py:65-67, g17 `wl_noloss`), applied to three clocks
+(work/r23/scratch-hunt/rule_alt.py):
+
+| clock | R3 | R4 | others |
+|---|---|---|---|
+| client TTFT (the gate's) | -1.45 % (noise 0.19) FAIL | -0.29 % (0.07) FAIL | pass |
+| engine prompt ms | -1.50 % (0.24) FAIL | -0.07 % (0.08) pass | pass |
+| engine prompt ms minus the park | **-0.04 % (0.27) pass** | **-0.07 % (0.08) pass** | pass |
+
+**Start lines.** B's and P's startlogs are identical on the prompt path; only timing noise and the engine version line
+differ (`diff gap/speed/B1r.startlog P1r.startlog`). Both show "prompt chunk auto: 16384 tokens, a 512-slot ring", "the
+prompt path borrows 3231 CUDA0 cache slots (6.13 GiB)", PCIe probe -> 0.55, expert cache 4585 slots, the same v2 kernel
+lines and KV streaming at 32768 cells. The settled PCIe share is 0.40 in all 6 passes (gates `pcie_B*` / `pcie_P*`).
+
+## 1. Ranked candidates
+
+### 1. The chat-cache park of the previous 54K conversation inside R3's prompt time, and its two-level cost
+- **Code (ours, not upstream):**
+  - Commit `4036f229f` (r23; r22 `83ee4a276`), "serve: --chat-cache N keeps other conversations in RAM", plus
+    `a7a45b11d`, the owner tag.
+  - `park()` is at generate.cpp:15314-15381:
+    - its timer starts at :15317;
+    - `cudaDeviceSynchronize()` at :15318;
+    - per host K/V array, `new uint8_t[bytes]` at :15328, then `par_copy` at :15329. `par_copy` (:15295-15305) is a
+      single `memcpy` for any array of 64 MiB or less;
+    - per QSA layer, `cudaMemcpy` of the indexer rows at :15339-15341;
+    - the log line at :15351.
+  - The stash and park block is the same text in both trees (r22 :13440-13720 vs r23 :15148-15428). The only
+    difference is one pipelined-batch line, `pc.on()`, outside `park`.
+- **Mechanism:**
+  - R3 is a new conversation (nonce, 0 reused tokens), so the request parks R2's live conversation first: 54,067
+    cells, 4 checkpoints, 1238 MiB. This happens after r0, so its time is part of R3's prompt time.
+  - The bytes are the same on both builds (1238 MiB on both). The time is not:
+    - B: 105 / 106 / 104 ms;
+    - P: 125 / 126 / 126 ms;
+    - passes interleaved B P P B B P, so drift does not explain the split.
+  - R3's prefill itself is identical: B 1289 / 1288 / 1287 ms vs P 1288 / 1287 / 1291 ms.
+- **The park cost has two levels on every build.** Across all 119 stored passes of this park (every gap since r22 gap 9):
+  - fast: 102-113 ms (44 passes);
+  - slow: 123-137 ms (75 passes);
+  - nothing in 114-122.
+
+  | build | passes at the fast level |
+  |---|---|
+  | x28h itself | 9 of 15 (gap16 X 130/103/131, gap17 B 137/106/135, gap18 B 134/107/107, ud31 P 111/105/130, today B 105/106/104) |
+  | x28h switch variants (gap 18) | 11 of 17 |
+  | v0.2.10 port family (gap 17: P / F / L / R) | 1 of 10 |
+  | v0.2.11 port (today) | 0 of 3 |
+
+  - The 24K and 26.7K parks (578 and 614 MiB) do not show the two levels: 47-56 ms in every stored pass.
+  - The fast-level share differs between x28h (9 of 15) and the two ports (1 of 13): Fisher one-sided p = 0.005. That
+    is suggestive, but sessions are confounded. Gap 17 had B at 1 of 3; today had B at 3 of 3.
+- **Why a ~5K prompt and not 16K / 64K / 33K:**
+  - The extra cost is about 20-27 ms and is fixed by the previous conversation's size, not by R3's. On R3's 1.29 s
+    prefill that is 1.4-1.9 %.
+  - Basalt's 16K / 64K fixtures run on cold engines, so no park is timed.
+  - R4 parks only R3's 5K conversation (10 ms, one level).
+  - R2 parks a 24K conversation (one level).
+- **Size:**
+  - It accounts for 20.7 of R3's 21.0 ms, i.e. -1.43 of the -1.45 points.
+  - Against x28h's own 15-pass mean park (116.7 ms), P's R3 would be -0.6 %. Against x28h's slow-level passes, P is
+    faster: 3,485 vs 3,468 tok/s.
+- **Earlier gate (0.2.8 -> 0.2.10 vs 0.2.10 -> 0.2.11):**
+  - Gap 17 had the same mechanism: the v0.2.10 port's R3 was -0.77 % at the client. It passed only because B itself
+    drew 137 / 106 / 135, so the noise was 2.09 %.
+  - With the park taken out, gap 17's R3 is -0.22 % (noise 0.83 %).
+  - So there is no 0.2.8 -> 0.2.10 or 0.2.10 -> 0.2.11 code step to split.
+- **Switch or pin:** none upstream; nothing to pin.
+  - Test switch: `--chat-cache 0`, which takes the park out of R3's request.
+  - Measurement fix: time the screen's prompt as engine prompt ms minus the `parked ... in N ms` line, or report the
+    park on its own line. Our park is inside 5 of the 9 workloads' TTFT: A-edit 54 ms, B-write 6, R1 3, R2 48, R3
+    105-126, R4 10.
+  - Code options for later, not proposed now:
+    - park after the previous request's DONE instead of inside the next request's prompt time;
+    - keep reusable host buffers for parks.
+
+### 2. A ~15 ms one-off outside the engine's prompt timer, moved from R1 (B) to R4 (P)
+- **Data, client TTFT minus engine prompt ms, per pass:**
+  - R4: B 45 / 45 / 44; P 60 / 61 / 63.
+  - R1: B 60 / 58 / 58; P 46 / 43 / 46.
+  - Every other workload agrees within 1 ms.
+  - The R1 + R4 sum barely changes: B 103.4 ms, P 106.3 ms.
+- **History** (same metric, stored gaps): the pause sits on R1, on R4 or on neither, depending on the build:
+
+  | build | where the pause lands |
+  |---|---|
+  | x28h family | R1 at about 57-60 ms in most passes (all of gap 17, gap 18, ud31 and today; gap 16's X 1 of 3, Xc 2 of 3); R4 always about 45 |
+  | v0.2.10 port (gap 17) | R1 about 44 in all 10 passes; R4 at 61 in 1 of 10 |
+  | P021m arm M (gaps 15, 16) | R4 at 56-59 in 5 of 5 |
+  | r27h | neither (gap 14); R1 at 58 in noboth (2 of 2) |
+
+  So it is not a property of v0.2.11's prompt path, nor of R4's tools.
+- **Mechanism (inferred, not verified):** a pause of one fixed size that lands on whichever request is being prepared
+  when it fires. Its position depends on the server or engine code, not on the request.
+  - The most likely source is an allocation-driven pause in the Python server's request preparation: CPython 3.12's
+    cyclic GC during render and tokenize (`render_prompt` renders a 33K-token medium-effort request 3 times,
+    server.py:5804-5821).
+  - v0.2.11's server.py differs from v0.2.8's by 1,493 lines (90 commits, scratch `server.diff`), which shifts the
+    allocation sequence.
+  - The render and encode functions themselves are byte-identical (r23 server.py:5804-5852 vs r22 :4922-4970).
+- **Size:** R4 -16.7 ms, -0.21 of its -0.29 points. R1 gains +13.7 ms (+0.25 %).
+- **Switch or pin:** none. There is no upstream commit to point at.
+
+### 3. Engine-side residual on R1 / R4: +5 ms (-0.07 % / -0.10 %), within noise
+- **Data:** engine minus park is +5.3 ms on R4 and +5.7 on R1 today; gap 17 had +14.3 / +5.3. W3 (+0.7), R2 (+2.0)
+  and R3 (+0.7) show nothing, so it does not scale with chunk count or prompt length. Today it passes the rule.
+- **The one unpinned new default reachable on the prompt path:** the dispatch counters, `af6ba4c60` (v0.2.10).
+  - They are on unless `STRATA_DISPATCH_STATS=0` (include/strata/core/dispatch_stats.hpp:115-117).
+  - Each eager call takes one mutex and one hash lookup: the HC read at fused_gr.cu:1625 / :3173 and grouped experts
+    at iq_kernels.cu:6276 / :6401. MMVQ at native_mmvq.cu:3569 / :3969 is decode.
+  - Estimated well under 1 ms per prompt (tens of ns × 10²-10³ calls). Not expected to explain even this residual.
+- **Switch or pin:** `STRATA_DISPATCH_STATS=0` gives identity if wanted. It is not a fix for R3 or R4.
+
+### The hunt list's prompt-path items: checked, none moves R3
+| item | v0.2.8 -> v0.2.11 | our path |
+|---|---|---|
+| prefill chunking / the 32768 ceiling for a bare `--prefill auto` (aa1202551, .11) | ceiling 32768 on NVIDIA cc 8.0+ | `auto:16384` makes `prefill_auto_bare` false (generate.cpp:3559-3560); `nv_chunk_ceiling` returns 0 under 026 (:3901, nv_chunk.hpp:17). The start line says 16384 on both |
+| MMQ/KQ, `STRATA_MMQ_KQ=1` (52ac4e733, .11) | K-quant routed experts on MMQ | `apply_nv_kq_default` (generate.cpp:3887) returns nothing under 026 (nv_defaults.cpp:117-127). Our routed experts are IQ/Q2_0, and we run fused |
+| PCIe share rule (213f1a390 + e364620c5, .11), start share (06ebf2e4d, .10) | ceiling 0.95, k rule, start from pool workers | pinned `STRATA_PCIE_SHARE_MAX=0.60`, `STRATA_PCIE_K_RULE=0` (generate.cpp:2716 / :2720, pcie_share_rule.hpp:40-49), `STRATA_PCIE_START=old` (:12608). Settled 0.40 on both |
+| src/prefill run_impl (scratch `prefill.diff`) | QSA norm + rope fusion 14a85eca9; routed stream 5273fb667; group scratch fbf6e1c75; HC region 3cc47f029; CPU share beside batch 1b1a28e77; extra `pt.mark` timing points | `STRATA_QSA_FUSE_NR=0` pinned (prefill.cpp:586-589). The others are opt-in. `pt.mark` returns at once without STRATA_PREFILL_TIMING (:3033, :3038-3039) |
+| prompt kernels | 2970fe74a (matrix-core QSA attention), 3410a8588 (`STRATA_QSA_FUSE_GATE`), moe_fused_iq.cu gfx12/gfx1151 rows | HIP only (qsa_prompt_attn.hpp:31-38) |
+| generate.cpp request -> prompt done (scratch `req.diff`, 16 hunks) | MTP prompt room 606f6272d, DFlash2 taps, lookup windows in the prompt (cc703b5e4), co-read / concurrent read, `share_gate`, `head_restore`, #4590 penalty window | room opt-in; DFlash2 not in use; `STRATA_LOOKUP_MAX_T=0` pinned; batch-only paths; `share_gate` with no slots never blocks; `head_restore` returns 0 without --prefill-head-alias; `STRATA_PENALTY_PROMPT=1` pinned. `g_lend_keep` is still 128 (generate.cpp:278) |
+
+## 2. Defaults check: prompt-path defaults that differ v0.2.8 -> v0.2.11, against P0211x's 18 pins + 2 keys
+
+Method:
+- the reviews' tables (results/r22/port-0210-review.md section 2, results/r22/port-0211-review.md section 1.1);
+- my own diff of the `"STRATA_*"` names (src/include/serve without dsv41/split/tests): 705 at v0.2.8, 807 at v0.2.11,
+  102 new (scratch `env-new.txt`);
+- every one of the 102 with a prompt-path read site was read in strata-r23p0211.
+
+| default (commit, release) | new behaviour | covered by |
+|---|---|---|
+| PCIe share ceiling / k rule (213f1a390, e364620c5, .11) | 0.95 / k 0.8-1.85 | pins `STRATA_PCIE_SHARE_MAX=0.60`, `STRATA_PCIE_K_RULE=0` (also 026) |
+| PCIe start share (06ebf2e4d, .10) | from pool workers | pin `STRATA_PCIE_START=old` |
+| NV 32768 chunk ceiling (aa1202551, .11) | bare `--prefill auto` only | `--prefill auto:16384` + 026; `STRATA_NV_CHUNK` unpinned (no-op) |
+| NV KQ (`STRATA_MMQ_KQ`) (52ac4e733, .11) | K-quant routed experts on MMQ | 026 + our types; `STRATA_NV_KQ_DEFAULT` unpinned (no-op) |
+| QSA norm + rope fusion (14a85eca9, .10) | on | pin `STRATA_QSA_FUSE_NR=0` |
+| QSA gate fusion (3410a8588, .10) | on | HIP only |
+| CPU share limit 1024 -> 3072 (c4082ce8c / de8308005, .10) | only for the default-armed share | explicit `STRATA_PREFILL_CPU_SHARE=0.4` + `_MAX=1792` (prefill.cpp:301-310 returns 1792 on both trees) |
+| small-card prompt path (fd59c9c39, .10) | unfused + layer-major below 8192 chunks | 026 + `STRATA_PF_FUSED=1` + `STRATA_PREFILL_LAYER_MAJOR=0` (generate.cpp:10735-10772) |
+| layer-major default off (3eb55adff, .10) | off | `STRATA_PREFILL_LAYER_MAJOR=0` (same) |
+| batched PLE post-ops (78316c8df, .10) | off for a CUDA 12.8 build on cc 12.0 only | CUDA 13.3 build: unchanged (sm120_series.hpp:47) |
+| FP16 weight cache (88a79a7ef, 62853e78d) | on with `--batch >= 2` (Linux CUDA) | no `--batch` (generate.cpp:8207-8208) |
+| GDN TC + CONVL2 from the server (bee469c46, .9) | on | pins `STRATA_GDN_TC=0`, `STRATA_GDN_CONVL2=0` |
+| lookup windows in prompt and decode (cc703b5e4, .10) | max T 12 | pin `STRATA_LOOKUP_MAX_T=0` |
+| arena RAM fallback (067b74338, .10) | on when RAM is short | pin `STRATA_ARENA_RAM_FALLBACK=0` |
+| spill / loan to 16 slots / head to host / MTP drop (2e7db84bc, ecf7424b5, .10) | on for a short card | pins `STRATA_SPILL_OFF=1`, `STRATA_MTP_KEEP=1`, `--vram-reserve-mib` |
+| KV window floor 20480 -> 4096 (2e7db84bc, .10) | `vram_fit.fit_start` may lower `--kv-resident` | key `"user_args": ["--kv-resident", "32768"]` |
+| penalty window reply-only (618cd7a4b, .10) | also blocks the merged first window (generate.cpp:17981) | pin `STRATA_PENALTY_PROMPT=1` |
+| drafting Auto = DFlash2 (13edeb7f8) | - | key `"drafting": "mtp"` |
+| BW-DENSE `GR_V3_PF`, `SMALL_UNR` (08b20b104, .10); `GR_R2` (21f950b4b, .9); `IL_PAD` (4c5a55491); `DF_PDL` (081d1c04d) | decode-side kernels | pins (`GR_V3_PF` / `SMALL_UNR` also 026) |
+| own-buffer probe (`STRATA_PF_OWN_PROBE_OFF`, .11) | - | returns early for a lending path or a chunk of 16384 or less (generate.cpp:1946) |
+| `PCIE_AUTO_SPLIT`, stage `late_alloc` (.11) | layer split only | 026 + no `--layer-split` |
+| stream write timeout 60 s, bounded console (c08fd2ecc, b776e1cd0, .11) | server | pins `STRATA_STREAM_WRITE_TIMEOUT_S=0`, `STRATA_BLOCKING_CONSOLE=1` |
+| **dispatch counters (af6ba4c60, .10)** | on | **not pinned**; negligible (section 1 item 3); `STRATA_DISPATCH_STATS=0` if identity is wanted |
+| #3961 lost-answer restart (.11) | no switch | not prompt speed |
+
+Conclusion of the defaults check:
+- Every prompt-path default new in v0.2.9-v0.2.11 that reaches one CUDA card plus the helper cache is pinned, held
+  off by 026 or by an explicit argument, or HIP / Windows / batch / split only.
+- The dispatch counters are the one exception, and they are not material.
+- Robustness note, as REVIEW-1105.md 2: NV_CHUNK, NV_KQ, PCIE_AUTO_SPLIT and late_alloc are held off only by
+  `STRATA_DEFAULTS=026`.
+
+## 3. Confirm gap for candidate 1 (written, not run)
+
+- **Arms:**
+  - B = x28h.json and P = P0211x-h.json, as in the gate;
+  - B0 / P0 = copies of the same two configs with `--chat-cache 0`. These are new test configs made at gap time;
+    `--side-stash` stays 0 and `--conversation-cache-mib` stays 0.
+- **Requests:** each start runs `abarm.sh` with the warm-up, then
+  `abrun.py --set research4 --only R2,R3 --reps 2`, i.e. R2, R3, R2, R3. Each R3 parks a fresh 54K conversation, so
+  every start gives 2 parks, which shows whether the level is per start or per park.
+- **Passes:**
+  - chat cache on: 4 starts per arm, order B P P B B P P B (8 parks per arm);
+  - chat cache off: 2 starts per arm, order B0 P0 P0 B0.
+- **Recorded:** client TTFT, engine prompt ms and the park ms per request. INFO: the engine's minor faults
+  (/proc/<pid>/stat field 10, read by the driver before and after each R3) separate an allocator cause from a sync wait.
+- **Rules, fixed before the run:**
+  - **(a) Confirmed:** P0's R3 prompt tok/s >= B0's × (1 − max(spread, 0.3 %)), and the same holds for P vs B on
+    engine prompt ms minus the park. Then the R3 loss is the park, not the port.
+  - **(b) Prefill lost:** if (a) fails with the chat cache off, the hunt goes back to src/prefill.
+  - **(c) INFO:** fast-level counts per arm (park ≤ 118 ms), and R3 TTFT per level per arm. If P shows 1 or fewer fast
+    of 8 and B shows 5 or more, a follow-up on the park's slow level goes to the backlog. That is not a pin.
+- **Time with the model server down:** about 25 min.
+  - 12 starts × about 105-110 s each: 15 s load, about 5 s warm-up and sleep, 2 × (R2 about 34 s + R3 about 8 s).
+  - Plus about 4 min to open and close.
+  - A minimal form (2 on-starts + 1 off-start per arm) takes about 13 min.
+
+## 4. Not determinable from the desk
+
+1. **Why the 54K park has two levels.** Three hypotheses:
+   - **(a) Allocator.** Each per-layer K/V array of a 54K park is about 28 MB (int8, 2 KV heads × 256, from the prefill
+     geometry; my estimate). That is near glibc's dynamic mmap threshold (at most 32 MiB). For the 24-27K parks the
+     arrays are 12-14 MB and the cost has one level. So fresh mmap pages versus reused heap could decide it.
+   - **(b) Sync wait.** GPU work still in flight at the park's `cudaDeviceSynchronize` (generate.cpp:15318).
+   - **(c) CPU placement.** Where the host thread's `memcpy` runs.
+
+   The confirm gap's fault count separates (a) from the others.
+2. **Build effect on the odds.** Whether the newer builds really reach the fast level less often (1 of 13 vs 9 of 15)
+   or the sessions just differed.
+3. **Which process holds candidate 2's ~15 ms**, and whether it is GC. No log line times the server's render and
+   tokenize step or the engine's time before r0. A test-only arm that starts server.py under `gc.freeze()` /
+   `gc.disable()` would decide it, as would one per-phase timestamp line.
+4. **The source of the +5 ms engine residual on R1 / R4** (≤ 0.1 %).
+5. **No upstream prompt-path commit can be ranked by size.** None shows in the data: engine-minus-park deltas are
+   ≤ 0.1 % on every workload.
+
+## 5. Why the save takes ~105 ms some times and ~130 ms others (desk note, 11-07; no gap spent)
+
+- **Stored logs** (114 screen arm-passes with the 1238 MiB save, 42 fast): nothing in them goes with the level.
+  - Not R2's length: 3,151 vs 3,253 tokens, sd about 540.
+  - Not R2's decode rate, nor the 578 MiB save's time (49.2 vs 49.4 ms).
+  - Not MemAvailable at start (85.5 vs 86.1 GiB), nor the load rate.
+  - Not the number of saves before it: always 2.
+  - Fast and slow alternate within one session and between consecutive passes, e.g. gap 18: F F s s F s F s s F F s
+    F F F F F F F s.
+  - Every pass's 54K save happens at the same point (the third request of the research set, about 3-4 min after the
+    engine starts), so process age cannot be separated from position in these logs.
+  - Each save looks like an independent draw.
+- **Code** (`park()`, generate.cpp:15314-15381):
+  - The timer starts before `cudaDeviceSynchronize()` (:15318).
+  - Then, for each host K/V array: a fresh `new uint8_t[bytes]` (:15328) and one `memcpy` (`par_copy`, :15295-15305).
+    The memcpy is single-threaded for an array of 64 MiB or less, i.e. all of them.
+  - The source arrays are pinned: `kv_host_alloc`, cudaHostAlloc mapped (layer.cpp:585). The destinations are ordinary
+    heap allocations, first touched by the copy.
+  - At 54K cells each int8 K or V array is about 28 MB; at 24-27K it is 12-14 MB (my estimate from the geometry).
+- **The most likely mechanism (not verified):** glibc's dynamic mmap threshold.
+  - A request under the threshold is served from the heap, often from pages already touched. A request over it gets
+    fresh mmap pages, which fault and are zero-filled during the copy.
+  - The threshold starts at 128 KiB and rises, up to 32 MiB, to the size of the largest mmapped chunk freed so far.
+    So whether the ~28 MB arrays get reused or fresh pages depends on what the process freed before. That history
+    differs with timing and thread interleaving, and with the build.
+  - The 12-14 MB arrays of the smaller saves sit far enough under the raised threshold to be served the same way every
+    time, which matches their one level.
+  - THP is `madvise` here (`/sys/kernel/mm/transparent_hugepage/enabled`), so these destinations get 4 KiB pages.
+- **Not excluded:**
+  - GPU work from R2's tail still in flight at the sync, which is inside the save's timer. The 24K save after R1's
+    continuation and the 26.7K save after W3's 2,048-token decode never show two levels, which argues against it.
+  - Where the copying thread runs.
+- **How to tell:** the confirmation gap samples the engine's minor page faults (INFO). If the allocator is the cause,
+  slow saves should come with roughly 7,000 more faults per array. A later test arm with glibc's mmap threshold fixed
+  through its tunable would decide it (check the tunable's limits first).
+- **If the allocator is confirmed:** reusing the park buffers (a free list, or allocating them once) should remove the
+  slow level. That is a code change to our chat cache, not a pin.

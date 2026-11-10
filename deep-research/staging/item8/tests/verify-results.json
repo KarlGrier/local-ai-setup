@@ -1,0 +1,174 @@
+{
+ "unit_tests": 34,
+ "o01-3": {
+  "merged": "o01-3",
+  "runs": [
+   "p4s3",
+   "p4s6",
+   "p4s7"
+  ],
+  "sources_per_run": [
+   6235,
+   6682,
+   6660
+  ],
+  "merged_sources": 14644,
+  "store_stats": {
+   "searches": 535,
+   "sources_seen": 14644,
+   "pages_read": 515,
+   "fetches": 723,
+   "subagents": 46
+  },
+  "pages_with_text": 883,
+  "claims_records_kept": 5323,
+  "unreadable_kept": 73,
+  "lead_tokens": 9302,
+  "lead_share_tokens": 10000,
+  "tool_counts": {
+   "claims_dropped_duplicate": 158,
+   "claims_kept": 5323,
+   "primary_dropped_duplicate": 8,
+   "refs_in_code_left": 40,
+   "refs_left": 1,
+   "refs_neutralised": 9,
+   "refs_renumbered": 31922,
+   "unreadable_dropped_duplicate": 4,
+   "unreadable_dropped_read_elsewhere": 1
+  },
+  "checks": {
+   "citation_numbers_checked": 34337,
+   "citations_checked": 31397,
+   "claims_checked": 5481,
+   "dangling_after": 3,
+   "fetches_checked": 723,
+   "non_citations_checked": 10,
+   "page_texts_checked": 1197,
+   "refs_in_code": 40,
+   "sources_checked": 19577,
+   "texts_checked": 190
+  },
+  "claims_rebuilt": {
+   "claims": 14456,
+   "exact": 10560,
+   "close": 1128,
+   "not_on_page": 2768,
+   "dated": 1147,
+   "sources_with_claims": 515,
+   "seconds": 12.0
+  },
+  "verify_s": 14.5
+ },
+ "o02-3": {
+  "merged": "o02-3",
+  "runs": [
+   "p4s3",
+   "p4s6",
+   "p4s7"
+  ],
+  "sources_per_run": [
+   8539,
+   6596,
+   6899
+  ],
+  "merged_sources": 15934,
+  "store_stats": {
+   "searches": 641,
+   "sources_seen": 15934,
+   "pages_read": 531,
+   "fetches": 774,
+   "subagents": 40
+  },
+  "pages_with_text": 641,
+  "claims_records_kept": 4939,
+  "unreadable_kept": 76,
+  "lead_tokens": 9266,
+  "lead_share_tokens": 10000,
+  "tool_counts": {
+   "claims_dropped_duplicate": 652,
+   "claims_kept": 4939,
+   "refs_in_code_left": 24,
+   "refs_left": 42,
+   "refs_neutralised": 5,
+   "refs_renumbered": 29285,
+   "unreadable_dropped_duplicate": 11
+  },
+  "checks": {
+   "citation_numbers_checked": 32084,
+   "citations_checked": 28791,
+   "claims_checked": 5591,
+   "dangling_after": 2,
+   "fetches_checked": 774,
+   "non_citations_checked": 47,
+   "page_texts_checked": 938,
+   "refs_in_code": 24,
+   "sources_checked": 22034,
+   "texts_checked": 200
+  },
+  "claims_rebuilt": {
+   "claims": 11653,
+   "exact": 9258,
+   "close": 502,
+   "not_on_page": 1893,
+   "dated": 2942,
+   "sources_with_claims": 531,
+   "seconds": 4.8
+  },
+  "verify_s": 5.8
+ },
+ "o03-3": {
+  "merged": "o03-3",
+  "runs": [
+   "p4s3",
+   "p4s6",
+   "p4s7"
+  ],
+  "sources_per_run": [
+   7702,
+   7601,
+   5947
+  ],
+  "merged_sources": 12865,
+  "store_stats": {
+   "searches": 684,
+   "sources_seen": 12865,
+   "pages_read": 502,
+   "fetches": 961,
+   "subagents": 51
+  },
+  "pages_with_text": 862,
+  "claims_records_kept": 4090,
+  "unreadable_kept": 128,
+  "lead_tokens": 8641,
+  "lead_share_tokens": 10000,
+  "tool_counts": {
+   "claims_dropped_duplicate": 423,
+   "claims_kept": 4090,
+   "primary_dropped_duplicate": 3,
+   "refs_left": 2,
+   "refs_renumbered": 28511,
+   "unreadable_dropped_duplicate": 36
+  },
+  "checks": {
+   "citation_numbers_checked": 29955,
+   "citations_checked": 26898,
+   "claims_checked": 4513,
+   "dangling_after": 0,
+   "fetches_checked": 961,
+   "non_citations_checked": 2,
+   "page_texts_checked": 1435,
+   "sources_checked": 21250,
+   "texts_checked": 187
+  },
+  "claims_rebuilt": {
+   "claims": 9950,
+   "exact": 8011,
+   "close": 780,
+   "not_on_page": 1159,
+   "dated": 5453,
+   "sources_with_claims": 502,
+   "seconds": 10.7
+  },
+  "verify_s": 12.0
+ }
+}

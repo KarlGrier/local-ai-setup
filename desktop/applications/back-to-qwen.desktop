@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Back to Qwen
+Comment=Start Qwen (P028x) after Switch to DeepSeek or Stop model (DeepSeek is stopped first), check it and release the test lock and the research queue.
+Exec=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/deepseek-session.sh back-to-qwen
+Icon=go-previous
+Terminal=true
+Categories=Utility;

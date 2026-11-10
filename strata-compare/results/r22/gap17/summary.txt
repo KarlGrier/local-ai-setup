@@ -1,0 +1,695 @@
+=== 2026-11-03 17:49:13 GAP 17 part a (work/r22/gap17.sh): the v0.2.10 port's gates and pricing - a test, nothing switches (Karl 11-02)
+=== 2026-11-03 17:49:13   gate build_x PASS engine-r22p0210 89379c28f361 = v0.2.10 + 28 commits (branch r22-port0210 fdd2fffa8b24ab6f3de46f38831b2964fd455f
+P0210x.json: all 14 pins as section 0 -> PASS
+P0210x-h.json: all 14 pins as section 0 -> PASS
+=== 2026-11-03 17:49:14 creating the stock worktree strata-v0210stock (detached at v0.2.10 ffa80d731; as build-stock021.sh did for v0.2.1)
+HEAD is now at ffa80d731 App: a layer split runs DFlash2 alone, one request at a time. chooseParallel kept the app's default of 4 slots on two or more cards, so the Python plan (drafting.blocked_by) refused DFlash2 for slots > 1, the MTP layer was not on the disk (a DFlash2 install leaves it out) and the start ran with no drafter. The one-request rule for DFlash2 no longer asks for one card; a number the person chose still stays, and the MTP keeps its slots. Test: two cards with DFlash2 give one slot and the note, two cards with the MTP keep more than one.
+2026-11-03 17:49:14 port_gap4: hold set; waiting for the running research run to finish
+run-strata: not running
+2026-11-03 22:36:16 port_gap4: gap open: test lock held (pid 3796593), 8080 stopped
+=== 2026-11-03 22:36:16 A1 build: the port's tests (strata-r22p0210/build-tests; the served engine-r22p0210 is not rebuilt)
+=== 2026-11-03 22:40:00   gate build_tests PASS strata-r22p0210/build-tests
+=== 2026-11-03 22:40:00 A1 build: stock v0.2.10 (strata-v0210stock -> engine-v0210stock)
+=== 2026-11-03 22:43:47   gate build_stock PASS engine-v0210stock c8fe72abe45a
+=== 2026-11-03 22:43:47   gate build8 PASS the port, its tests and stock: verify windows hold up to 8 rows
+=== 2026-11-03 22:43:47 A2 tests: ours, upstream's sampler tests, the v2 unit test (bit-identical H and down rows)
+=== 2026-11-03 22:43:48   patch_guard_test rc 0: 2026-11-03T22:43:48 g17-patch_guard_test exit=0 0s min_MemAvailable=86.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.09GiB min_4060Ti_fr
+=== 2026-11-03 22:43:49   cost_gate_test rc 0: 2026-11-03T22:43:49 g17-cost_gate_test exit=0 0s min_MemAvailable=86.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.09GiB min_4060Ti_free
+=== 2026-11-03 22:43:49   draft_cum_test rc 0: 2026-11-03T22:43:49 g17-draft_cum_test exit=0 0s min_MemAvailable=86.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.09GiB min_4060Ti_free
+=== 2026-11-03 22:43:49   gate tests PASS patch_guard, cost_gate, draft_cum rc 0
+=== 2026-11-03 22:43:52   spec_prob_test rc 0: 2026-11-03T22:43:52 g17-spec_prob_test exit=0 2s min_MemAvailable=86.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.09GiB min_4060Ti_free
+=== 2026-11-03 22:43:53   gated_proposal_test rc 0: 2026-11-03T22:43:53 g17-gated_proposal_test exit=0 0s min_MemAvailable=86.5GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.09GiB min_4060Ti
+=== 2026-11-03 22:43:56   spec_verify_parity rc 0: 2026-11-03T22:43:56 g17-spec_verify_parity exit=0 3s min_MemAvailable=86.4GiB@1s min_5080_free=15640MiB@0s max_tree_RSS=0.2GiB max_swap_used=3.09GiB min_4060Ti_
+=== 2026-11-03 22:43:57   spec_proposal_parity rc 0: 2026-11-03T22:43:57 g17-spec_proposal_parity exit=0 0s min_MemAvailable=86.6GiB@0s min_5080_free=15916MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.09GiB min_4060T
+=== 2026-11-03 22:43:57   gate sampler_tests PASS spec_prob, gated_proposal, spec_verify_parity, spec_proposal_parity rc 0
+=== 2026-11-03 22:44:09   prefill_fused_iq_test --v2 rc 0: 2026-11-03T22:44:09 g17-v2test exit=0 11s min_MemAvailable=86.0GiB@3s min_5080_free=15322MiB@10s max_tree_RSS=0.9GiB max_swap_used=3.09GiB min_4060Ti_free=7872M
+=== 2026-11-03 22:44:09   gate v2_unit PASS prefill_fused_iq_test --v2 rc 0
+=== 2026-11-03 22:44:09 A2 server tests (strata-r22p0210/serve, unittest discover) and the four-backtick fence check
+Ran 1397 tests in 384.161s
+
+FAILED (failures=1, skipped=44)
+1397 tests, 1 failed or erred (known: test_hip_ordinal) -> PASS
+four-backtick fence with a three-backtick example and </think>: reasoning until the outer fence closed, at widths 1 / 2 / 7 / all -> PASS
+=== 2026-11-03 22:50:34 A3 exact7 at pin 2500
+=== 2026-11-03 22:50:34 exact7 g17-s210 (s0210-h.json)
+g17-s210-x-math   out fcf88201 (C*13 a46e2e9f) DIFFERENT  ms/round 34.40  prompt ms 544
+g17-s210-s-math   out 3159af33 (C*13 ea6fbe6c) DIFFERENT  ms/round 30.88  prompt ms 491
+g17-s210-x-code   out f0ee8954 (C*13 3748f95d) DIFFERENT  ms/round 23.59  prompt ms 498
+g17-s210-s-code   out 7be7fe64 (C*13 94953719) DIFFERENT  ms/round 19.01  prompt ms 507
+g17-s210-x-p2000  out 3e219376 (C*13 3e219376) =  ms/round 39.62  prompt ms 1106
+g17-s210-x-32k    out 651f56c8 (C*13 651f56c8) =  ms/round 42.00  prompt ms 7803
+g17-s210-x-112k   out a393ca0a (C*13 a944c147) DIFFERENT  ms/round 35.08  prompt ms 26718
+exact7 g17-s210: 2/7 identical to C*13
+exact7-slots g17-s210: 3238+3300 slots (5080 + 4060 Ti); C*13: ? -> DIFFER
+=== 2026-11-03 22:53:55 exact7 g17-p210off (P0210x-h-off.json against g17-s210)
+g17-p210off-x-math   out fcf88201 (g17-s210 fcf88201) =  ms/round 34.41  prompt ms 535
+g17-p210off-s-math   out 3159af33 (g17-s210 3159af33) =  ms/round 31.02  prompt ms 525
+g17-p210off-x-code   out f0ee8954 (g17-s210 f0ee8954) =  ms/round 23.53  prompt ms 502
+g17-p210off-s-code   out 7be7fe64 (g17-s210 7be7fe64) =  ms/round 18.95  prompt ms 512
+g17-p210off-x-p2000  out 3e219376 (g17-s210 3e219376) =  ms/round 42.65  prompt ms 1101
+g17-p210off-x-32k    out 651f56c8 (g17-s210 651f56c8) =  ms/round 41.62  prompt ms 7827
+g17-p210off-x-112k   out a393ca0a (g17-s210 a393ca0a) =  ms/round 35.31  prompt ms 26728
+exact7 g17-p210off: 7/7 identical to g17-s210
+exact7-slots g17-p210off: 3238+3300 slots (5080 + 4060 Ti); g17-s210: 3238+3300 -> MATCHED
+exact7 g17-p210off: 7/7, slots MATCHED -> PASS
+=== 2026-11-03 22:57:17 exact7 g17-x28h (x28h.json)
+g17-x28h-x-math   out 6b251415 (C*13 a46e2e9f) DIFFERENT  ms/round 33.20  prompt ms 481
+g17-x28h-s-math   out 8c25c022 (C*13 ea6fbe6c) DIFFERENT  ms/round 32.53  prompt ms 450
+g17-x28h-x-code   out 3585ad6f (C*13 3748f95d) DIFFERENT  ms/round 24.78  prompt ms 508
+g17-x28h-s-code   out 2fe9fd9e (C*13 94953719) DIFFERENT  ms/round 23.64  prompt ms 514
+g17-x28h-x-p2000  out 3e219376 (C*13 3e219376) =  ms/round 37.39  prompt ms 1123
+g17-x28h-x-32k    out 651f56c8 (C*13 651f56c8) =  ms/round 39.20  prompt ms 7490
+g17-x28h-x-112k   out a393ca0a (C*13 a944c147) DIFFERENT  ms/round 32.20  prompt ms 25606
+exact7 g17-x28h: 2/7 identical to C*13
+exact7-slots g17-x28h: 3238+3300 slots (5080 + 4060 Ti); C*13: ? -> DIFFER
+=== 2026-11-03 23:00:33 exact7 g17-p210a (P0210x-h.json against g17-x28h)
+g17-p210a-x-math   out 6b251415 (g17-x28h 6b251415) =  ms/round 33.13  prompt ms 527
+g17-p210a-s-math   out 8c25c022 (g17-x28h 8c25c022) =  ms/round 32.33  prompt ms 504
+g17-p210a-x-code   out 3585ad6f (g17-x28h 3585ad6f) =  ms/round 24.91  prompt ms 519
+g17-p210a-s-code   out 2fe9fd9e (g17-x28h 2fe9fd9e) =  ms/round 23.54  prompt ms 506
+g17-p210a-x-p2000  out 3e219376 (g17-x28h 3e219376) =  ms/round 40.94  prompt ms 1114
+g17-p210a-x-32k    out 651f56c8 (g17-x28h 651f56c8) =  ms/round 39.09  prompt ms 7559
+g17-p210a-x-112k   out a393ca0a (g17-x28h a393ca0a) =  ms/round 32.31  prompt ms 25579
+exact7 g17-p210a: 7/7 identical to g17-x28h
+exact7-slots g17-p210a: 3238+3300 slots (5080 + 4060 Ti); g17-x28h: 3238+3300 -> MATCHED
+exact7 g17-p210a: 7/7, slots MATCHED -> PASS
+=== 2026-11-03 23:03:50   gate guards PASS strata patch guards: 7 checked, 0 off [spec_exact side_mixer router_q8k qsa_split_attn gr_fork draft_cum prefill_v2]
+=== 2026-11-03 23:03:50 exact7 g17-p210b (P0210x-h.json against g17-p210a)
+g17-p210b-x-math   out 6b251415 (g17-p210a 6b251415) =  ms/round 32.95  prompt ms 509
+g17-p210b-s-math   out 8c25c022 (g17-p210a 8c25c022) =  ms/round 32.35  prompt ms 506
+g17-p210b-x-code   out 3585ad6f (g17-p210a 3585ad6f) =  ms/round 24.88  prompt ms 518
+g17-p210b-s-code   out 2fe9fd9e (g17-p210a 2fe9fd9e) =  ms/round 23.53  prompt ms 481
+g17-p210b-x-p2000  out 3e219376 (g17-p210a 3e219376) =  ms/round 37.57  prompt ms 1130
+g17-p210b-x-32k    out 651f56c8 (g17-p210a 651f56c8) =  ms/round 39.09  prompt ms 7501
+g17-p210b-x-112k   out a393ca0a (g17-p210a a393ca0a) =  ms/round 32.24  prompt ms 25604
+exact7 g17-p210b: 7/7 identical to g17-p210a
+exact7-slots g17-p210b: 3238+3300 slots (5080 + 4060 Ti); g17-p210a: 3238+3300 -> MATCHED
+exact7 g17-p210b: 7/7, slots MATCHED -> PASS
+=== 2026-11-03 23:07:06 exact7 g17-p210nov2 (P0210x-h-nov2.json against g17-p210a)
+g17-p210nov2-x-math   out 6b251415 (g17-p210a 6b251415) =  ms/round 33.18  prompt ms 499
+g17-p210nov2-s-math   out 8c25c022 (g17-p210a 8c25c022) =  ms/round 32.70  prompt ms 491
+g17-p210nov2-x-code   out 3585ad6f (g17-p210a 3585ad6f) =  ms/round 24.91  prompt ms 493
+g17-p210nov2-s-code   out 2fe9fd9e (g17-p210a 2fe9fd9e) =  ms/round 23.51  prompt ms 539
+g17-p210nov2-x-p2000  out 3e219376 (g17-p210a 3e219376) =  ms/round 37.92  prompt ms 1114
+g17-p210nov2-x-32k    out 651f56c8 (g17-p210a 651f56c8) =  ms/round 39.14  prompt ms 7810
+g17-p210nov2-x-112k   out a393ca0a (g17-p210a a393ca0a) =  ms/round 32.30  prompt ms 26781
+exact7 g17-p210nov2: 7/7 identical to g17-p210a
+exact7-slots g17-p210nov2: 3238+3300 slots (5080 + 4060 Ti); g17-p210a: 3238+3300 -> MATCHED
+exact7 g17-p210nov2: 7/7, slots MATCHED -> PASS
+=== 2026-11-03 23:10:25 exact7 g17-pf133 (P0210x-h-pf133.json against g17-p210a)
+g17-pf133-x-math   out 6b251415 (g17-p210a 6b251415) =  ms/round 33.09  prompt ms 502
+g17-pf133-s-math   out 8c25c022 (g17-p210a 8c25c022) =  ms/round 32.47  prompt ms 501
+g17-pf133-x-code   out 3585ad6f (g17-p210a 3585ad6f) =  ms/round 24.75  prompt ms 449
+g17-pf133-s-code   out 2fe9fd9e (g17-p210a 2fe9fd9e) =  ms/round 23.57  prompt ms 509
+g17-pf133-x-p2000  out 3e219376 (g17-p210a 3e219376) =  ms/round 37.99  prompt ms 1115
+g17-pf133-x-32k    out 651f56c8 (g17-p210a 651f56c8) =  ms/round 39.09  prompt ms 7541
+g17-pf133-x-112k   out a393ca0a (g17-p210a a393ca0a) =  ms/round 32.09  prompt ms 25614
+exact7 g17-pf133: 7/7 identical to g17-p210a
+exact7-slots g17-pf133: 3238+3300 slots (5080 + 4060 Ti); g17-p210a: 3238+3300 -> MATCHED
+exact7 g17-pf133: 7/7, slots MATCHED -> PASS
+=== 2026-11-03 23:13:41 exact7 g17-hcr (P0210x-h-hcr.json against g17-p210a)
+g17-hcr-x-math   out 4f191bf5 (g17-p210a 6b251415) DIFFERENT  ms/round 32.73  prompt ms 512
+g17-hcr-s-math   out d104ad62 (g17-p210a 8c25c022) DIFFERENT  ms/round 32.09  prompt ms 522
+g17-hcr-x-code   out 67824d6f (g17-p210a 3585ad6f) DIFFERENT  ms/round 25.48  prompt ms 518
+g17-hcr-s-code   out 924277a8 (g17-p210a 2fe9fd9e) DIFFERENT  ms/round 22.24  prompt ms 512
+g17-hcr-x-p2000  out 3e219376 (g17-p210a 3e219376) =  ms/round 37.44  prompt ms 1122
+g17-hcr-x-32k    out 651f56c8 (g17-p210a 651f56c8) =  ms/round 41.62  prompt ms 7230
+g17-hcr-x-112k   out a393ca0a (g17-p210a a393ca0a) =  ms/round 32.16  prompt ms 25504
+exact7 g17-hcr: 3/7 identical to g17-p210a
+exact7-slots g17-hcr: 3238+3300 slots (5080 + 4060 Ti); g17-p210a: 3238+3300 -> MATCHED
+exact7 g17-hcr: 3/7, slots MATCHED -> FAIL
+=== 2026-11-03 23:16:57 lookup exact7 g17-L0 (--suffix-draft 3 --lookup-max-t 0)
+=== 2026-11-03 23:20:13 lookup exact7 g17-L12 (--suffix-draft 3 --lookup-max-t 12)
+  x-math: DIFFERENT from token 204 (1024 / 1024 tokens); windows of 9+ rows on 3, off 0
+  s-math: DIFFERENT from token 87 (1024 / 1024 tokens); windows of 9+ rows on 2, off 0 (sampled: reported only)
+  x-code: DIFFERENT from token 202 (1024 / 1024 tokens); windows of 9+ rows on 1, off 0
+  s-code: identical (1024 / 1024 tokens); windows of 9+ rows on 0, off 0 (sampled: reported only)
+  x-p2000: identical (64 / 64 tokens); windows of 9+ rows on 0, off 0
+  x-32k: identical (64 / 64 tokens); windows of 9+ rows on 2, off 0
+  x-112k: identical (64 / 64 tokens); windows of 9+ rows on 0, off 0
+g17-L12 vs g17-L0: greedy 3/5 identical; 6 windows of 9+ rows in the greedy on runs; slots [(3238, 3300)] -> DIFFER
+=== 2026-11-03 23:23:30 the greedy items differ with the windows on: the control pair with STRATA_GR_FORK=0 (is it the fork or window shape?)
+=== 2026-11-03 23:23:30 lookup exact7 g17-L0f (--suffix-draft 3 --lookup-max-t 0; STRATA_GR_FORK=0)
+=== 2026-11-03 23:26:47 lookup exact7 g17-L12f (--suffix-draft 3 --lookup-max-t 12; STRATA_GR_FORK=0)
+  x-math: DIFFERENT from token 100 (1024 / 1024 tokens); windows of 9+ rows on 3, off 0
+  s-math: DIFFERENT from token 84 (1024 / 1024 tokens); windows of 9+ rows on 3, off 0 (sampled: reported only)
+  x-code: DIFFERENT from token 237 (1024 / 1024 tokens); windows of 9+ rows on 3, off 0
+  s-code: DIFFERENT from token 28 (1024 / 1024 tokens); windows of 9+ rows on 2, off 0 (sampled: reported only)
+  x-p2000: identical (64 / 64 tokens); windows of 9+ rows on 2, off 0
+  x-32k: identical (64 / 64 tokens); windows of 9+ rows on 1, off 0
+  x-112k: identical (64 / 64 tokens); windows of 9+ rows on 0, off 0
+g17-L12f vs g17-L0f: greedy 3/5 identical; 9 windows of 9+ rows in the greedy on runs; slots [(3238, 3300)] -> DIFFER
+=== 2026-11-03 23:30:04 A4 KL: pf_yardstick long40 on P0210x-h, -gdn, -hcr
+pfy p210: 40 prompts, 40 logit rows
+pfy p210:   strata: prompt experts: v2 kernels for IQ3_XXS gate/up (17 of 48 layers), IQ4_NL down (39 of 48 layers) (STRATA_PREFILL_V2=1, adapted from Basalt)
+pfy p210: 2026-11-03T23:38:39 pfy17-p210 exit=0 514s min_MemAvailable=38.0GiB@152s min_5080_free=7358MiB@15s max_tree_RSS=48.7GiB max_swap_used=3.16GiB min_4060Ti_free=1179MiB ok
+pfy p210gdn: 40 prompts, 40 logit rows
+pfy p210gdn:   strata: prompt experts: v2 kernels for IQ3_XXS gate/up (17 of 48 layers), IQ4_NL down (39 of 48 layers) (STRATA_PREFILL_V2=1, adapted from Basalt)
+pfy p210gdn: 2026-11-03T23:47:14 pfy17-p210gdn exit=0 514s min_MemAvailable=38.0GiB@207s min_5080_free=7298MiB@506s max_tree_RSS=48.7GiB max_swap_used=3.16GiB min_4060Ti_free=1179MiB ok
+pfy p210hcr: 40 prompts, 40 logit rows
+pfy p210hcr:   strata: prompt experts: v2 kernels for IQ3_XXS gate/up (17 of 48 layers), IQ4_NL down (39 of 48 layers) (STRATA_PREFILL_V2=1, adapted from Basalt)
+pfy p210hcr: 2026-11-03T23:55:49 pfy17-p210hcr exit=0 514s min_MemAvailable=38.0GiB@467s min_5080_free=7424MiB@14s max_tree_RSS=48.7GiB max_swap_used=3.15GiB min_4060Ti_free=1179MiB ok
+=== 2026-11-03 23:55:49   gate hcr_logits PASS 0 of 40 first-token logit files differ (HC_REGION on vs off, v2 on)
+=== 2026-11-03 23:55:49   gate logits_vs_p028x INFO 0 of 40 first-token logit files differ from gap 16's x28h (the same yardstick settings)
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap17/pfy - bounds: top-1 >= 34 prompts, KL mean <= 0.401361, KL p90 <= 0.365952, rows KL > 1 <= 4
+unfused    top-1 35/40  KL mean 0.161958  p90 0.365952  rows > 1: 3  (max 2.4641, not judged)
+cpushare   top-1 35/40  KL mean 0.364874  p90 0.215046  rows > 1: 3  (max 9.7615, not judged)
+p210       top-1 35/40  KL mean 0.085689  p90 0.193319  rows > 1: 0  (max 0.9993, not judged)  -> PASS
+p210gdn    top-1 35/40  KL mean 0.575080  p90 1.101426  rows > 1: 5  (max 13.6821, not judged)  -> FAIL (mean, p90, KL>1 rows)
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap17/pfy (10-26 rule, 40 prompts, NLL on 36) - bounds: KL mean <= 0.401361, KL p90 <= 0.402547, rows KL > 1 <= 4, changed top-1 <= 5.5, NLL above ref's (4.1273) <= 0.0860
+unfused    KL mean 0.161958  p90 0.365952  rows > 1: 3  changed top-1 5/40  NLL 4.2055 (+0.0782)
+cpushare   KL mean 0.364874  p90 0.215046  rows > 1: 3  changed top-1 5/40  NLL 4.0883 (-0.0390)
+p210       KL mean 0.085689  p90 0.193319  rows > 1: 0  changed top-1 5/40  NLL 4.1034 (-0.0239)  -> PASS
+p210gdn    KL mean 0.575080  p90 1.101426  rows > 1: 5  changed top-1 5/40  NLL 3.8475 (-0.2798)  -> FAIL (mean, p90, KL>1 rows)
+=== 2026-11-03 23:55:49   gate kl2_p210 PASS p210 top-1 35/40 KL mean 0.085689 p90 0.193319 rows > 1: 0 (max 0.9993, not judged) -> PASS
+=== 2026-11-03 23:55:49   gate kl3_p210 PASS p210 KL mean 0.085689 p90 0.193319 rows > 1: 0 changed top-1 5/40 NLL 4.1034 (-0.0239) -> PASS
+=== 2026-11-03 23:55:49   gate kl2_gdn FAIL p210gdn top-1 35/40 KL mean 0.575080 p90 1.101426 rows > 1: 5 (max 13.6821, not judged) -> FAIL (mean, p90, KL>1 rows)
+=== 2026-11-03 23:55:49   gate kl3_gdn FAIL p210gdn KL mean 0.575080 p90 1.101426 rows > 1: 5 changed top-1 5/40 NLL 3.8475 (-0.2798) -> FAIL (mean, p90, KL>1 rows)
+=== 2026-11-03 23:55:49 the GDN stack does not pass KL: each path KL-gated alone (pf_yardstick long40 on -gdntc, -gdncv)
+pfy p210gdntc: 40 prompts, 40 logit rows
+pfy p210gdntc:   strata: prompt experts: v2 kernels for IQ3_XXS gate/up (17 of 48 layers), IQ4_NL down (39 of 48 layers) (STRATA_PREFILL_V2=1, adapted from Basalt)
+pfy p210gdntc: 2026-11-04T00:04:24 pfy17-p210gdntc exit=0 514s min_MemAvailable=38.0GiB@512s min_5080_free=7298MiB@506s max_tree_RSS=48.7GiB max_swap_used=3.15GiB min_4060Ti_free=1179MiB ok
+pfy p210gdncv: 40 prompts, 40 logit rows
+pfy p210gdncv:   strata: prompt experts: v2 kernels for IQ3_XXS gate/up (17 of 48 layers), IQ4_NL down (39 of 48 layers) (STRATA_PREFILL_V2=1, adapted from Basalt)
+pfy p210gdncv: 2026-11-04T00:12:59 pfy17-p210gdncv exit=0 514s min_MemAvailable=38.0GiB@503s min_5080_free=7358MiB@14s max_tree_RSS=48.7GiB max_swap_used=3.15GiB min_4060Ti_free=1179MiB ok
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap17/pfy - bounds: top-1 >= 34 prompts, KL mean <= 0.401361, KL p90 <= 0.365952, rows KL > 1 <= 4
+unfused    top-1 35/40  KL mean 0.161958  p90 0.365952  rows > 1: 3  (max 2.4641, not judged)
+cpushare   top-1 35/40  KL mean 0.364874  p90 0.215046  rows > 1: 3  (max 9.7615, not judged)
+p210gdntc  top-1 33/40  KL mean 0.859140  p90 1.133460  rows > 1: 5  (max 14.4181, not judged)  -> FAIL (top-1, mean, p90, KL>1 rows)
+p210gdncv  top-1 36/40  KL mean 0.485822  p90 0.295464  rows > 1: 3  (max 14.1978, not judged)  -> FAIL (mean)
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap17/pfy (10-26 rule, 40 prompts, NLL on 36) - bounds: KL mean <= 0.401361, KL p90 <= 0.402547, rows KL > 1 <= 4, changed top-1 <= 5.5, NLL above ref's (4.1273) <= 0.0860
+unfused    KL mean 0.161958  p90 0.365952  rows > 1: 3  changed top-1 5/40  NLL 4.2055 (+0.0782)
+cpushare   KL mean 0.364874  p90 0.215046  rows > 1: 3  changed top-1 5/40  NLL 4.0883 (-0.0390)
+p210gdntc  KL mean 0.859140  p90 1.133460  rows > 1: 5  changed top-1 7/40  NLL 3.9716 (-0.1557)  -> FAIL (mean, p90, KL>1 rows, top-1)
+p210gdncv  KL mean 0.485822  p90 0.295464  rows > 1: 3  changed top-1 4/40  NLL 3.9052 (-0.2222)  -> FAIL (mean)
+=== 2026-11-04 00:13:00   gate kl2_gdntc FAIL p210gdntc top-1 33/40 KL mean 0.859140 p90 1.133460 rows > 1: 5 (max 14.4181, not judged) -> FAIL (top-1, mean, p90, KL>1 rows)
+=== 2026-11-04 00:13:00   gate kl3_gdntc FAIL p210gdntc KL mean 0.859140 p90 1.133460 rows > 1: 5 changed top-1 7/40 NLL 3.9716 (-0.1557) -> FAIL (mean, p90, KL>1 rows, top-1)
+=== 2026-11-04 00:13:00   gate kl2_gdncv FAIL p210gdncv top-1 36/40 KL mean 0.485822 p90 0.295464 rows > 1: 3 (max 14.1978, not judged) -> FAIL (mean)
+=== 2026-11-04 00:13:00   gate kl3_gdncv FAIL p210gdncv KL mean 0.485822 p90 0.295464 rows > 1: 3 changed top-1 4/40 NLL 3.9052 (-0.2222) -> FAIL (mean)
+=== 2026-11-04 00:13:00   GDN paths priced alone: none
+=== 2026-11-04 00:13:00 A5 the screen: B P L F x 3 passes in turned order, R once
+=== 2026-11-04 00:13:00 screen B1 (x28h.json)
+server ready (guard pid 3863762, server pid 3863777) load_time_s 14.338196786 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-B1_20261104T001301.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3863782: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+B1n W1-think r0: prompt 108 ttft 0.29 s, 3072 tokens, 169.88 tok/s, length
+B1n W2-code r0: prompt 125 ttft 0.32 s, 3072 tokens, 171.1 tok/s, length
+B1n W3-research r0: prompt 26728 ttft 6.03 s, 2048 tokens, 163.12 tok/s, length
+B1a A-edit r0: prompt 2677 ttft 1.016 s, 336 tokens, 118.8 tok/s, tool_calls
+B1a B-write r0: prompt 1370 ttft 0.852 s, 1120 tokens, 184.67 tok/s, tool_calls
+B1r R1-verify20k r0: prompt 24239 ttft 5.53 s, 3723 tokens, 153.79 tok/s, stop
+B1r R2-report54k r0: prompt 54071 ttft 12.021 s, 2764 tokens, 145.16 tok/s, stop
+B1r R3-extract5k r0: prompt 5009 ttft 1.447 s, 1081 tokens, 178.12 tok/s, stop
+B1r R4-agent33k r0: prompt 33417 ttft 7.831 s, 367 tokens, 133.56 tok/s, tool_calls
+B1e E1-rewrite r0: prompt 1370 ttft 0.838 s, 2330 tokens, 165.78 tok/s, stop
+B1e E2-rewrite-nothink r0: prompt 1373 ttft 0.766 s, 1483 tokens, 194.59 tok/s, stop
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:16:52 screen P1 (P0210x-h.json)
+server ready (guard pid 3866541, server pid 3866556) load_time_s 15.357008984 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-P1_20261104T001653.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3866574: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+P1n W1-think r0: prompt 111 ttft 0.285 s, 3072 tokens, 184.3 tok/s, length
+P1n W2-code r0: prompt 124 ttft 0.315 s, 3072 tokens, 165.2 tok/s, length
+P1n W3-research r0: prompt 26730 ttft 6.016 s, 2048 tokens, 163.44 tok/s, length
+P1a A-edit r0: prompt 2677 ttft 1.018 s, 418 tokens, 139.4 tok/s, tool_calls
+P1a B-write r0: prompt 1370 ttft 0.851 s, 1723 tokens, 165.13 tok/s, tool_calls
+P1r R1-verify20k r0: prompt 24240 ttft 5.527 s, 3842 tokens, 153.7 tok/s, stop
+P1r R2-report54k r0: prompt 54065 ttft 12.013 s, 2065 tokens, 151.09 tok/s, stop
+P1r R3-extract5k r0: prompt 5013 ttft 1.457 s, 948 tokens, 176.71 tok/s, stop
+P1r R4-agent33k r0: prompt 33416 ttft 7.859 s, 263 tokens, 123.53 tok/s, tool_calls
+P1e E1-rewrite r0: prompt 1370 ttft 0.835 s, 2955 tokens, 164.19 tok/s, stop
+P1e E2-rewrite-nothink r0: prompt 1373 ttft 0.769 s, 1374 tokens, 195.1 tok/s, stop
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:20:47 screen L1 (P0210x-h-L12.json)
+server ready (guard pid 3869382, server pid 3869397) load_time_s 15.361471517 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-L1_20261104T002048.log
+vram after load: 0, 15432 MiB, 502 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3869415: 40 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+L1n W1-think r0: prompt 111 ttft 0.29 s, 3072 tokens, 187.17 tok/s, length
+L1n W2-code r0: prompt 124 ttft 0.309 s, 3072 tokens, 153.68 tok/s, length
+L1n W3-research r0: prompt 26730 ttft 6.031 s, 2048 tokens, 167.25 tok/s, length
+L1a A-edit r0: prompt 2676 ttft 1.023 s, 1446 tokens, 152.22 tok/s, tool_calls
+L1a B-write r0: prompt 1371 ttft 0.853 s, 3180 tokens, 154.25 tok/s, tool_calls
+L1r R1-verify20k r0: prompt 24239 ttft 5.53 s, 3558 tokens, 155.46 tok/s, stop
+L1r R2-report54k r0: prompt 54070 ttft 12.014 s, 2885 tokens, 144.98 tok/s, stop
+L1r R3-extract5k r0: prompt 5011 ttft 1.449 s, 927 tokens, 173.15 tok/s, stop
+L1r R4-agent33k r0: prompt 33416 ttft 7.836 s, 280 tokens, 138.21 tok/s, tool_calls
+L1e E1-rewrite r0: prompt 1370 ttft 0.838 s, 3720 tokens, 163.67 tok/s, stop
+L1e E2-rewrite-nothink r0: prompt 1375 ttft 0.767 s, 1394 tokens, 194.17 tok/s, stop
+vram at end: 0, 15538 MiB, 396 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:25:08 screen F1 (P0210x-h-pf133.json)
+server ready (guard pid 3872556, server pid 3872571) load_time_s 14.336527472 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-F1_20261104T002510.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3872591: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+F1n W1-think r0: prompt 112 ttft 0.286 s, 3072 tokens, 169.07 tok/s, length
+F1n W2-code r0: prompt 124 ttft 0.315 s, 3072 tokens, 155.11 tok/s, length
+F1n W3-research r0: prompt 26728 ttft 6.037 s, 2048 tokens, 163.96 tok/s, length
+F1a A-edit r0: prompt 2679 ttft 1.011 s, 799 tokens, 140.58 tok/s, tool_calls
+F1a B-write r0: prompt 1372 ttft 0.907 s, 2417 tokens, 159.39 tok/s, tool_calls
+F1r R1-verify20k r0: prompt 24240 ttft 5.531 s, 3907 tokens, 152.65 tok/s, stop
+F1r R2-report54k r0: prompt 54069 ttft 12.02 s, 3152 tokens, 145.57 tok/s, stop
+F1r R3-extract5k r0: prompt 5011 ttft 1.426 s, 1313 tokens, 186.42 tok/s, stop
+F1r R4-agent33k r0: prompt 33414 ttft 7.835 s, 360 tokens, 125.2 tok/s, tool_calls
+F1e E1-rewrite r0: prompt 1372 ttft 0.837 s, 3090 tokens, 169.32 tok/s, stop
+F1e E2-rewrite-nothink r0: prompt 1374 ttft 0.767 s, 1381 tokens, 196.72 tok/s, stop
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:29:24 screen F2 (P0210x-h-pf133.json)
+server ready (guard pid 3875696, server pid 3875711) load_time_s 15.363150406 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-F2_20261104T002925.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3875736: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+F2n W1-think r0: prompt 110 ttft 0.29 s, 3072 tokens, 164.42 tok/s, length
+F2n W2-code r0: prompt 125 ttft 0.322 s, 3072 tokens, 159.09 tok/s, length
+F2n W3-research r0: prompt 26729 ttft 6.031 s, 2048 tokens, 163.4 tok/s, length
+F2a A-edit r0: prompt 2677 ttft 1.017 s, 170 tokens, 131.43 tok/s, tool_calls
+F2a B-write r0: prompt 1372 ttft 0.864 s, 1593 tokens, 170.84 tok/s, tool_calls
+F2r R1-verify20k r0: prompt 24241 ttft 5.527 s, 3919 tokens, 157.52 tok/s, stop
+F2r R2-report54k r0: prompt 54071 ttft 12.012 s, 2887 tokens, 152.88 tok/s, stop
+F2r R3-extract5k r0: prompt 5010 ttft 1.448 s, 1271 tokens, 186.25 tok/s, stop
+F2r R4-agent33k r0: prompt 33418 ttft 7.835 s, 378 tokens, 136.74 tok/s, tool_calls
+F2e E1-rewrite r0: prompt 1371 ttft 0.839 s, 3344 tokens, 162.8 tok/s, stop
+F2e E2-rewrite-nothink r0: prompt 1372 ttft 0.766 s, 1386 tokens, 191.6 tok/s, stop
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:33:29 screen L2 (P0210x-h-L12.json)
+server ready (guard pid 3878684, server pid 3878701) load_time_s 15.350051656 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-L2_20261104T003330.log
+vram after load: 0, 15432 MiB, 502 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3878719: 40 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+L2n W1-think r0: prompt 109 ttft 0.304 s, 3072 tokens, 164.84 tok/s, length
+L2n W2-code r0: prompt 124 ttft 0.319 s, 3072 tokens, 159.07 tok/s, length
+L2n W3-research r0: prompt 26728 ttft 6.017 s, 2048 tokens, 159.38 tok/s, length
+L2a A-edit r0: prompt 2679 ttft 1.012 s, 171 tokens, 126.45 tok/s, tool_calls
+L2a B-write r0: prompt 1371 ttft 0.863 s, 1343 tokens, 172.85 tok/s, tool_calls
+L2r R1-verify20k r0: prompt 24240 ttft 5.522 s, 3902 tokens, 156.58 tok/s, stop
+L2r R2-report54k r0: prompt 54071 ttft 12.018 s, 3882 tokens, 148.36 tok/s, stop
+L2r R3-extract5k r0: prompt 5011 ttft 1.446 s, 1160 tokens, 184.7 tok/s, stop
+L2r R4-agent33k r0: prompt 33416 ttft 7.833 s, 275 tokens, 124.79 tok/s, tool_calls
+L2e E1-rewrite r0: prompt 1372 ttft 0.834 s, 3007 tokens, 167.64 tok/s, stop
+L2e E2-rewrite-nothink r0: prompt 1374 ttft 0.766 s, 1373 tokens, 195.65 tok/s, stop
+vram at end: 0, 15538 MiB, 396 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:37:37 screen R2 (P0210x-h-hcr.json)
+server ready (guard pid 3881716, server pid 3881731) load_time_s 15.351881101 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-R2_20261104T003738.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3881756: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+R2n W1-think r0: prompt 109 ttft 0.295 s, 3072 tokens, 169.16 tok/s, length
+R2n W2-code r0: prompt 124 ttft 0.314 s, 3072 tokens, 157.27 tok/s, length
+R2n W3-research r0: prompt 26730 ttft 6.005 s, 2048 tokens, 162.19 tok/s, length
+R2a A-edit r0: prompt 2679 ttft 1.009 s, 175 tokens, 132.99 tok/s, tool_calls
+R2a B-write r0: prompt 1369 ttft 0.846 s, 2242 tokens, 159.05 tok/s, tool_calls
+R2r R1-verify20k r0: prompt 24241 ttft 5.507 s, 3690 tokens, 154.63 tok/s, stop
+R2r R2-report54k r0: prompt 54070 ttft 11.991 s, 4096 tokens, 158.15 tok/s, length
+R2r R3-extract5k r0: prompt 5011 ttft 1.435 s, 1080 tokens, 181.07 tok/s, stop
+R2r R4-agent33k r0: prompt 33417 ttft 7.811 s, 341 tokens, 121.87 tok/s, tool_calls
+R2e E1-rewrite r0: prompt 1372 ttft 0.834 s, 3656 tokens, 161.69 tok/s, stop
+R2e E2-rewrite-nothink r0: prompt 1373 ttft 0.758 s, 1383 tokens, 191.63 tok/s, stop
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:41:54 screen P2 (P0210x-h.json)
+server ready (guard pid 3884908, server pid 3884923) load_time_s 15.363700819 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-P2_20261104T004155.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3884948: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+P2n W1-think r0: prompt 110 ttft 0.294 s, 3072 tokens, 166.95 tok/s, length
+P2n W2-code r0: prompt 125 ttft 0.32 s, 3072 tokens, 154.95 tok/s, length
+P2n W3-research r0: prompt 26728 ttft 6.04 s, 2048 tokens, 156.2 tok/s, length
+P2a A-edit r0: prompt 2676 ttft 1.017 s, 178 tokens, 126.24 tok/s, tool_calls
+P2a B-write r0: prompt 1370 ttft 0.864 s, 1156 tokens, 180.81 tok/s, tool_calls
+P2r R1-verify20k r0: prompt 24241 ttft 5.532 s, 3611 tokens, 155.34 tok/s, stop
+P2r R2-report54k r0: prompt 54072 ttft 12.015 s, 3168 tokens, 150.34 tok/s, stop
+P2r R3-extract5k r0: prompt 5012 ttft 1.443 s, 1083 tokens, 171.71 tok/s, stop
+P2r R4-agent33k r0: prompt 33418 ttft 7.837 s, 430 tokens, 142.73 tok/s, tool_calls
+P2e E1-rewrite r0: prompt 1371 ttft 0.834 s, 3159 tokens, 167.63 tok/s, stop
+P2e E2-rewrite-nothink r0: prompt 1371 ttft 0.765 s, 1382 tokens, 192.19 tok/s, stop
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:45:56 screen B2 (x28h.json)
+server ready (guard pid 3887850, server pid 3887865) load_time_s 14.337272198 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-B2_20261104T004557.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3887871: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+B2n W1-think r0: prompt 111 ttft 0.297 s, 3072 tokens, 187.46 tok/s, length
+B2n W2-code r0: prompt 122 ttft 0.305 s, 3072 tokens, 156.65 tok/s, length
+B2n W3-research r0: prompt 26728 ttft 6.03 s, 2048 tokens, 159.06 tok/s, length
+B2a A-edit r0: prompt 2677 ttft 1.016 s, 170 tokens, 127.25 tok/s, tool_calls
+B2a B-write r0: prompt 1371 ttft 0.855 s, 2677 tokens, 156.66 tok/s, tool_calls
+B2r R1-verify20k r0: prompt 24240 ttft 5.533 s, 3815 tokens, 156.23 tok/s, stop
+B2r R2-report54k r0: prompt 54069 ttft 12.012 s, 3208 tokens, 149.64 tok/s, stop
+B2r R3-extract5k r0: prompt 5012 ttft 1.418 s, 1328 tokens, 176.97 tok/s, stop
+B2r R4-agent33k r0: prompt 33415 ttft 7.83 s, 383 tokens, 130.31 tok/s, tool_calls
+B2e E1-rewrite r0: prompt 1373 ttft 0.838 s, 3604 tokens, 168.61 tok/s, stop
+B2e E2-rewrite-nothink r0: prompt 1373 ttft 0.766 s, 1385 tokens, 195.31 tok/s, stop
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:50:09 screen P3 (P0210x-h.json)
+server ready (guard pid 3890941, server pid 3890956) load_time_s 15.349283206 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-P3_20261104T005010.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3890976: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+P3n W1-think r0: prompt 110 ttft 0.29 s, 3072 tokens, 162.92 tok/s, length
+P3n W2-code r0: prompt 125 ttft 0.318 s, 3072 tokens, 152.52 tok/s, length
+P3n W3-research r0: prompt 26730 ttft 6.034 s, 2048 tokens, 158.95 tok/s, length
+P3a A-edit r0: prompt 2675 ttft 1.014 s, 340 tokens, 120.39 tok/s, tool_calls
+P3a B-write r0: prompt 1370 ttft 0.865 s, 76 tokens, 134.93 tok/s, tool_calls
+P3r R1-verify20k r0: prompt 24238 ttft 5.514 s, 3820 tokens, 156.69 tok/s, stop
+P3r R2-report54k r0: prompt 54068 ttft 12.019 s, 2243 tokens, 144.47 tok/s, stop
+P3r R3-extract5k r0: prompt 5012 ttft 1.445 s, 1237 tokens, 171.87 tok/s, stop
+P3r R4-agent33k r0: prompt 33417 ttft 7.852 s, 378 tokens, 142.36 tok/s, tool_calls
+P3e E1-rewrite r0: prompt 1371 ttft 0.836 s, 2954 tokens, 166.19 tok/s, stop
+P3e E2-rewrite-nothink r0: prompt 1371 ttft 0.762 s, 1404 tokens, 190.08 tok/s, stop
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:54:02 screen B3 (x28h.json)
+server ready (guard pid 3893762, server pid 3893777) load_time_s 14.344364437 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-B3_20261104T005403.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3893789: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+B3n W1-think r0: prompt 108 ttft 0.308 s, 3072 tokens, 164.52 tok/s, length
+B3n W2-code r0: prompt 124 ttft 0.308 s, 3072 tokens, 154.97 tok/s, length
+B3n W3-research r0: prompt 26730 ttft 6.029 s, 2048 tokens, 178.44 tok/s, length
+B3a A-edit r0: prompt 2678 ttft 1.009 s, 502 tokens, 129.67 tok/s, tool_calls
+B3a B-write r0: prompt 1370 ttft 0.839 s, 2555 tokens, 156.71 tok/s, tool_calls
+B3r R1-verify20k r0: prompt 24241 ttft 5.538 s, 3805 tokens, 156.4 tok/s, stop
+B3r R2-report54k r0: prompt 54070 ttft 12.017 s, 2431 tokens, 144.23 tok/s, stop
+B3r R3-extract5k r0: prompt 5010 ttft 1.445 s, 1306 tokens, 184.0 tok/s, stop
+B3r R4-agent33k r0: prompt 33417 ttft 7.827 s, 366 tokens, 129.44 tok/s, tool_calls
+B3e E1-rewrite r0: prompt 1372 ttft 0.838 s, 3739 tokens, 170.39 tok/s, stop
+B3e E2-rewrite-nothink r0: prompt 1374 ttft 0.77 s, 1398 tokens, 193.76 tok/s, stop
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 00:58:14 screen F3 (P0210x-h-pf133.json)
+server ready (guard pid 3896860, server pid 3896875) load_time_s 14.339605443 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-F3_20261104T005815.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3896893: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+F3n W1-think r0: prompt 107 ttft 0.29 s, 3072 tokens, 187.39 tok/s, length
+F3n W2-code r0: prompt 125 ttft 0.312 s, 3072 tokens, 165.18 tok/s, length
+F3n W3-research r0: prompt 26729 ttft 6.073 s, 2048 tokens, 158.75 tok/s, length
+F3a A-edit r0: prompt 2677 ttft 1.014 s, 803 tokens, 146.98 tok/s, tool_calls
+F3a B-write r0: prompt 1371 ttft 0.853 s, 2895 tokens, 164.69 tok/s, tool_calls
+F3r R1-verify20k r0: prompt 24241 ttft 5.529 s, 3567 tokens, 154.99 tok/s, stop
+F3r R2-report54k r0: prompt 54072 ttft 12.017 s, 3142 tokens, 147.14 tok/s, stop
+F3r R3-extract5k r0: prompt 5011 ttft 1.453 s, 1236 tokens, 178.73 tok/s, stop
+F3r R4-agent33k r0: prompt 33414 ttft 7.834 s, 331 tokens, 132.47 tok/s, tool_calls
+F3e E1-rewrite r0: prompt 1372 ttft 0.836 s, 3337 tokens, 167.82 tok/s, stop
+F3e E2-rewrite-nothink r0: prompt 1373 ttft 0.773 s, 1384 tokens, 192.33 tok/s, stop
+vram at end: 0, 15488 MiB, 446 MiB 1, 6603 MiB, 1287 MiB 
+=== 2026-11-04 01:02:28 screen L3 (P0210x-h-L12.json)
+server ready (guard pid 3899891, server pid 3899906) load_time_s 14.334228696 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-L3_20261104T010229.log
+vram after load: 0, 15432 MiB, 502 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 3899924: 40 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+L3n W1-think r0: prompt 111 ttft 0.291 s, 3072 tokens, 168.57 tok/s, length
+L3n W2-code r0: prompt 126 ttft 0.327 s, 3072 tokens, 152.77 tok/s, length
+L3n W3-research r0: prompt 26729 ttft 6.035 s, 2048 tokens, 168.07 tok/s, length
+L3a A-edit r0: prompt 2677 ttft 1.016 s, 178 tokens, 129.09 tok/s, tool_calls
+L3a B-write r0: prompt 1372 ttft 0.867 s, 1532 tokens, 166.1 tok/s, tool_calls
+L3r R1-verify20k r0: prompt 24240 ttft 5.529 s, 3626 tokens, 156.46 tok/s, stop
+L3r R2-report54k r0: prompt 54071 ttft 12.017 s, 2603 tokens, 148.2 tok/s, stop
+L3r R3-extract5k r0: prompt 5011 ttft 1.455 s, 1027 tokens, 175.01 tok/s, stop
+L3r R4-agent33k r0: prompt 33416 ttft 7.839 s, 289 tokens, 125.77 tok/s, tool_calls
+L3e E1-rewrite r0: prompt 1372 ttft 0.839 s, 2213 tokens, 166.1 tok/s, stop
+L3e E2-rewrite-nothink r0: prompt 1375 ttft 0.764 s, 1384 tokens, 191.04 tok/s, stop
+vram at end: 0, 15538 MiB, 396 MiB 1, 6603 MiB, 1287 MiB 
+base: 5/5 wanted lines; none of the unwanted lines -> PASS
+lookup: 6/6 wanted lines; none of the unwanted lines -> PASS
+=== 2026-11-04 01:06:20   gate cont_P PASS continuations: 6 hits, 0 misses
+=== 2026-11-04 01:06:20   gate cont_L PASS continuations: 7 hits, 0 misses
+=== 2026-11-04 01:06:20 A6 Basalt's fixtures, cold, 3 passes: M (x28h) and H (P0210x-h) decode / pp16k / pp64k
+server ready (guard pid 3902780, server pid 3902797) load_time_s 14.336749477 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpM-decode-1_20261104T010621.log
+engine pid 3902802: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpM-decode-1 pass 1 conv: 1050 tokens (stop), 148.0 tok/s decode
+bpM-decode-1 pass 1 struct: 7230 tokens (stop), 231.6 tok/s decode
+bpM-decode-1 pass 1 prose: 1200 tokens (length), 133.2 tok/s decode
+server ready (guard pid 3903980, server pid 3903995) load_time_s 14.333320653 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpM-pp16k-1_20261104T010759.log
+engine pid 3904000: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpM-pp16k-1 pass 1 pp16k: 16676 tokens, 3820.4 tok/s engine
+server ready (guard pid 3904544, server pid 3904579) load_time_s 14.335473856 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpM-pp64k-1_20261104T010853.log
+engine pid 3904584: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpM-pp64k-1 pass 1 pp64k: 66617 tokens, 4359.5 tok/s engine
+server ready (guard pid 3905172, server pid 3905187) load_time_s 14.336816619 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpH-decode-1_20261104T010957.log
+engine pid 3905213: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpH-decode-1 pass 1 conv: 1054 tokens (stop), 149.6 tok/s decode
+bpH-decode-1 pass 1 struct: 7230 tokens (stop), 224.8 tok/s decode
+bpH-decode-1 pass 1 prose: 1118 tokens (stop), 130.5 tok/s decode
+server ready (guard pid 3906372, server pid 3906387) load_time_s 15.357434858 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpH-pp16k-1_20261104T011134.log
+engine pid 3906412: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpH-pp16k-1 pass 1 pp16k: 16676 tokens, 3831.3 tok/s engine
+server ready (guard pid 3906964, server pid 3906979) load_time_s 14.333558375 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpH-pp64k-1_20261104T011229.log
+engine pid 3906997: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpH-pp64k-1 pass 1 pp64k: 66617 tokens, 4386.8 tok/s engine
+server ready (guard pid 3907580, server pid 3907596) load_time_s 15.359977267 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpH-decode-2_20261104T011333.log
+engine pid 3907614: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpH-decode-2 pass 2 conv: 1089 tokens (stop), 149.4 tok/s decode
+bpH-decode-2 pass 2 struct: 7230 tokens (stop), 224.9 tok/s decode
+bpH-decode-2 pass 2 prose: 1200 tokens (length), 136.3 tok/s decode
+server ready (guard pid 3908787, server pid 3908802) load_time_s 14.335702146 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpH-pp16k-2_20261104T011512.log
+engine pid 3908820: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpH-pp16k-2 pass 2 pp16k: 16676 tokens, 3841.3 tok/s engine
+server ready (guard pid 3909382, server pid 3909397) load_time_s 14.328632522 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpH-pp64k-2_20261104T011605.log
+engine pid 3909415: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpH-pp64k-2 pass 2 pp64k: 66617 tokens, 4385.4 tok/s engine
+server ready (guard pid 3910023, server pid 3910038) load_time_s 14.334340361 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpM-decode-2_20261104T011710.log
+engine pid 3910043: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpM-decode-2 pass 2 conv: 1127 tokens (stop), 152.8 tok/s decode
+bpM-decode-2 pass 2 struct: 7230 tokens (stop), 231.8 tok/s decode
+bpM-decode-2 pass 2 prose: 995 tokens (stop), 139.4 tok/s decode
+server ready (guard pid 3911184, server pid 3911199) load_time_s 14.336696496 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpM-pp16k-2_20261104T011845.log
+engine pid 3911204: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpM-pp16k-2 pass 2 pp16k: 16676 tokens, 3750.4 tok/s engine
+server ready (guard pid 3911775, server pid 3911797) load_time_s 14.328719120 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpM-pp64k-2_20261104T011938.log
+engine pid 3911802: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpM-pp64k-2 pass 2 pp64k: 66617 tokens, 4354.6 tok/s engine
+server ready (guard pid 3912391, server pid 3912406) load_time_s 14.337342452 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpH-decode-3_20261104T012042.log
+engine pid 3912424: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpH-decode-3 pass 3 conv: 1064 tokens (stop), 142.6 tok/s decode
+bpH-decode-3 pass 3 struct: 7230 tokens (stop), 223.7 tok/s decode
+bpH-decode-3 pass 3 prose: 1200 tokens (length), 131.7 tok/s decode
+server ready (guard pid 3913570, server pid 3913585) load_time_s 14.339705968 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpH-pp16k-3_20261104T012221.log
+engine pid 3913605: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpH-pp16k-3 pass 3 pp16k: 16676 tokens, 3795.0 tok/s engine
+server ready (guard pid 3914174, server pid 3914189) load_time_s 15.351767473 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpH-pp64k-3_20261104T012314.log
+engine pid 3914207: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpH-pp64k-3 pass 3 pp64k: 66617 tokens, 4364.1 tok/s engine
+server ready (guard pid 3914788, server pid 3914803) load_time_s 14.342275753 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpM-decode-3_20261104T012419.log
+engine pid 3914808: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpM-decode-3 pass 3 conv: 906 tokens (stop), 142.9 tok/s decode
+bpM-decode-3 pass 3 struct: 7230 tokens (stop), 226.5 tok/s decode
+bpM-decode-3 pass 3 prose: 1066 tokens (stop), 131.2 tok/s decode
+server ready (guard pid 3915963, server pid 3915978) load_time_s 14.351872573 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpM-pp16k-3_20261104T012555.log
+engine pid 3915990: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpM-pp16k-3 pass 3 pp16k: 16676 tokens, 3778.1 tok/s engine
+server ready (guard pid 3916540, server pid 3916555) load_time_s 14.336744262 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-bpM-pp64k-3_20261104T012649.log
+engine pid 3916560: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+bpM-pp64k-3 pass 3 pp64k: 66617 tokens, 4354.3 tok/s engine
+=== 2026-11-04 01:27:51 A7 the served form on P0210x-RTpin-vision: chat-cache checks + a picture
+server ready (guard pid 3917150, server pid 3917165) load_time_s 15.355189135 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-rt_20261104T012753.log
+engine pid 3917186: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+PASS greedy: A was restored from the chat cache
+PASS greedy: resumed output = fresh output (17 chars)
+PASS greedy: the session's STATE_HASH after it = fresh
+PASS greedy: strata_checkpoint=false gives the same output
+PASS sampled seed 7: A was restored from the chat cache
+PASS sampled seed 7: resumed output = fresh output (17 chars)
+PASS sampled seed 7: the session's STATE_HASH after it = fresh
+PASS sampled seed 7: strata_checkpoint=false gives the same output
+PASS drop: R (research) dropped
+PASS drop: A (untagged) still parked and restored after the drop
+PASS drop: R is read from scratch afterwards (not restored)
+ALL PASS
+=== 2026-11-04 01:29:08   gate chatcache PASS ALL PASS
+=== 2026-11-04 01:29:08   gate vision PASS 2 answers (read by hand afterwards: picture-1.txt, picture-2.txt)
+=== 2026-11-04 01:29:08 A7 the live tool-call test (work/r22/toolrecovery, 27 prompts x 2, the same seeds): B (x28h) vs P (P0210x-h), recovery off
+server ready (guard pid 3917861, server pid 3917876) load_time_s 14.342299227 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-tcB_20261104T012909.log
+engine pid 3917881: 27 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+  TOTAL 54 responses: 4 with a spurious call, 0 with a lost call, 0 errors
+server ready (guard pid 3922996, server pid 3923011) load_time_s 15.362706859 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-tcP_20261104T013418.log
+engine pid 3923029: 41 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+  TOTAL 54 responses: 4 with a spurious call, 0 with a lost call, 0 errors
+P028x (x28h) 54 responses: 4 with a spurious call, 0 with a lost call, 0 errors; the v0.2.10 port 54: 4 spurious, 0 lost, 0 errors (rule: port spurious <= P028x's and port lost <= P028x's) -> PASS
+patchtest lossless: cfg: PASS (tail skip 0, adapt-async 0, CPU share 0.4, 0.2.7 defaults ROUTE_PRIOR=0 PROMPT_ATTN_IMMA=0 GR_V3=1 PREFILL_LAYER_MAJOR=0, PLE 0); log clean
+=== 2026-11-04 01:39:20   gate lossless PASS cfg + log clean
+exact7 vs P028x: 7/7 identical (the port with the pins is P028x bit for bit on exact7)
+speed screen decode: P -0.87 % vs B (B 155.0, P 153.7; noise 5.6 %) -> PASS
+speed screen prompt: P +0.04 % vs B (B 2,103.3, P 2,104.1; noise 0.6 %) -> PASS
+Basalt conv decode: P 147.2 vs B 147.9 (-0.5 %; spread 6.7 %) -> PASS
+Basalt struct decode: P 224.5 vs B 230.0 (-2.4 %; spread 2.3 %) -> FAIL
+Basalt prose decode: P 132.8 vs B 134.6 (-1.3 %; spread 6.1 %) -> PASS
+Basalt blend: P 196.1 vs B 201.1 (-2.5 %) -> FAIL
+Basalt 16K prompt: P 3,822.5 vs B 3,783.0 (+1.0 %) -> PASS
+Basalt 64K prompt: P 4,378.8 vs B 4,356.1 (+0.5 %) -> PASS
+BASELINE (pinned-off port = P028x): FAIL
+  - Basalt fixtures: FAIL
+  - not run / missing: build_twin
+  - not run / missing: chk2_p210
+  - not run / missing: chk1_p210_ess
+  - not run / missing: chk2_p210_ess
+  (info) logits_vs_p028x: INFO 0 of 40 first-token logit files differ from gap 16's x28h (the same yardstick settings) [17a 11-03 23:55]
+(0) GDN_TC + GDN_CONVL2, the stack: FAIL (baseline FAIL)
+  G 16K cold prompt: G 0 / P 3 passes - not priced
+  G 64K cold prompt: G 0 / P 3 passes - not priced
+  per-workload no-loss: G or P has fewer than 2 passes of a workload - not decided
+  - kl2_gdn: FAIL p210gdn top-1 35/40 KL mean 0.575080 p90 1.101426 rows > 1: 5 (max 13.6821, not judged) -> FAIL (mean, p90, KL>1 rows) [17a 11-03 23:55]
+  - kl3_gdn: FAIL p210gdn KL mean 0.575080 p90 1.101426 rows > 1: 5 changed top-1 5/40 NLL 3.8475 (-0.2798) -> FAIL (mean, p90, KL>1 rows) [17a 11-03 23:55]
+  - not run / missing: env_bpG* (the arm never ran)
+  - not run / missing: env_G\d* (the arm never ran)
+(0t) GDN_TC alone, KL-gated alone (the stack did not pass KL): FAIL (baseline FAIL)
+  T 16K cold prompt: T 0 / P 3 passes - not priced
+  T 64K cold prompt: T 0 / P 3 passes - not priced
+  per-workload no-loss: T or P has fewer than 2 passes of a workload - not decided
+  CANDIDATE = this path adds a gain; NO GAIN = it adds nothing and can stay off
+  - kl2_gdntc: FAIL p210gdntc top-1 33/40 KL mean 0.859140 p90 1.133460 rows > 1: 5 (max 14.4181, not judged) -> FAIL (top-1, mean, p90, KL>1 rows) [17a 11-04 00:13]
+  - kl3_gdntc: FAIL p210gdntc KL mean 0.859140 p90 1.133460 rows > 1: 5 changed top-1 7/40 NLL 3.9716 (-0.1557) -> FAIL (mean, p90, KL>1 rows, top-1) [17a 11-04 00:13]
+  - not run / missing: env_bpT* (the arm never ran)
+  - not run / missing: env_T\d* (the arm never ran)
+(0v) GDN_CONVL2 alone, KL-gated alone (the stack did not pass KL): FAIL (baseline FAIL)
+  V 16K cold prompt: V 0 / P 3 passes - not priced
+  V 64K cold prompt: V 0 / P 3 passes - not priced
+  per-workload no-loss: V or P has fewer than 2 passes of a workload - not decided
+  CANDIDATE = this path adds a gain; NO GAIN = it adds nothing and can stay off
+  - kl2_gdncv: FAIL p210gdncv top-1 36/40 KL mean 0.485822 p90 0.295464 rows > 1: 3 (max 14.1978, not judged) -> FAIL (mean) [17a 11-04 00:13]
+  - kl3_gdncv: FAIL p210gdncv KL mean 0.485822 p90 0.295464 rows > 1: 3 changed top-1 4/40 NLL 3.9052 (-0.2222) -> FAIL (mean) [17a 11-04 00:13]
+  - not run / missing: env_bpV* (the arm never ran)
+  - not run / missing: env_V\d* (the arm never ran)
+(1) lookup windows up to 12: NOT DECIDED (baseline FAIL)
+  exactness: lookup_e7 DIFFER, control (GR_FORK=0) DIFFER -> WINDOW-VARIANT (not the fork; the distribution checks decide)
+  speed (9 workloads, no loss): L vs P: decode +0.96 % (noise 5.6 %, 3 pass(es)), prompt -0.23 % (noise 1.1 %, 3 pass(es)) -> PASS
+  E1-rewrite decode: L 165.8 vs P 166.0 tok/s (-0.1 %; noise 2.4 %)
+  E2-rewrite-nothink decode: L 193.6 vs P 192.5 tok/s (+0.6 %; noise 2.6 %)
+  A-edit decode (reported): L 135.9 vs P 128.7 (+5.6 %)
+  B-write decode (reported): L 164.4 vs P 160.3 (+2.6 %)
+  per-workload no-loss: none of the 9 slower beyond its noise
+  - not run / missing: chk1_p210_essL
+  - not run / missing: chk2_p210_essL
+  - not run / missing: env_spessL* (the arm never ran)
+(2) GR_V3_PF=133 with GR_FORK=1 (identity): PASS (baseline FAIL)
+  speed: F vs P: decode +2.06 % (noise 5.6 %, 3 pass(es)), prompt -0.10 % (noise 0.6 %, 3 pass(es)) -> PASS
+(3) PF_HC_REGION=1 with PREFILL_V2: FAIL (baseline FAIL)
+  one quick screen: R vs P: decode +0.34 % (noise 5.6 %, 1 pass(es)), prompt +0.26 % (noise 0.6 %, 1 pass(es)) -> PASS
+  - e7_hcr: FAIL exact7 g17-hcr: 3/7, slots MATCHED
+Nothing switches (Karl 11-02: P028x stays served until item 7 is done); a CANDIDATE / PASS here is a candidate for after item 7, Karl's call.
+=== 2026-11-04 01:39:20 P028x back on 8080 (port_gap4.sh end) - nothing switched
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-04 01:39:36 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-04 01:39:36 gap 17 part a done (183 min with 8080 down)
+=== 2026-11-04 01:39:52 GAP 17 part b (work/r22/gap17.sh): the v0.2.10 port's gates and pricing - a test, nothing switches (Karl 11-02)
+=== 2026-11-04 01:39:53   gate build_x PASS engine-r22p0210 89379c28f361 = v0.2.10 + 28 commits (branch r22-port0210 fdd2fffa8b24ab6f3de46f38831b2964fd455f
+P0210x.json: all 14 pins as section 0 -> PASS
+P0210x-h.json: all 14 pins as section 0 -> PASS
+2026-11-04 01:39:53 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 3928092 (engine 3928108)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-04 04:29:27 port_gap4: gap open: test lock held (pid 4072467), 8080 stopped
+=== 2026-11-04 04:29:27 B1 build: the port's MEASUREMENT twin (strata-r22p0210m -> engine-r22p0210m)
+=== 2026-11-04 04:33:15   gate build_twin PASS engine-r22p0210m 0b3bf05a0fc7, 8-row windows
+=== 2026-11-04 04:33:15 B1 build: stock v0.2.10's MEASUREMENT twin (strata-r22s0210t -> engine-r22s0210t; reported, not judged)
+=== 2026-11-04 04:37:04   gate build_stwin INFO engine-r22s0210t 7ee49046f367
+=== 2026-11-04 04:37:04 B2 check (2): arith-j3 T 0.6, 4,000, speculation off, against the build's own probabilities in 1-token windows
+server ready (guard pid 4086997, server pid 4087024) load_time_s 18.415659902 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-sphnospec_20261104T043705.log
+engine pid 4087047: 40 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+=== 2026-11-04 05:08:10   start lines hnospec: exact 0, v2 1, lookup-12 0
+=== 2026-11-04 05:08:11   check (2), hnospec, 1-token reference: 3831 of 4000 samples at the tie; '=' 51.9 % vs 51.6 % expected (+0.3 points); chi-square 0.11 (1), p 0.745, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points -> PASS
+=== 2026-11-04 05:08:11   gate hashpair_hnospec INFO rc 0 MATCH
+server ready (guard pid 4106886, server pid 4106901) load_time_s 14.333156364 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-t3hnospec_20261104T050812.log
+=== 2026-11-04 05:14:04   diagnostic, hnospec, 3-token reference: 3831 of 4000 samples at the tie; '=' 51.9 % vs 55.3 % expected (-3.4 points); chi-square 17.82 (1), p 0.000, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points -> INFO
+server ready (guard pid 4109229, server pid 4109251) load_time_s 15.354823141 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-sps210t_20261104T051405.log
+engine pid 4109269: 37 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+=== 2026-11-04 05:45:56   start lines s210t: exact 0, v2 0, lookup-12 0
+=== 2026-11-04 05:45:57   check (2), s210t, 1-token reference: 3847 of 4000 samples at the tie; '=' 54.2 % vs 52.7 % expected (+1.5 points); chi-square 3.33 (1), p 0.068, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points -> INFO
+=== 2026-11-04 05:45:57   gate hashpair_s210t INFO rc 0 MATCH
+=== 2026-11-04 05:45:57 B3 checks (1) + (2) on the speculative path, 4,000 each: P0210t-ess (windows off), P0210t-ess-L12 (up to 12)
+server ready (guard pid 4123011, server pid 4123026) load_time_s 15.367884563 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-spess_20261104T054558.log
+engine pid 4123044: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+=== 2026-11-04 06:13:00   start lines ess: exact 1, cumulative 1, lookup-12 0, graph drops 0
+=== 2026-11-04 06:13:00   check (2), ess (against hnospec's 1-token reference): 3796 of 4000 samples at the tie; '=' 52.8 % vs 51.6 % expected (+1.2 points); chi-square 2.15 (1), p 0.143, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points -> PASS
+=== 2026-11-04 06:13:00   check (1), ess vs hnospec: g17-ess 2004/3796 vs g17-hnospec 1987/3831 at the tie: +0.9 points, p 0.418; 95 % +/- 2.2 points, smallest detectable 3.2 points -> PASS
+server ready (guard pid 4135978, server pid 4135993) load_time_s 14.334612922 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g17-spessL_20261104T061301.log
+engine pid 4136011: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+=== 2026-11-04 06:38:42   start lines essL: exact 1, cumulative 1, lookup-12 1, graph drops 0
+=== 2026-11-04 06:38:42   check (2), essL (against hnospec's 1-token reference): 3852 of 4000 samples at the tie; '=' 55.5 % vs 51.6 % expected (+3.9 points); chi-square 23.14 (1), p 0.000, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points -> FAIL
+=== 2026-11-04 06:38:42   check (1), essL vs hnospec: g17-essL 2137/3852 vs g17-hnospec 1987/3831 at the tie: +3.6 points, p 0.002; 95 % +/- 2.2 points, smallest detectable 3.2 points -> FAIL
+exact7 vs P028x: 7/7 identical (the port with the pins is P028x bit for bit on exact7)
+speed screen decode: P -0.87 % vs B (B 155.0, P 153.7; noise 5.6 %) -> PASS
+speed screen prompt: P +0.04 % vs B (B 2,103.3, P 2,104.1; noise 0.6 %) -> PASS
+Basalt conv decode: P 147.2 vs B 147.9 (-0.5 %; spread 6.7 %) -> PASS
+Basalt struct decode: P 224.5 vs B 230.0 (-2.4 %; spread 2.3 %) -> FAIL
+Basalt prose decode: P 132.8 vs B 134.6 (-1.3 %; spread 6.1 %) -> PASS
+Basalt blend: P 196.1 vs B 201.1 (-2.5 %) -> FAIL
+Basalt 16K prompt: P 3,822.5 vs B 3,783.0 (+1.0 %) -> PASS
+Basalt 64K prompt: P 4,378.8 vs B 4,356.1 (+0.5 %) -> PASS
+BASELINE (pinned-off port = P028x): FAIL
+  - Basalt fixtures: FAIL
+  (info) logits_vs_p028x: INFO 0 of 40 first-token logit files differ from gap 16's x28h (the same yardstick settings) [17a 11-03 23:55]
+  (info) chk2diag_p210: INFO 3831 of 4000 samples at the tie; '=' 51.9 % vs 55.3 % expected (-3.4 points); chi-square 17.82 (1), p 0.000, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points
+  (info) chk2_s210: INFO 3847 of 4000 samples at the tie; '=' 54.2 % vs 52.7 % expected (+1.5 points); chi-square 3.33 (1), p 0.068, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points
+  (info) build_stwin: INFO engine-r22s0210t 7ee49046f367 [17b 11-04 04:37]
+(0) GDN_TC + GDN_CONVL2, the stack: FAIL (baseline FAIL)
+  G 16K cold prompt: G 0 / P 3 passes - not priced
+  G 64K cold prompt: G 0 / P 3 passes - not priced
+  per-workload no-loss: G or P has fewer than 2 passes of a workload - not decided
+  - kl2_gdn: FAIL p210gdn top-1 35/40 KL mean 0.575080 p90 1.101426 rows > 1: 5 (max 13.6821, not judged) -> FAIL (mean, p90, KL>1 rows) [17a 11-03 23:55]
+  - kl3_gdn: FAIL p210gdn KL mean 0.575080 p90 1.101426 rows > 1: 5 changed top-1 5/40 NLL 3.8475 (-0.2798) -> FAIL (mean, p90, KL>1 rows) [17a 11-03 23:55]
+  - not run / missing: env_bpG* (the arm never ran)
+  - not run / missing: env_G\d* (the arm never ran)
+(0t) GDN_TC alone, KL-gated alone (the stack did not pass KL): FAIL (baseline FAIL)
+  T 16K cold prompt: T 0 / P 3 passes - not priced
+  T 64K cold prompt: T 0 / P 3 passes - not priced
+  per-workload no-loss: T or P has fewer than 2 passes of a workload - not decided
+  CANDIDATE = this path adds a gain; NO GAIN = it adds nothing and can stay off
+  - kl2_gdntc: FAIL p210gdntc top-1 33/40 KL mean 0.859140 p90 1.133460 rows > 1: 5 (max 14.4181, not judged) -> FAIL (top-1, mean, p90, KL>1 rows) [17a 11-04 00:13]
+  - kl3_gdntc: FAIL p210gdntc KL mean 0.859140 p90 1.133460 rows > 1: 5 changed top-1 7/40 NLL 3.9716 (-0.1557) -> FAIL (mean, p90, KL>1 rows, top-1) [17a 11-04 00:13]
+  - not run / missing: env_bpT* (the arm never ran)
+  - not run / missing: env_T\d* (the arm never ran)
+(0v) GDN_CONVL2 alone, KL-gated alone (the stack did not pass KL): FAIL (baseline FAIL)
+  V 16K cold prompt: V 0 / P 3 passes - not priced
+  V 64K cold prompt: V 0 / P 3 passes - not priced
+  per-workload no-loss: V or P has fewer than 2 passes of a workload - not decided
+  CANDIDATE = this path adds a gain; NO GAIN = it adds nothing and can stay off
+  - kl2_gdncv: FAIL p210gdncv top-1 36/40 KL mean 0.485822 p90 0.295464 rows > 1: 3 (max 14.1978, not judged) -> FAIL (mean) [17a 11-04 00:13]
+  - kl3_gdncv: FAIL p210gdncv KL mean 0.485822 p90 0.295464 rows > 1: 3 changed top-1 4/40 NLL 3.9052 (-0.2222) -> FAIL (mean) [17a 11-04 00:13]
+  - not run / missing: env_bpV* (the arm never ran)
+  - not run / missing: env_V\d* (the arm never ran)
+(1) lookup windows up to 12: FAIL (baseline FAIL)
+  exactness: lookup_e7 DIFFER, control (GR_FORK=0) DIFFER -> WINDOW-VARIANT (not the fork; the distribution checks decide)
+  speed (9 workloads, no loss): L vs P: decode +0.96 % (noise 5.6 %, 3 pass(es)), prompt -0.23 % (noise 1.1 %, 3 pass(es)) -> PASS
+  E1-rewrite decode: L 165.8 vs P 166.0 tok/s (-0.1 %; noise 2.4 %)
+  E2-rewrite-nothink decode: L 193.6 vs P 192.5 tok/s (+0.6 %; noise 2.6 %)
+  A-edit decode (reported): L 135.9 vs P 128.7 (+5.6 %)
+  B-write decode (reported): L 164.4 vs P 160.3 (+2.6 %)
+  per-workload no-loss: none of the 9 slower beyond its noise
+  - chk1_p210_essL: FAIL g17-essL 2137/3852 vs g17-hnospec 1987/3831 at the tie: +3.6 points, p 0.002; 95 % +/- 2.2 points, smallest detectable 3.2 points
+  - chk2_p210_essL: FAIL 3852 of 4000 samples at the tie; '=' 55.5 % vs 51.6 % expected (+3.9 points); chi-square 23.14 (1), p 0.000, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points
+(2) GR_V3_PF=133 with GR_FORK=1 (identity): PASS (baseline FAIL)
+  speed: F vs P: decode +2.06 % (noise 5.6 %, 3 pass(es)), prompt -0.10 % (noise 0.6 %, 3 pass(es)) -> PASS
+(3) PF_HC_REGION=1 with PREFILL_V2: FAIL (baseline FAIL)
+  one quick screen: R vs P: decode +0.34 % (noise 5.6 %, 1 pass(es)), prompt +0.26 % (noise 0.6 %, 1 pass(es)) -> PASS
+  - e7_hcr: FAIL exact7 g17-hcr: 3/7, slots MATCHED
+Nothing switches (Karl 11-02: P028x stays served until item 7 is done); a CANDIDATE / PASS here is a candidate for after item 7, Karl's call.
+=== 2026-11-04 06:38:42 P028x back on 8080 (port_gap4.sh end) - nothing switched
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-04 06:39:01 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-04 06:39:01 gap 17 part b done (129 min with 8080 down)

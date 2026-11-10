@@ -1,0 +1,45 @@
+work/r9/hold.sh phaseC
+work/r9/tagcheck.sh "phase C: C*11 candidate (v0.1.32 + 0001-0015, exact sampling + v3 + deterministic landing)"
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r9/build-cstar11.sh
+.venv/bin/python work/r9/buildrec.py C11-clean configs/Cstar11.json "clean clone build of the Phase C candidate C*11 (v0.1.32 + patches/r9c/0001-0015)"
+BDIR=build work/r9/build.sh strata-c11m engine-c11m
+.venv/bin/python work/r9/buildrec.py C11m configs/R11m-tf3500-helper.json "C*11's measurement twin (r10-c11-meas)"
+ENVX='STRATA_SPEC_EXACT=0 STRATA_GR_V3=0 STRATA_ADAPT_LAND=0' work/r9/exact7.sh c11off configs/Cstar11.json
+ENVX='STRATA_SPEC_EXACT=0 STRATA_ADAPT_LAND=0' work/r9/exact7.sh c11v3 configs/Cstar11.json
+work/r9/exact7.sh c11 configs/Cstar11.json
+work/r9/exact7.sh c11b configs/Cstar11.json
+.venv/bin/python work/r9/c11_hashes.py | tee results/r9/c11-hashes.txt
+work/r9/tf.sh R11mtf3500-helper configs/R11m-tf3500-helper.json engine-c11m/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+work/r9/tf.sh R11mtf3500-single configs/R11m-tf3500-single.json engine-c11m/strata math corpus long16k long24k long28k long40k long64k
+.venv/bin/python work/r9/tf_compare9.py R11mtf3500-helper=R10v3tf3500-helper R11mtf3500-single=R10v3tf3500-single | tee results/r9/tf-c11.txt
+.venv/bin/python work/r9/tf_long2.py R10btf3500-helper R11mtf3500-helper R10oldtf3500-helper | tee results/r9/tf-c11-vs-c10.txt
+work/r9/with_server.sh RT11-direct configs/R11m-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py direct small r11-ours-direct1"
+work/r9/with_server.sh RT11-direct configs/R11m-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py direct small r11-ours-direct2"
+work/r9/with_server.sh RT11-park configs/R11m-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py park small r11-ours-park"
+work/r9/with_server.sh RT11-editref configs/R11m-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py editref small r11-ours-editref"
+.venv/bin/python work/r9/rt_compare.py r11-ours > results/r9/roundtrip-c11.md; cat results/r9/roundtrip-c11.md
+work/r9/with_server.sh FAIL11 configs/Cstar11.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r9/with_server.sh N11 configs/Cstar11.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label S11 --temperature 1.0"
+work/r9/tagcheck.sh "phase C gates part 1 done"
+work/r9/screen.sh PC11-a configs/Cstar11.json
+work/r9/screen.sh PC10-a configs/Cstar10.json
+work/r9/screen.sh PC10-b configs/Cstar10.json
+work/r9/screen.sh PC11-b configs/Cstar11.json
+work/r9/decscreen.sh PC11d-a configs/Cstar11.json
+work/r9/decscreen.sh PC10d-a configs/Cstar10.json
+work/r9/decscreen.sh PC10d-b configs/Cstar10.json
+work/r9/decscreen.sh PC11d-b configs/Cstar11.json
+.venv/bin/python work/r9/ab_table.py C10=PC10-a,PC10-b C11=PC11-a,PC11-b | tee results/r9/ab-c11-full.md
+.venv/bin/python work/r9/ab_table.py C10=PC10d-a,PC10d-b C11=PC11d-a,PC11d-b | tee results/r9/ab-c11-decode.md
+work/r9/holdscreen.sh H11-a configs/Cstar11.json
+work/r9/holdscreen.sh H10-a configs/Cstar10.json
+work/r9/holdscreen.sh H10-b configs/Cstar10.json
+work/r9/holdscreen.sh H11-b configs/Cstar11.json
+WEB=1 work/r9/with_server.sh BR11 configs/BR11.json -- ".venv/bin/python work/r5/browser_test.py --engine-log \$ELOG --tag b11 --web"
+work/r9/fallback_test11.sh
+work/r9/tagcheck.sh "phase C gates done"
+work/r9/hold.sh soak11
+STRATA_CONFIG=configs/Cstar11.json work/r9/soak11.sh 120
+.venv/bin/python work/r6/webreplay.py replay --base http://127.0.0.1:8080 --label WR11
+work/r9/tagcheck.sh "phase C soak done"

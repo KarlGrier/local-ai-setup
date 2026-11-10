@@ -1,0 +1,28 @@
+=== 2026-10-24 16:03:57 reference screen (initial #2) - DS4.1 arm A-init-2 (/home/USER/ai-speed-testing/strata-compare/configs/DS41-tune-A-init-2.json, server /home/USER/ai-speed-testing/strata-compare/strata-v024/serve/server.py, 1 passes): --max-context 32768 --eos 1 --dspark auto --dspark-conf 0.65 --tp 2 --ssd-cache 70 --expert-profile /home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX5080,GPU-UUID-RTX4060TI', 'STRATA_DS4_PROMPT_SKIP': '0', 'DS4_STORE_FLOOR_GB': '16'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/A-init-2-1024-1603
+=== 2026-10-24 16:03:57 cool-down before the arm: 0 s, drive 39 -> 39 C
+dropcache: 7 model files dropped from the page cache in 0.5 s
+=== 2026-10-24 16:03:58 before: MemAvailable 86.4 GB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-24 16:04:10 ready after 12 s: MemAvailable 27.4 GB, engine RSS 60124 MB; vram 0, 15359 MiB, 575 MiB;1, 7299 MiB, 591 MiB;
+=== 2026-10-24 16:14:10 requests done (rc 0): 7 responses
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: DSpark not loaded: the routed experts (132 GB) are far more than the GPU holds (23 GB), where its verify rounds read 3.3x a token's bytes and gain nothing (--dspark on loads it anyway)
+ds4: RAM store: up to 6814 slots of 10.3 MB (70.0 GB), policy 0, 8 reader threads, unbuffered reads
+ds4: RAM store: 6558 of the profile's hottest experts read in (50.9 GB) in 5.5 s
+ds4: CUDA0 layers [0, 21]: weights 3.08 GB, experts 9.67 GB (1156 of 8448 in VRAM), caches 0.03 GB, 574 MiB free
+ds4: CUDA1 layers [22, 39] + head: weights 2.78 GB, experts 2.00 GB (201 of 6912 in VRAM), caches 0.01 GB, 590 MiB free
+ds4: 14003 routed experts on the CPU lane (121.1 GB, in place in the model's files), 16 threads
+monitor: lowest MemAvailable 17.2 GB, peak engine RSS 70745 MB, peak VRAM used 5080 15433 MiB / 4060 Ti 7375 MiB
+=== 2026-10-24 16:14:15 kcheck clean
+P4K: [179.0] tok/s (mean 179.0, spread None %), tokens [4124], SSD [90.207] GB per prompt
+P20K: [322.7] tok/s (mean 322.7, spread None %), tokens [19755], SSD [201.603] GB per prompt
+W1-think: decode [23.48] tok/s, [2467] tokens, finish ['stop'], SSD [0.0474] GB/token, thinking chars [6016] / answer chars [640]
+W2-code: decode [22.8] tok/s, [3072] tokens, finish ['length'], SSD [0.0615] GB/token, thinking chars [10512] / answer chars [3239]
+W3-research: decode [21.39] tok/s, [2048] tokens, finish ['length'], SSD [0.1647] GB/token, thinking chars [5206] / answer chars [1259]
+W1-W3 decode mean 22.56 tok/s over 3 responses; pass means [22.56] (spread None %); SSD 0.0912 GB/token
+CUDA0 layers [0,21]: 1156 experts in VRAM (9.67 GB), weights 3.08 GB, 574 MiB free
+CUDA1 layers [22,39]: 201 experts in VRAM (2.0 GB), weights 2.78 GB, 590 MiB free
+GPU clocks while decode: GPU0 SM 2835 MHz (p10 2805), util 40 %, 77.8 W; GPU1 SM 2685 MHz (p10 2670), util 60 %, 62.2 W
+GPU clocks while prompt: GPU0 SM 2610 MHz (p10 180), util 0 %, 46.1 W; GPU1 SM 2670 MHz (p10 2655), util 100 %, 106.2 W
+lowest MemAvailable 17.2 GB, peak engine RSS 70745 MB, peak VRAM [15433, 7375] MiB
+nvme0 (Samsung 9100 PRO): 21 samples 16:04-16:14, composite 38-44 C (sensor 1 max 49 C), alarm bit never set; no request above 70 C
+=== 2026-10-24 16:14:15 done

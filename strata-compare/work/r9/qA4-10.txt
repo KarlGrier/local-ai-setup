@@ -1,0 +1,16 @@
+work/r9/tagcheck.sh "phase A track 4: draft settings with exact sampling"
+BDIR=build work/r9/build.sh strata-splitn10 engine-splitn10
+.venv/bin/python work/r9/buildrec.py A4 configs/A4-s4p5.json "track A.4: r10-splitn = exact sampling + STRATA_SPLIT_MIN - v0.1.32 base"
+work/r9/exact7.sh a4splitx configs/A4-splitx.json
+work/r9/decscreen.sh A4s4-a configs/A4-s4p5.json
+work/r9/decscreen.sh A4s5-a configs/A4-s5p5.json
+work/r9/decscreen.sh A4s6-a configs/A4-s6p6.json
+work/r9/decscreen.sh A4s8-a configs/A4-s8p6sp.json
+work/r9/decscreen.sh A4s8-b configs/A4-s8p6sp.json
+work/r9/decscreen.sh A4s6-b configs/A4-s6p6.json
+work/r9/decscreen.sh A4s5-b configs/A4-s5p5.json
+work/r9/decscreen.sh A4s4-b configs/A4-s4p5.json
+.venv/bin/python work/r9/ab_table.py s4p5=A4s4-a,A4s4-b s5p5=A4s5-a,A4s5-b
+.venv/bin/python work/r9/ab_table.py s4p5=A4s4-a,A4s4-b s6p6=A4s6-a,A4s6-b
+.venv/bin/python work/r9/ab_table.py s4p5=A4s4-a,A4s4-b s8p6split6=A4s8-a,A4s8-b
+work/r9/tagcheck.sh "track 4 screens done"

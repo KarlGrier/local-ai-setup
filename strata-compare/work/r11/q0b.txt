@@ -1,0 +1,12 @@
+work/r11/tagcheck.sh "P0.3 fixes + holdout corpus"
+websearch/searxng.sh start; .venv/bin/python work/r11/ldr11_corpus.py; websearch/searxng.sh stop
+.venv/bin/python work/r11/ldr11_prompts.py && chmod a-w prompts/r11/ldr-holdout11.json && sha256sum prompts/r11/ldr-holdout11.json
+BDIR=build work/r11/build.sh strata-r11f engine-r11f && .venv/bin/python work/r11/buildrec.py R11F configs/R11F.json "Phase 0.3 fixes: r11-base + #550 (3143756) + #700 (24e373d) + #454 (d0e99a0) + #652 by hand (b30c819) + the A/B switches (9c88d92)"
+work/r11/servertests.sh strata-r11f
+for d in 0 1; do tmp/r11/res_race $d 20000; done
+work/r11/with_server.sh C121-t652 configs/R11-C121.json -- ".venv/bin/python work/r11/followup652.py http://127.0.0.1:8081 c121 plain think"
+work/r11/with_server.sh C121-tstop configs/R11-C121.json -- ".venv/bin/python work/r11/stoptest.py http://127.0.0.1:8081 c121; .venv/bin/python work/r11/tooltag_test.py http://127.0.0.1:8081 c121 3"
+[ -x engine-r11f/strata ] && work/r11/with_server.sh F-t652 configs/R11F.json -- ".venv/bin/python work/r11/followup652.py http://127.0.0.1:8081 r11f plain think"
+[ -x engine-r11f/strata ] && work/r11/with_server.sh F-tstop configs/R11F.json -- ".venv/bin/python work/r11/stoptest.py http://127.0.0.1:8081 r11f; .venv/bin/python work/r11/tooltag_test.py http://127.0.0.1:8081 r11f 3"
+[ -x engine-r11f/strata ] && work/r11/exact7.sh r11f configs/R11F.json
+echo "=== $(date -Is) MARK q0b"

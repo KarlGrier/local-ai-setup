@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Stop model
+Comment=Stop whichever model is on 8080 (Qwen or DeepSeek) at the next clean boundary, hold the research queue and confirm VRAM and RAM are free. Nothing restarts it until Back to Qwen (or opening Jan or DS Harness).
+Exec=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/deepseek-session.sh stop-model
+Icon=media-playback-stop
+Terminal=true
+Categories=Utility;

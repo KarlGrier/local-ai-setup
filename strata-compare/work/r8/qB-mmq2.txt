@@ -1,0 +1,18 @@
+work/r8/build.sh strata-r8s engine-r8s
+for d in strata-r8/build-mg strata-r8s/build-mg; do f=$(find $d -name mmq-instance-iq4_nl.cu.o | head -1); echo "== $d"; /usr/local/cuda-13.3/bin/cuobjdump -sass -arch sm_120 "$f" | grep -oE '\b(LD|LDG)\.[A-Z0-9.]*' | sort | uniq -c | sort -rn | head -6; done
+work/r8/run.sh pBm2-x-on-32k configs/R8s-helper.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-x-off-32k configs/R8s-old.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-x-on-rep4k configs/R8s-helper.json rep4k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-x-off-rep4k configs/R8s-old.json rep4k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-ta-on-32k configs/R8s-helper.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-ta-c8-32k configs/Cstar8.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-ta-off-32k configs/R8s-old.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-ta-on-tf-long112k configs/R8s-helper.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-ta-c8-tf-long112k configs/Cstar8.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-ta-off-tf-long112k configs/R8s-old.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-tb-on-32k configs/R8s-helper.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-tb-c8-32k configs/Cstar8.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-tb-off-32k configs/R8s-old.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-tb-on-tf-long112k configs/R8s-helper.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-tb-c8-tf-long112k configs/Cstar8.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm2-tb-off-tf-long112k configs/R8s-old.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500

@@ -1,0 +1,190 @@
+2026-10-28 08:45:24 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 323036 (engine 323048)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-10-28 08:45:57 port_gap4: gap open: test lock held (pid 549089), 8080 stopped
+0, NVIDIA GeForce RTX 5080, 15 MiB, 15919 MiB, 36
+1, NVIDIA GeForce RTX 4060 Ti, 15 MiB, 7875 MiB, 37
+=== 2026-10-28 08:45:57 1 build: work/r22/build-port027.sh
+v0.2.7 + 17 commits (branch r22-port027 9bacbe42d0b7690706f6df72380d456076f88d16), tree c5019c95958e11ebeb18d5e244b191ea807e1c80
+2accf218adb1cec4f6e5553e1a9bedf0e4e530b356a1faf99be0b6b61c70c833  engine-r22p027/strata
+=== 2026-10-28 08:49:44 1b twin build: work/r22/build-port027.sh twin (+ upstream's sampler tests)
+twin: v0.2.7 + 21 commits (branch r22-port027-meas 7615279ea0186174de3880bebf4823c52462ca83), tree a5eb41b4c8d9fd2634d9ef64ca91d55261e1e066
+04b67c3e2f47cbaedaef5480447d9c904d16e916ea3c5eacdae95f46c84b799b  engine-r22p027m/strata
+=== 2026-10-28 08:53:30 2 server tests (strata-r22p027/serve)
+Ran 1229 tests in 366.646s
+
+FAILED (failures=1, skipped=38)
+=== 2026-10-28 08:59:37 2b upstream's sampler tests (strata-r22p027m/build-twin)
+=== 2026-10-28 08:59:40   spec_prob_test rc 0: 2026-10-28T08:59:40 g12-spec_prob_test exit=0 2s min_MemAvailable=85.4GiB@0s min_5080_free=15919MiB@0s max_tree_RSS=0.0GiB max_swap_used=2.20GiB min_4060Ti_free
+=== 2026-10-28 08:59:41   gated_proposal_test rc 0: 2026-10-28T08:59:41 g12-gated_proposal_test exit=0 0s min_MemAvailable=85.4GiB@0s min_5080_free=15919MiB@0s max_tree_RSS=0.0GiB max_swap_used=2.20GiB min_4060Ti
+=== 2026-10-28 08:59:44   spec_verify_parity rc 0: 2026-10-28T08:59:44 g12-spec_verify_parity exit=0 3s min_MemAvailable=85.2GiB@2s min_5080_free=15641MiB@0s max_tree_RSS=0.2GiB max_swap_used=2.20GiB min_4060Ti_
+=== 2026-10-28 08:59:45   spec_proposal_parity rc 0: 2026-10-28T08:59:45 g12-spec_proposal_parity exit=0 0s min_MemAvailable=85.2GiB@0s min_5080_free=15916MiB@0s max_tree_RSS=0.0GiB max_swap_used=2.20GiB min_4060T
+=== 2026-10-28 08:59:45 3 repeat-run gate: exact7 twice on r27a (STRATA_ADAPT_ASYNC=0) and twice on r27a-async, pin 2500
+r27a-e7a-x-math   out fcf88201 (C*13 a46e2e9f) DIFFERENT  ms/round 34.08  prompt ms 5869
+r27a-e7a-s-math   out 3159af33 (C*13 ea6fbe6c) DIFFERENT  ms/round 31.05  prompt ms 428
+r27a-e7a-x-code   out f0ee8954 (C*13 3748f95d) DIFFERENT  ms/round 23.51  prompt ms 480
+r27a-e7a-s-code   out 7be7fe64 (C*13 94953719) DIFFERENT  ms/round 19.03  prompt ms 490
+r27a-e7a-x-p2000  out 3e219376 (C*13 3e219376) =  ms/round 41.00  prompt ms 1083
+r27a-e7a-x-32k    out 651f56c8 (C*13 651f56c8) =  ms/round 40.92  prompt ms 7772
+r27a-e7a-x-112k   out a393ca0a (C*13 a944c147) DIFFERENT  ms/round 35.00  prompt ms 26693
+exact7 r27a-e7a: 2/7 identical to C*13
+exact7-slots r27a-e7a: 3238+3300 slots (5080 + 4060 Ti); C*13: ? -> DIFFER
+r27a-e7b-x-math   out fcf88201 (r27a-e7a fcf88201) =  ms/round 34.22  prompt ms 492
+r27a-e7b-s-math   out 3159af33 (r27a-e7a 3159af33) =  ms/round 30.84  prompt ms 482
+r27a-e7b-x-code   out f0ee8954 (r27a-e7a f0ee8954) =  ms/round 23.64  prompt ms 489
+r27a-e7b-s-code   out 7be7fe64 (r27a-e7a 7be7fe64) =  ms/round 19.01  prompt ms 501
+r27a-e7b-x-p2000  out 3e219376 (r27a-e7a 3e219376) =  ms/round 39.15  prompt ms 1088
+r27a-e7b-x-32k    out 651f56c8 (r27a-e7a 651f56c8) =  ms/round 41.24  prompt ms 7796
+r27a-e7b-x-112k   out a393ca0a (r27a-e7a a393ca0a) =  ms/round 35.27  prompt ms 26661
+exact7 r27a-e7b: 7/7 identical to r27a-e7a
+exact7-slots r27a-e7b: 3238+3300 slots (5080 + 4060 Ti); r27a-e7a: 3238+3300 -> MATCHED
+r27aa-e7a-x-math   out fcf88201 (C*13 a46e2e9f) DIFFERENT  ms/round 34.44  prompt ms 487
+r27aa-e7a-s-math   out 3159af33 (C*13 ea6fbe6c) DIFFERENT  ms/round 30.88  prompt ms 487
+r27aa-e7a-x-code   out f0ee8954 (C*13 3748f95d) DIFFERENT  ms/round 23.56  prompt ms 489
+r27aa-e7a-s-code   out 7be7fe64 (C*13 94953719) DIFFERENT  ms/round 18.92  prompt ms 486
+r27aa-e7a-x-p2000  out 3e219376 (C*13 3e219376) =  ms/round 39.05  prompt ms 1096
+r27aa-e7a-x-32k    out 651f56c8 (C*13 651f56c8) =  ms/round 45.12  prompt ms 7842
+r27aa-e7a-x-112k   out a393ca0a (C*13 a944c147) DIFFERENT  ms/round 35.12  prompt ms 26705
+exact7 r27aa-e7a: 2/7 identical to C*13
+exact7-slots r27aa-e7a: 3238+3300 slots (5080 + 4060 Ti); C*13: ? -> DIFFER
+r27aa-e7b-x-math   out fcf88201 (r27aa-e7a fcf88201) =  ms/round 34.11  prompt ms 441
+r27aa-e7b-s-math   out 3159af33 (r27aa-e7a 3159af33) =  ms/round 30.85  prompt ms 489
+r27aa-e7b-x-code   out f0ee8954 (r27aa-e7a f0ee8954) =  ms/round 23.58  prompt ms 468
+r27aa-e7b-s-code   out 7be7fe64 (r27aa-e7a 7be7fe64) =  ms/round 19.03  prompt ms 498
+r27aa-e7b-x-p2000  out 3e219376 (r27aa-e7a 3e219376) =  ms/round 39.64  prompt ms 1048
+r27aa-e7b-x-32k    out 651f56c8 (r27aa-e7a 651f56c8) =  ms/round 41.34  prompt ms 7764
+r27aa-e7b-x-112k   out a393ca0a (r27aa-e7a a393ca0a) =  ms/round 35.01  prompt ms 26741
+exact7 r27aa-e7b: 7/7 identical to r27aa-e7a
+exact7-slots r27aa-e7b: 3238+3300 slots (5080 + 4060 Ti); r27aa-e7a: 3238+3300 -> MATCHED
+=== 2026-10-28 09:13:13 repeat gate: r27a repeats 7/7 (want 7/7 MATCHED), r27a-async repeats 7/7
+=== 2026-10-28 09:13:13 4 lossless: patchtest.sh lossless on r27a
+patchtest lossless: cfg: PASS (tail skip 0, adapt-async 0, CPU share 0.4, 0.2.7 defaults ROUTE_PRIOR=0 PROMPT_ATTN_IMMA=0 GR_V3=1 PREFILL_LAYER_MAJOR=0, PLE 0)
+=== 2026-10-28 09:13:13 5 KL check: pf_yardstick long40 on r27a vs gap 8's references
+pfy r27a: 40 prompts, 40 logit rows
+pfy r27a: 2026-10-28T09:21:54 pfy12-r27a exit=0 520s min_MemAvailable=36.2GiB@335s min_5080_free=7361MiB@20s max_tree_RSS=48.7GiB max_swap_used=2.20GiB min_4060Ti_free=1179MiB ok
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap12/pfy - bounds: top-1 >= 34 prompts, KL mean <= 0.401361, KL p90 <= 0.365952, rows KL > 1 <= 4
+unfused    top-1 35/40  KL mean 0.161958  p90 0.365952  rows > 1: 3  (max 2.4641, not judged)
+cpushare   top-1 35/40  KL mean 0.364874  p90 0.215046  rows > 1: 3  (max 9.7615, not judged)
+r27a       top-1 37/40  KL mean 0.132306  p90 0.096319  rows > 1: 1  (max 4.1526, not judged)  -> PASS
+=== 2026-10-28 09:21:54 6 speed screen: P021m test form (M) vs r27a (A) vs r27a-prob (B), 2 passes
+=== 2026-10-28 09:21:54 arm M pass 1 (r21n-candpm.json)
+server ready (guard pid 577826, server pid 577843) load_time_s 14.344470573 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g12-M1_20261028T092155.log
+M1n W1-think r0: prompt 112 ttft 0.294 s, 3072 tokens, 167.7 tok/s, length
+M1n W2-code r0: prompt 126 ttft 0.322 s, 3072 tokens, 162.11 tok/s, length
+M1n W3-research r0: prompt 26728 ttft 6.007 s, 2048 tokens, 161.05 tok/s, length
+M1a A-edit r0: prompt 2676 ttft 1.014 s, 335 tokens, 125.31 tok/s, tool_calls
+M1a B-write r0: prompt 1372 ttft 0.855 s, 1458 tokens, 162.92 tok/s, tool_calls
+M1r R1-verify20k r0: prompt 24241 ttft 5.495 s, 3657 tokens, 153.2 tok/s, stop
+M1r R2-report54k r0: prompt 54071 ttft 11.962 s, 3288 tokens, 154.58 tok/s, stop
+M1r R3-extract5k r0: prompt 5010 ttft 1.432 s, 986 tokens, 175.45 tok/s, stop
+M1r R4-agent33k r0: prompt 33414 ttft 7.787 s, 348 tokens, 134.08 tok/s, tool_calls
+=== 2026-10-28 09:25:25 arm A pass 1 (r27a.json)
+server ready (guard pid 580074, server pid 580089) load_time_s 15.366969864 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g12-A1_20261028T092526.log
+A1n W1-think r0: prompt 112 ttft 0.331 s, 3072 tokens, 161.71 tok/s, length
+A1n W2-code r0: prompt 125 ttft 0.363 s, 3072 tokens, 143.65 tok/s, length
+A1n W3-research r0: prompt 26728 ttft 6.326 s, 2048 tokens, 151.09 tok/s, length
+A1a A-edit r0: prompt 2676 ttft 1.142 s, 474 tokens, 124.16 tok/s, tool_calls
+A1a B-write r0: prompt 1372 ttft 0.888 s, 1526 tokens, 161.82 tok/s, tool_calls
+A1r R1-verify20k r0: prompt 24241 ttft 5.782 s, 3862 tokens, 140.18 tok/s, stop
+A1r R2-report54k r0: prompt 54072 ttft 12.659 s, 2578 tokens, 126.97 tok/s, stop
+A1r R3-extract5k r0: prompt 5013 ttft 1.682 s, 1108 tokens, 168.53 tok/s, stop
+A1r R4-agent33k r0: prompt 33416 ttft 8.203 s, 379 tokens, 130.62 tok/s, tool_calls
+=== 2026-10-28 09:29:10 arm B pass 1 (r27a-prob.json)
+server ready (guard pid 582459, server pid 582474) load_time_s 14.358211560 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g12-B1_20261028T092911.log
+B1n W1-think r0: prompt 112 ttft 0.333 s, 3072 tokens, 147.39 tok/s, length
+B1n W2-code r0: prompt 125 ttft 0.38 s, 3072 tokens, 134.24 tok/s, length
+B1n W3-research r0: prompt 26727 ttft 6.327 s, 2048 tokens, 138.92 tok/s, length
+B1a A-edit r0: prompt 2677 ttft 1.144 s, 421 tokens, 127.26 tok/s, tool_calls
+B1a B-write r0: prompt 1370 ttft 0.907 s, 1283 tokens, 166.39 tok/s, tool_calls
+B1r R1-verify20k r0: prompt 24239 ttft 5.784 s, 3855 tokens, 142.0 tok/s, stop
+B1r R2-report54k r0: prompt 54070 ttft 12.663 s, 3822 tokens, 135.2 tok/s, stop
+B1r R3-extract5k r0: prompt 5011 ttft 1.671 s, 1333 tokens, 164.94 tok/s, stop
+B1r R4-agent33k r0: prompt 33417 ttft 8.207 s, 413 tokens, 107.09 tok/s, tool_calls
+=== 2026-10-28 09:33:06 arm B pass 2 (r27a-prob.json)
+server ready (guard pid 584873, server pid 584888) load_time_s 14.359286959 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g12-B2_20261028T093307.log
+B2n W1-think r0: prompt 110 ttft 0.33 s, 3072 tokens, 164.69 tok/s, length
+B2n W2-code r0: prompt 125 ttft 0.363 s, 3072 tokens, 142.96 tok/s, length
+B2n W3-research r0: prompt 26728 ttft 6.334 s, 2048 tokens, 147.15 tok/s, length
+B2a A-edit r0: prompt 2679 ttft 1.145 s, 178 tokens, 112.12 tok/s, tool_calls
+B2a B-write r0: prompt 1369 ttft 0.913 s, 1571 tokens, 135.67 tok/s, tool_calls
+B2r R1-verify20k r0: prompt 24239 ttft 5.796 s, 3634 tokens, 139.91 tok/s, stop
+B2r R2-report54k r0: prompt 54070 ttft 12.673 s, 3311 tokens, 127.88 tok/s, stop
+B2r R3-extract5k r0: prompt 5012 ttft 1.672 s, 849 tokens, 144.9 tok/s, stop
+B2r R4-agent33k r0: prompt 33416 ttft 8.21 s, 326 tokens, 113.41 tok/s, tool_calls
+=== 2026-10-28 09:36:54 arm A pass 2 (r27a.json)
+server ready (guard pid 587160, server pid 587175) load_time_s 14.359850885 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g12-A2_20261028T093655.log
+A2n W1-think r0: prompt 110 ttft 0.334 s, 3072 tokens, 168.71 tok/s, length
+A2n W2-code r0: prompt 123 ttft 0.355 s, 3072 tokens, 137.58 tok/s, length
+A2n W3-research r0: prompt 26729 ttft 6.328 s, 2048 tokens, 144.37 tok/s, length
+A2a A-edit r0: prompt 2677 ttft 1.137 s, 340 tokens, 112.86 tok/s, tool_calls
+A2a B-write r0: prompt 1367 ttft 0.9 s, 2700 tokens, 147.23 tok/s, tool_calls
+A2r R1-verify20k r0: prompt 24240 ttft 5.801 s, 3864 tokens, 138.65 tok/s, stop
+A2r R2-report54k r0: prompt 54071 ttft 12.668 s, 2386 tokens, 126.55 tok/s, stop
+A2r R3-extract5k r0: prompt 5012 ttft 1.7 s, 1200 tokens, 159.83 tok/s, stop
+A2r R4-agent33k r0: prompt 33417 ttft 8.201 s, 327 tokens, 123.76 tok/s, tool_calls
+=== 2026-10-28 09:40:46 arm M pass 2 (r21n-candpm.json)
+server ready (guard pid 589549, server pid 589564) load_time_s 14.357873488 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g12-M2_20261028T094047.log
+M2n W1-think r0: prompt 107 ttft 0.308 s, 3072 tokens, 162.13 tok/s, length
+M2n W2-code r0: prompt 121 ttft 0.311 s, 3072 tokens, 155.46 tok/s, length
+M2n W3-research r0: prompt 26729 ttft 5.998 s, 2048 tokens, 165.34 tok/s, length
+M2a A-edit r0: prompt 2677 ttft 1.018 s, 303 tokens, 119.36 tok/s, tool_calls
+M2a B-write r0: prompt 1371 ttft 0.855 s, 1839 tokens, 154.41 tok/s, tool_calls
+M2r R1-verify20k r0: prompt 24241 ttft 5.489 s, 3829 tokens, 156.13 tok/s, stop
+M2r R2-report54k r0: prompt 54072 ttft 11.944 s, 3347 tokens, 153.2 tok/s, stop
+M2r R3-extract5k r0: prompt 5011 ttft 1.429 s, 978 tokens, 182.29 tok/s, stop
+M2r R4-agent33k r0: prompt 33417 ttft 7.801 s, 341 tokens, 132.03 tok/s, tool_calls
+| M1r | R4-agent33k | 1 | 348 | 134.1 | 132.1 | 253/377 (67%) | 80.0 | 4290.9 | tool_calls | 3.73 |
+| M2r | R1-verify20k | 1 | 3829 | 156.1 | 156.0 | 2713/3494 (78%) | 81.3 | 4416.6 | stop | 3.18 |
+| M2r | R2-report54k | 1 | 3347 | 153.2 | 152.8 | 2397/3382 (71%) | 76.9 | 4527.0 | stop | 3.55 |
+| M2r | R3-extract5k | 1 | 978 | 182.3 | 181.9 | 777/960 (81%) | 81.6 | 3506.7 | stop | 4.78 |
+| M2r | R4-agent33k | 1 | 341 | 132.0 | 131.7 | 241/375 (64%) | 81.2 | 4283.8 | tool_calls | 3.68 |
+| A1r | R1-verify20k | 1 | 3862 | 140.2 | 140.0 | 2639/3782 (70%) | 80.8 | 4192.3 | stop | - |
+| A1r | R2-report54k | 1 | 2578 | 127.0 | 126.9 | 1792/3218 (56%) | 77.3 | 4271.5 | stop | - |
+| A1r | R3-extract5k | 1 | 1108 | 168.5 | 168.2 | 877/1150 (76%) | 80.3 | 2980.9 | stop | - |
+| A1r | R4-agent33k | 1 | 379 | 130.6 | 130.3 | 269/448 (60%) | 80.3 | 4073.5 | tool_calls | - |
+| A2r | R1-verify20k | 1 | 3864 | 138.7 | 138.2 | 2646/3828 (69%) | 80.4 | 4178.6 | stop | - |
+| A2r | R2-report54k | 1 | 2386 | 126.5 | 126.2 | 1621/2995 (54%) | 75.1 | 4268.4 | stop | - |
+| A2r | R3-extract5k | 1 | 1200 | 159.8 | 159.6 | 935/1308 (71%) | 81.5 | 2948.0 | stop | - |
+| A2r | R4-agent33k | 1 | 327 | 123.8 | 123.4 | 236/361 (65%) | 80.5 | 4074.6 | tool_calls | - |
+| B1r | R1-verify20k | 1 | 3855 | 142.0 | 141.8 | 2706/3918 (69%) | 82.0 | 4190.5 | stop | - |
+| B1r | R2-report54k | 1 | 3822 | 135.2 | 135.2 | 2775/4722 (59%) | 77.0 | 4269.9 | stop | - |
+| B1r | R3-extract5k | 1 | 1333 | 164.9 | 164.7 | 1051/1401 (75%) | 82.2 | 2998.0 | stop | - |
+| B1r | R4-agent33k | 1 | 413 | 107.1 | 106.9 | 281/537 (52%) | 81.4 | 4071.9 | tool_calls | - |
+| B2r | R1-verify20k | 1 | 3634 | 139.9 | 139.7 | 2596/3798 (68%) | 80.3 | 4182.2 | stop | - |
+| B2r | R2-report54k | 1 | 3311 | 127.9 | 127.8 | 2371/4335 (55%) | 75.0 | 4266.5 | stop | - |
+| B2r | R3-extract5k | 1 | 849 | 144.9 | 144.7 | 617/936 (66%) | 81.7 | 2998.3 | stop | - |
+| B2r | R4-agent33k | 1 | 326 | 113.4 | 113.2 | 233/455 (51%) | 81.4 | 4070.3 | tool_calls | - |
+
+- M1n: experts in VRAM at start: 4585 slots / 8.75 GiB
+- M2n: experts in VRAM at start: 4585 slots / 8.75 GiB
+- A1n: experts in VRAM at start: 4586 slots / 8.75 GiB
+- A2n: experts in VRAM at start: 4586 slots / 8.75 GiB
+- B1n: experts in VRAM at start: 4585 slots / 8.75 GiB
+- B2n: experts in VRAM at start: 4585 slots / 8.75 GiB
+- M1a: experts in VRAM at start: 4585 slots / 8.75 GiB
+- M2a: experts in VRAM at start: 4585 slots / 8.75 GiB
+- A1a: experts in VRAM at start: 4586 slots / 8.75 GiB
+- A2a: experts in VRAM at start: 4586 slots / 8.75 GiB
+- B1a: experts in VRAM at start: 4585 slots / 8.75 GiB
+- B2a: experts in VRAM at start: 4585 slots / 8.75 GiB
+- M1r: experts in VRAM at start: 4585 slots / 8.75 GiB
+- M2r: experts in VRAM at start: 4585 slots / 8.75 GiB
+- A1r: experts in VRAM at start: 4586 slots / 8.75 GiB
+- A2r: experts in VRAM at start: 4586 slots / 8.75 GiB
+- B1r: experts in VRAM at start: 4585 slots / 8.75 GiB
+- B2r: experts in VRAM at start: 4585 slots / 8.75 GiB
+=== 2026-10-28 09:44:22 7 near-tie test: arith-j3 T 0.6, speculation off 4,000 vs STRATA_SPEC_PROB=1 + top gate 4,000 (the port's twin)
+server ready (guard pid 591971, server pid 591986) load_time_s 14.337284131 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g12-sp-nospec_20261028T094424.log
+spec depth lines: 0; old-rule warning: 0
+server ready (guard pid 605296, server pid 605311) load_time_s 14.351958044 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_g12-sp-prob_20261028T101928.log
+spec depth lines: 0; old-rule warning: 0
+=== 2026-10-28 10:51:41   vs own probabilities, nospec: | arith-j3 T=0.6 | 4000 | 3838 (0.947) | '=': 1992 vs 2017.6, ' ': 1846 vs 1820.4 | 0.69 (1) | 0.407 | 0 |
+=== 2026-10-28 10:51:42   vs own probabilities, prob: | arith-j3 T=0.6 | 4000 | 3830 (0.947) | '=': 1952 vs 2013.4, ' ': 1878 vs 1816.6 | 3.95 (1) | 0.047 | 0 |
+g12-nospec: '=' 1992 of 3838 = 51.9 %
+g12-prob: '=' 1952 of 3830 = 51.0 %
+g12-prob vs g12-nospec: -0.9 points, z -0.82, two-sided p 0.412 - PASS (no difference shown)
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-10-28 10:51:57 port_gap4: served build back (7b38796237f5), policy on, queue released
+=== 2026-10-28 10:51:57 kcheck clean
+=== 2026-10-28 10:51:57 gap 12 done after 126 min

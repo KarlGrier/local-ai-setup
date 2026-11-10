@@ -1,0 +1,21 @@
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r9/tagcheck.sh "phase A track 1 (exact speculative sampling) start"
+work/r9/exact7.sh eA-r9e configs/R9e.json
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r9/run.sh essoff-s-math configs/R9e.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -4
+ENVX=STRATA_SPEC_EXACT=1 PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r9/run.sh esson-s-math configs/R9e.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -4
+ENVX=STRATA_SPEC_EXACT=1 PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r9/run.sh esson-s-code configs/R9e.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -4
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r9/run.sh essoff-s-code configs/R9e.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500 | tail -4
+.venv/bin/python work/r9/p0_table.py essoff-s-math esson-s-math essoff-s-code esson-s-code
+work/r9/decscreen.sh EON-a configs/R9e-on.json
+work/r9/decscreen.sh EOFF-a configs/R9e.json
+work/r9/decscreen.sh EOFF-b configs/R9e.json
+work/r9/decscreen.sh EON-b configs/R9e-on.json
+work/r9/decscreen.sh EON-c configs/R9e-on.json
+work/r9/decscreen.sh EOFF-c configs/R9e.json
+work/r9/screen.sh EONf-a configs/R9e-on.json
+work/r9/screen.sh EOFFf-a configs/R9e.json
+work/r9/screen.sh EOFFf-b configs/R9e.json
+work/r9/screen.sh EONf-b configs/R9e-on.json
+work/r9/tagcheck.sh "track 1 A/B done"
+work/r9/ess_probe.sh 1500
+work/r9/tagcheck.sh "track 1 probe done"

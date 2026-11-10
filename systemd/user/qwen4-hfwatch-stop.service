@@ -1,0 +1,7 @@
+[Unit]
+Description=Karl 11-06: stop the Qwen4 Hugging Face watch after Mon 11-30 (qwen4-hfwatch.timer; extended 11-07)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl --user disable --now qwen4-hfwatch.timer
+ExecStartPost=/bin/sh -c 'echo "* $(date "+%%F %%H:%%M") Qwen4 HF watch stopped (qwen4-hfwatch-stop.timer, Karl 11-07: through 11-30)" >> /home/USER/ai-speed-testing/strata-compare/NOTES.md'

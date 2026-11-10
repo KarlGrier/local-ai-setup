@@ -1,0 +1,1438 @@
+#!/usr/bin/env python3
+# AMENDMENT 2026-11-07 (Karl) - it applies from now on, not to finished gates; recorded before the confirmation gap
+# (work/r23/gap-confirm0211.sh). Karl, 11-07, on results/r23/port-0211/HUNT-1107.md:
+#   "Measurement rule: yes, as a dated amendment applying from now on. Per-workload prompt numbers exclude the
+#   chat-cache save. Time the save as its own line in every screen, and judge it separately against its own noise,
+#   taking its two-speed pattern into account, so a real regression in saving still shows."
+#   "Prompt clock: engine clock for the per-workload prompt numbers, as you recommend. The overall screen rule stays on
+#   the client clock minus the save, at -1%. Add one INFO flag, not a fail: if a workload's outside-engine time is worse
+#   in all 3 passes by more than its own spread, flag it for review, so a server-side slowdown hitting one workload
+#   can't hide under the overall rule. Record the amendment as dated before the confirmation gap."
+# The rule as implemented (work/r22/g17_rules.py, section "11-07 park amendment"):
+#   - Per-workload prompt numbers exclude the chat-cache save and are taken on the engine clock: prompt tokens / (the
+#     engine's prompt ms - the `chat cache: parked ... in N ms` line logged just before that request). They feed Karl
+#     11-03's no-loss rule (wl_noloss) and g16's "no workload more than 3 % below".
+#   - The overall screen rule (g16's geometric mean, -1 %) stays on the client clock minus the save: prompt tokens /
+#     (TTFT - save).
+#   - The save is judged as its own "chat-cache save" line (save_rule), against its own noise and with its two levels
+#     taken into account. The level mix is INFO.
+#   - The outside-engine INFO flag (outside_flags). It is INFO and never changes a verdict.
+#     - A workload's outside-engine time per request = client TTFT - the engine's prompt ms. The save is inside the
+#       engine figure, so it cancels.
+#     - Its spread = the larger of the two arms' half-ranges over their passes.
+#     - Flag: every pass of the arm is above the base's mean by more than that spread -> "outside-engine time worse in
+#       every pass - for review (INFO)".
+# A gate that started before 2026-11-07 14:00 keeps the rules it ran under; so does screen data without engine logs.
+# Here: the screen numbers and the per-workload no-loss line (with the INFO flag) come from g17's screen_passes /
+# wl_noloss. screen() (B3 of the stacks' price) also takes the save line: a FAIL is a loss, NOT DECIDED leaves it
+# undecided. This file's finished gates keep the verdicts they ran under.
+"""basalt_rules.py - r23, the gate of the Basalt prompt-path port (results/r23/basalt-prompt/GATE-PLAN.md, STUDY.md
+section 6): the decision rules, written down BEFORE either gap ran (11-04), plus the small tools the two gap drivers
+(work/r23/gap-basalt-a.sh, gap-basalt-b.sh) call. NOTHING SWITCHES: P028x stays served until item 7 is done; a part
+that passes is a candidate, and the switch is Karl's call (with his 5 switch conditions of gap 16).
+
+The port: worktree strata-r23basalt, branch r23-basalt-prompt = r22-port0210 (fdd2fffa8) + 3 commits (head 3383d1f8d):
+STRATA_PF_AHEAD (=1 exact), STRATA_PF_TAIL_SPLIT and STRATA_PF_FIRST_CHUNK (rounding-level), each off by default. Built
+in gap a into engine-r23basalt/. Every arm = configs/P0210x-h.json with exe -> engine-r23basalt/strata and server ->
+strata-r23basalt/serve/server.py (the configs are written by `arms` into results/r23/basalt-prompt/gap/configs/):
+  B  nothing (every r23 switch unset)          the base, claimed = P0210x-h bit for bit
+  A  STRATA_PF_AHEAD=1                          exact            T  STRATA_PF_TAIL_SPLIT=1                 rounding-level
+  U  STRATA_HC_UPMIX=1                          exact            K  STRATA_CKPT_POOL=1 + _READY=2          exact
+  KP STRATA_KV_PREFETCH=1 (optional)            exact            G  STRATA_GDN_CHUNKED=2 (priced first)   rounding-level
+  S  the parts that passed in gap a (A T U K, + KP, G where they passed)
+  C  the parts in S when A7 starts + --prefill auto:N (N = the lend's chunk from one start at auto:24576)
+     + STRATA_PF_FIRST_CHUNK=1                                                                        rounding-level
+  (A2 = STRATA_PF_AHEAD=2 is NOT run: its condition needs gap b's B1 and its 8 extra 1.2-1.8K prompts are not defined)
+
+THE KL RULE FOR A ROUNDING-LEVEL PART (T, C, G; A or U when they are not exact) - which form decides is read at run
+time from the NLL many-positions gap's decision (`nllmode`: results/r23/nll-many/gap/decision.json status JUDGED,
+its gates' validate_ref PASS and ADOPTED-BOUND.json present = validated + adopted): Karl 11-04 "adopt it once the gap
+has validated the offline head against the engine's own output; apply it going forward".
+  OLD form (the NLL gap did not validate + adopt, or no decision file): kernel_rule2 AND kernel_rule3 (with its point
+      NLL check) - KL mean <= 1.10 x the larger reference's, top-1 hits >= the lower reference's - 1, KL p90 <= the worse
+      reference's (rule2) / <= 1.10 x (rule3), rows KL > 1 <= the worse reference's + 1, changed top-1 <= 1.10 x the
+      larger reference's, NLL of the text's next token above the base <= 1.10 x the larger reference's distance -
+      on tail24 at the served chunk (ref16 = B at --prefill auto:16384 --kv int8; references unfused16 = + PF_FUSED=0,
+      cpushare16 = + STRATA_PREFILL_CPU_SHARE=0.4 - the same run as A3's B16s, which has exactly that environment) AND
+      on long40 against gap 8's references (ref, unfused, cpushare); C at its own chunk on both.
+  NEW form (the decision file says the offline head was validated AND the bound adopted): the same KL checks (rule2
+      in full, rule3 without its point NLL check, which is printed as INFO) on tail24 and long40, AND the many-positions
+      NLL check in place of the point one: score.py run (every 8th row of the 11 long texts, --max-len 33536 so each
+      text >= 33,536 tokens ends in a staged 768-token rest that T and C change) on engine-r23basalt for ref
+      (B at auto:16384), unfused, cpushare and the candidate (at its chunk), score.py validate PASS on ref and the
+      candidate, score.py compare's proposed rule: PASS when d_cand <= 1.10 x max |d_R| + 1.645 se(d_cand) and
+      se <= 0.01; UNDERPOWERED -> NOT DECIDED.
+  Each verdict line in decision-a.txt says which form decided it.
+
+PART A (gap a; decide-a writes OUTDIR/decision-a.txt):
+  BUILD     build_r23 PASS (engine-r23basalt from the clean worktree at 3383d1f8d, 31 commits on v0.2.10, the pinned
+            ggml), warnings PASS (no prefill.cpp warning message the r22p0210 build log does not have), strings PASS
+            (STRATA_PF_AHEAD, STRATA_PF_TAIL_SPLIT, STRATA_PF_FIRST_CHUNK in the binary)
+  BASELINE  e7_B (exact7 at pin 2500, B against gap 17's g17-p210a: 7/7, slots MATCHED) AND logits_B40 (pf_yardstick
+            long40 on B: 0 of 40 first-token logit files differ from gap 17's p210). Else nothing below is decided.
+  PART_B    ALLOWED only when BUILD and BASELINE pass (gap-basalt-b.sh refuses otherwise)
+  A   EXACT when same_A16 (tail24, auto:16384, int8: B16 vs A16 24/24 byte-identical), same_A16s (the same with the
+      served CPU share: B16s vs A16s 24/24), ahead_A16 + ahead_A16s (the "M read in place" lines, M > 0; else
+      UNEXERCISED -> NOT DECIDED) and e7_A (7/7 MATCHED against B) all pass; differs -> rounding-level by the KL rule
+      on tail24 (A16) and long40 (A40, run only then), else FAIL
+  U   EXACT when e7_U 7/7 MATCHED and logits_U40 (long40 U vs B40: 0 of 40 differ); differs -> rounding-level by the
+      KL rule on long40 (gap 8's references), else FAIL
+  K   EXACT when e7_K 7/7 MATCHED (no prompt-logit effect to check: the yardstick has no chat cache)
+  KP  (optional) EXACT when same_KP (the 16 cuts >= 33K with --keep-kv-resident 32768 --kv int8: 16/16 identical)
+  T   ROUNDING-LEVEL when plan_T16 (24 of 24 tail24 cuts print their STRATA_PF_TAIL_SPLIT plan line) and the KL rule
+      (tail24 T16, long40 T40) pass; a KL check fails -> FAIL
+  G   only when g_go (A1: G's GDN phases shorter than B's on both cold fixtures), then as T (G16, G40); else NOT RUN
+  C   ROUNDING-LEVEL when c_lend (the lend line gives a chunk N > 16384), plan_C16 (the FIRST_CHUNK plan lines on the
+      cuts the formula says), vram_C (every C start and run: 5080 free >= 300 MiB, MemAvailable >= 12 GiB) and the KL
+      rule (tail24 C16 at auto:N, long40 C40 at auto:N) pass
+  S_PARTS = A T U K KP G that are EXACT or ROUNDING-LEVEL; C_PARTS = those of them in C; C_CHUNK = N
+
+PART B (gap b; decide-b writes OUTDIR/decision-b.txt):
+  B1 gain, per part (Basalt's cold pp16k / pp64k, a fresh engine per measurement, 3 passes in turned order; against B
+     on the same build): change = mean / B's mean - 1, noise = the larger arm's pass-to-pass spread (max / min - 1)
+     for that fixture. Targets: A, T -> 16K (64K the other); C, KP, K -> 64K (16K the other); U, G, S -> either.
+     GAIN = a target above +max(noise, 1.0 %) and no other fixture below -noise.
+  B2 decode (Basalt's decode fixtures, 1 pass, B S C): each fixture's decode of S and C >= B's x (1 - noise), noise =
+     gap 17's 3-pass spread of that fixture on P0210x-h (= B bit for bit; 3 % when that file is missing)
+  B3 screen (9 workloads, 3 passes in turned order, B S C): Karl's 11-03 per-workload no-loss (per workload, decode and
+     prompt tok/s each, the arm's pass mean >= B's x (1 - the larger of the two arms' spreads there)) AND the screen's
+     prompt geomean (over the passes) not below B's
+  B4 the chat-cache trade of T and C (round-11 #693): request 2's and 3's prompt reads and the "checkpoint at" lines,
+     REPORTED (Karl decides the trade)
+  verdict per part: CANDIDATE = its part-a class is EXACT / ROUNDING-LEVEL + GAIN (S and C: + B2 + B3; C: + vram_C in
+  every part-b C run + B4 reported); NO GAIN = the gates pass without the gain; VOID = an env / fatal gate of the
+  arm failed; NOT DECIDED = something missing.
+
+Subcommands: arms, cfgcheck, pfy, nllrun, envcli, envcheck, e7gate, same, ahead, planlines, kl, nllmode, nllgate,
+profile, lend, vram, chat3, chatrep, decide-a, decide-b (see main()). Python: .venv/bin/python -I -B (numpy).
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import math
+import os
+import random
+import re
+import signal
+import statistics as st
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+sys.dont_write_bytecode = True     # it loads modules from trees it must not write to (work/r22, work/r23/nll-many)
+WS = Path("/home/USER/ai-speed-testing/strata-compare")
+BASE_CFG = WS / "configs/P0210x-h.json"
+E23 = WS / "engine-r23basalt/strata"
+SRV23 = WS / "strata-r23basalt/serve/server.py"
+TREE23 = WS / "strata-r23basalt"
+PR = WS / "bringup/out/r20a/prompts"
+PFY = WS / "work/r22/pf_yardstick.py"
+SCORE = WS / "work/r23/nll-many/score.py"
+G17 = WS / "work/r22/g17_rules.py"
+PROF = WS / "bringup/out/logs/prof"
+GUARD_SUM = WS / "bringup/out/logs/guard/summary.txt"
+GGUF = WS / "models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf"
+BP90_DATA = Path("/home/USER/ai-speed-testing/basalt-pr90-data")
+G17_BP90_H = WS / "results/r22/gap17/bp90/cold-H.jsonl"      # B2's noise: P0210x-h's 3 passes in gap 17
+NLL_ROOT = Path(os.environ.get("R23_NLL_ROOT_TEST", WS / "results/r23/nll-many/gap"))   # the NLL gap's output
+# (work/r23/gap-nll.sh); R23_NLL_ROOT_TEST is for the dry runs only
+NLL_MAXLEN = 33536      # 2 x 16384 + a 768-token staged rest (< the yardstick's stream-all floor 1024)
+TOL, KL_HIGH = 1.10, 1.0
+
+TAIL24 = [("tf-long40k.prompt", (16684, 17084, 17384, 33188, 33618)),
+          ("tf-long64k.prompt", (16640, 16944, 33068, 33768, 49572, 49852)),
+          ("tf-long112k.prompt", (16804, 17234, 33328, 49408, 50152, 65836, 65956, 66236)),
+          ("tf-long96k.prompt", (17384, 33468, 49712, 66386, 66536))]
+ARMS = {"B": {}, "A": {"STRATA_PF_AHEAD": "1"}, "T": {"STRATA_PF_TAIL_SPLIT": "1"}, "U": {"STRATA_HC_UPMIX": "1"},
+        "K": {"STRATA_CKPT_POOL": "1", "STRATA_CKPT_POOL_READY": "2"}, "KP": {"STRATA_KV_PREFETCH": "1"},
+        "G": {"STRATA_GDN_CHUNKED": "2"}}
+PROFILE_ENV = {"STRATA_PREFILL_TIMING": "1", "STRATA_TRACE": "1"}
+TRACE_ENV = {"STRATA_TRACE": "1"}
+FIRST_ENV = {"STRATA_PF_FIRST_CHUNK": "1"}
+# switches that must not reach an engine unless its config sets them (r23's, the parts', the diagnostics')
+R23_OWN = sorted({k for v in ARMS.values() for k in v} | set(PROFILE_ENV) | set(FIRST_ENV) | {"STRATA_PF_AHEAD_MAX"})
+KNOWN = sorted(set(R23_OWN) | {"STRATA_PREFILL_DUMP_R", "STRATA_PREFILL_DUMP_R_ALL", "STRATA_DUMP_FIRST_LOGITS",
+                               "STRATA_PREFILL_STREAM_MIN", "STRATA_GDN_TC", "STRATA_GDN_CONVL2", "STRATA_PF_HC_REGION"})
+PARTS = ("A", "T", "U", "K", "KP", "G", "C")
+CLAIM = {"A": "exact", "U": "exact", "K": "exact", "KP": "exact", "T": "rounding", "G": "rounding", "C": "rounding"}
+KL_SETS = {"T": ("tail24", "long40"), "G": ("tail24", "long40"), "C": ("tail24", "long40"), "A": ("tail24", "long40"),
+           "U": ("long40",)}
+TARGETS = {"A": ["pp16k"], "T": ["pp16k"], "C": ["pp64k"], "KP": ["pp64k"], "K": ["pp64k"], "U": ["pp16k", "pp64k"],
+           "G": ["pp16k", "pp64k"], "S": ["pp16k", "pp64k"]}
+PF_NAMES = ["embed+steps", "hc read", "gdn", "qsa proj", "qsa indexer", "qsa select", "qsa attn", "router+shared",
+            "host grouping", "gather", "wait copy", "dequant", "gemm gate/up", "gemm down", "combine", "ple", "kv stage",
+            "gdn conv+gates", "gdn recurrence", "gdn out proj", "hc write", "hc read: down+silu", "hc read: up",
+            "hc read: inject", "hc read: mix", "qsa: indexer gemms", "qsa: norm/rope/kv append/q prep"]
+GDN_PHASES = ("gdn", "gdn conv+gates", "gdn recurrence", "gdn out proj")
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def gate(a, status, detail):
+    if getattr(a, "gates", None) and getattr(a, "gate", None):
+        with open(a.gates, "a") as f:
+            f.write(f"{a.gate} {status} {detail}\n")
+
+
+def read_gates(p):
+    g = {}
+    for line in Path(p).read_text(errors="replace").splitlines() if Path(p).exists() else []:
+        k, _, rest = line.partition(" ")
+        s, _, det = rest.partition(" ")
+        if k:
+            g[k] = (s, det)       # the last line of a gate counts
+    return g
+
+
+def ids_of(f):
+    return [int(x) for x in (PR / f).read_text().replace("\n", ",").split(",") if x.strip()]
+
+
+def last_val(argv, flag):
+    v = [argv[i + 1] for i, x in enumerate(argv[:-1]) if x == flag]
+    return v[-1] if v else None
+
+
+def gm(v):
+    return math.exp(sum(math.log(x) for x in v) / len(v))
+
+
+def spread(v):
+    return max(v) / min(v) - 1 if len(v) > 1 else 0.0
+
+
+# ================================================================================================ arm configs
+def write_cfg(out, name, base, env_add, prefill=None, note=""):
+    c = json.loads(json.dumps(base))
+    c["_comment"] = (f"r23 Basalt prompt-path gate, arm {name} (work/r23/basalt_rules.py arms, from configs/P0210x-h.json): "
+                     f"exe engine-r23basalt, server strata-r23basalt; adds {env_add or 'nothing'}"
+                     + (f", --prefill {prefill}" if prefill else "") + (f". {note}" if note else "") +
+                     ". Measurement only, never served.")
+    c["exe"], c["server"] = str(E23), str(SRV23)
+    c["log"] = str(WS / f"logs/engine-r23-{name}.log")
+    c["env"].update(env_add)
+    if prefill:
+        i = c["args"].index("--prefill")
+        c["args"][i + 1] = prefill
+    p = Path(out) / f"r23-{name}.json"
+    p.write_text(json.dumps(c, indent=1) + "\n")
+    return p, {"env": env_add, "prefill": prefill}
+
+
+def cmd_arms(a):
+    base = json.loads(BASE_CFG.read_text())
+    out = Path(a.outdir)
+    out.mkdir(parents=True, exist_ok=True)
+    man = {}
+    for n, e in ARMS.items():
+        man[n] = write_cfg(out, n, base, dict(e))[1]
+    for n in ("B", "T", "G"):
+        man[n + "p"] = write_cfg(out, n + "p", base, {**ARMS[n], **PROFILE_ENV}, note="A1 profile (timing + trace)")[1]
+    for n in ("B", "T"):
+        man[n + "c"] = write_cfg(out, n + "c", base, {**ARMS[n], **TRACE_ENV}, note="B4 chat-cache trade (trace)")[1]
+    if a.stack is not None:
+        parts = [x for x in a.stack.split(",") if x]
+        bad = [x for x in parts if x not in ARMS or x == "B"]
+        if bad:
+            print(f"unknown stack part(s) {bad}")
+            return 2
+        env = {}
+        for x in parts:
+            env.update(ARMS[x])
+        man["S"] = write_cfg(out, "S", base, env, note=f"the stack {'+'.join(parts) or '(empty)'}")[1]
+        man["S"]["parts"] = parts
+        if a.cstack is not None:          # C's parts as gap a gated them (part b), when they differ from S's
+            parts = [x for x in a.cstack.split(",") if x]
+            if any(x not in ARMS or x == "B" for x in parts):
+                print(f"unknown C part(s) in {a.cstack}")
+                return 2
+            env = {}
+            for x in parts:
+                env.update(ARMS[x])
+        if a.scan:
+            man["Cscan"] = write_cfg(out, "Cscan", base, {**env, **FIRST_ENV}, prefill="auto:24576",
+                                     note="A7: one start to read the lend's chunk")[1]
+        if a.cap:
+            man["C"] = write_cfg(out, "C", base, {**env, **FIRST_ENV}, prefill=f"auto:{a.cap}",
+                                 note=f"the cap arm on {'+'.join(parts) or 'B'}")[1]
+            man["Cc"] = write_cfg(out, "Cc", base, {**env, **FIRST_ENV, **TRACE_ENV}, prefill=f"auto:{a.cap}",
+                                  note="B4 chat-cache trade (trace)")[1]
+            man["C"]["parts"] = man["Cc"]["parts"] = parts
+    mp = out / "manifest.json"
+    old = json.loads(mp.read_text()) if mp.exists() else {}
+    old.update(man)
+    old["_base"] = {"path": str(BASE_CFG), "sha256": __import__("hashlib").sha256(BASE_CFG.read_bytes()).hexdigest()}
+    mp.write_text(json.dumps(old, indent=1) + "\n")
+    print(f"arm configs in {out}: {', '.join(sorted(k for k in man))}")
+    return cmd_cfgcheck(argparse.Namespace(outdir=str(out), gate=a.gate, gates=a.gates))
+
+
+def cmd_cfgcheck(a):
+    """every arm config = P0210x-h + exactly its manifest delta (exe, server, log, comment, env keys, --prefill)"""
+    base = json.loads(BASE_CFG.read_text())
+    out = Path(a.outdir)
+    man = json.loads((out / "manifest.json").read_text())
+    bad = []
+    for n, m in man.items():
+        if n.startswith("_"):
+            continue
+        c = json.loads((out / f"r23-{n}.json").read_text())
+        if c["exe"] != str(E23) or c["server"] != str(SRV23):
+            bad.append(f"{n}: exe/server")
+        want_env = {**base["env"], **m["env"]}
+        if c["env"] != want_env:
+            bad.append(f"{n}: env differs from P0210x-h + {m['env']}")
+        a_want = list(base["args"])
+        if m.get("prefill"):
+            a_want[a_want.index("--prefill") + 1] = m["prefill"]
+        if c["args"] != a_want:
+            bad.append(f"{n}: args")
+        for k in set(base) | set(c):
+            if k not in ("_comment", "exe", "server", "log", "env", "args") and base.get(k) != c.get(k):
+                bad.append(f"{n}: {k}")
+        stray = [k for k in base["env"] if k in R23_OWN]
+        if stray:
+            bad.append(f"P0210x-h itself sets {stray}")
+    line = ("CONFIG CHECK OK: " + ", ".join(sorted(k for k in man if not k.startswith("_"))) +
+            " = P0210x-h + their switches only") if not bad else "CONFIG CHECK FAILED: " + "; ".join(sorted(set(bad)))
+    print(line)
+    gate(a, "FAIL" if bad else "PASS", line[:300])
+    return 1 if bad else 0
+
+
+# ================================================================================================ the yardstick (r23 form)
+def prompt_set(py, name):
+    out = []
+    if name in ("tail24", "tail24hi"):
+        for f, cuts in TAIL24:
+            ids = ids_of(f)
+            for n in cuts:
+                if name == "tail24hi" and n < 33000:
+                    continue
+                out.append({"name": f"{f.split('.')[0]}-{n}", "file": f, "cut": n, "ids": ids[:n]})
+        assert len(out) == (24 if name == "tail24" else 16), len(out)
+    elif name == "long40":
+        for f, cuts in py.LONG40:
+            ids = ids_of(f)
+            for n in cuts:
+                out.append({"name": f"{f.split('.')[0]}-{n or len(ids)}", "file": f, "cut": n or len(ids),
+                            "ids": ids[:n] if n else ids})
+        assert len(out) == 40
+    else:
+        raise SystemExit(f"unknown set {name}")
+    return out
+
+
+def cmd_pfy(a):
+    """work/r22/pf_yardstick.py run with the plan's options: --prefill SPEC (instead of the forced bare auto), --set
+    tail24 / tail24hi / long40, --kv, --keep-share (do not force STRATA_PREFILL_CPU_SHARE=0), --keep-kv-resident N"""
+    py = load("pf_yardstick", PFY)
+    qq = py.tool()
+    cfg = json.load(open(a.config, encoding="utf-8-sig"))
+    out = Path(a.outdir).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    for f in out.glob("first.*"):
+        f.unlink()
+    ps = prompt_set(py, a.set)
+    env = dict(os.environ)
+    env.update(cfg.get("env", {}))
+    if cfg.get("lib_dirs"):
+        env["LD_LIBRARY_PATH"] = ":".join(cfg["lib_dirs"] + [env.get("LD_LIBRARY_PATH", "")])
+    fixed = dict(qq.FIXED_ENV)
+    if a.keep_share:
+        fixed.pop("STRATA_PREFILL_CPU_SHARE", None)
+    env.update(fixed)
+    for kv in a.env or []:
+        k, _, v = kv.partition("=")
+        env[k] = v
+    env["STRATA_DUMP_FIRST_LOGITS"] = str(out / "first")
+    if qq.mem_available_gb() < a.min_free_gb:
+        raise SystemExit(f"only {qq.mem_available_gb():.0f} GB available (< {a.min_free_gb}): not starting an engine")
+    args = qq.engine_args(cfg, False, max(len(p["ids"]) for p in ps))
+    k = args.index("--short-read")
+    del args[k:k + 2]
+    args[args.index("--prefill") + 1] = a.prefill
+    args[args.index("--kv") + 1] = a.kv
+    if a.keep_kv_resident:
+        args += ["--kv-resident", str(a.keep_kv_resident)]
+    errf = open(out / "stderr.txt", "w")
+    print("engine:", " ".join(args), flush=True)
+    t0 = time.time()
+    p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errf, text=True,
+                         cwd=cfg.get("cwd"), env=env, bufsize=1)
+    for line in p.stdout:
+        if line.startswith("READY"):
+            break
+    else:
+        raise SystemExit(f"the engine ended before READY (exit {p.wait()}); see {out}/stderr.txt")
+    index = []
+    for r in ps:
+        p.stdin.write("GEN 1 " + ",".join(map(str, r["ids"])) + "\n")
+        p.stdin.flush()
+        done = None
+        for line in p.stdout:
+            if line.startswith(("DONE", "ERR")):
+                done = line.strip()
+                break
+        if done is None or not done.startswith("DONE") or "nonfinite" in done:
+            p.kill()
+            raise SystemExit(f"{r['name']}: the engine answered {done!r}; see {out}/stderr.txt")
+        index.append({"segment": r["name"].rsplit("-", 1)[0], "tokens": len(r["ids"]), "name": r["name"],
+                      "file": r["file"], "cut": r["cut"]})
+    p.stdin.write("QUIT\n")
+    p.stdin.flush()
+    try:
+        p.wait(timeout=600)
+    except subprocess.TimeoutExpired:
+        p.kill()
+    errf.close()
+    n = len(list(out.glob("first.*")))
+    settings = {"set": a.set, "prefill": a.prefill, "kv": a.kv, "keep_share": a.keep_share,
+                "keep_kv_resident": a.keep_kv_resident, "seconds": round(time.time() - t0, 1)}
+    (out / "index.json").write_text(json.dumps({"requests": index, "args": args, "env": a.env or [], "config": a.config,
+                                                "r23": settings}, indent=1))
+    print(f"{len(index)} prompts, {n} logit rows, {settings['seconds']:.0f} s ({a.set}, --prefill {a.prefill}, --kv {a.kv}"
+          f"{', served CPU share' if a.keep_share else ''}{f', --kv-resident {a.keep_kv_resident}' if a.keep_kv_resident else ''})")
+    return 0 if n == len(index) else 1
+
+
+def cmd_nllrun(a):
+    """score.py run (work/r23/nll-many, unchanged) with this arm's prompt chunk: score.py forces --prefill auto, so the
+    engine start is given --prefill SPEC instead (subprocess.Popen wrapped in score.py's module only); the index.json
+    records the args the engine really got"""
+    sm = load("score_nll", SCORE)
+    real = sm.subprocess
+    spec = a.prefill
+
+    class SP:
+        def __getattr__(self, k):
+            return getattr(real, k)
+
+        @staticmethod
+        def Popen(args, *x, **kw):
+            args = list(args)
+            if spec and "--prefill" in args:
+                args[args.index("--prefill") + 1] = spec
+            SP.args = args
+            print("engine (r23 chunk):", " ".join(args), flush=True)
+            return real.Popen(args, *x, **kw)
+    sm.subprocess = SP()
+    ns = argparse.Namespace(config=a.config, outdir=a.outdir, set="long11", rows=a.rows, env=a.env, kv="fp16",
+                            pcie_frac=None, min_free_gb=a.min_free_gb, max_len=a.max_len)
+    rc = sm.cmd_run(ns)
+    ip = Path(a.outdir) / "index.json"
+    if ip.exists() and getattr(SP, "args", None):
+        d = json.loads(ip.read_text())
+        d["args"] = SP.args
+        d["r23"] = {"prefill": spec, "max_len": a.max_len, "rows": a.rows}
+        ip.write_text(json.dumps(d, indent=1))
+    return rc
+
+
+# ================================================================================================ environment checks
+def proc_tree(root):
+    kids = {}
+    for d in Path("/proc").iterdir():
+        if d.name.isdigit():
+            try:
+                pp = int((d / "stat").read_text().rsplit(")", 1)[1].split()[1])
+            except (OSError, IndexError, ValueError):
+                continue
+            kids.setdefault(pp, []).append(int(d.name))
+    out, todo = set(), [root]
+    while todo:
+        p = todo.pop()
+        for c in kids.get(p, []):
+            if c not in out:
+                out.add(c)
+                todo.append(c)
+    return out
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return Path(f"/proc/{pid}").exists() and "zombie" not in Path(f"/proc/{pid}/status").read_text()
+    except OSError:
+        return False
+
+
+def proc_env(pid):
+    env = dict(x.split("=", 1) for x in Path(f"/proc/{pid}/environ").read_bytes().decode("utf-8", "replace").split("\0")
+               if "=" in x)
+    argv = Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace").split("\0")
+    return env, argv
+
+
+def cmd_envcli(a):
+    """the engines a CLI job starts (exact7 items, the yardstick, score.py): found under the job's process tree by
+    /proc/PID/exe (never a command-line pattern), each checked as it starts; a mismatching one is stopped by its PID"""
+    cfg = json.loads(Path(a.config).read_text())
+    want = dict(cfg.get("env", {}))
+    allowed = {"STRATA_MON_GPU"}
+    if a.mode in ("pfy", "nll"):
+        qq = load("pf_yardstick", PFY).tool()
+        fx = dict(qq.FIXED_ENV)
+        if a.keep_share:
+            fx.pop("STRATA_PREFILL_CPU_SHARE", None)
+        want.update(fx)
+        allowed.add("STRATA_DUMP_FIRST_LOGITS")
+        if a.mode == "nll":
+            allowed |= {"STRATA_PREFILL_DUMP_R", "STRATA_PREFILL_DUMP_R_ALL"}
+        f = dict(zip(qq.FIXED[0::2], qq.FIXED[1::2]))
+        args_want = {"--expert-cache": f["--expert-cache"], "--pcie-frac": f["--pcie-frac"], "--adapt-every": f["--adapt-every"],
+                     "--suffix-draft": f["--suffix-draft"], "--prompt-cache": f["--prompt-cache"],
+                     "--prefill": a.prefill or "auto", "--kv": a.kv or "fp16", "--kv-resident": a.kv_resident}
+    else:
+        args_want = {"--expert-cache": "2500", "--adapt-swaps": "0", "--suffix-draft": "0",
+                     "--prefill": last_val(cfg["args"], "--prefill")}
+        if "--kv-resident" in cfg.get("user_args", []):
+            args_want["--kv-resident"] = "32768"
+    for kv in a.set or []:
+        k, _, v = kv.partition("=")
+        want[k] = v
+    exe = os.path.realpath(a.exe)
+    seen = {}
+
+    def check(env, argv):
+        bad = [f"{k}={env.get(k, 'unset')} (want {v})" for k, v in want.items() if env.get(k) != v]
+        bad += [f"{k}={env[k]} (not in the config)" for k in sorted(env) if k.startswith("STRATA_") and k not in want
+                and k not in allowed]
+        if env.get("STRATA_ROUTE_TAIL_SKIP") != "0":
+            bad.append(f"STRATA_ROUTE_TAIL_SKIP={env.get('STRATA_ROUTE_TAIL_SKIP', 'unset')}")
+        n = len([x for x in env.get("CUDA_VISIBLE_DEVICES", "").split(",") if x])
+        if n != 2:
+            bad.append(f"{n} GPU(s) in CUDA_VISIBLE_DEVICES (want 2)")
+        if a.mode in ("pfy", "nll") and (len(argv) < 2 or argv[1] != "--serve"):
+            bad.append("not the yardstick's --serve engine")
+        bad += [f"{k} {last_val(argv, k)} (want {v})" for k, v in args_want.items() if last_val(argv, k) != v]
+        return bad
+
+    while True:
+        done = not alive(a.job)
+        for pid in sorted(proc_tree(a.job) | {a.job}):
+            if pid in seen:
+                continue
+            try:
+                if os.readlink(f"/proc/{pid}/exe") != exe:
+                    continue
+                env, argv = proc_env(pid)
+            except OSError:
+                continue
+            bad = check(env, argv)
+            seen[pid] = bad
+            killed = ""
+            if bad and a.kill:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed = "; STOPPED (pid) before it measures"
+                except OSError:
+                    killed = "; could not stop it"
+            print(f"engine pid {pid}: {len(want)} env keys, STRATA_ROUTE_TAIL_SKIP={env.get('STRATA_ROUTE_TAIL_SKIP', 'unset')}, "
+                  f"{' '.join(f'{k} {last_val(argv, k)}' for k in args_want)}"
+                  + (f" -> ENV MISMATCH {', '.join(bad)}{killed}" if bad else " -> ENV OK"), flush=True)
+        if done:
+            break
+        time.sleep(0.2)
+    bad_all = [b for v in seen.values() for b in v]
+    if not seen:
+        line = f"no engine {exe} started in job {a.job}"
+    elif bad_all:
+        line = f"{sum(1 for v in seen.values() if v)} of {len(seen)} engine start(s) not as configured: " + "; ".join(sorted(set(bad_all)))
+    else:
+        line = (f"{len(seen)} engine start(s) ({a.mode}), {len(want)} env keys as configured, STRATA_ROUTE_TAIL_SKIP=0, "
+                "no other STRATA_*, harness args as expected")
+    ok = bool(seen) and not bad_all
+    print(("ENV CHECK OK: " if ok else "ENV CHECK FAILED - the arm is void: ") + line)
+    gate(a, "PASS" if ok else "FAIL", line[:400])
+    return 0 if ok else 1
+
+
+def cmd_envcheck(a):
+    """a server arm's engine (inside with_server.sh): the config's env exactly, none of the known switches set behind
+    it, STRATA_ROUTE_TAIL_SKIP=0, 2 GPUs, --kv-resident 32768 last (user_args), the config's --prefill"""
+    cfg = json.loads(Path(a.config).read_text())
+    want = cfg.get("env", {})
+    exe = os.path.realpath(a.exe)
+    procs = []
+    for d in Path("/proc").iterdir():
+        if d.name.isdigit():
+            try:
+                if os.readlink(d / "exe") == exe:
+                    procs.append((d.name, *proc_env(d.name)))
+            except OSError:
+                continue
+    if not procs:
+        print(f"ENV CHECK FAILED: no running engine {exe}")
+        gate(a, "FAIL", f"no running engine {exe}")
+        return 1
+    pf = last_val(cfg["args"], "--prefill")
+    bad_all = []
+    for pid, env, argv in procs:
+        bad = [f"{k}={env.get(k, 'unset')} (want {v})" for k, v in want.items() if env.get(k) != v]
+        bad += [f"{k}={env[k]} set behind the config" for k in KNOWN if k not in want and k in env]
+        if env.get("STRATA_ROUTE_TAIL_SKIP") != "0":
+            bad.append(f"STRATA_ROUTE_TAIL_SKIP={env.get('STRATA_ROUTE_TAIL_SKIP', 'unset')}")
+        n = len([x for x in env.get("CUDA_VISIBLE_DEVICES", "").split(",") if x])
+        if n != 2:
+            bad.append(f"{n} GPU(s) in CUDA_VISIBLE_DEVICES (want 2)")
+        kv = last_val(argv, "--kv-resident")
+        if "--kv-resident" in cfg.get("user_args", []) and kv != "32768":
+            bad.append(f"--kv-resident {kv or 'missing'} (want 32768, user_args)")
+        if pf and last_val(argv, "--prefill") != pf:
+            bad.append(f"--prefill {last_val(argv, '--prefill')} (want {pf})")
+        print(f"engine pid {pid}: {len(want)} config env keys checked, STRATA_ROUTE_TAIL_SKIP="
+              f"{env.get('STRATA_ROUTE_TAIL_SKIP', 'unset')}, {n} GPU(s), --kv-resident {kv or '-'}, --prefill "
+              f"{last_val(argv, '--prefill')}" + (f"; MISMATCH {', '.join(bad)}" if bad else ""))
+        bad_all += bad
+    if bad_all:
+        print("ENV CHECK FAILED - this arm is not measured")
+        gate(a, "FAIL", "; ".join(bad_all)[:300])
+        return 1
+    print("ENV CHECK OK")
+    gate(a, "PASS", f"{len(procs)} engine process(es), {len(want)} env keys as configured, --prefill {pf}")
+    return 0
+
+
+# ================================================================================================ exactness
+def e7_of(summary, label):
+    s = Path(summary).read_text(errors="replace") if Path(summary).exists() else ""
+    m = re.findall(rf"^exact7 {re.escape(label)}: (\d)/7 identical", s, re.M)
+    sl = re.findall(rf"^exact7-slots {re.escape(label)}: .*-> (MATCHED|DIFFER)", s, re.M)
+    return (int(m[-1]) if m else None), (sl[-1] if sl else None)
+
+
+def cmd_e7gate(a):
+    n, sl = e7_of(a.summary, a.label)
+    ok = n == 7 and sl == "MATCHED"
+    line = f"exact7 {a.label}: {n if n is not None else '?'}/7, slots {sl or '?'}"
+    print(f"{line} -> {'PASS' if ok else 'FAIL'}")
+    gate(a, "PASS" if ok else ("FAIL" if n is not None else "MISSING"), line)
+    return 0
+
+
+def cmd_same(a):
+    """byte-identical first-token logit files, A against B, over A's index (the same prompts in the same order)"""
+    da, db = Path(a.a), Path(a.b)
+    try:
+        ia = json.loads((da / "index.json").read_text())["requests"]
+        ib = json.loads((db / "index.json").read_text())["requests"]
+    except OSError:
+        print(f"{da.name} vs {db.name}: an index.json is missing")
+        gate(a, "MISSING", f"{da.name} vs {db.name}: an index.json is missing")
+        return 1
+    if [(r["tokens"]) for r in ia] != [(r["tokens"]) for r in ib]:
+        print(f"{da.name} vs {db.name}: not the same prompts")
+        gate(a, "FAIL", f"{da.name} vs {db.name}: not the same prompts")
+        return 1
+    nd = nf = miss = 0
+    for i in range(len(ia)):
+        fa, fb = da / f"first.{i}", db / f"first.{i}"
+        if not fa.exists() or not fb.exists():
+            miss += 1
+            continue
+        nf += 1
+        nd += fa.read_bytes() != fb.read_bytes()
+    ok = nd == 0 and miss == 0 and nf == len(ia) and nf > 0
+    line = f"{da.name} vs {db.name}: {nd} of {nf} first-token logit files differ" + (f", {miss} missing" if miss else "")
+    print(line + (" -> IDENTICAL" if ok else " -> DIFFER"))
+    gate(a, "PASS" if ok else "FAIL", line)
+    return 0
+
+
+def cmd_ahead(a):
+    t = (Path(a.dir) / "stderr.txt").read_text(errors="replace") if (Path(a.dir) / "stderr.txt").exists() else ""
+    rows = [(int(c), int(u)) for c, u in re.findall(r"STRATA_PF_AHEAD=\d+: (\d+) experts copied ahead of their layer's "
+                                                    r"routing, (\d+) read in place", t)]
+    used = sum(1 for _, u in rows if u > 0)
+    line = (f"{Path(a.dir).name}: {len(rows)} prompt line(s) 'copied ahead', {used} with M > 0 read in place "
+            f"(copied {sum(c for c, _ in rows)}, read in place {sum(u for _, u in rows)})")
+    st_ = "PASS" if used > 0 else "UNEXERCISED"
+    print(f"{line} -> {st_}")
+    gate(a, st_, line)
+    return 0
+
+
+def expect_plan(cuts, C, smin, kind):
+    n_exp = 0
+    for n in cuts:
+        if n <= C:
+            continue
+        if kind == "first":
+            if C > 16384:
+                rest = n - 16384
+                k = (rest + C - 1) // C
+                n_exp += k > 1 or rest >= smin
+        else:
+            k = (n + C - 1) // C
+            last = n - (k - 1) * C
+            r = C + last
+            aa = min(C, ((r + 1) // 2 + 255) // 256 * 256)
+            n_exp += last >= 256 and last < smin and aa >= smin and r - aa >= smin
+    return n_exp
+
+
+def cmd_planlines(a):
+    d = Path(a.dir)
+    t = (d / "stderr.txt").read_text(errors="replace") if (d / "stderr.txt").exists() else ""
+    idx = json.loads((d / "index.json").read_text())["requests"] if (d / "index.json").exists() else []
+    key = "STRATA_PF_FIRST_CHUNK:" if a.kind == "first" else "STRATA_PF_TAIL_SPLIT:"
+    got = t.count(key)
+    exp = expect_plan([r["tokens"] for r in idx], a.chunk, a.smin, a.kind)
+    ok = bool(idx) and exp > 0 and got == exp
+    line = f"{d.name}: {got} '{key}' plan line(s), the formula expects {exp} of {len(idx)} prompts (chunk {a.chunk}, stream-all {a.smin})"
+    print(line + (" -> PASS" if ok else " -> FAIL"))
+    gate(a, "PASS" if ok else "FAIL", line)
+    return 0
+
+
+# ================================================================================================ the KL rule
+def logp(d, i):
+    import numpy as np
+    x = np.fromfile(d / f"first.{i}", dtype=np.float32).astype(np.float64)
+    x -= x.max()
+    return x - np.log(np.exp(x).sum())
+
+
+def next_tokens(idx):
+    """the text's own next token after each prompt (None where the text ends there): from the index's file / cut (r23
+    runs), else long40's order (pf_yardstick.py runs, as kernel_rule3)"""
+    if all("file" in r for r in idx):
+        cache = {}
+        out = []
+        for r in idx:
+            ids = cache.setdefault(r["file"], ids_of(r["file"]))
+            out.append((r["cut"], ids[r["cut"]] if r["cut"] < len(ids) else None))
+        return out
+    py = load("pf_yardstick", PFY)
+    out = []
+    for f, cuts in py.LONG40:
+        ids = ids_of(f)
+        for n in cuts:
+            out.append((n or len(ids), ids[n] if n and n < len(ids) else None))
+    if len(out) != len(idx):
+        raise SystemExit(f"index.json has {len(idx)} requests, long40 has {len(out)}")
+    return out
+
+
+def kl_rows(ref, run, idx, nxt):
+    import numpy as np
+    kl, hits, nll = [], 0, []
+    for i, rq in enumerate(idx):
+        if rq["tokens"] <= 1000 or not (run / f"first.{i}").exists() or not (ref / f"first.{i}").exists():
+            continue
+        if rq["tokens"] != nxt[i][0]:
+            raise SystemExit(f"request {i}: {rq['tokens']} tokens, the set says {nxt[i][0]} - order differs")
+        lr, la = logp(ref, i), logp(run, i)
+        kl.append(float((np.exp(lr) * (lr - la)).sum()))
+        hits += int(lr.argmax() == la.argmax())
+        if nxt[i][1] is not None:
+            nll.append((i, -float(la[nxt[i][1]]), -float(lr[nxt[i][1]])))
+    k = np.array(kl)
+    return {"n": len(k), "hits": hits, "flips": len(k) - hits, "mean": float(k.mean()), "p90": float(np.percentile(k, 90)),
+            "high": int((k > KL_HIGH).sum()), "max": float(k.max()), "nll_rows": nll}
+
+
+def cmd_kl(a):
+    """kernel_rule2 + kernel_rule3 on one root (tail24 or long40 dirs), the reference index's prompts > 1000 tokens;
+    --mode new: rule3's point NLL check is INFO (the many-positions check decides the NLL)"""
+    import numpy as np
+    root = Path(a.root)
+    idx = json.loads((root / a.ref / "index.json").read_text())["requests"]
+    nxt = next_tokens(idx)
+    refs = a.refs.split(",")
+    cands = [c.split(":") if ":" in c else (c, c) for c in a.cands.split(",") if c]
+    s = {x: kl_rows(root / a.ref, root / x, idx, nxt) for x in refs + [c for c, _ in cands] if (root / x / "index.json").exists()}
+    if any(x not in s for x in refs):
+        print(f"MISSING references: {', '.join(x for x in refs if x not in s)}")
+        for c, g in cands:
+            for r in ("kl2", "kl3"):
+                gate(argparse.Namespace(gates=a.gates, gate=f"{r}_{g}_{a.set}"), "MISSING", "a reference is missing")
+        return 2
+    common = set.intersection(*[{i for i, _, _ in s[x]["nll_rows"]} for x in s])
+    for x in s:
+        rows = [(c, b) for i, c, b in s[x]["nll_rows"] if i in common]
+        s[x]["nll"], s[x]["nll_base"] = float(np.mean([c for c, _ in rows])), float(np.mean([b for _, b in rows]))
+    base = s[refs[0]]["nll_base"]
+    b2 = {"mean": TOL * max(s[x]["mean"] for x in refs), "hits": min(s[x]["hits"] for x in refs) - 1,
+          "p90": max(s[x]["p90"] for x in refs), "high": max(s[x]["high"] for x in refs) + 1}
+    b3 = {"mean": b2["mean"], "p90": TOL * max(s[x]["p90"] for x in refs), "high": b2["high"],
+          "flips": TOL * max(s[x]["flips"] for x in refs), "nll": TOL * max(abs(s[x]["nll"] - base) for x in refs)}
+    print(f"reference {a.ref} in {root} ({a.set}) - bounds: top-1 >= {b2['hits']} prompts, KL mean <= {b2['mean']:.6f}, "
+          f"KL p90 <= {b2['p90']:.6f}, rows KL > {KL_HIGH:g} <= {b2['high']}")
+    for x in refs + [c for c, _ in cands]:
+        if x not in s:
+            print(f"{x}: no data")
+            continue
+        r = s[x]
+        line = (f"{x:10s} top-1 {r['hits']}/{r['n']}  KL mean {r['mean']:.6f}  p90 {r['p90']:.6f}  rows > {KL_HIGH:g}: "
+                f"{r['high']}  (max {r['max']:.4f}, not judged)")
+        if x in dict(cands):
+            fails = [w for w, bad in (("top-1", r["hits"] < b2["hits"]), ("mean", r["mean"] > b2["mean"]),
+                                      ("p90", r["p90"] > b2["p90"]), ("KL>1 rows", r["high"] > b2["high"])) if bad]
+            line += f"  -> {'PASS' if not fails else 'FAIL (' + ', '.join(fails) + ')'}"
+            s[x]["f2"], s[x]["l2"] = fails, line
+        print(line)
+    print(f"reference {a.ref} in {root} (10-26 rule, {s[refs[0]]['n']} prompts, NLL on {len(common)}) - bounds: KL mean <= "
+          f"{b3['mean']:.6f}, KL p90 <= {b3['p90']:.6f}, rows KL > {KL_HIGH:g} <= {b3['high']}, changed top-1 <= {b3['flips']:.1f}, "
+          f"NLL above {a.ref}'s ({base:.4f}) <= {b3['nll']:.4f}" + ("  [mode new: the point NLL check is INFO]" if a.mode == "new" else ""))
+    for x in refs + [c for c, _ in cands]:
+        if x not in s:
+            continue
+        r = s[x]
+        line = (f"{x:10s} KL mean {r['mean']:.6f}  p90 {r['p90']:.6f}  rows > {KL_HIGH:g}: {r['high']}  changed top-1 "
+                f"{r['flips']}/{r['n']}  NLL {r['nll']:.4f} ({r['nll'] - base:+.4f})")
+        if x in dict(cands):
+            nll_bad = r["nll"] - base > b3["nll"]
+            fails = [w for w, bad in (("mean", r["mean"] > b3["mean"]), ("p90", r["p90"] > b3["p90"]),
+                                      ("KL>1 rows", r["high"] > b3["high"]), ("top-1", r["flips"] > b3["flips"]),
+                                      ("NLL", nll_bad and a.mode == "old")) if bad]
+            line += f"  -> {'PASS' if not fails else 'FAIL (' + ', '.join(fails) + ')'}"
+            if a.mode == "new":
+                line += f"  (point NLL {'above' if nll_bad else 'within'} its bound: INFO)"
+            s[x]["f3"], s[x]["l3"] = fails, line
+        print(line)
+    for c, g in cands:
+        if c not in s:
+            for r in ("kl2", "kl3"):
+                gate(argparse.Namespace(gates=a.gates, gate=f"{r}_{g}_{a.set}"), "MISSING", f"no run {c}")
+            continue
+        for r, f, l in (("kl2", s[c]["f2"], s[c]["l2"]), ("kl3", s[c]["f3"], s[c]["l3"])):
+            gate(argparse.Namespace(gates=a.gates, gate=f"{r}_{g}_{a.set}"), "FAIL" if f else "PASS",
+                 f"[{a.mode} form] " + re.sub(r"\s+", " ", l)[:220])
+    return 0
+
+
+def nll_mode():
+    """the many-positions NLL check is used only when the NLL gap (work/r23/gap-nll.sh, nll_rules.py decide) JUDGED -
+    validate_ref PASS: the offline head agrees with the engine's own window rows - and wrote ADOPTED-BOUND.json (Karl
+    11-04: adopt once validated, apply going forward); anything else, or no decision yet = the old form"""
+    env = os.environ.get("R23_NLL_MODE")
+    if env in ("old", "new"):
+        return env, f"R23_NLL_MODE={env} (set by hand)"
+    dj, ab = NLL_ROOT / "decision.json", NLL_ROOT / "ADOPTED-BOUND.json"
+    if not dj.exists():
+        return "old", f"no NLL-gap decision ({dj})"
+    try:
+        status = json.loads(dj.read_text()).get("status")
+    except (OSError, ValueError) as e:
+        return "old", f"{dj} unreadable ({e})"
+    v = read_gates(NLL_ROOT / "gates.txt").get("validate_ref", ("MISSING", ""))
+    if status == "JUDGED" and ab.exists() and v[0] == "PASS":
+        try:
+            when = json.loads(ab.read_text()).get("adopted", "?")
+        except ValueError:
+            when = "?"
+        return "new", f"{dj}: JUDGED, validate_ref PASS ({v[1][:60]}), ADOPTED-BOUND.json (adopted {when})"
+    return "old", (f"{dj}: status {status}, validate_ref {v[0]}, ADOPTED-BOUND.json "
+                   f"{'present' if ab.exists() else 'absent'} - not validated + adopted")
+
+
+def cmd_nllargs(a):
+    """score.py compare's options from the adopted bound (ADOPTED-BOUND.json; its defaults where a key is missing)"""
+    r = {}
+    try:
+        r = json.loads((NLL_ROOT / "ADOPTED-BOUND.json").read_text())
+    except (OSError, ValueError):
+        pass
+    print(f"--min-pos {r.get('min_pos', 1024)} --block {r.get('block_tokens', 2048)} --boot {r.get('boot', 10000)} "
+          f"--seed {r.get('seed', 20261104)} --se-cap {r.get('se_cap', 0.01)}")
+    return 0
+
+
+def cmd_nllmode(a):
+    m, why = nll_mode()
+    print(f"{m} {why}")
+    gate(a, m.upper(), why[:300])
+    return 0
+
+
+def cmd_nllgate(a):
+    p = Path(a.json)
+    if not p.exists():
+        for c in a.cands.split(","):
+            gate(argparse.Namespace(gates=a.gates, gate=f"nllmp_{c}"), "MISSING", f"no {p}")
+        print(f"no {p}")
+        return 1
+    r = json.loads(p.read_text())
+    for c in [x for x in a.cands.split(",") if x]:
+        v = r.get("verdicts", {}).get(c)
+        g = argparse.Namespace(gates=a.gates, gate=f"nllmp_{c}")
+        if v is None:
+            gate(g, "MISSING", "not in the compare result")
+            continue
+        q = r["nll"]["arms"][c]
+        line = (f"[new form] {r['nll']['n']} positions: d {q['d']:+.4f} [{q['lo']:+.4f}, {q['hi']:+.4f}], se {q['se']:.4f}; "
+                f"S {v['S']:+.4f} vs margin {v['margin']:.4f} -> proposed rule {v['ci']}; many-positions KL "
+                f"{'PASS' if not v['kl_fails'] else 'FAIL (' + ', '.join(v['kl_fails']) + ')'} (INFO)")
+        print(f"{c}: {line}")
+        gate(g, {"PASS": "PASS", "FAIL": "FAIL"}.get(v["ci"], "UNDERPOWERED"), line)
+    return 0
+
+
+# ================================================================================================ A1, A7, guards
+def timing(text):
+    """the 'strata prefill timing:' lines: (tokens, GPU timeline ms, {phase: ms})"""
+    out = []
+    for line in text.splitlines():
+        m = re.search(r"strata prefill timing: (\d+) tokens, GPU timeline (\d+) ms, wall (\d+) ms, host staging (\d+) ms:(.*)$", line)
+        if not m:
+            continue
+        ph = {}
+        for nm in PF_NAMES:
+            mm = re.search(r" " + re.escape(nm) + r" (\d+) \(", m[5])
+            if mm:
+                ph[nm] = int(mm[1])
+        out.append((int(m[1]), int(m[2]), int(m[3]), ph))
+    return out
+
+
+def cmd_profile(a):
+    d = Path(a.dir)
+    res, lines = {}, []
+    for f in sorted(d.glob("*.englog")):
+        arm, _, fx = f.stem.partition("-")
+        t = f.read_text(errors="replace")
+        tl = [x for x in timing(t) if x[0] > 8000]
+        if not tl:
+            lines.append(f"{f.stem}: no prefill timing line")
+            continue
+        n, gpu, wall, ph = max(tl, key=lambda x: x[0])
+        gdn = sum(ph.get(x, 0) for x in GDN_PHASES)
+        res.setdefault(arm, {})[fx] = gdn
+        host = re.findall(r"strata prefill timing: host: (.*)$", t, re.M)
+        ck = re.findall(r"strata trace: checkpoint at (\d+): sync ([\d.]+) ms, save ([\d.]+) ms", t)
+        top = sorted(ph.items(), key=lambda kv: -kv[1])[:8]
+        lines.append(f"{f.stem}: {n} tokens, GPU timeline {gpu} ms, wall {wall} ms; GDN phases {gdn} ms; top: "
+                     + ", ".join(f"{k} {v}" for k, v in top))
+        if host:
+            lines.append(f"  host: {host[-1][:200]}")
+        if ck:
+            lines.append("  checkpoints: " + "; ".join(f"at {L}: sync {s} ms, save {v} ms" for L, s, v in ck[-6:]))
+    Path(a.out).write_text("\n".join(lines) + "\n")
+    print("\n".join(lines))
+    b, g = res.get("Bp", {}), res.get("Gp", {})
+    if not g or not b or set(g) != {"pp16k", "pp64k"} or set(b) != {"pp16k", "pp64k"}:
+        gate(a, "NOT RUN", f"G {g or 'missing'}, B {b or 'missing'}")
+        return 0
+    go = all(g[k] < b[k] for k in ("pp16k", "pp64k"))
+    gate(a, "PASS" if go else "FAIL", "GDN phases (ms) G vs B: " + ", ".join(f"{k} {g[k]} vs {b[k]}" for k in ("pp16k", "pp64k"))
+         + (" -> G goes on" if go else " -> G stops here (priced by A1 only)"))
+    return 0
+
+
+def cmd_lend(a):
+    t = Path(a.log).read_text(errors="replace") if Path(a.log).exists() else ""
+    m = re.findall(r"prompt chunk auto: (\d+) tokens, a (\d+)-slot ring", t)
+    b = re.findall(r"the prompt path borrows (\d+) CUDA0 cache slots \(([\d.]+) GiB\)", t) or \
+        re.findall(r"lend sizing: the prompt path borrows (\d+) slots", t)
+    if not m:
+        print("no 'prompt chunk auto' line")
+        gate(a, "FAIL", "no 'prompt chunk auto: N tokens' line in the scan's engine log")
+        return 1
+    n = int(m[-1][0])
+    line = f"auto:24576 -> prompt chunk {n} tokens, a {m[-1][1]}-slot ring; borrows {b[-1][0] if b else '?'} slots"
+    ok = n > 16384
+    print(n if ok else 0)
+    gate(a, "PASS" if ok else "FAIL", line + ("" if ok else " (no chunk above 16384: FIRST_CHUNK would be a no-op)"))
+    return 0
+
+
+def guard_line(label):
+    rows = [l for l in GUARD_SUM.read_text(errors="replace").splitlines() if l.split(" ")[1:2] == [label]] \
+        if GUARD_SUM.exists() else []
+    return rows[-1] if rows else None
+
+
+def cmd_vram(a):
+    bad, seen = [], []
+    for lab in a.labels:
+        l = guard_line(lab)
+        if l is None:
+            bad.append(f"{lab}: no guard line")
+            continue
+        v = re.search(r"min_5080_free=(\d+)MiB", l)
+        m = re.search(r"min_MemAvailable=([\d.]+)GiB", l)
+        stop = "GUARD-STOP" in l or not l.rstrip().endswith("ok")
+        seen.append(f"{lab} {v[1] if v else '?'} MiB / {m[1] if m else '?'} GiB")
+        if stop or not v or int(v[1]) < 300 or not m or float(m[1]) < 12:
+            bad.append(f"{lab}: {l.split(' ', 2)[2][:120]}")
+    line = ("5080 free >= 300 MiB and MemAvailable >= 12 GiB throughout: " + ", ".join(seen)) if not bad else "; ".join(bad)
+    print(line)
+    gate(a, "FAIL" if bad else "PASS", line[:300])
+    return 0
+
+
+# ================================================================================================ B4: the chat-cache trade
+def cmd_chat3(a):
+    """B4 (Karl's #693 lesson): on one fresh server - request 1 = Basalt's cold 16K prompt (bp90_client's pp16k form,
+    a fixed nonce seed); request 2 = the same document up to ~16,500 prompt tokens, then another question; request 3 =
+    request 1 + its answer + a follow-up. T 1.0 / 0.95 / 20 / min-p 0.05, seed 7, thinking off."""
+    tree = Path(a.tree)
+    sys.path.insert(0, str(tree))
+    sys.path.insert(0, str(tree / "tools"))
+    from strata_tokenizer import Tokenizer          # noqa: E402
+    from serve.frontend import ChatTemplate          # noqa: E402
+    tok = Tokenizer.from_gguf(str(GGUF))
+    tpl = ChatTemplate(str(tree / "serve" / "chat_template.jinja"))
+    render = lambda msgs: tpl.render(msgs, enable_thinking=False)   # noqa: E731
+    mark = "⁣BODY⁣"
+    pre_txt, post_txt = render([{"role": "user", "content": mark}]).split(mark)
+    rows = [[int(x) for x in l.split(",")] for l in (BP90_DATA / "prefill.ids").read_text().strip().split("\n")]
+    pre, body, post = rows
+    rng = random.Random(a.seed)
+    best = None
+    for attempt in range(60 if not a.dry_run else 3):
+        ids = pre + [rng.randint(1000, 150000) for _ in range(4)] + body + post
+        text = tok.decode(ids)
+        user = text[len(pre_txt):len(text) - len(post_txt)]
+        back = tok.encode(render([{"role": "user", "content": user}]), parse_special=True)
+        dd = 0 if back == ids else (abs(len(back) - len(ids)) or 1)
+        if best is None or dd < best[0]:
+            best = (dd, ids, user)
+        if dd == 0:
+            break
+    _, ids1, user1 = best
+    n_pre = len(tok.encode(pre_txt, parse_special=True))
+    doc2 = tok.decode(ids1[n_pre:a.share])
+    user2 = doc2 + "\n\nQuestion: which word occurs most often in the text above? Answer with one word."
+    ids2 = tok.encode(render([{"role": "user", "content": user2}]), parse_special=True)
+    shared = next((i for i, (x, y) in enumerate(zip(ids1, ids2)) if x != y), min(len(ids1), len(ids2)))
+    print(f"request 1: {len(ids1)} tokens; request 2: {len(ids2)} tokens, {shared} shared with request 1", flush=True)
+    if a.dry_run:
+        return 0
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    def chat(messages, max_new):
+        body_ = {"model": "x", "messages": messages, "max_tokens": max_new, "stream": True,
+                 "stream_options": {"include_usage": True}, "chat_template_kwargs": {"enable_thinking": False},
+                 "temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.05, "seed": 7}
+        req = urllib.request.Request(a.url.rstrip("/") + "/v1/chat/completions", data=json.dumps(body_).encode(),
+                                     headers={"Content-Type": "application/json"})
+        t0, text, usage, tm = time.monotonic(), "", None, None
+        with opener.open(req, timeout=3600) as r:
+            for raw in r:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:") or line[5:].strip() == "[DONE]":
+                    continue
+                c = json.loads(line[5:].strip())
+                for ch in c.get("choices") or []:
+                    text += (ch.get("delta") or {}).get("content") or ""
+                usage = c.get("usage") or usage
+                tm = c.get("timings") or tm
+        u, tm = usage or {}, tm or {}
+        return text, {"prompt_tokens": u.get("prompt_tokens"),
+                      "cached": (u.get("prompt_tokens_details") or {}).get("cached_tokens"),
+                      "prompt_n": tm.get("prompt_n"), "prompt_ms": tm.get("prompt_ms"),
+                      "completion_tokens": u.get("completion_tokens"), "wall_s": round(time.monotonic() - t0, 3)}
+    m1 = [{"role": "user", "content": user1}]
+    ans1, r1 = chat(m1, 32)
+    _, r2 = chat([{"role": "user", "content": user2}], 16)
+    m3 = m1 + [{"role": "assistant", "content": ans1},
+               {"role": "user", "content": "Thank you. Now quote the first sentence of the document."}]
+    _, r3 = chat(m3, 32)
+    with open(a.out, "a") as f:
+        for k, r in ((1, r1), (2, r2), (3, r3)):
+            rec = {"label": a.label, "request": k, **r, "shared_with_1": shared if k == 2 else None,
+                   "time": time.strftime("%F %T")}
+            f.write(json.dumps(rec) + "\n")
+            print(f"{a.label} request {k}: {r['prompt_tokens']} prompt tokens, read {r['prompt_n']} in {r['prompt_ms']} ms "
+                  f"(cached {r['cached']})", flush=True)
+    return 0
+
+
+def cmd_chatrep(a):
+    d = Path(a.dir)
+    lines, ok = [], True
+    for arm in ("B", "T", "C"):
+        p = d / f"chat-{arm}.jsonl"
+        if not p.exists():
+            lines.append(f"{arm}: not run")
+            continue
+        r = {x["request"]: x for x in (json.loads(l) for l in p.read_text().splitlines() if l.strip())}
+        e = (d / f"chat-{arm}.englog").read_text(errors="replace") if (d / f"chat-{arm}.englog").exists() else ""
+        ck = re.findall(r"strata trace: checkpoint at (\d+): sync", e)
+        rs = re.findall(r"checkpoint at (\d+) restored", e)
+        q2, q3 = r.get(2, {}), r.get(3, {})
+        lines.append(f"{arm}: request 2 ({q2.get('prompt_tokens')} tokens, {q2.get('shared_with_1')} shared) read "
+                     f"{q2.get('prompt_n')} in {q2.get('prompt_ms')} ms; request 3 ({q3.get('prompt_tokens')} tokens) read "
+                     f"{q3.get('prompt_n')} in {q3.get('prompt_ms')} ms; checkpoints saved at {', '.join(ck) or '-'}"
+                     + (f"; restored {', '.join(rs)}" if rs else ""))
+        exp2 = (lambda n: n is not None and n < 1000) if arm == "B" else (lambda n: n is not None and n > 15000)
+        if not (exp2(q2.get("prompt_n")) and q3.get("prompt_n") is not None and q3["prompt_n"] < 2000):
+            ok = False
+    txt = "\n".join(lines) + ("\nas expected (B ~120 tokens for request 2 from its 16,384 checkpoint; T and C ~16.5K; "
+                              "request 3 only its new part)" if ok else "\nNOT as the plan expected - see the lines")
+    (d / "chat-trade.txt").write_text(txt + "\n")
+    print(txt)
+    gate(a, "INFO", ("as expected; " if ok else "unexpected; ") + " | ".join(lines)[:300])
+    return 0
+
+
+# ================================================================================================ decisions
+def gs(g, k):
+    return g.get(k, ("", ""))[0]
+
+
+def kl_verdict(g, part, mode, provisional=False):
+    """the KL rule for one rounding-level part from its gates; (status, text). provisional (A7's S, before the
+    many-positions arms ran): the NLL many-positions gates are not required yet"""
+    need, miss, fail = [], [], []
+    for s_ in KL_SETS[part]:
+        need += [f"kl2_{part}_{s_}", f"kl3_{part}_{s_}"]
+    if mode == "new" and not provisional:
+        need.append(f"nllmp_{part}")
+        need += ["nllval_ref", "nllval_unfused", "nllval_cpushare", f"nllval_{part}"]
+    for k in need:
+        v = gs(g, k)
+        if v == "PASS":
+            continue
+        (fail if v in ("FAIL",) else miss).append(f"{k} {v or 'missing'}")
+    form = ("NEW form: KL checks (kernel_rule2 + kernel_rule3 without its point NLL) on " + " + ".join(KL_SETS[part]) +
+            " and the many-positions NLL check (score.py proposed rule)") if mode == "new" else \
+        ("OLD form: kernel_rule2 + kernel_rule3 with the point NLL check on " + " + ".join(KL_SETS[part]))
+    if fail:
+        return "FAIL", f"{form}: " + "; ".join(fail)
+    if miss:
+        return "NOT DECIDED", f"{form}: " + "; ".join(miss)
+    return "PASS", form
+
+
+def cmd_decide_a(a):
+    o = Path(a.outdir)
+    g = read_gates(o / "gates.txt")
+    mode = gs(g, "nll_mode").lower() or "old"
+    out = []
+    bld = all(gs(g, k) == "PASS" for k in ("build_r23", "warnings", "strings"))
+    out.append(f"BUILD {'PASS' if bld else 'FAIL'} (build_r23 {gs(g, 'build_r23') or '-'}, warnings {gs(g, 'warnings') or '-'}, "
+               f"strings {gs(g, 'strings') or '-'}): {g.get('build_r23', ('', ''))[1][:120]}")
+    if "e7_B" not in g and "logits_B40" not in g:
+        base = "NOT RUN"
+    else:
+        base = "PASS" if gs(g, "e7_B") == "PASS" and gs(g, "logits_B40") == "PASS" else "FAIL"
+    out.append(f"BASELINE {base} (B = P0210x-h: exact7 vs g17-p210a {gs(g, 'e7_B') or '-'}; long40 vs gap 17's p210 "
+               f"{gs(g, 'logits_B40') or '-'}: {g.get('logits_B40', ('', ''))[1][:80]})")
+    allowed = bld and base == "PASS"
+    out.append(f"PART_B {'ALLOWED' if allowed else 'REFUSED'} (needs BUILD PASS and BASELINE PASS)")
+    out.append(f"NLL_MODE {mode} ({g.get('nll_mode', ('', 'not read'))[1][:200]})")
+    void = [k for k, (s_, _) in g.items() if re.match(r"(env|fatal)_", k) and s_ == "FAIL"]
+    void_ref = [k for k in void if re.match(r"(env|fatal)_(ref_|B_(pfy|e7|nll))", k)]
+    cls = {}
+    if base != "PASS":
+        for p in PARTS:
+            cls[p] = ("NOT DECIDED", "the baseline did not pass" if base == "FAIL" else "the baseline was not run")
+    else:
+        # A: exact
+        ex = [gs(g, k) for k in ("same_A16", "same_A16s", "e7_A")]
+        un = [gs(g, k) for k in ("ahead_A16", "ahead_A16s")]
+        if all(x == "PASS" for x in ex) and all(x == "PASS" for x in un):
+            cls["A"] = ("EXACT", "tail24 24/24 twice (share 0 and the served share), copies read in place, exact7 7/7")
+        elif all(x == "PASS" for x in ex) and any(x == "UNEXERCISED" for x in un):
+            cls["A"] = ("NOT DECIDED", "identical, but UNEXERCISED (no 'M read in place' with M > 0)")
+        elif any(x == "FAIL" for x in ex):
+            v, t = kl_verdict(g, "A", mode, a.provisional)
+            cls["A"] = ("ROUNDING-LEVEL" if v == "PASS" else v, f"not exact ({', '.join(f'{k} {gs(g, k)}' for k in ('same_A16', 'same_A16s', 'e7_A'))}); {t}")
+        else:
+            cls["A"] = ("NOT DECIDED", ", ".join(f"{k} {gs(g, k) or 'missing'}" for k in ("same_A16", "same_A16s", "e7_A", "ahead_A16", "ahead_A16s")))
+        # U
+        if gs(g, "e7_U") == "PASS" and gs(g, "logits_U40") == "PASS":
+            cls["U"] = ("EXACT", "exact7 7/7 and long40 0 of 40 differ")
+        elif "FAIL" in (gs(g, "e7_U"), gs(g, "logits_U40")):
+            v, t = kl_verdict(g, "U", mode, a.provisional)
+            cls["U"] = ("ROUNDING-LEVEL" if v == "PASS" else v, f"not exact (exact7 {gs(g, 'e7_U')}, long40 {gs(g, 'logits_U40')}); {t}")
+        else:
+            cls["U"] = ("NOT DECIDED", f"exact7 {gs(g, 'e7_U') or 'missing'}, long40 {gs(g, 'logits_U40') or 'missing'}")
+        cls["K"] = {"PASS": ("EXACT", "exact7 7/7 MATCHED"), "FAIL": ("FAIL", "exact7 not 7/7 (K has no rounding-level path)")}.get(
+            gs(g, "e7_K"), ("NOT DECIDED", "exact7 K missing"))
+        cls["KP"] = {"PASS": ("EXACT", "16 cuts >= 33K with KV streaming: 16/16 identical"),
+                     "FAIL": ("FAIL", g.get("same_KP", ("", ""))[1][:100])}.get(gs(g, "same_KP"), ("NOT RUN", "optional A5 not run"))
+        # T
+        v, t = kl_verdict(g, "T", mode, a.provisional)
+        if gs(g, "plan_T16") != "PASS":
+            cls["T"] = ("NOT DECIDED" if v != "FAIL" else "FAIL", f"plan lines {gs(g, 'plan_T16') or 'missing'}; {t}")
+        else:
+            cls["T"] = ("ROUNDING-LEVEL" if v == "PASS" else v, t)
+        # G
+        if gs(g, "g_go") != "PASS":
+            cls["G"] = ("NOT RUN", f"A1: {g.get('g_go', ('', 'no profile'))[1][:120]}")
+        else:
+            v, t = kl_verdict(g, "G", mode, a.provisional)
+            cls["G"] = ("ROUNDING-LEVEL" if v == "PASS" else v, t)
+        # C
+        v, t = kl_verdict(g, "C", mode, a.provisional)
+        pre = [f"{k} {gs(g, k) or 'missing'}" for k in ("c_lend", "plan_C16", "vram_C") if gs(g, k) != "PASS"]
+        if any(gs(g, k) == "FAIL" for k in ("c_lend", "vram_C")) or v == "FAIL":
+            cls["C"] = ("FAIL", "; ".join(pre + [t]))
+        elif pre or v != "PASS":
+            cls["C"] = ("NOT DECIDED", "; ".join(pre + [t]))
+        else:
+            mm = re.search(r"prompt chunk \d+ tokens[^;]*", g["c_lend"][1])
+            cls["C"] = ("ROUNDING-LEVEL", f"the lend's {mm[0] if mm else 'chunk ?'}; {t}")
+    # an arm whose env / fatal gate failed is void (gates env_<ARM>_<step>, fatal_<ARM>_<step>); a reference's or the
+    # base's makes every verdict that compares with it void
+    for p in PARTS:
+        vv = [k for k in void if k.split("_")[1] == p] + void_ref
+        if vv and cls[p][0] in ("EXACT", "ROUNDING-LEVEL"):
+            cls[p] = ("VOID", f"{', '.join(vv)} failed; was {cls[p][0]}")
+    for p in PARTS:
+        out.append(f"PART {p} {cls[p][0]} ({CLAIM[p]} claimed): {cls[p][1]}")
+    s_parts = [p for p in ("A", "T", "U", "K", "KP", "G") if cls[p][0] in ("EXACT", "ROUNDING-LEVEL")]
+    out.append(f"S_PARTS {','.join(s_parts)}")
+    cp = g.get("c_parts", ("", "none"))[1].split(" ")[0]
+    cp = "" if cp in ("none", "-") else cp
+    out.append(f"C_PARTS {cp}")
+    m = re.search(r"prompt chunk (\d+) tokens", g.get("c_lend", ("", ""))[1])
+    out.append(f"C_CHUNK {m[1] if m and cls['C'][0] == 'ROUNDING-LEVEL' else ''}")
+    out.append(f"G_GO {gs(g, 'g_go') or 'NOT RUN'}")
+    if void:
+        out.append("VOID GATES " + ", ".join(void))
+    if a.provisional:
+        out.insert(0, "PROVISIONAL (A7's stack: the many-positions NLL gates not required yet) - not the decision")
+    (o / ("decision-a-provisional.txt" if a.provisional else "decision-a.txt")).write_text("\n".join(out) + "\n")
+    print("\n".join(out))
+    return 0 if allowed else 1
+
+
+def read_decision(p):
+    d = {}
+    for line in Path(p).read_text(errors="replace").splitlines() if Path(p).exists() else []:
+        m = re.match(r"PART (\S+) (.+?) \(", line)
+        if m:
+            d[f"PART {m[1]}"] = m[2]
+        else:
+            k, _, v = line.partition(" ")
+            d[k] = v
+    return d
+
+
+def cmd_preb(a):
+    """part b's refusal: part a's decision says BUILD PASS, BASELINE PASS, PART_B ALLOWED"""
+    d = read_decision(a.decision)
+    ok = d.get("BUILD", "").startswith("PASS") and d.get("BASELINE", "").startswith("PASS") and d.get("PART_B", "").startswith("ALLOWED")
+    print(("part a passed its build and exact checks: " if ok else "part a did NOT pass its build / exact checks: ") +
+          f"BUILD {d.get('BUILD', 'missing')[:60]}; BASELINE {d.get('BASELINE', 'missing')[:60]}; PART_B {d.get('PART_B', 'missing')[:40]}")
+    if ok:
+        print("S_PARTS=" + d.get("S_PARTS", "").strip())
+        print("C_PARTS=" + d.get("C_PARTS", "").strip())
+        print("C_CHUNK=" + d.get("C_CHUNK", "").strip())
+        for p in PARTS:
+            print(f"CLASS_{p}={d.get(f'PART {p}', 'missing')}")
+    return 0 if ok else 1
+
+
+def bp_vals(o, arm, test, key="prompt_tps"):
+    p = Path(o) / "bp90" / f"cold-{arm}.jsonl"
+    recs = [json.loads(x) for x in p.read_text().splitlines() if x.strip()] if p.exists() else []
+    return [r[key] for r in recs if r["test"] == test and r.get(key)]
+
+
+def gain(o, arm):
+    out, ok_floor, hit, have = [], True, False, True
+    for fx in ("pp16k", "pp64k"):
+        b, x = bp_vals(o, "B", fx), bp_vals(o, arm, fx)
+        if len(b) < 2 or len(x) < 2:
+            have = False
+            out.append(f"{fx}: {arm} {len(x)} / B {len(b)} passes - not priced")
+            continue
+        d = st.mean(x) / st.mean(b) - 1
+        noise = max(spread(b), spread(x))
+        tgt = fx in TARGETS[arm]
+        if tgt and d > max(noise, 0.010):
+            hit = True
+        if d < -noise:
+            ok_floor = False
+        out.append(f"{fx}{'*' if tgt else ''}: {st.mean(x):,.1f} vs B {st.mean(b):,.1f} tok/s ({100 * d:+.1f} %; noise "
+                   f"{100 * noise:.1f} %)" + (" above +max(noise, 1 %)" if d > max(noise, 0.010) else "")
+                   + (" BELOW -noise" if d < -noise else ""))
+    return have, hit and ok_floor, "; ".join(out)
+
+
+def decode_check(o, arm):
+    ref = [json.loads(x) for x in G17_BP90_H.read_text().splitlines() if x.strip()] if G17_BP90_H.exists() else []
+    out, ok, have = [], True, True
+    for fx in ("conv", "struct", "prose"):
+        b, x = bp_vals(o, "Bd", fx, "decode_tps"), bp_vals(o, f"{arm}d", fx, "decode_tps")
+        h = [r["decode_tps"] for r in ref if r["test"] == fx and r.get("decode_tps")]
+        noise = spread(h) if len(h) > 1 else 0.03
+        if not b or not x:
+            have = False
+            out.append(f"{fx}: missing")
+            continue
+        d = st.mean(x) / st.mean(b) - 1
+        ok &= d >= -noise
+        out.append(f"{fx} {100 * d:+.1f} % (noise {100 * noise:.1f} %{'' if len(h) > 1 else ', default'})")
+    return have, ok, "; ".join(out)
+
+
+def screen(o, arm, g17):
+    r, x = g17.screen_passes(o, "B"), g17.screen_passes(o, arm)
+    if len(r) < 3 or len(x) < 3:
+        return None, f"screen: B {len(r)} / {arm} {len(x)} complete passes of 3"
+    wl_ok, wl_line = g17.wl_noloss(o, arm, ref="B")
+    pb, px = gm([v[1] for v in r.values()]), gm([v[1] for v in x.values()])
+    db, dx = gm([v[0] for v in r.values()]), gm([v[0] for v in x.values()])
+    ok = bool(wl_ok) and px >= pb
+    txt = (f"screen prompt geomean {100 * (px / pb - 1):+.2f} % ({'not below B' if px >= pb else 'BELOW B'}), decode "
+           f"{100 * (dx / db - 1):+.2f} %; {wl_line}")
+    sv, sl = g17.save_rule(o, arm, "B")   # 11-07 amendment: (None, []) for a gate before it
+    if sv is not None:
+        txt += "; " + sl[0]
+        if sv == "FAIL":
+            ok = False
+        elif sv == "NOT DECIDED":
+            return None, txt
+    return ok, txt
+
+
+def cmd_decide_b(a):
+    o = Path(a.outdir)
+    g = read_gates(o / "gates.txt")
+    da = read_decision(a.decision_a)
+    g17 = load("g17_rules", G17)
+    out = [f"part a: BUILD {da.get('BUILD', '?')[:4]}, BASELINE {da.get('BASELINE', '?')[:4]}, S_PARTS {da.get('S_PARTS', '').strip() or '-'}, "
+           f"C_PARTS {da.get('C_PARTS', '').strip() or '-'}, C_CHUNK {da.get('C_CHUNK', '').strip() or '-'}"]
+    void = [k for k, (s_, _) in g.items() if re.match(r"(env|fatal)_", k) and s_ == "FAIL"]
+    arms = [p for p in ("A", "T", "U", "K", "KP", "G") if da.get(f"PART {p}") in ("EXACT", "ROUNDING-LEVEL")]
+    if da.get("S_PARTS", "").strip():
+        arms.append("S")
+    if da.get("PART C") == "ROUNDING-LEVEL" and da.get("C_CHUNK", "").strip():
+        arms.append("C")
+    for p in ("A", "T", "U", "K", "KP", "G", "S", "C"):
+        if p not in arms:
+            why = da.get(f"PART {p}", "not in S") if p not in ("S",) else "no part passed gap a"
+            out.append(f"PRICE {p} NOT PRICED (part a: {why})")
+            continue
+        vv = [k for k in void if k.split("_")[1] == p or (k.split("_")[1] == "B" and "_chat" not in k)]
+        have, gn, gl = gain(o, p)
+        cls = da.get(f"PART {p}", "STACK" if p == "S" else "?")
+        extra_ok, extra = True, []
+        if p in ("S", "C"):
+            h2, ok2, l2 = decode_check(o, p)
+            ok3, l3 = screen(o, p, g17)
+            extra += [f"B2 decode {('PASS' if ok2 else 'FAIL') if h2 else 'MISSING'}: {l2}",
+                      f"B3 {('PASS' if ok3 else 'FAIL') if ok3 is not None else 'MISSING'}: {l3}"]
+            extra_ok = h2 and ok2 and bool(ok3)
+            if ok3 is None or not h2:
+                have = False
+        if p == "C":
+            vr = gs(g, "vram_Cb")
+            extra.append(f"vram/mem in every C run {vr or 'missing'}; B4 {gs(g, 'chat_trade') or 'missing'} (reported)")
+            extra_ok &= vr == "PASS"
+            have &= vr in ("PASS", "FAIL") and bool(gs(g, "chat_trade"))
+        if vv:
+            v = "VOID"
+        elif not have:
+            v = "NOT DECIDED"
+        else:
+            v = "CANDIDATE" if gn and extra_ok else ("NO GAIN" if extra_ok else "FAIL (screen / decode / VRAM)")
+        out.append(f"PRICE {p} {v} (part a {cls}): B1 {gl}" + ("; " + "; ".join(extra) if extra else "")
+                   + (f"; void: {', '.join(vv)}" if vv else ""))
+    if (o / "bp90" / "chat-trade.txt").exists():
+        out.append("B4 chat-cache trade (Karl decides): " + " | ".join((o / "bp90" / "chat-trade.txt").read_text().splitlines()))
+    elif (o / "chat" / "chat-trade.txt").exists():
+        out.append("B4 chat-cache trade (Karl decides): " + " | ".join((o / "chat" / "chat-trade.txt").read_text().splitlines()))
+    out.append("NOTHING SWITCHES: P028x stays served; a CANDIDATE is Karl's call after item 7 (his 5 switch conditions).")
+    (o / "decision-b.txt").write_text("\n".join(out) + "\n")
+    print("\n".join(out))
+    return 0
+
+
+# ================================================================================================ main
+def main():
+    ap = argparse.ArgumentParser()
+    sp = ap.add_subparsers(dest="cmd", required=True)
+
+    def sub(name, *pos, gates=True):
+        p = sp.add_parser(name)
+        for x in pos:
+            p.add_argument(x)
+        if gates:
+            p.add_argument("--gate")
+            p.add_argument("--gates")
+        return p
+    p = sub("arms", "outdir")
+    p.add_argument("--stack")
+    p.add_argument("--cap", type=int)
+    p.add_argument("--scan", action="store_true")
+    p.add_argument("--cstack", help="C's parts when they differ from the stack's (default: the stack)")
+    sub("cfgcheck", "outdir")
+    p = sub("pfy", "config", "outdir", gates=False)
+    p.add_argument("--set", default="tail24", choices=["tail24", "tail24hi", "long40"])
+    p.add_argument("--prefill", default="auto")
+    p.add_argument("--kv", default="fp16", choices=["fp16", "int8"])
+    p.add_argument("--keep-share", action="store_true")
+    p.add_argument("--keep-kv-resident", type=int, default=0)
+    p.add_argument("--env", action="append")
+    p.add_argument("--min-free-gb", type=float, default=16)
+    p = sub("nllrun", "config", "outdir", gates=False)
+    p.add_argument("--prefill")
+    p.add_argument("--env", action="append")
+    p.add_argument("--rows", default="all:8")
+    p.add_argument("--max-len", type=int, default=NLL_MAXLEN)
+    p.add_argument("--min-free-gb", type=float, default=16)
+    p = sub("envcli", "exe", "config")
+    p.add_argument("--job", type=int, required=True)
+    p.add_argument("--mode", default="e7", choices=["e7", "pfy", "nll"])
+    p.add_argument("--prefill")
+    p.add_argument("--kv")
+    p.add_argument("--keep-share", action="store_true")
+    p.add_argument("--kv-resident")
+    p.add_argument("--set", action="append")
+    p.add_argument("--kill", action="store_true")
+    sub("envcheck", "exe", "config")
+    sub("e7gate", "summary", "label")
+    sub("same", "a", "b")
+    sub("ahead", "dir")
+    p = sub("planlines", "dir")
+    p.add_argument("--kind", required=True, choices=["tail", "first"])
+    p.add_argument("--chunk", type=int, required=True)
+    p.add_argument("--smin", type=int, default=1024)
+    p = sub("kl", "root", gates=False)
+    p.add_argument("--gates")
+    p.add_argument("--ref", required=True)
+    p.add_argument("--refs", required=True)
+    p.add_argument("--cands", required=True, help="DIR[:PART],... (gates kl2_PART_SET / kl3_PART_SET)")
+    p.add_argument("--set", required=True, choices=["tail24", "tail24hi", "long40"])
+    p.add_argument("--mode", default="old", choices=["old", "new"])
+    sub("nllmode")
+    sub("nllargs", gates=False)
+    p = sub("nllgate", "json", gates=False)
+    p.add_argument("--cands", required=True)
+    p.add_argument("--gates")
+    p = sub("profile", "dir", "out")
+    p = sub("lend", "log")
+    p = sub("vram")
+    p.add_argument("labels", nargs="+")
+    p = sub("chat3", "url", gates=False)
+    p.add_argument("--label", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--tree", default=str(TREE23))
+    p.add_argument("--share", type=int, default=16500)
+    p.add_argument("--seed", type=int, default=20261105)
+    p.add_argument("--dry-run", action="store_true")
+    sub("chatrep", "dir")
+    p = sub("decide-a", "outdir", gates=False)
+    p.add_argument("--provisional", action="store_true")
+    sub("preb", "decision", gates=False)
+    p = sub("decide-b", "outdir", gates=False)
+    p.add_argument("--decision-a", required=True)
+    a = ap.parse_args()
+    f = {"arms": cmd_arms, "cfgcheck": cmd_cfgcheck, "pfy": cmd_pfy, "nllrun": cmd_nllrun, "envcli": cmd_envcli,
+         "envcheck": cmd_envcheck, "e7gate": cmd_e7gate, "same": cmd_same, "ahead": cmd_ahead, "planlines": cmd_planlines,
+         "kl": cmd_kl, "nllmode": cmd_nllmode, "nllargs": cmd_nllargs, "nllgate": cmd_nllgate, "profile": cmd_profile, "lend": cmd_lend,
+         "vram": cmd_vram, "chat3": cmd_chat3, "chatrep": cmd_chatrep, "decide-a": cmd_decide_a, "preb": cmd_preb,
+         "decide-b": cmd_decide_b}[a.cmd]
+    return f(a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

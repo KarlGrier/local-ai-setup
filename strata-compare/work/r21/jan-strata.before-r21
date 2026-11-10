@@ -1,0 +1,12 @@
+#!/bin/bash
+# jan-strata - Jan 0.8.6 (AppImage in ~/.local/opt/jan-0.8.6) for Strata, offline except 127.0.0.1.
+# Started by the "Jan (Strata)" app icon (~/.local/share/applications/jan-strata.desktop).
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+source "$HERE/offline-env.sh"
+# Strata keeps the RTX 5080's memory nearly full: Jan's window is drawn in software, so it takes no VRAM from the model
+# (with the monitor on the iGPU this changes nothing visible).
+export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1
+# Jan starts its own llama.cpp worker even when every model is remote; keep it off the NVIDIA cards Strata uses
+# (remove this line to run models inside Jan itself).
+export CUDA_VISIBLE_DEVICES=-1
+exec "$HOME/.local/opt/jan-0.8.6/Jan_0.8.6_amd64.AppImage" "$@"

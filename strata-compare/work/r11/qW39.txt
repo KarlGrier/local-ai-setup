@@ -1,0 +1,28 @@
+work/r11/tagcheck.sh "after Phase B: combined"; work/r11/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r11/build.sh strata-v39-win engine-v39win && .venv/bin/python work/r11/buildrec.py V39W configs/V39W.json "after Phase B: v39-fix + A.2 (4) + B.2 (1) + B.3 (5) + B.1 (2)"
+BDIR=build work/r11/build.sh strata-v39-winm engine-v39winm && .venv/bin/python work/r11/buildrec.py V39Wm configs/V39Wm-tf-helper.json "after Phase B: TF twin"
+[ -x engine-v39win/strata ] && REF=v39 work/r11/exact7.sh v39woff configs/V39W-off.json && REF=v39 work/r11/exact7.sh v39won configs/V39W.json
+[ -x engine-v39winm/strata ] && work/r11/tf.sh V39Wmtf-helper configs/V39Wm-tf-helper.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+[ -x engine-v39winm/strata ] && work/r11/tf.sh V39Wmtf-single configs/V39Wm-tf-single.json engine-v39winm/strata math corpus long16k long24k long28k long40k long64k long96k long112k
+TEXTS="math corpus long16k long24k long28k long40k long64k long96k long112k" .venv/bin/python work/r11/tf_compare9.py V39Wmtf-helper=V39mtf-helper V39Wmtf-single=V39mtf-single | tee results/r11/tf-v39w-vs-v39.txt
+(.venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-helper V39mtf-helper V39Wmtf-helper; .venv/bin/python work/r11/tf_vs_ref.py V36mfp16tf-single V39mtf-single V39Wmtf-single) | tee results/r11/tf-v39w-vs-fp16.md
+[ -x engine-v39win/strata ] && work/r11/with_server.sh N-V39W configs/V39W.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label NV39W --temperature 1.0"
+[ -x engine-v39win/strata ] && work/r11/repeat3.sh rep-v39w configs/V39W.json
+work/r11/ldrscreen.sh WL-o1 configs/V39W-off.json
+work/r11/ldrscreen.sh WL-n1 configs/V39W.json
+work/r11/ldrscreen.sh WL-n2 configs/V39W.json
+work/r11/ldrscreen.sh WL-o2 configs/V39W-off.json
+.venv/bin/python work/r11/ldr_table.py base=WL-o1,WL-o2 phaseB=WL-n1,WL-n2 | tee results/r11/ab-W-ldr.md
+work/r11/decscreen.sh WD-o1 configs/V39W-off.json
+work/r11/decscreen.sh WD-n1 configs/V39W.json
+work/r11/decscreen.sh WD-n2 configs/V39W.json
+work/r11/decscreen.sh WD-o2 configs/V39W-off.json
+.venv/bin/python work/r11/ab_table.py base=WD-o1,WD-o2 phaseB=WD-n1,WD-n2 | tee results/r11/ab-W-decode.md
+work/r11/screen.sh WS-o1 configs/V39W-off.json
+work/r11/screen.sh WS-n1 configs/V39W.json
+work/r11/screen.sh WS-n2 configs/V39W.json
+work/r11/screen.sh WS-o2 configs/V39W-off.json
+.venv/bin/python work/r11/ab_table.py base=WS-o1,WS-o2 phaseB=WS-n1,WS-n2 | tee results/r11/ab-W-full.md
+work/r11/phase_end.sh pB keep
+echo "=== $(date -Is) MARK qW39"

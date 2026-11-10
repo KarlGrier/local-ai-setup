@@ -1,0 +1,39 @@
+work/r10/tagcheck.sh "Phase D start"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v36d1 engine-v36d1
+BDIR=build-q4 CMAKE_EXTRA=-DSTRATA_MMQ_KQUANTS=ON work/r10/build.sh strata-v36 engine-v36q4
+BDIR=build-q4 CMAKE_EXTRA=-DSTRATA_MMQ_KQUANTS=ON work/r10/build.sh strata-v36m engine-v36q4m
+.venv/bin/python work/r10/buildrec.py D1 configs/D1-base.json "D.1 build (v36-d1 = base + STRATA_GR_V3_UPTO)"
+.venv/bin/python work/r10/buildrec.py Q4 configs/Q4-24.json "D.3 Q4 build (the base, -DSTRATA_MMQ_KQUANTS=ON)"
+work/r10/exact7.sh d1base configs/D1-base.json
+work/r10/startcheck.sh D1s8 configs/D1-s8x3.json
+work/r10/decscreen.sh D1b-a configs/D1-base.json
+work/r10/decscreen.sh D1x3-a configs/D1-s8x3.json
+work/r10/decscreen.sh D1x8-a configs/D1-s8x8.json
+work/r10/decscreen.sh D1x16-a configs/D1-s8x16.json
+work/r10/decscreen.sh D1x16-b configs/D1-s8x16.json
+work/r10/decscreen.sh D1x8-b configs/D1-s8x8.json
+work/r10/decscreen.sh D1x3-b configs/D1-s8x3.json
+work/r10/decscreen.sh D1b-b configs/D1-base.json
+work/r10/copyscreen.sh D1cb-a configs/D1-base.json
+work/r10/copyscreen.sh D1cx3-a configs/D1-s8x3.json
+work/r10/copyscreen.sh D1cx8-a configs/D1-s8x8.json
+work/r10/copyscreen.sh D1cx16-a configs/D1-s8x16.json
+work/r10/copyscreen.sh D1cx16-b configs/D1-s8x16.json
+work/r10/copyscreen.sh D1cx8-b configs/D1-s8x8.json
+work/r10/copyscreen.sh D1cx3-b configs/D1-s8x3.json
+work/r10/copyscreen.sh D1cb-b configs/D1-base.json
+for x in 3 8 16; do .venv/bin/python work/r10/ab_table.py base=D1b-a,D1b-b s8x$x=D1x$x-a,D1x$x-b; done | tee results/r10/ab-D1-decode.md
+for x in 3 8 16; do .venv/bin/python work/r10/ldr_table.py base=D1cb-a,D1cb-b s8x$x=D1cx$x-a,D1cx$x-b; done | tee results/r10/ab-D1-copy.md
+work/r10/tagcheck.sh "D.1 done"
+work/r10/basecheck.sh
+work/r10/q4budget10.sh
+work/r10/q4test10.sh
+work/r10/tagcheck.sh "D.3 done"
+work/r10/basecheck.sh
+work/r10/tagcheck.sh "Signal AP-Q4_K_XL (your addition)"
+work/r10/sgpack.sh
+work/r10/sgbudget.sh
+work/r10/sgtest.sh
+work/r10/tagcheck.sh "Signal done"

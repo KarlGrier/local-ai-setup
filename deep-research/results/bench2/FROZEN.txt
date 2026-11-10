@@ -1,0 +1,6 @@
+# Frozen 2026-10-17 22:17 - test set for phases 3 and 5 (sha256). Do not edit; a change needs a new version.
+9fc868abccce8bfbe389c213170f479e346ae75ea0274f6f08d62ebce8448f33  questions-screen.jsonl
+37f77e078907e585936fce083ea052cdb6d0bcbbd59df2c29446a513ecf4f961  questions-holdout.jsonl
+9cb8961e29532a089591535b953ab51f07c89e49b28ebd50185f927acdd1f68c  answers/answers.jsonl
+67980e84993794c181e63753273c6aad5b08b2de25c1e6936069e6ba7dacdec2  files/strata-REPORT.md
+beabbd7028620a561c7eb59eaa22b5c151327c37d313f85ea0f615533d299399  files/strata-NOTES.md

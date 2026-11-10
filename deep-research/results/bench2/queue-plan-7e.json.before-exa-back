@@ -1,0 +1,174 @@
+[
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "ids": [
+   "s1"
+  ],
+  "label": "p7ew"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "ids": [
+   "s2"
+  ],
+  "label": "p7ew"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "ids": [
+   "s3"
+  ],
+  "label": "p7ew"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "ids": [
+   "s4"
+  ],
+  "label": "p7ew"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "ids": [
+   "s1"
+  ],
+  "label": "p7et",
+  "paid_route": "7b"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "ids": [
+   "s2"
+  ],
+  "label": "p7et",
+  "paid_route": "7b"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "ids": [
+   "s3"
+  ],
+  "label": "p7et",
+  "paid_route": "7b"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "ids": [
+   "s4"
+  ],
+  "label": "p7et",
+  "paid_route": "7b"
+ }
+]

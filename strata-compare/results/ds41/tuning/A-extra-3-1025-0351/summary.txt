@@ -1,0 +1,29 @@
+=== 2026-10-25 03:51:16 reference screen (extra #3): {"order": "rev", "DS4_SPLIT": "10,30", "DS4_SETTLE_MS": 0, "--ssd-cache": 74} - DS4.1 arm A-extra-3 (/home/USER/ai-speed-testing/strata-compare/configs/DS41-tune-A-extra-3.json, server /home/USER/ai-speed-testing/strata-compare/strata-v024/serve/server.py, 1 passes): --max-context 32768 --eos 1 --dspark auto --dspark-conf 0.65 --tp 2 --ssd-cache 74 --expert-profile /home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX4060TI,GPU-UUID-RTX5080', 'STRATA_DS4_PROMPT_SKIP': '0', 'DS4_STORE_FLOOR_GB': '16', 'DS4_SPLIT': '10,30', 'DS4_SETTLE_MS': '0'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/A-extra-3-1025-0351
+=== 2026-10-25 03:51:16 cool-down before the arm: 0 s, drive 41 -> 41 C
+dropcache: 7 model files dropped from the page cache in 0.5 s
+=== 2026-10-25 03:51:17 before: MemAvailable 86.3 GB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-25 03:51:29 ready after 12 s: MemAvailable 24.2 GB, engine RSS 63272 MB; vram 0, 15365 MiB, 569 MiB;1, 7295 MiB, 595 MiB;
+=== 2026-10-25 03:59:11 requests done (rc 0): 7 responses
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: DSpark not loaded: the routed experts (132 GB) are far more than the GPU holds (23 GB), where its verify rounds read 3.3x a token's bytes and gain nothing (--dspark on loads it anyway)
+ds4: RAM store: up to 7203 slots of 10.3 MB (74.0 GB), policy 0, 8 reader threads, unbuffered reads
+ds4: RAM store: 6947 of the profile's hottest experts read in (54.0 GB) in 5.9 s
+ds4: CUDA0 layers [0, 9]: weights 1.42 GB, experts 3.34 GB (415 of 3840 in VRAM), caches 0.01 GB, 594 MiB free
+ds4: CUDA1 layers [10, 39] + head: weights 4.44 GB, experts 8.27 GB (901 of 11520 in VRAM), caches 0.02 GB, 568 MiB free
+ds4: 14044 routed experts on the CPU lane (121.2 GB, in place in the model's files), 16 threads
+=== 2026-10-25 03:59:16 SOFTSTOP: MemAvailable 14.9 GB < 15 (the user's limit for these arms; 14 for the daily store-size runs, the user 10-24)
+monitor: lowest MemAvailable 14.9 GB, peak engine RSS 72976 MB, peak VRAM used 5080 15439 MiB / 4060 Ti 7371 MiB
+=== 2026-10-25 03:59:16 kcheck clean
+P4K: [294.2] tok/s (mean 294.2, spread None %), tokens [4128], SSD [57.964] GB per prompt
+P20K: [518.0] tok/s (mean 518.0, spread None %), tokens [19754], SSD [173.562] GB per prompt
+W1-think: decode [29.01] tok/s, [3072] tokens, finish ['length'], SSD [0.0251] GB/token, thinking chars [5672] / answer chars [1978]
+W2-code: decode [26.81] tok/s, [3072] tokens, finish ['length'], SSD [0.0415] GB/token, thinking chars [9596] / answer chars [3144]
+W3-research: decode [23.19] tok/s, [1795] tokens, finish ['length'], SSD [0.1581] GB/token, thinking chars [5224] / answer chars [601]
+W1-W3 decode mean 26.34 tok/s over 3 responses; pass means [26.34] (spread None %); SSD 0.0749 GB/token
+CUDA0 layers [0,9]: 415 experts in VRAM (3.34 GB), weights 1.42 GB, 594 MiB free
+CUDA1 layers [10,39]: 901 experts in VRAM (8.27 GB), weights 4.44 GB, 568 MiB free
+GPU clocks while decode: GPU0 SM 2812 MHz (p10 2805), util 69 %, 99.6 W; GPU1 SM 2550 MHz (p10 2550), util 31 %, 45.6 W
+GPU clocks while prompt: GPU0 SM 2805 MHz (p10 2790), util 100 %, 214.0 W; GPU1 SM 2670 MHz (p10 2550), util 100 %, 108.2 W
+lowest MemAvailable 14.9 GB, peak engine RSS 72976 MB, peak VRAM [15439, 7371] MiB
+nvme0: no temperature samples between 03:51 and 03:59 (the logger started 22:18)
+=== 2026-10-25 03:59:16 done

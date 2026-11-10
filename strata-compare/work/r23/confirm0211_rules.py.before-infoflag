@@ -1,0 +1,418 @@
+#!/usr/bin/env python3
+"""confirm0211_rules.py - r23 (Karl 11-07): THE CONFIRMATION GAP for the v0.2.11 port's prompt-speed fail. The driver is
+work/r23/gap-confirm0211.sh; the design is in results/r23/port-0211/HUNT-1107.md section 3. These rules were written down
+BEFORE any run (11-07), under the 11-07 amendment (work/r22/g17_rules.py, "11-07 park amendment"). Nothing switches;
+P028x stays served.
+
+KARL 11-07: "Port verdict: put the 'fail for serving' on hold. Run the 25-minute confirmation gap (B vs P, each also with
+the chat cache off) after Phase 5's queue. If it confirms the artifact, record the port's baseline check as passed under
+the amended rule. Passing doesn't mean switching: the before-switch requirements in the port plan still apply."
+
+WHAT IT CONFIRMS:
+  - port-0211's screen (results/r23/port-0211/gap, 11-07 00:43) failed only on R3-extract5k's prompt (-1.4 %) and
+    R4-agent33k's (-0.3 %).
+  - The hunt found the cause of R3's loss: R3's request first saves R2's 54K conversation into our chat cache, inside
+    R3's prompt time. That save (1238 MiB) has two cost levels on every build, 102-113 or 123-137 ms; B drew the fast
+    level and P the slow one. The prefill itself was equal: 1288.0 vs 1288.7 ms.
+  - R4's loss was outside the engine's prompt time.
+
+ARMS (a fresh test server each on port 8081, with_server.sh):
+  - B = configs/x28h.json (P028x's test form).
+  - P = configs/P0211x-h.json (the port, the 18 pins).
+  - Boff / Poff = the same two with --chat-cache 0, so no save happens at all. The driver makes them into
+    OUTDIR/configs/ (mkcfg: only that argument changes).
+
+REQUESTS per start: abarm.sh's warm-up, then research4's R2-report54k and R3-extract5k twice (R2, R3, R2, R3), as in
+the screen (thinking on, medium, nonce, sampling as configured). With the chat cache on, each R3 saves a fresh 54K
+conversation (1238 MiB) first.
+
+ORDER:
+  - chat cache on: B P P B B P P B. 4 starts an arm, 8 R3s and 8 saves of 1238 MiB.
+  - chat cache off: Boff Poff Poff Boff. 2 starts an arm, 4 R3s.
+
+THE RULES. The engine's numbers come from each start's engine log slice, paired with the client's records as
+g17_rules.py's _park_pair pairs them. A record the log does not match makes the verdict INCOMPLETE.
+  (a) Prefill, chat cache off.
+      - R3's prompt rate = prompt tokens / the engine's prompt ms; there is no save in it.
+      - PASS when Poff's mean >= Boff's mean x (1 - noise), noise = max(the two arms' spreads (max / min - 1), 0.3 %).
+      - INFO: the client clock and R2.
+  (b) Prefill, chat cache on.
+      - R3's prompt rate = prompt tokens / (the engine's prompt ms - the save logged just before it).
+      - PASS: P against B, the same bound as (a).
+      - INFO: the client clock minus the save.
+  (c) The save, chat cache on: g17_rules.py save_rule's own rule on this gap's saves (each start is a "pass").
+      - The judged saves are the 1238 MiB ones; the 186 MiB ones, under 20 ms, are INFO.
+      - PASS when P's save index (each save divided by the stored median of its level) is not above B's by more than
+        max(the spreads, 2 %), and P has no saves above the stored band in 2+ starts beyond B's count.
+      - INFO:
+        - the fast / slow counts per arm;
+        - whether a start's two saves share a level (one level per engine start, or one per save);
+        - R3's client TTFT per level and arm;
+        - the engine's minor page faults per start (the allocator hypothesis; the driver samples /proc/PID/stat).
+  (d) The stored gate re-judged (results/r23/port-0211/gap, read-only).
+      - Its required gates as port0211_rules.py decide reads them: every REQUIRED gate and every env_* PASS, no
+        fatal_* / foreign_*, exact7 vs P028x PASS, Basalt's fixtures PASS.
+      - AND its screen under the amendment: port0211_rules.py speed(amended=True) PASS and save(amended=True) PASS.
+  VOID: an arm-start with an env_* / fatal_* / foreign_* FAIL is left out. With fewer than 2 valid starts of an arm with
+  the chat cache on, or fewer than 1 with it off, the verdict is INCOMPLETE.
+  VERDICT:
+    - CONFIRMED = (a), (b) and (c) PASS.
+    - CONFIRMED with (d) PASS -> "BASELINE PASS under the 11-07 amended rule (switch requirements in the port plan
+      still apply)".
+    - (a) or (b) FAIL -> "NOT CONFIRMED: the prefill itself is slower on the port - the hunt goes back to src/prefill".
+    - (c) FAIL -> "NOT CONFIRMED: the port saves slower (the chat-cache save line FAILs)".
+    - (d) not PASS with CONFIRMED -> "CONFIRMED, BASELINE NOT PASSED", with the stored gate's reasons.
+    - A PASS is not a switch: Karl's switch conditions still apply (PORT.md "Required before v0.2.11 could replace
+      P028x", PORT-V0210-PLAN.md).
+
+Subcommands:
+  rules OUT              this text, frozen at the gap's start (OUT)
+  mkcfg SRC DST          DST = SRC with --chat-cache 0 (only that argument changes; checked)
+  decide OUTDIR          the verdict -> OUTDIR/decision.txt; exit 0 = BASELINE PASS under the amended rule
+  selftest SCRATCH       the rules on synthetic starts plus the stored gate's re-judgement (read-only); no GPU, no engine
+"""
+import argparse
+import json
+import re
+import shutil
+import statistics as st
+import sys
+from pathlib import Path
+
+WS = Path("/home/USER/ai-speed-testing/strata-compare")
+sys.path.insert(0, str(WS / "work/r22"))
+sys.path.insert(0, str(WS / "work/r23"))
+sys.path.insert(0, str(WS / "bringup/lib"))
+import g17_rules as g17  # noqa: E402
+import port0211_rules as p211  # noqa: E402  (it imports the same g17_rules module)
+
+STORED = WS / "results/r23/port-0211/gap"
+R2, R3 = "R2-report54k", "R3-extract5k"
+ON, OFF = ("B", "P"), ("Boff", "Poff")
+NOISE_MIN = 0.003
+BIG = 1238      # the screen's two-level save size (PARK_REF_1107)
+PASS_LINE = "BASELINE PASS under the 11-07 amended rule (switch requirements in the port plan still apply)"
+
+
+# ------------------------------------------------------------------------------------------------ data
+def starts(o, arm):
+    return [k for k in range(1, 5) if (Path(o) / "speed" / f"{arm}{k}r.jsonl").exists()]
+
+
+def void(g, n):
+    return [f"{k} {s}" for k, (s, _) in g.items() if re.fullmatch(rf"(env|fatal|foreign)_{n}", k) and s == "FAIL"]
+
+
+def records(o, n):
+    """Arm-start N's client records in order, each with its request's engine numbers (g17._park_pair)."""
+    jl, eg = Path(o) / "speed" / f"{n}r.jsonl", Path(o) / "speed" / f"{n}r.englog"
+    recs = [json.loads(x) for x in jl.read_text().splitlines() if x.strip()]
+    g17._park_pair(recs, eg)
+    return recs
+
+
+def collect(o, arm, g):
+    """{start: records} of ARM's valid starts, the void starts, and the pairing problems."""
+    out, voided, prob = {}, [], []
+    for k in starts(o, arm):
+        n = f"{arm}{k}"
+        if void(g, n):
+            voided.append(f"{n} ({'; '.join(void(g, n))})")
+            continue
+        recs = records(o, n)
+        prob += [r["pair_error"] for r in recs if r.get("pair_error")]
+        out[k] = recs
+    return out, voided, prob
+
+
+def rates(data, wid, key):
+    return [r[key] for recs in data.values() for r in recs if r.get("id") == wid and r.get(key)]
+
+
+def cmp_rates(xa, ba):
+    noise = max(g17.spread(xa), g17.spread(ba), NOISE_MIN)
+    d = st.mean(xa) / st.mean(ba) - 1
+    return d >= -noise, d, noise
+
+
+# ------------------------------------------------------------------------------------------------ the rules
+def prefill(o, g, arms, key, label):
+    """(a) / (b): R3's rate, arms[1] against arms[0]. Returns (verdict, lines)."""
+    (bd, bv, bp), (pd, pv, pp) = collect(o, arms[0], g), collect(o, arms[1], g)
+    need = 2 if arms == ON else 1
+    lines = []
+    if bv or pv:
+        lines.append(f"  void starts: {', '.join(bv + pv)}")
+    if bp or pp:
+        return "INCOMPLETE", [f"{label}: INCOMPLETE - engine log pairing failed: {'; '.join((bp + pp)[:4])}"] + lines
+    if len(bd) < need or len(pd) < need:
+        return "INCOMPLETE", [f"{label}: INCOMPLETE - {arms[0]} {len(bd)} / {arms[1]} {len(pd)} valid starts "
+                              f"({need} needed)"] + lines
+    xa, ba = rates(pd, R3, key), rates(bd, R3, key)
+    if len(xa) < 2 or len(ba) < 2:
+        return "INCOMPLETE", [f"{label}: INCOMPLETE - R3 rates {arms[0]} {len(ba)} / {arms[1]} {len(xa)}"] + lines
+    ok, d, noise = cmp_rates(xa, ba)
+    v = "PASS" if ok else "FAIL"
+    lines.insert(0, f"{label}: R3 {arms[1]} {100 * d:+.2f} % vs {arms[0]} ({arms[0]} {st.mean(ba):,.1f}, {arms[1]} "
+                    f"{st.mean(xa):,.1f} tok/s; {len(ba)} / {len(xa)} R3s; noise {100 * noise:.2f} %) -> {v}")
+    info_key = "prompt_tps"   # the client clock (minus the save where one was made)
+    for wid in (R3, R2):
+        xi, bi = rates(pd, wid, info_key), rates(bd, wid, info_key)
+        if len(xi) >= 2 and len(bi) >= 2:
+            lines.append(f"  (info) {wid} client clock{' minus the save' if arms == ON else ''}: {arms[1]} "
+                         f"{100 * (st.mean(xi) / st.mean(bi) - 1):+.2f} % vs {arms[0]} (noise "
+                         f"{100 * max(g17.spread(xi), g17.spread(bi)):.2f} %)")
+    xe, be = rates(pd, R2, key), rates(bd, R2, key)
+    if len(xe) >= 2 and len(be) >= 2:
+        lines.append(f"  (info) R2 engine clock{' minus the save' if arms == ON else ''}: {arms[1]} "
+                     f"{100 * (st.mean(xe) / st.mean(be) - 1):+.2f} % vs {arms[0]}")
+    return v, lines
+
+
+def save(o, g):
+    """(c): g17.save_rule's rule on this gap's starts (each start = a pass); INFO lines on the levels."""
+    pp = {}
+    for arm in ON:
+        d = {}
+        for k in starts(o, arm):
+            n = f"{arm}{k}"
+            eg = Path(o) / "speed" / f"{n}r.englog"
+            if not void(g, n) and eg.exists():
+                d[k] = [r["park"] for r in g17.engine_requests(eg) if r["park"]]
+        pp[arm] = d
+    orig = g17.screen_parks
+    g17.screen_parks = lambda o_, arm_, sets="nar": pp[arm_]   # save_rule's own rule, on this gap's starts
+    try:
+        v, lines = g17.save_rule(o, "P", "B", amended=True)
+    finally:
+        g17.screen_parks = orig
+    lines = [lines[0].replace("chat-cache save [11-07 amendment]", "(c) the chat-cache save")] + ["  " + x for x in lines[1:]]
+    # INFO: one level per start or per save; R3's TTFT per level
+    for arm in ON:
+        per = []
+        for k, ps in sorted(pp[arm].items()):
+            lv = ["fast" if g17.park_level(BIG, p["ms"])[0] == 0 else "slow" for p in ps if p["mib"] == BIG]
+            per.append(f"{arm}{k} {'/'.join(lv) or '-'}")
+        same = sum(1 for x in per if len(set(x.split()[1].split("/"))) == 1)
+        lines.append(f"  (info) {arm}: the 1238 MiB save's level per start: {', '.join(per)} ({same} of {len(per)} "
+                     f"starts on one level)")
+    for arm in ON:
+        data, _, _ = collect(o, arm, g)
+        lv = {}
+        for recs in data.values():
+            for r in recs:
+                if r.get("id") == R3 and r.get("park_mib") == BIG and r.get("ttft_s"):
+                    lv.setdefault("fast" if g17.park_level(BIG, r["park_ms"])[0] == 0 else "slow", []).append(r["ttft_s"])
+        if lv:
+            lines.append(f"  (info) {arm}: R3's client TTFT by save level: " + ", ".join(
+                f"{name} {1000 * st.mean(x):.0f} ms (n {len(x)})" for name, x in sorted(lv.items())))
+    for arm in ON + OFF:
+        f = []
+        for k in starts(o, arm):
+            p = Path(o) / f"faults-{arm}{k}.tsv"
+            if p.exists():
+                rows = [x.split() for x in p.read_text().splitlines() if x and not x.startswith("#")]
+                if len(rows) >= 2:
+                    f.append(f"{arm}{k} {int(rows[-1][1]) - int(rows[0][1]):,}")
+        if f:
+            lines.append(f"  (info) {arm}: the engine's minor page faults per start (sampled): {', '.join(f)}")
+    return v, lines
+
+
+def stored():
+    """(d): the stored gate's required gates, Basalt, and its screen under the amendment (read-only)."""
+    g = g17.read_gates(STORED)
+    s = lambda k: g.get(k, ("MISSING", ""))[0]
+    reasons = []
+    for k in p211.REQUIRED + [k for k in g if k.startswith("env_")]:
+        if s(k) != "PASS":
+            reasons.append(f"{k}: {s(k)}")
+    reasons += [f"{k}: {g[k][0]}" for k in g if k.startswith(("fatal_", "foreign_"))]
+    if s("e7_vs_p028x") != "PASS":
+        reasons.append(f"e7_vs_p028x: {s('e7_vs_p028x')}")
+    bv, bl = g17.bp90_baseline(STORED / "bp90")
+    if bv != "PASS":
+        reasons.append(f"Basalt fixtures: {bv}")
+    sv, sl = p211.speed(STORED, amended=True)
+    if sv != "PASS":
+        reasons.append(f"speed screen under the amendment: {sv}")
+    cv, cl = p211.save(STORED, amended=True)
+    if cv != "PASS":
+        reasons.append(f"chat-cache save under the amendment: {cv}")
+    return (not reasons), reasons, sl + cl
+
+
+def decide(a):
+    o = Path(a.outdir)
+    g = g17.read_gates(o)
+    out = [g17.AMENDMENT_1107,
+           "CONFIRMATION GAP (work/r23/gap-confirm0211.sh): the v0.2.11 port's R3 / R4 prompt fail - B (x28h) vs P "
+           "(P0211x-h), each also with --chat-cache 0; measurements only, P028x stays served, nothing switches"]
+    va, la = prefill(o, g, OFF, "prompt_tps_wl", "(a) prefill, chat cache off")
+    vb, lb = prefill(o, g, ON, "prompt_tps_wl", "(b) prefill, chat cache on (minus the save)")
+    vc, lc = save(o, g)
+    out += la + lb + lc
+    dok, dreasons, dlines = stored()
+    out.append(f"(d) the stored gate (results/r23/port-0211/gap) re-judged under the amendment: "
+               f"{'PASS' if dok else 'NOT PASS'}")
+    out += ["  " + x for x in dlines] + [f"  - {r}" for r in dreasons]
+    vs = (va, vb, vc)
+    if "INCOMPLETE" in vs or vc in ("NOT DECIDED", "NOT JUDGED", None):
+        verdict = "INCOMPLETE (see above) - the port's verdict stays ON HOLD"
+    elif "FAIL" in (va, vb):
+        verdict = "NOT CONFIRMED: the prefill itself is slower on the port - the hunt goes back to src/prefill"
+    elif vc == "FAIL":
+        verdict = "NOT CONFIRMED: the port saves slower (the chat-cache save line FAILs)"
+    elif dok:
+        verdict = PASS_LINE
+    else:
+        verdict = "CONFIRMED, BASELINE NOT PASSED: the stored gate has other reasons (above)"
+    out.append(f"VERDICT: {verdict}")
+    out.append("A PASS is not a switch: Karl's switch conditions (PORT.md \"Required before v0.2.11 could replace P028x\") "
+               "still apply; P028x stays served.")
+    txt = "\n".join(out) + "\n"
+    (o / "decision.txt").write_text(txt)
+    print(txt, end="")
+    return 0 if verdict == PASS_LINE else 1
+
+
+# ------------------------------------------------------------------------------------------------ tools
+def rules(a):
+    Path(a.out).write_text(__doc__)
+    return 0
+
+
+def mkcfg(a):
+    c = json.loads(Path(a.src).read_text())
+    args = list(c["args"])
+    i = [j for j, x in enumerate(args) if x == "--chat-cache"]
+    if len(i) != 1 or i[0] + 1 >= len(args):
+        print(f"mkcfg: {a.src} has {len(i)} --chat-cache arguments (1 needed)")
+        return 1
+    args[i[0] + 1] = "0"
+    d = dict(c, args=args)
+    d["_comment"] = (f"confirmation gap (work/r23/gap-confirm0211.sh, Karl 11-07): {Path(a.src).name} with --chat-cache 0 "
+                     f"(no chat-cache save); nothing else changed. Measurement only, never served.")
+    diff = [k for k in set(c) | set(d) if k not in ("args", "_comment") and c.get(k) != d.get(k)]
+    adiff = [j for j, (x, y) in enumerate(zip(c["args"], args)) if x != y]
+    if diff or adiff != [i[0] + 1] or len(args) != len(c["args"]):
+        print(f"mkcfg: unexpected difference {diff} {adiff}")
+        return 1
+    Path(a.dst).write_text(json.dumps(d, indent=1) + "\n")
+    print(f"mkcfg: {a.dst} = {Path(a.src).name} with --chat-cache {c['args'][i[0] + 1]} -> 0")
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ selftest
+def selftest(a):
+    root = Path(a.scratch) / "confirm0211-selftest"
+    shutil.rmtree(root, ignore_errors=True)
+    fails = []
+
+    def check(name, cond, txt=""):
+        print(f"{'ok  ' if cond else 'FAIL'} {name}")
+        if not cond:
+            fails.append(name)
+            print("     " + str(txt).replace("\n", "\n     ")[:2500])
+
+    def mkgap(name, r3=None, park=None, env_fail=(), faults=False):
+        """r3(arm, k, rep) -> R3's prefill ms; park(arm, k, rep) -> the 1238 MiB save's ms (cache-on arms)."""
+        r3 = r3 or (lambda arm, k, rep: 1288 + (k + rep) % 3 - 1)
+        park = park or (lambda arm, k, rep: 105 + rep if arm == "B" else 125 + rep)
+        d = root / name
+        (d / "speed").mkdir(parents=True)
+        gl = []
+        for arm, ks in (("B", 4), ("P", 4), ("Boff", 2), ("Poff", 2)):
+            for k in range(1, ks + 1):
+                n = f"{arm}{k}"
+                gl.append(f"env_{n} {'FAIL' if n in env_fail else 'PASS'} synthetic\n")
+                recs, eng = [], []
+                for rep in (0, 1):
+                    pk2 = 10 if (rep == 1 and arm in ON) else 0
+                    if pk2:
+                        eng.append("strata serve: chat cache: parked a conversation of 5006 tokens (1 checkpoints, 186 MiB) in 10 ms\n")
+                    ms2 = 11960 + pk2
+                    eng.append(f"strata serve: prompt 54072 tokens = 0 reused + 54072 read in {ms2} ms (4521.0 tok/s), 3364 "
+                               f"generated in 21909 ms (153.5 tok/s), drafts accepted 1 of 1, 4 checkpoints, 900 windows, 3.70 drafts per window\n")
+                    recs.append({"arm": n, "id": R2, "rep": rep, "prompt_tokens": 54072, "ttft_s": round((ms2 + 49) / 1000, 3),
+                                 "decode_tps": 153.0, "prompt_tps": round(54072 / ((ms2 + 49) / 1000), 1)})
+                    pf, pk = int(round(r3(arm, k, rep))), (int(round(park(arm, k, rep))) if arm in ON else 0)
+                    if pk:
+                        eng.append(f"strata serve: chat cache: parked a conversation of 54067 tokens (4 checkpoints, 1238 MiB) in {pk} ms\n")
+                    eng.append(f"strata serve: prompt 5011 tokens = 0 reused + 5011 read in {pf + pk} ms (3500.0 tok/s), 1182 "
+                               f"generated in 6785 ms (174.2 tok/s), drafts accepted 1 of 1, 1 checkpoints, 266 windows, 4.46 drafts per window\n")
+                    t = round((pf + pk + 24) / 1000, 3)
+                    recs.append({"arm": n, "id": R3, "rep": rep, "prompt_tokens": 5011, "ttft_s": t, "decode_tps": 175.0,
+                                 "prompt_tps": round(5011 / t, 1)})
+                (d / "speed" / f"{n}r.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs))
+                (d / "speed" / f"{n}r.englog").write_text("".join(eng))
+                if faults:
+                    (d / f"faults-{n}.tsv").write_text(f"# t minflt majflt rss_kb\n0 1000 0 1\n1 {1000 + 200000 * (2 if arm == 'P' else 1)} 0 1\n")
+        (d / "gates.txt").write_text("".join(gl))
+        return d
+
+    def run(d):
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = decide(argparse.Namespace(outdir=str(d)))
+        return rc, (d / "decision.txt").read_text()
+
+    # 0. the stored gate re-judged (read-only): PASS (the hunt's finding)
+    ok, reasons, lines = stored()
+    check("(d) the stored port-0211 gate under the amendment: PASS", ok, reasons + lines)
+    # 1. B fast, P slow, equal prefill -> CONFIRMED -> BASELINE PASS under the amended rule
+    rc, t = run(mkgap("confirm", faults=True))
+    check("B-fast vs P-slow saves, equal prefill: BASELINE PASS under the amended rule", rc == 0 and PASS_LINE in t
+          and "(c) the chat-cache save: P" in t and "minor page faults" in t, t)
+    # 2. the prefill with the cache off 1.5 % slower on P -> NOT CONFIRMED (prefill)
+    rc, t = run(mkgap("prefill-off", r3=lambda arm, k, rep: 1288 * (1.015 if arm == "Poff" else 1.0)))
+    check("Poff's prefill +1.5 %: NOT CONFIRMED (prefill)", rc == 1 and "the prefill itself is slower" in t
+          and "(a) prefill, chat cache off: R3 Poff -1.4" in t, t)
+    # 3. the prefill with the cache on 15 % slower on P -> NOT CONFIRMED (prefill)
+    rc, t = run(mkgap("prefill-on", r3=lambda arm, k, rep: 1288 * (1.15 if arm == "P" else 1.0)))
+    check("P's prefill +15 %: NOT CONFIRMED (prefill)", rc == 1 and "the prefill itself is slower" in t, t)
+    # 4. P's saves 15 % slower (its slow level 125 -> 144) -> NOT CONFIRMED (save)
+    rc, t = run(mkgap("save15", park=lambda arm, k, rep: 105 + rep if arm == "B" else round((125 + rep) * 1.15)))
+    check("P's saves +15 %: NOT CONFIRMED (save)", rc == 1 and "the port saves slower" in t, t)
+    # 5. levels mixed in both arms, within a start -> PASS; the INFO line says how many starts stayed on one level
+    rc, t = run(mkgap("mixed", park=lambda arm, k, rep: (106 if (k + rep) % 2 else 131) + (1 if arm == "P" else 0)))
+    check("mixed levels in both arms: PASS, the per-start INFO line", rc == 0 and "0 of 4 starts on one level" in t, t)
+    # 6. three of P's four starts void -> INCOMPLETE
+    rc, t = run(mkgap("void", env_fail=("P1", "P2", "P3")))
+    check("3 of P's starts void: INCOMPLETE", rc == 1 and "INCOMPLETE" in t and "valid starts" in t, t)
+    # 7. a pairing failure -> INCOMPLETE, named
+    d = mkgap("pairfail")
+    eg = d / "speed" / "Poff1r.englog"
+    eg.write_text(eg.read_text().replace("prompt 5011 tokens", "prompt 5099 tokens", 1))
+    rc, t = run(d)
+    check("a record the engine log does not match: INCOMPLETE, named", rc == 1 and "pairing failed" in t and "5099" in t, t)
+    # 8. mkcfg on the real configs: only --chat-cache changes
+    for src in ("x28h.json", "P0211x-h.json"):
+        dst = root / f"cc0-{src}"
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = mkcfg(argparse.Namespace(src=str(WS / "configs" / src), dst=str(dst)))
+        c0, c1 = json.loads((WS / "configs" / src).read_text()), json.loads(dst.read_text()) if dst.exists() else {}
+        check(f"mkcfg {src}: --chat-cache 16 -> 0, nothing else", rc == 0 and c1.get("args", [None])[c1.get("args", []).index("--chat-cache") + 1] == "0"
+              and {k: v for k, v in c0.items() if k not in ("args", "_comment")} == {k: v for k, v in c1.items() if k not in ("args", "_comment")}, c1)
+    print(f"selftest: {len(fails)} failure(s)")
+    return 1 if fails else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+    sp.add_parser("rules").add_argument("out")
+    p = sp.add_parser("mkcfg")
+    p.add_argument("src")
+    p.add_argument("dst")
+    sp.add_parser("decide").add_argument("outdir")
+    sp.add_parser("selftest").add_argument("scratch")
+    a = ap.parse_args()
+    return {"rules": rules, "mkcfg": mkcfg, "decide": decide, "selftest": selftest}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

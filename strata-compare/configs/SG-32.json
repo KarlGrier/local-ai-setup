@@ -1,0 +1,57 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-v36q4/strata",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/work/r10/signal/packs/ap-q4_k_xl",
+  "--native",
+  "/home/USER/.cache/huggingface/hub/models--agentionai--Signal-3.8-Flash-Next-GGUF/snapshots/eba565bea194b899480ebd8a8ab63d537917004b/AP-Q4_K_XL/Signal-3.8-Flash-Next-AP-Q4_K_XL.gguf",
+  "--resident-budget-gib",
+  "32",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0131/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "auto",
+  "--spec",
+  "4",
+  "--spec-min-p",
+  "0.5",
+  "--mtp",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt",
+  "--max-context",
+  "32768",
+  "--kv",
+  "int8",
+  "--vram-reserve-mib",
+  "1000"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-cstar10",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/work/r10/signal/packs/ap-q4_k_xl/tokenizer",
+ "model_name": "signal-3.8-flash-next-ap-q4_k_xl",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-SG-32.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8081,
+ "host": "127.0.0.1",
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "server": "/home/USER/ai-speed-testing/strata-compare/strata-v36/serve/server.py",
+ "env": {
+  "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX5080",
+  "STRATA_IO_THREADS": "64",
+  "CUDA_MODULE_LOADING": "LAZY",
+  "STRATA_SPEC_EXACT": "1",
+  "STRATA_GR_V3": "1",
+  "STRATA_ADAPT_LAND": "2"
+ },
+ "_comment": "round 10 (your addition): Signal AP-Q4_K_XL (Round 1's llama.cpp file) on the base built with -DSTRATA_MMQ_KQUANTS=ON, RAM budget 32 GiB, reserve 1000, 32K context, no chat cache, the 5080 alone; the MTP layer and expert profile as for Q4 [re-pointed to the v0.1.36 port's builds]",
+ "fallback": null
+}

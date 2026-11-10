@@ -1,0 +1,1823 @@
+#!/usr/bin/env python3
+"""dayone.py - the Qwen4 day-one kit's one entry point (Karl 11-05: "One script, given a GGUF repo: pick the largest quant
+whose experts fit about 72 GiB (prefer ISTA or Unsloth per the v3.1 result, leave that as a setting); check disk space and
+download; pack the file and write a config with explicit helper slot counts; generate the exactness smoke test,
+KL-vs-reference and speed-screen drivers. Dry-run every step that needs no GPU on Flash-Next as the stand-in.").
+Written 11-05 before any Qwen4 release. No GPU, no engine, nothing installed; plan first, then each step on its own.
+
+  dayone.py plan --repo OWNER/NAME[@REV] [--repo ...] [--local SHARD1 ...] --name NAME --out DIR [options]
+      1. the repo's files at a PINNED commit (HF API, paginated; --listing REPO=FILE reads a saved listing instead),
+         grouped by quant (split shards joined; MTP / engram / mmproj / imatrix files listed apart);
+      2. headers: reused from --headers DIR or the files on disk; else (live) fetched by range requests
+         (bringup/fetch_model.py fetch_head: grown until gguf_head parses, 206 + Content-Range required) - only for the
+         quants a size pre-screen puts near the fit boundary (exact experts of the read quants, estimates for the rest);
+      3. work/qwen4-kit/day1.py check on every quant with a header (types against the engine tree, the fit by Karl's rule,
+         ties, the same-model swap test, the day-one config / params / commands);
+      4. the pick: Karl's rule (the largest whose experts fit RAM + VRAM, ~72 GiB); a tie (equal expert bytes) is broken
+         by --prefer ista|unsloth, else "quality decides" (--prefer any); --prefer auto (default) reads the v3.1 result
+         (results/r23/ud31/decision.json: U BETTER THAN P -> unsloth, WORSE THAN P -> ista, else any). The documented
+         default today: v3.1's UD-IQ3_XXS ties our ISTA IQ3_S on expert bytes (results/qwen4-kit/unsloth-v31/REPORT.md),
+         and its quality gap (work/r23/gap-ud31.sh) has not run -> any -> quality decides;
+      5. disk: free space after the download + the pack + the splice (if any) + the drafter conversion >= 100 GB;
+      6. download plan: work/qwen4-kit/gentle_dl.py (pinned commit, checksummed, page-cache dropping, the 100 GB floor;
+         Karl 11-05's default --window measure: at once, paused only while a gap is open, no fixed cap - a share of the
+         line left to a live LDR run) - planned, never started by `plan`;
+      7. pack plan: the release tree's tools/iq_pack.py (--compat-bf16 when day1 says so) under
+         work/r23/nogap-run.sh (nice 19, freezes while a gap is open); STRATA_HC_Q8=1 in the config for a file that
+         stores Q8_0 hyper-connections (Karl 11-05);
+      8. configs: day1's config (P028x.json as the template) with EXPLICIT --expert-cache / --expert-cache-device1
+         counts from the slot model (results/catchup/F1-frame-pools.md: --expert-cache N = a byte budget of N largest
+         blobs, filled in profile order at each layer's own size; the helper is a count); the KL reference's config;
+      9. the gap drivers (exactness smoke, KL vs the named reference, speed screen) from the templates below, in the
+         series' conventions (pipefail, lock fds closed, preflight, port_gap4 begin / end, kcheck after every step, exit
+         0 / 1 / 3 / 4), with work/qwen4-kit/q4_rules.py as their rules. NO .ready FILE IS WRITTEN: Claude reviews a
+         driver and writes it before any gap may use it.
+  dayone.py execute download|pack --plan DIR/plan.json [--go]   one step of a plan (without --go: print the command)
+  dayone.py dryrun [--out results/qwen4-kit/dayone-dryrun]      every non-GPU step on Flash-Next as the stand-in,
+      offline (the saved v3.1 listing + headers, our local files; the header fetch path exercised on a local file)
+  dayone.py selftest                                            the slot model against F1's logged numbers, the pick
+
+Read-only outside --out (and work/qwen4-kit/scratch-d/ in dryrun / selftest). Python: .venv/bin/python -I -B.
+"""
+from __future__ import annotations
+
+import sys
+
+sys.dont_write_bytecode = True
+
+import argparse  # noqa: E402
+import datetime  # noqa: E402
+import fnmatch  # noqa: E402
+import hashlib  # noqa: E402
+import importlib.util  # noqa: E402
+import json  # noqa: E402
+import math  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+import shlex  # noqa: E402
+import shutil  # noqa: E402
+import struct  # noqa: E402
+import subprocess  # noqa: E402
+import time  # noqa: E402
+import urllib.request  # noqa: E402
+from collections import OrderedDict  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+WS = Path("/home/USER/ai-speed-testing/strata-compare")
+KIT = WS / "work/qwen4-kit"
+PY = WS / ".venv/bin/python"
+VERSION = "dayone.py 2026-11-05"
+GIB, MIB = 2 ** 30, 2 ** 20
+SERVED = WS / "models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf"
+SERVED_PROFILE = WS / "strata-cstar18/data/expert-profile.bin"
+X28H = WS / "configs/x28h.json"
+UD31_DECISION = WS / "results/r23/ud31/decision.json"
+UA = {"User-Agent": "strata-compare-dayone/1.0"}
+# F1-frame-pools.md (logged, the served pack r20a + the STRP profile): the slot model's calibration points
+F1 = {"uniform_auto": 3526, "sized_auto": 4583, "pin": 2500, "sized_pin": 3238, "helper": 3300, "helper_gib": 6.206154823}
+# the series' minutes on Flash-Next (gap-ud31.sh and earlier gaps: exact7 4, score.py arm 7, the spilling R 12, a screen
+# pass 5, pf_yardstick long40 ~8, the compare 10); a new model's are scaled by its active-parameter ratio
+MIN = {"e7": 4, "smoke": 2, "q": 7, "qr": 12, "pfy": 9, "pfyr": 14, "scr": 5, "cmp": 10}
+HC_RE = re.compile(r"^(blk\.\d+\.hc_(attn|ffn)_(down|up)|output_hc_(down|up))\.weight$")
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+D1 = load("day1", KIT / "day1.py")
+
+
+def now():
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+def log(msg):
+    print(f"{time.strftime('%H:%M:%S')} {msg}", flush=True)
+
+
+def sha256_file(p):
+    return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+
+
+# =====================================================================================================================
+# 1. the listing (pinned commit) and the quants
+# =====================================================================================================================
+def hf_json(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r:
+        return json.load(r), r.headers
+
+
+def resolve_commit(repo, rev):
+    if re.fullmatch(r"[0-9a-f]{40}", rev):
+        return rev
+    j, _ = hf_json(f"https://huggingface.co/api/models/{repo}/revision/{rev}")
+    return j["sha"]
+
+
+def api_tree(repo, commit):
+    """every entry at the commit (recursive, paged by the Link header), raw: gentle_dl.py's TREE.json format"""
+    out, url = [], f"https://huggingface.co/api/models/{repo}/tree/{commit}?recursive=1&expand=0"
+    while url:
+        j, h = hf_json(url)
+        out += j
+        url = next((p.split(";")[0].strip(" <>") for p in h.get("Link", "").split(",") if 'rel="next"' in p), None)
+    return out
+
+
+def list_repo(repo, rev, listing=None, offline=False):
+    if listing:
+        if not re.fullmatch(r"[0-9a-f]{40}", rev or ""):
+            raise SystemExit(f"--listing for {repo} needs --repo {repo}@<the listing's 40-hex commit>")
+        return {"repo": repo, "commit": rev, "entries": json.loads(Path(listing).read_text()), "source": str(listing)}
+    if offline:
+        raise SystemExit(f"{repo}: --offline and no --listing for it")
+    commit = resolve_commit(repo, rev or "main")
+    return {"repo": repo, "commit": commit, "entries": api_tree(repo, commit),
+            "source": f"HF API {now()} (revision {rev or 'main'} -> {commit})"}
+
+
+QUANT_RE = re.compile(r"(?<![A-Za-z0-9])((?:UD-)?(?:IQ\d_[A-Z0-9]+|TQ\d_\d|Q\d_K(?:_[A-Z0-9]+)?|Q\d_\d|Q\d_[A-Z]+|BF16|F16|F32|"
+                      r"MXFP4[A-Z0-9_]*|NVFP4[A-Z0-9_]*))(?![A-Za-z0-9])", re.I)
+
+
+def classify(path):
+    base = Path(path).name
+    low = path.lower()
+    if base.endswith(".gguf_file"):   # Unsloth publishes its engram tables and imatrix as .gguf_file (data, never run)
+        base = base[:-5]
+    if not base.endswith(".gguf"):
+        return "other", None, None
+    if base.startswith("mtp-") or "/mtp/" in f"/{low}":
+        kind = "mtp"
+    elif "engram" in low:
+        kind = "engram"
+    elif base.startswith("mmproj"):
+        kind = "mmproj"
+    elif "imatrix" in low:
+        kind = "imatrix"
+    else:
+        kind = "model"
+    m = D1.SHARD_RE.match(base)
+    stem = m.group(1) if m else base[:-5]
+    q = QUANT_RE.findall(stem)
+    return kind, (q[-1].upper().replace("UD-", "UD-") if q else stem), stem
+
+
+def publisher_of(text):
+    t = text.lower()
+    return "unsloth" if "unsloth" in t else "ista" if ("ista" in t or "ist-daslab" in t or "gsq-rco" in t) else "other"
+
+
+def quants_of(lst, dest_root):
+    out, side = OrderedDict(), []
+    for e in lst["entries"]:
+        if e.get("type") != "file" or not e.get("lfs"):
+            continue
+        kind, label, stem = classify(e["path"])
+        if kind == "other":
+            continue
+        if kind != "model":
+            side.append({"kind": kind, "path": e["path"], "size": int(e["size"]), "oid": e["lfs"]["oid"]})
+            continue
+        key = (str(Path(e["path"]).parent), stem)
+        q = out.setdefault(key, {"label": label, "stem": stem, "repo": lst["repo"], "commit": lst["commit"],
+                                 "publisher": publisher_of(lst["repo"]), "source": "listed", "files": [], "bytes": 0})
+        q["files"].append({"path": e["path"], "size": int(e["size"]), "oid": e["lfs"]["oid"]})
+        q["bytes"] += int(e["size"])
+    for q in out.values():
+        q["files"].sort(key=lambda f: f["path"])
+        q["dest"] = str(Path(dest_root) / q["label"])
+        q["shard1"] = q["files"][0]["path"]
+    return list(out.values()), side
+
+
+def local_candidate(shard1):
+    p = Path(shard1).absolute()   # not resolve(): the shard names must stay (an HF-cache file links to a hash-named blob)
+    shards = D1.shards_of(p)
+    _, label, stem = classify(p.name)
+    return {"label": label, "stem": stem, "repo": None, "commit": None, "publisher": publisher_of(str(p)), "source": "local",
+            "files": [{"path": str(s), "size": s.stat().st_size if s.exists() else None, "oid": None} for s in shards],
+            "bytes": sum(s.stat().st_size for s in shards if s.exists()), "dest": str(p.parent), "shard1": str(p)}
+
+
+# =====================================================================================================================
+# 2. headers
+# =====================================================================================================================
+def sums_of(d):
+    p, out = Path(d) / "SHA256SUMS", {}
+    for ln in p.read_text().splitlines() if p.exists() else []:
+        if ln.strip():
+            h, _, n = ln.strip().partition("  ")
+            out[n] = h
+    return out
+
+
+def header_state(q, headers_root):
+    """('disk', shard-1 path, verified?) when every shard is in its destination at the pinned size; ('headers', path)
+    when every shard's header is under --headers (DIR/<repo path>, NAME.size = the pinned size); else ('none', None)"""
+    if q["source"] == "local":
+        ok = all(f["size"] for f in q["files"])
+        return {"state": "disk" if ok else "none", "path": q["shard1"] if ok else None, "verified": None,
+                "why": "a local file (not pinned: no listing)"}
+    d = Path(q["dest"])
+    on = [d / Path(f["path"]).name for f in q["files"]]
+    if all(p.exists() and p.stat().st_size == f["size"] for p, f in zip(on, q["files"])):
+        s = sums_of(d)
+        ver = all(s.get(p.name) == f["oid"] for p, f in zip(on, q["files"]))
+        return {"state": "disk", "path": str(on[0]), "verified": ver,
+                "why": "every shard in its destination at the pinned size" + ("; SHA256SUMS = the pins" if ver else
+                                                                               "; NO SHA256SUMS match: re-hash")}
+    if headers_root:
+        hs = [Path(headers_root) / f["path"] for f in q["files"]]
+
+        def ok(p, f):
+            sz = Path(str(p) + ".size")
+            return p.exists() and (int(sz.read_text().split()[0]) if sz.exists() else p.stat().st_size) == f["size"]
+        if all(ok(p, f) for p, f in zip(hs, q["files"])):
+            return {"state": "headers", "path": str(hs[0]), "verified": None, "why": f"headers under {headers_root}"}
+    return {"state": "none", "path": None, "verified": None, "why": "no header here"}
+
+
+def fetch_headers(q, headers_root, base=None):
+    """bringup/fetch_model.py fetch_head for every shard (base = a local folder holding the files: offline test)"""
+    FM = load("fetch_model", WS / "bringup/fetch_model.py")
+    pins = {"repo": q["repo"], "revision": q["commit"], "files": {f["path"]: (f["size"], f["oid"]) for f in q["files"]}}
+    for f in q["files"]:
+        dest = Path(headers_root) / Path(f["path"]).parent
+        dest.mkdir(parents=True, exist_ok=True)
+        if base:   # fetch_model reads ranges from <base>/<name> (the name is the repo path): a symlink farm in scratch-d
+            b = KIT / "scratch-d" / "fetch-base"
+            (b / Path(f["path"]).parent).mkdir(parents=True, exist_ok=True)
+            link = b / f["path"]
+            if not link.is_symlink():
+                os.symlink(Path(base) / Path(f["path"]).name, link)
+            FM.fetch_head(pins, f["path"], dest, str(b))
+        else:
+            FM.fetch_head(pins, f["path"], dest, None)
+            time.sleep(0.5)
+
+
+def header_model(path, tree):
+    D1.type_table(Path(tree))
+    return D1.Model(path)
+
+
+def blobs_of(m):
+    """{layer: blob bytes} as day1.sizes / Strata's pack (gate + up + down per expert, + 16 B NVFP4 scales, 256-aligned)"""
+    trunk = D1.trunk_of(m)
+    n_exp = D1.ai(m, "expert_count")
+    out = OrderedDict()
+    for l in range(trunk):
+        ts = [m.tensors.get(f"blk.{l}.ffn_{p}_exps.weight") for p in ("gate", "up", "down")]
+        if not all(ts) or not n_exp or any(t.nbytes is None for t in ts):
+            continue
+        b = sum(t.nbytes // n_exp for t in ts) + (16 if any(t.type == 40 for t in ts) else 0)
+        out[l] = (b + 255) // 256 * 256
+    return out, n_exp
+
+
+def hc_types(m):
+    return sorted({t.tname for t in m.tensors.values() if HC_RE.match(t.name)})
+
+
+# =====================================================================================================================
+# 3. the slot model (results/catchup/F1-frame-pools.md; generate.cpp's sized fill)
+# =====================================================================================================================
+def read_profile(path, nl, ne):
+    if not path or not Path(path).exists():
+        return None, "no expert profile"
+    raw = Path(path).read_bytes()
+    if raw[:4] != b"STRP":
+        return None, f"{path}: not a STRP profile"
+    _ver, pl, pe, _want, n = struct.unpack_from("<5I", raw, 4)
+    if (pl, pe) != (nl, ne):
+        return None, f"{Path(path).name} is {pl} x {pe}, the model {nl} x {ne}: not used (uniform slots)"
+    return [struct.unpack_from("<2H", raw, 24 + 4 * i) for i in range(n)], f"{Path(path).name}: {n} ranked pairs"
+
+
+def slot_model(blobs, n_exp, pairs, main_bytes, helper_budget, margin_bytes, pin):
+    """5080: --expert-cache N is a budget of N largest blobs, capped by the free room; with a profile the pairs fill it
+    in rank order at their own sizes (the sized fill), without one it holds N uniform slots. The 4060 Ti: a count,
+    filled with the next ranks (without a profile: the rest in layer-interleaved order)."""
+    mx = max(blobs.values())
+    order = pairs if pairs else [(l, e) for e in range(n_exp) for l in blobs]
+
+    def fill(budget):
+        if not pairs:
+            n = int(min(budget, main_bytes) // mx)
+            return n, n * mx, order[:n]
+        used, n = 0, 0
+        cap = min(budget, main_bytes)
+        for l, e in order:
+            b = blobs.get(l)
+            if b is None or used + b > cap:
+                break
+            used += b
+            n += 1
+        return n, used, order[:n]
+    u_auto = int(main_bytes // mx)
+    u_cfg = int(max(0, main_bytes - margin_bytes) // mx)
+    out = {"max_blob": mx, "mean_blob": sum(blobs.values()) / len(blobs), "profile": bool(pairs),
+           "main_room_gib": main_bytes / GIB, "margin_mib": margin_bytes / MIB, "uniform_auto": u_auto, "uniform_cfg": u_cfg}
+    out["sized_auto"], b_auto, _ = fill(u_auto * mx)
+    out["sized_cfg"], b_cfg, taken = fill(u_cfg * mx)
+    out["main_gib"] = b_cfg / GIB
+    if pin:
+        out["pin"], (out["sized_pin"], _, _) = pin, fill(pin * mx)
+    rest = order[len(taken):]
+    used = n = 0
+    for l, e in rest:
+        b = blobs.get(l, mx)
+        if used + b > helper_budget:
+            break
+        used += b
+        n += 1
+    out["helper"], out["helper_gib"], out["helper_budget_gib"] = n, used / GIB, helper_budget / GIB
+    return out
+
+
+def helper_bytes_of(blobs, pairs, n_exp, main_bytes, count):
+    """bytes of `count` helper experts after the main card's fill (the served config's 3,300 -> today's bytes)"""
+    s = slot_model(blobs, n_exp, pairs, main_bytes, 1 << 62, 0, None)
+    mx = s["max_blob"]
+    order = pairs if pairs else [(l, e) for e in range(n_exp) for l in blobs]
+    rest = order[s["sized_auto"]:]
+    return sum(blobs.get(l, mx) for l, _ in rest[:count])
+
+
+def served_calibration(tree, room_main_gib=None):
+    """the slot model on the served file (header + profile) against F1's logged numbers"""
+    m = header_model(SERVED, tree)
+    blobs, ne = blobs_of(m)
+    pairs, note = read_profile(SERVED_PROFILE, len(blobs), ne)
+    logged_main = F1["uniform_auto"] * max(blobs.values())       # what auto granted (logged 3,526 uniform)
+    model_main = (room_main_gib or 0) * GIB
+    rows = {}
+    for what, mb in (("logged budget (3,526 x largest)", logged_main + max(blobs.values()) - 1),
+                     ("day1's room (fit model)", model_main)):
+        if mb <= 0:
+            continue
+        s = slot_model(blobs, ne, pairs, mb, F1["helper_gib"] * GIB, 0, F1["pin"])
+        rows[what] = s
+    hb = helper_bytes_of(blobs, pairs, ne, logged_main + max(blobs.values()) - 1, F1["helper"])
+    return {"blobs": blobs, "n_exp": ne, "pairs": pairs, "note": note, "rows": rows, "helper_today_bytes": hb}
+
+
+# =====================================================================================================================
+# 4. day1, the estimates, the pick
+# =====================================================================================================================
+def run_day1(paths, out, name, files_at, a, extra=()):
+    cmd = ["nice", "-n", "19", "taskset", "-c", "31", "timeout", "300", str(PY), "-I", "-B", str(KIT / "day1.py"), "check",
+           *map(str, paths), "--name", name, "--out", str(out), "--tree", a.tree, "--tie-tol-gib", str(a.tie_tol_gib)]
+    for g, d in files_at:
+        cmd += ["--files-at", f"{g}={d}"]
+    if a.no_swap:
+        cmd.append("--no-swap")
+    for k in ("exe", "server", "mtp"):
+        if getattr(a, k, None):
+            cmd += [f"--{k}", getattr(a, k)]
+    cmd += list(extra)
+    Path(out).mkdir(parents=True, exist_ok=True)
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    (Path(out).parent / f"{Path(out).name}.stdout.txt").write_text("$ " + " ".join(shlex.quote(c) for c in cmd) + "\n"
+                                                                   + r.stdout + r.stderr)
+    if r.returncode != 0 or not (Path(out) / "report.json").exists():
+        raise SystemExit(f"day1.py check failed (rc {r.returncode}): {r.stderr[-800:]}")
+    return json.loads((Path(out) / "report.json").read_text())
+
+
+def prefer_default():
+    """--prefer auto: the v3.1 quality result when it exists (U = Unsloth's UD-IQ3_XXS, P = our ISTA IQ3_S)"""
+    if UD31_DECISION.exists():
+        try:
+            q = json.loads(UD31_DECISION.read_text()).get("quality", {})
+            v = q.get("kl_U_class") or q.get("kl_U") or ""
+        except (ValueError, OSError):
+            v = ""
+        if v.startswith("BETTER THAN P"):
+            return "unsloth", f"the v3.1 gap: U {v} (results/r23/ud31/decision.json)"
+        if v.startswith("WORSE THAN P"):
+            return "ista", f"the v3.1 gap: U {v} (results/r23/ud31/decision.json; the pack-rounding tag applies)"
+        if v:
+            return "any", f"the v3.1 gap: U {v} - no quality difference either way (results/r23/ud31/decision.json)"
+    return "any", ("no v3.1 quality result yet (work/r23/gap-ud31.sh not run): the documented default is the v3.1 header "
+                   "result - UD-IQ3_XXS ties our ISTA IQ3_S on expert bytes (46.84 GiB each) - so quality decides")
+
+
+def estimates(cands, rep_by_path):
+    """expert bytes for the quants without a header: file bytes - the non-expert bytes of the same repo's nearest read
+    quant (the n-gram shard and the dense part are shared or similar); a pre-screen for which headers to read"""
+    for c in cands:
+        if c.get("rep"):
+            continue
+        refs = [x for x in cands if x.get("rep") and x["repo"] == c["repo"] and x["rep"].get("fit")]
+        if not refs:
+            c["est"] = None
+            continue
+        r = min(refs, key=lambda x: abs(x["bytes"] - c["bytes"]))
+        nonexp = r["rep"]["file_bytes"] - r["rep"]["fit"]["experts_gib"] * GIB
+        e = (c["bytes"] - nonexp) / GIB
+        room = r["rep"]["fit"]["room_total_gib"]
+        c["est"] = {"experts_gib": e, "room_gib": room, "fits": e <= room, "margin_gib": room - e, "from": r["label"]}
+
+
+def fetch_set(cands, best_exact, room):
+    """estimated quants that could change the pick or tie with it: est experts in [best exact - 1 GiB, room x 1.08]"""
+    lo = (best_exact or 0) - 1.0
+    return [c for c in cands if c.get("est") and lo <= c["est"]["experts_gib"] <= room * 1.08]
+
+
+def apply_prefer(pick, cand_of, prefer, served_path):
+    files = pick.get("tie") or ([pick["pick"]] if pick.get("pick") else [])
+    pubs = {f: cand_of[f]["publisher"] if f in cand_of else publisher_of(f) for f in files}
+    if len(files) <= 1:
+        return files, "no tie"
+    if prefer in ("ista", "unsloth"):
+        keep = [f for f in files if pubs[f] == prefer]
+        if keep:
+            note = f"tie broken by --prefer {prefer}: {', '.join(Path(f).name for f in keep)} (dropped: " \
+                   f"{', '.join(Path(f).name for f in files if f not in keep)})"
+            return keep, note
+        return files, f"--prefer {prefer}: no tied file from that publisher - quality decides"
+    return files, "--prefer any: QUALITY DECIDES (the KL driver runs every tied file against the reference)"
+
+
+# =====================================================================================================================
+# 5. configs
+# =====================================================================================================================
+def argval(args, flag):
+    v = [args[i + 1] for i, x in enumerate(args[:-1]) if x == flag]
+    return v[-1] if v else None
+
+
+def set_arg(args, flag, val, after=None):
+    if flag in args[:-1]:
+        args[args.index(flag) + 1] = str(val)
+    elif after and after in args[:-1]:
+        i = args.index(after) + 2
+        args[i:i] = [flag, str(val)]
+    else:
+        args += [flag, str(val)]
+
+
+def drop_arg(args, flag, value=True):
+    while flag in args:
+        i = args.index(flag)
+        del args[i:i + (2 if value else 1)]
+
+
+def finalize_config(cfg, slots, hcq8, name, swap, helper_rule):
+    cfg = json.loads(json.dumps(cfg), object_pairs_hook=OrderedDict)
+    args = cfg["args"]
+    old = {"--expert-cache": argval(args, "--expert-cache"), "--expert-cache-device1": argval(args, "--expert-cache-device1")}
+    set_arg(args, "--expert-cache", slots["uniform_cfg"])
+    if slots.get("helper_final"):
+        set_arg(args, "--expert-cache-device1", slots["helper_final"], after="--chat-cache-mib")
+    drop_arg(args, "--vision", value=False)
+    vis = cfg.pop("vision", None)
+    fb = cfg.pop("fallback", None)
+    env = cfg.setdefault("env", OrderedDict())
+    if hcq8:
+        env["STRATA_HC_Q8"] = "1"
+    cfg["log"] = str(WS / f"logs/engine-{name}.log")
+    cfg["_dayone"] = OrderedDict([
+        ("written", f"{VERSION} {now()}: day1.py's config + only the changes below. NOT RUN."),
+        ("expert_cache", f"{old['--expert-cache']} -> {slots['uniform_cfg']} (explicit: a budget of {slots['uniform_cfg']:,} largest "
+                         f"blobs of {slots['max_blob']:,} B = the 5080's room {slots['main_room_gib']:.3f} GiB - "
+                         f"{slots['margin_mib']:.0f} MiB margin; auto would grant {slots['uniform_auto']:,}); expected log "
+                         f"'expert cache {slots['sized_cfg']:,} slots' ({'the profile sized fill' if slots['profile'] else 'uniform: no profile of this shape'})"),
+        ("expert_cache_device1", f"{old['--expert-cache-device1']} -> {slots.get('helper_final')} ({slots.get('helper_note')})"),
+        ("vision", "dropped (a test config: no picture helper)" if vis or "--vision" in json.dumps(old) else "none"),
+        ("fallback", f"dropped ({fb})" if fb else "none"),
+        ("STRATA_HC_Q8", "1: the file stores its hyper-connection projections as Q8_0 (Karl 11-05: the verify read takes the "
+                         "GGUF's own Q8_0 bytes; the prompt path still reads the pack's BF16 = the pack-rounding tag)"
+         if hcq8 else "not set (BF16 hyper-connections, or none)"),
+        ("mode", "same-model swap" if swap else "stock (new model)"),
+        ("slot_model", {k: v for k, v in slots.items() if k not in ("blobs",)}),
+    ])
+    return cfg
+
+
+def ref_config(base_cfg, ref, name, room_ram_gib, margin_gib=5.0):
+    """the KL reference R: quality only (score.py / pf_yardstick put the experts on the CPU anyway). The candidate's
+    config with R's paths, the 5080 alone, no helper, --resident-budget-gib when R's experts exceed the RAM tier,
+    chat cache 2 GiB, STRATA_UNBUFFERED_LOAD=1 (configs/r21-yq-udq4.json's memory form, as ud31-R.json)"""
+    cfg = json.loads(json.dumps(base_cfg), object_pairs_hook=OrderedDict)
+    args = cfg["args"]
+    set_arg(args, "--pack", ref["pack"])
+    set_arg(args, "--native", ref["paths"][0])
+    if ref.get("ngram_path"):
+        set_arg(args, "--ple-gguf", ref["ngram_path"])
+    drop_arg(args, "--expert-cache-device1")
+    set_arg(args, "--expert-cache", "auto")
+    set_arg(args, "--chat-cache-mib", 2048)
+    resident = int(room_ram_gib - margin_gib)   # ud31-R.json / r21-yq-udq4.json: 52 on Flash-Next (RAM tier 57.8 - 5)
+    if ref["experts_gib"] > room_ram_gib:
+        set_arg(args, "--resident-budget-gib", resident)
+    env = cfg["env"]
+    cvd = env.get("CUDA_VISIBLE_DEVICES", "")
+    if "," in cvd:
+        env["CUDA_VISIBLE_DEVICES"] = cvd.split(",")[0]
+    env["STRATA_UNBUFFERED_LOAD"] = "1"
+    if ref["hcq8"]:
+        env["STRATA_HC_Q8"] = "1"
+    else:
+        env.pop("STRATA_HC_Q8", None)
+    cfg["log"] = str(WS / f"logs/engine-{name}-R.log")
+    cfg["model_name"] = f"strata-{name}-R"
+    cfg["_dayone"] = OrderedDict([
+        ("written", f"{VERSION} {now()}: the KL reference R for {name} - quality arms only, never served. NOT RUN."),
+        ("reference", f"{Path(ref['paths'][0]).name}: {ref['experts_gib']:.2f} GiB of experts ({ref['label']})"),
+        ("memory form", "5080 alone, no helper, chat cache 2 GiB, STRATA_UNBUFFERED_LOAD=1"
+                        + (f", --resident-budget-gib {resident} (its experts exceed the {room_ram_gib:.1f} GiB "
+                           "RAM tier: the rest streams from the SSD - slow, quality only)" if ref["experts_gib"] > room_ram_gib else "")),
+        ("STRATA_HC_Q8", "1 (R stores Q8_0 hyper-connections: its own bytes)" if ref["hcq8"] else "not set")])
+    return cfg
+
+
+# =====================================================================================================================
+# 6. the driver templates (bash; @@KEY@@ filled by render())
+# =====================================================================================================================
+COMMON = r'''#!/bin/bash
+# @@FILE@@ - Qwen4 day one: @@WHAT@@
+# Generated by work/qwen4-kit/dayone.py (@@VERSION@@, @@WHEN@@) for @@NAME@@ (@@LABEL@@; @@MODE@@).
+# GENERATED, NOT REVIEWED, NOT RUN. The generator writes NO .ready file: Claude reviews this driver and writes
+# @@FILE@@.ready before work/r23/gap-series.sh (or a hand start, `bash <driver>`, no arguments) may use it.
+# Measurements only: P028x stays served, NOTHING SWITCHES. Rules: work/qwen4-kit/q4_rules.py's docstring, copied to the
+# gap folder when the gap starts. Every model-specific value comes from the params file below (dayone.py wrote it).
+@@STEPS@@
+# A kernel check after every step; a failure stops new steps and leaves the gap OPEN (8080 down, exit 3: Karl decides).
+# No new step after Q4_MAX_MIN (default @@MAXM@@) minutes with 8080 down; a step starts only if its minutes fit.
+# Exit 0 = done (outcome in decision.txt), 1 = refused / not opened (8080 untouched), 3 = kernel check failed (gap open),
+# 4 = port_gap4.sh end failed.
+set -u -o pipefail
+exec 8>&- 9>&-                     # no inherited lock descriptor (work/r22 lock-fd rule): this script holds none itself
+WS=/home/USER/ai-speed-testing/strata-compare
+export RB_CACHE=$WS/tmp/qwen4
+source $WS/bringup/lib/env.sh
+unset GUARD_MEM_GIB GUARD_VRAM_MIB GUARD_SWAP_GROW_GIB GUARD_VRAM_MODE GUARD_FOLLOW_PORT LR_MAX SPEED_FILE
+for v in $(compgen -e | grep '^STRATA_'); do [ "$v" = STRATA_MON_GPU ] || unset "$v"; done   # no stray switch reaches an engine
+P=$WS/.venv/bin/python; KR=$WS/work/r22; LIB=$WS/bringup/lib; KIT=$WS/work/qwen4-kit; Q4R=$KIT/q4_rules.py
+PRM=@@PARAMS@@
+NAME=@@NAME@@; SHORT=@@SHORT@@; MODE=@@MODE_KEY@@
+CFG=@@CFG@@; EXE=@@EXE@@; NGPU=@@NGPU@@
+TREE=@@TREE@@                # the release's source tree: patchtest.sh TREE=, its tools
+X=$WS/configs/x28h.json; X_EXE=$WS/engine-r22p028x/strata; P028X_SHA=f4c4f654fb24   # P028x as served, without vision
+ENGINES="@@ENGINES@@"        # engine process names (exact): the preflight and the waits; add the release's if it is new
+R=@@RESULTS@@; O=$R/gap-@@KIND@@; G=$O/gates.txt; PROF=$WS/bringup/out/logs/prof
+STARTS=$R/gap-@@KIND@@-starts.log; S=$STARTS             # until the pre-gap checks pass (then $O/summary.txt)
+MAXM=${Q4_MAX_MIN:-@@MAXM@@}
+TAG=$(date +%m%d%H%M)
+export PROMPT_DIR=@@PROMPT_DIR@@ EVICT_GLOB="@@EVICT@@"
+mkdir -p $R $WS/tmp/qwen4 $WS/logs
+say() { echo "=== $(date '+%F %T') $*" | tee -a $S; }
+gate() { echo "$1 $2 ${*:3} [q4 $(date '+%m-%d %H:%M')]" >> $G; say "  gate $*"; }
+gstat() { grep "^$1 " $G 2> /dev/null | tail -1 | cut -d' ' -f2; }
+KFAIL=0; T0=$(date +%s); DEADLINE=$T0
+kc() { $LIB/kcheck.sh "q4-$SHORT-$1" > /dev/null 8>&- 9>&- || { say "KERNEL CHECK FAILED after $1"; KFAIL=1; echo "kfail FAIL after $1" >> $G; return 1; }; }
+left() { echo $(( DEADLINE - $(date +%s) )); }
+ok_to_go() { [ $KFAIL = 0 ] && [ $(left) -gt 0 ]; }
+fits() { ok_to_go && [ $(left) -ge $(( $1 * 60 )) ]; }   # a step starts only if it ends before the deadline
+sha12() { sha256sum "$1" | cut -c1-12; }
+elog() { $P -I -c "import json; print(json.load(open('$1'))['log'])"; }
+slog() { ls -t $WS/bringup/out/logs/server_$1_*.log 2> /dev/null | head -1; }   # the newest server log of a with_server label
+ppid_of() { local s; s=$(cat /proc/$1/stat 2> /dev/null) || return 0; s=${s##*) }; set -- $s; echo "${2:-}"; }
+memavail() { awk '/^MemAvailable/ {printf "%d", $2 / 1048576}' /proc/meminfo; }
+prm() { $P -I -c "import json, sys; d = json.load(open('$PRM'))
+for k in sys.argv[1].split('.'): d = d[int(k)] if isinstance(d, list) else d[k]
+print(d if not isinstance(d, list) else ' '.join(map(str, d)))" "$1"; }
+
+preflight() {   # refuse (exit 1, nothing touched) when a measurement holds the GPU lock or a model server other than the
+  # 8080 queue's P028x runs: every engine process (exact names) and every NVIDIA compute process must belong to the server
+  # listening on 8080, and that server's engine must be P028x (engine-r22p028x, sha $P028X_SHA; its vision helper allowed)
+  local l p q apps bad=""
+  if [ -s $WS/tmp/port-gap.lockpid ] && kill -0 "$(cat $WS/tmp/port-gap.lockpid)" 2> /dev/null; then
+    say "another gap holds the test lock (tmp/port-gap.lockpid $(cat $WS/tmp/port-gap.lockpid)) - not started"; exit 1
+  fi
+  if ! flock -n -x $WS/tmp/gpu-test.lock true 2> /dev/null; then
+    say "tmp/gpu-test.lock is held (a measurement or a test server) - not started"; exit 1
+  fi
+  l=$(ss -H -ltnp "( sport = :8080 )" 2> /dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+  apps=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2> /dev/null) || { say "nvidia-smi did not answer - not started"; exit 1; }
+  for p in $( { for x in $ENGINES; do pgrep -x "$x"; done; echo "$apps"; } | tr -d ' ' | grep -E '^[0-9]+$' | sort -un); do
+    q=$p; while [ -n "$q" ] && [ "$q" -gt 1 ] && [ "$q" != "${l:-none}" ]; do q=$(ppid_of $q); done
+    if [ -n "$l" ] && [ "$q" = "$l" ]; then
+      case $(cat /proc/$p/comm 2> /dev/null) in
+        strata|strata-host) [ "$(sha12 /proc/$p/exe 2> /dev/null)" = $P028X_SHA ] || bad="$bad 8080-engine:$p($(readlink /proc/$p/exe))";;
+        strata-vision) ;;
+        *) bad="$bad 8080:$p($(cat /proc/$p/comm 2> /dev/null))";;
+      esac
+    else bad="$bad $p($(cat /proc/$p/comm 2> /dev/null))"; fi
+  done
+  ss -H -ltn "( sport = :8081 )" 2> /dev/null | grep -q . && bad="$bad listener-on-8081(a-test-server)"
+  [ -z "$bad" ] || { say "a model server other than the 8080 queue's P028x is running:$bad - not started"; exit 1; }
+}
+wait_mem() {   # after 8080 stops: its engines gone and their memory back, at most 120 s
+  local i x left_p m
+  for i in $(seq 60); do
+    left_p=""; for x in $ENGINES; do pgrep -x $x > /dev/null && left_p="$left_p $x"; done
+    m=$(memavail)
+    [ -z "$left_p" ] && [ "$m" -ge 40 ] && break
+    sleep 2
+  done
+  say "8080 down: engines left:${left_p:- none}, MemAvailable ${m} GB"
+}
+fatalchk() {   # fatalchk NAME ENGINE_LOG OFFSET LABEL: a fatal GPU error / stall / engine restart / non-finite (gap 17)
+  local n=$1 L=$2 off=$3 sl hits
+  sl=$(slog $4)
+  hits=$( { tail -c +$((off + 1)) $L 2> /dev/null; [ -n "$sl" ] && cat $sl; } | grep -c -E "fatal GPU error|no progress for [0-9]+ s during a request|the engine had stopped \(exit code|became non-finite")
+  [ "$hits" = 0 ] && gate fatal_$n PASS "no fatal / stall / restart / non-finite line" \
+    || gate fatal_$n FAIL "$hits line(s): fatal GPU error / stall / engine restart / non-finite (engine log $L from byte $off; $sl)"
+}
+evict_all() {   # drop the model files' clean pages (scripts/evict.py, posix_fadvise) and report the page cache
+  local f="" x
+  for x in $EVICT_GLOB; do [ -e "$x" ] && f="$f $x"; done
+  $P -I $WS/scripts/evict.py $f > $O/evict-$1.txt 2>&1
+  say "  evicted ($1): $(grep -c 'page cache' $O/evict-$1.txt) files; $(awk '/^(Dirty|Writeback|Cached|MemAvailable|SwapFree):/ {printf "%s %d MiB  ", $1, $2 / 1024}' /proc/meminfo)"
+}
+need_files() { local f; for f in "$@"; do [ -e "$f" ] || { say "missing $f - not started"; exit 1; }; done; }
+predl_all() {   # predl_all GATE: every listed arm's shards here, at the pinned size, with a SHA256SUMS line = the pin
+  local i n=$(prm dl.n) rc=0 d t pths
+  for i in $(seq 0 $((n - 1))); do
+    d=$(prm dl.items.$i.dest); t=$(prm dl.items.$i.tree); pths=$(prm dl.items.$i.paths_csv)
+    $P -I -B $Q4R predl $d $t --paths $pths >> $PRE/predl.txt 2>&1 || rc=1
+  done
+  return $rc
+}
+rehash_all() {   # rehash_all: inside the gap, every listed shard re-hashed against the pin before anything reads it
+  local i n=$(prm dl.n) d t pths
+  for i in $(seq 0 $((n - 1))); do
+    d=$(prm dl.items.$i.dest); t=$(prm dl.items.$i.tree); pths=$(prm dl.items.$i.paths_csv)
+    $P -I -B $Q4R rehash $d $t --paths $pths --gate dl_sha_$i --gates $G 8>&- 9>&- 2>&1 | tail -1 | tee -a $S
+    [ "$(gstat dl_sha_$i)" = PASS ] || return 1
+  done
+  return 0
+}
+lossless_cfg() {   # lossless_cfg KEY CONFIG [ENGINE_LOG]: bringup/patchtest.sh lossless (no GPU; with a log: none of the lossy lines)
+  local r
+  r=$(CFG=$2 TREE=$TREE ${3:+ELOG=$3} $WS/bringup/patchtest.sh lossless 2>&1 8>&- 9>&- | grep -E "PASS|FAIL" | tail -1)
+  if echo "$r" | grep -q "cfg: PASS" && { [ -z "${3:-}" ] || echo "$r" | grep -q "log clean"; }; then gate $1 PASS "$(echo $r | cut -c1-200)"
+  else gate $1 FAIL "$(echo $r | cut -c1-200)"; return 1; fi
+}
+open_gap() {   # open_gap WHAT: port_gap4.sh begin (the running question finishes, test lock, 8080 down)
+  $KR/port_gap4.sh begin "$1" 8>&- 9>&- 2>&1 | tee -a $S
+  [ -s $WS/tmp/port-gap.lockpid ] || { rm -f /home/USER/ai/deep-research/tmp/bench2.hold; say "the gap did not open (hold removed)"; exit 1; }
+  T0=$(date +%s); DEADLINE=$(( T0 + MAXM * 60 ))
+  echo "$T0 $(date -Is)" > $O/t0.txt
+  wait_mem
+}
+close_gap() {   # close_gap: the decision, port_gap4.sh end (P028x back) + a kernel check; exits
+  if [ $KFAIL = 1 ]; then say "the gap stays OPEN (8080 down) after a kernel-check failure: Karl decides"; decide; exit 3; fi
+  decide
+  say "P028x back on 8080 (port_gap4.sh end) - nothing switched"
+  if ! $KR/port_gap4.sh end 8>&- 9>&- 2>&1 | tee -a $S; then
+    say "port_gap4.sh end FAILED: 8080 and the research queue need a look"; exit 4
+  fi
+  kc end || { say "the kernel check failed after P028x came back: Karl decides"; exit 3; }
+  after_gap
+  say "@@KIND@@ gap: $(( ($(date +%s) - T0) / 60 )) min with 8080 down; done"
+  exit 0
+}
+start_attempt() {   # the pre-gap checks every driver shares (no GPU; 8080 untouched)
+  say "start attempt: $(basename $0) (pre-gap checks)"
+  preflight
+  [ -f $WS/tmp/r19/kwatch.pid ] && kill -0 "$(cat $WS/tmp/r19/kwatch.pid)" 2> /dev/null || { say "the kernel-log watcher is not running - not started"; exit 1; }
+  PRE=$R/pre-@@KIND@@; rm -rf $PRE; mkdir -p $PRE   # this attempt's pre-gap check outputs (overwritten by the next attempt)
+  need_files $PRM $Q4R $KR/port_gap4.sh $LIB/kcheck.sh $LIB/run.sh $LIB/exact7.sh $LIB/with_server.sh $LIB/guard.py \
+    $WS/bringup/patchtest.sh $WS/scripts/evict.py $TREE
+  if [ "$(prm dl.n)" -gt 0 ]; then
+    predl_all || { say "REFUSED: the download is not complete and verified: $(grep FAIL $PRE/predl.txt | head -2 | tr '\n' ' ' | cut -c1-240) - not started"; exit 1; }
+  fi
+  PREV=""
+  if [ -e $O ]; then PREV=$R/prev-@@KIND@@-$(date +%m%d-%H%M%S); mv $O $PREV; fi   # the rules judge only this attempt's files
+  mkdir -p $O
+  $P -I -B $Q4R rules --out $O/rules.txt > /dev/null 2>&1 || { say "could not write the rules snapshot $O/rules.txt - not started"; exit 1; }
+}
+'''
+
+EXACT = r'''
+# ================================================================ before the gap (no GPU; 8080 untouched)
+PIN=@@PIN@@; E7REF=@@E7REF@@; PACK=@@PACK@@
+start_attempt
+need_files $CFG $EXE $PACK/native_experts.txt $PACK/index.txt @@SHARDS@@ @@DRAFTER@@
+for f in math.tokens code.tokens p2000.tokens 32k.tokens tf-long112k.prompt; do
+  [ -s $PROMPT_DIR/$f ] || { say "missing prompt file $f in $PROMPT_DIR (exact7's items; a new tokenizer: day1.py retok first) - not started"; exit 1; }
+done
+$P -I -B $Q4R cfgcheck $CFG $PRM > $PRE/cfg.txt 2>&1 || { say "REFUSED: $(tail -1 $PRE/cfg.txt) - not started"; exit 1; }
+if [ "$E7REF" != c13 ] && [ "$(ls $PROF/$E7REF-*.out 2> /dev/null | wc -l)" != 7 ]; then say "P028x's exact7 $E7REF is not complete (7 .out files) - not started"; exit 1; fi
+ls $PROF/$SHORT-$TAG-* > /dev/null 2>&1 && { say "exact7 labels $SHORT-$TAG-* exist already - not started"; exit 1; }
+S=$O/summary.txt
+lossless_cfg lossless_cfg $CFG || { say "REFUSED: the lossless config check fails - not started"; exit 1; }
+say "QWEN4 DAY ONE EXACTNESS SMOKE ($(basename $0)): $NAME - smoke + exact7 twice at pin $PIN (repeatability) - measurements only, P028x stays served, nothing switches"
+[ -n "$PREV" ] && say "an earlier attempt's outputs moved to $PREV"
+gate rules INFO "q4_rules.py's docstring at the gap's start: gap-exact/rules.txt sha $(sha12 $O/rules.txt)"
+gate cfg PASS "$(tail -1 $PRE/cfg.txt | cut -c1-200)"
+[ "$(prm dl.n)" -gt 0 ] && gate predl PASS "$(grep -c '^PASS' $PRE/predl.txt) quant(s): every shard here, pinned size + SHA256SUMS"
+DONE=0
+e7() {   # e7 KEY REF INFO: exact7 at the pin, its engine environment checked as it starts (q4_rules.py envcli, mode e7)
+  local k=$1 ref=$2 L=$SHORT-$TAG-$1 jp info=${3:-}
+  fits @@E7_MIN@@ || { say "skipped exact7 $L (@@E7_MIN@@ min do not fit before the deadline, or a kernel check)"; return 1; }
+  say "exact7 $L ($(basename $CFG), against $ref)"
+  ( PIN_CACHE=$PIN REF=$ref $LIB/exact7.sh $L $CFG 2>&1 | tail -9 | tee -a $S ) 8>&- 9>&- &
+  jp=$!
+  $P -I -B $Q4R envcli $EXE $CFG --job $jp --mode e7 --pin $PIN --ngpu $NGPU --kill --gate env_e7$k --gates $G 8>&- 9>&- 2>&1 \
+    | tee $O/env-e7$k.txt | tail -1 | tee -a $S
+  wait $jp
+  $P -I -B $WS/work/r23/decode_rules.py e7gate $S $L $info --gate e7_$k --gates $G 8>&- 9>&- | tee -a $S
+  kc e7-$k
+}
+decide() { $P -I -B $Q4R exactdecide $O --arm X 8>&- 9>&- | tail -1 | tee -a $S; cp $O/decision.txt $R/decision-exact.txt 2> /dev/null; }
+after_gap() { :; }
+
+# ================================================================ the gap
+open_gap "Qwen4 day one $NAME exactness smoke (dayone.py: smoke + exact7 x2 at pin $PIN; measurements only, P028x stays served, nothing switches)"
+kc open || close_gap
+say "1 the files: every listed shard re-hashed against its pin (pages dropped as read), then evicted"
+if [ "$(prm dl.n)" -gt 0 ]; then rehash_all || { say "a shard does not hash to its pin: nothing runs on it, the gap ends"; close_gap; }; fi
+evict_all start
+kc files || close_gap
+say "2 the CLI smoke: $NAME loads and generates (run.sh math 256)"
+if fits @@SMOKE_MIN@@; then
+  L=$SHORT-$TAG-smoke
+  $LIB/run.sh $L $CFG math 256 8>&- 9>&- 2>&1 | tail -3 | tee -a $S
+  $P -I -B $Q4R smoke $PROF/$L.out $PROF/$L.err --gate smoke --gates $G 8>&- 9>&- | tee -a $S
+  lossless_cfg lossless_log $CFG $PROF/$L.err
+  $P -I -B $Q4R slots $PROF/$L.err --main @@PRED_MAIN@@ @@PRED_HELPER_ARG@@ --gate slots_cfg --gates $G 8>&- 9>&- | tee -a $S
+  kc smoke || close_gap
+fi
+if [ "$(gstat smoke)" = PASS ]; then
+  say "3 exactness: exact7 at pin $PIN, X1 @@E7REF_WHAT@@, X2 against X1 (7/7 + MATCHED)"
+  e7 X1 $E7REF --info
+  $P -I -B $Q4R slots $PROF/$SHORT-$TAG-X1-x-math.err --main @@PRED_PIN@@ @@PRED_HELPER_ARG@@ --gate slots_e7 --gates $G 8>&- 9>&- | tee -a $S
+  e7 X2 $SHORT-$TAG-X1
+else
+  say "no exact7: the smoke did not pass ($(gstat smoke))"
+fi
+close_gap
+'''
+
+KL = r'''
+# ================================================================ before the gap (no GPU; 8080 untouched)
+DATA=@@KLDATA@@              # dump = score.py many positions (Flash-Next's head and tokenizer); pfy = pf_yardstick long40
+REFA=R; CANDS="@@CANDS@@"; BASE=@@BASE@@; ARMS="@@ARMS@@"
+NL=$O/nll; PF=$O/pfy; SCORE=$WS/work/r23/nll-many/score.py; RU=$WS/work/r23/ud31_rules.py; NR=$WS/work/r23/nll_rules.py
+cfg_of() { prm "kl.cfg.$1"; }
+min_of() { prm "kl.min.$1"; }
+start_attempt
+for a in $ARMS; do need_files $(cfg_of $a) $(prm "kl.pack.$a")/native_experts.txt $(prm "kl.pack.$a")/index.txt; done
+need_files @@SHARDS@@
+for a in $CANDS; do
+  $P -I -B $Q4R cfgcheck $(cfg_of $a) $PRM > $PRE/cfg-$a.txt 2>&1 || { say "REFUSED: $a: $(tail -1 $PRE/cfg-$a.txt) - not started"; exit 1; }
+done
+$P -I -B $Q4R cfgcheck $(cfg_of R) $PRM --quality-only > $PRE/cfg-R.txt 2>&1 || { say "REFUSED: R: $(tail -1 $PRE/cfg-R.txt) - not started"; exit 1; }
+if [ $DATA = dump ]; then
+  need_files $SCORE $RU $NR
+  for f in 32k.tokens tf-long28k.prompt tf-long40k.prompt tf-long64k.prompt tf-long112k.prompt pp4k.tokens ldrsyn20k.tokens \
+           rep9k.tokens pp32k.tokens tf-long96k.prompt pp8k.tokens; do
+    [ -s $WS/bringup/out/r20a/prompts/$f ] || { say "missing prompt file $f (score.py's long11 set) - not started"; exit 1; }
+  done
+else
+  for f in 32k.tokens tf-long28k.prompt tf-long40k.prompt tf-long64k.prompt tf-long112k.prompt pp4k.tokens ldrsyn20k.tokens rep9k.tokens; do
+    [ -s $PROMPT_DIR/$f ] || { say "missing prompt file $f in $PROMPT_DIR (pf_yardstick long40; a new tokenizer: day1.py retok first) - not started"; exit 1; }
+  done
+  $P -I -B $KIT/day1.py pfy $PROMPT_DIR --check > $PRE/pfy-check.txt 2>&1 || true   # INFO: the cuts against the texts' lengths
+fi
+S=$O/summary.txt
+for a in $ARMS; do [ $a = P ] && continue; lossless_cfg lossless_cfg_$a $(cfg_of $a) || { say "REFUSED: the lossless config check fails on $a - not started"; exit 1; }; done
+mkdir -p $NL $PF
+say "QWEN4 DAY ONE QUALITY ($(basename $0)): $CANDS against the named local reference R ($(prm kl.ref_label)), data $DATA - the KL rules at the text level, text NLL INFO (the many-positions bound is revoked) - measurements only, P028x stays served, nothing switches"
+[ -n "$PREV" ] && say "an earlier attempt's outputs moved to $PREV"
+gate rules INFO "q4_rules.py's docstring at the gap's start: gap-kl/rules.txt sha $(sha12 $O/rules.txt)"
+for a in $CANDS; do gate cfg_$a PASS "$(tail -1 $PRE/cfg-$a.txt | cut -c1-200)"; done
+[ -s $PRE/pfy-check.txt ] && gate pfy_cuts INFO "$(tail -1 $PRE/pfy-check.txt | cut -c1-200)"
+DONE_Q=0
+watchdog() {   # watchdog JOB MINUTES NAME: an arm past MINUTES (3 x its estimate) is hung - stop its engine by PID
+  local j=$1 m=$2 n=$3 t p q
+  t=$(( $(date +%s) + m * 60 ))
+  while kill -0 $j 2> /dev/null; do
+    if [ $(date +%s) -ge $t ]; then
+      for p in $( { for x in $ENGINES; do pgrep -x $x; done; } | sort -un); do
+        q=$p; while [ -n "$q" ] && [ "$q" -gt 1 ] && [ "$q" != $j ]; do q=$(ppid_of $q); done
+        [ "$q" = $j ] && kill -TERM $p 2> /dev/null && echo "watchdog: $n ran past $m min - its engine (pid $p) was stopped" >> $O/$n.watchdog
+      done
+      return 0
+    fi
+    sleep 5
+  done
+}
+qarm() {   # qarm ARM: one quality arm (dump: score.py run --set long11 --rows all:8; pfy: day1.py pfy -- run --set long40),
+  # its engine's environment checked as it starts; a kernel check after it
+  local n=$1 m cfg jp wd mw rc t1 d need
+  cfg=$(cfg_of $1); m=$(min_of $1); need=$(prm kl.memneed.$1)
+  fits $m || { say "skipped quality arm $n ($m min do not fit before the deadline, or a kernel check)"; return 1; }
+  # Karl 11-05: keep the wait-for-memory check, abort cleanly rather than swap (q4_rules.py QUALITY "memory")
+  if ! $P -I -B $Q4R memwait --need-gib $need --max-s 120 --gate mem_$n --gates $G 8>&- 9>&- 2>&1 | tail -1 | tee -a $S; then
+    gate run_$n FAIL "aborted: memory (not started: MemAvailable below the arm's $need GiB after 120 s)"; kc arm-$n; return 1
+  fi
+  say "quality arm $n ($(basename $cfg); ~$m min; $DATA; memory need $need GiB)"
+  t1=$(date +%s); rm -f $O/$n.rc $O/$n.watchdog $O/$n.aborted
+  if [ $DATA = dump ]; then
+    d=$NL/$n; rm -rf $d
+    ( $P $LIB/guard.py q4nll-$SHORT-$n -- $P -I $SCORE run $cfg $d --set long11 --rows all:8 > $O/$n.run.txt 2>&1; echo $? > $O/$n.rc ) 8>&- 9>&- &
+    jp=$!
+    watchdog $jp $(( 3 * m )) $n 8>&- 9>&- &
+    wd=$!
+    $P -I -B $Q4R memwatch $jp --names "$ENGINES" --floor-gib 12 --margin-gib 1 --swap-pages 1024 --out $O/$n.aborted \
+      --gate memw_$n --gates $G > $O/$n.memwatch.txt 2>&1 8>&- 9>&- &
+    mw=$!
+    $P -I -B $NR envwatch $jp $cfg --kill --gate env_$n --gates $G 8>&- 9>&- 2>&1 | tail -2 | tee -a $S
+  else
+    d=$PF/$n; rm -rf $d
+    ( $P $LIB/guard.py q4pfy-$SHORT-$n -- $P -I -B $KIT/day1.py pfy $PROMPT_DIR -- run $cfg $d --set long40 > $O/$n.run.txt 2>&1; echo $? > $O/$n.rc ) 8>&- 9>&- &
+    jp=$!
+    watchdog $jp $(( 3 * m )) $n 8>&- 9>&- &
+    wd=$!
+    $P -I -B $Q4R memwatch $jp --names "$ENGINES" --floor-gib 12 --margin-gib 1 --swap-pages 1024 --out $O/$n.aborted \
+      --gate memw_$n --gates $G > $O/$n.memwatch.txt 2>&1 8>&- 9>&- &
+    mw=$!
+    $P -I -B $Q4R envcli $(prm kl.exe.$n) $cfg --job $jp --mode pfy --ngpu $(prm kl.ngpu.$n) --kill --gate env_$n --gates $G 8>&- 9>&- 2>&1 | tail -1 | tee -a $S
+  fi
+  wait $jp
+  kill $wd 2> /dev/null; wait $wd 2> /dev/null
+  wait $mw 2> /dev/null    # memwatch ends with the job (or after it stopped the engine)
+  [ -f $O/$n.watchdog ] && say "  $(cat $O/$n.watchdog)"
+  rc=$(cat $O/$n.rc 2> /dev/null || echo none)
+  if [ -f $O/$n.aborted ]; then say "  $n: $(cat $O/$n.aborted)"; gate run_$n FAIL "$(cut -c1-250 $O/$n.aborted)"
+  elif [ "$rc" = 0 ] && [ -f $d/index.json ]; then gate run_$n PASS "rc 0: $(grep -E 'rows from [0-9]+ texts|prompts, [0-9]+ logit rows' $O/$n.run.txt | tail -1)"
+  else gate run_$n FAIL "rc $rc: $(grep -E '^PROBLEM|SystemExit|Error|answered|ended before|GUARD' $O/$n.run.txt | head -3 | tr '\n' ' ' | cut -c1-250)"; fi
+  say "  $n: $(( ($(date +%s) - t1 + 59) / 60 )) min"
+  kc arm-$n
+}
+quality_after() {   # quality_after THREADS: CPU only - the rows (dump: validate each arm with its own head, the compare;
+  # pfy: the rows from the engine's own logits), then the KL rules at the text level
+  local th=$1 x c cfgs="" ok=1 good=""
+  say "quality: rows + the KL rules ($th BLAS threads, nice 19)"
+  for x in $ARMS; do
+    if [ "$(gstat run_$x)" = PASS ] && [ "$(gstat env_$x)" = PASS ]; then good="$good $x"; else say "  arm $x not clean (run $(gstat run_$x), env $(gstat env_$x))"; fi
+  done
+  echo " $good " | grep -q " R " || { say "no clean R arm: QUALITY NOT JUDGED"; DONE_Q=1; return; }
+  rm -f $O/rows.tsv
+  if [ $DATA = dump ]; then
+    for x in $good; do
+      c=$(cfg_of $x)
+      nice -n 19 $P -I -B $RU validate $NL/$x $c --json $NL/validate-$x.json --gate validate_$x --gates $G > $NL/validate-$x.txt 2>&1
+      tail -1 $NL/validate-$x.txt | sed "s/^/  validate $x: /" | tee -a $S
+      [ "$(gstat validate_$x)" = PASS ] && cfgs="$cfgs --cfg $x=$c"
+    done
+    if [ "$BASE" = P ] && [ -f $NL/P/index.json ]; then
+      nice -n 19 $P -I $SCORE validate $NL/P > $NL/validate-P-scorepy.txt 2>&1
+      $P -I -B $RU headcheck $NL/validate-P-scorepy.txt $NL/validate-P.json --gate head_P --gates $G 2>&1 | tee -a $S
+    fi
+    nice -n 19 $P -I -B $RU compare $NL $cfgs --base @@CMP_BASE@@ --ref R --threads $th --json $O/result.json --rows-out $O/rows.tsv \
+      --gate compare --gates $G > $O/compare.txt 2>&1 || gate compare FAIL "rc $?: $(tail -2 $O/compare.txt | tr '\n' ' ' | cut -c1-200)"
+  else
+    nice -n 19 $P -I -B $Q4R pfyrows $PF --ref R --arms $(echo $good | tr ' ' '\n' | grep -v '^R$' | paste -sd,) --prompt-dir $PROMPT_DIR \
+      --sets long40 --out $O/rows.tsv --gate rows --gates $G > $O/rows.txt 2>&1 || gate rows FAIL "$(tail -1 $O/rows.txt | cut -c1-200)"
+  fi
+  if [ -s $O/rows.tsv ]; then
+    nice -n 19 $P -I -B $Q4R kldecide $O/rows.tsv --ref R --cands $(echo $CANDS | tr ' ' ',') @@KLD_BASE@@ @@KLD_TAG@@ \
+      --published "$(prm kl.published)" --out $O --gate kl --gates $G 2>&1 | tail -3 | tee -a $S
+  else say "no rows.tsv: QUALITY NOT JUDGED"; fi
+  DONE_Q=1
+}
+decide() { [ -f $O/decision-kl.txt ] && cp $O/decision-kl.txt $R/decision-kl.txt; true; }
+after_gap() {
+  if [ $DONE_Q = 0 ]; then
+    for i in $(seq 60); do [ "$(memavail)" -ge 22 ] && break; sleep 10; done   # heads (~5 GB) above the 12 GB floor
+    if [ "$(memavail)" -ge 22 ]; then quality_after 4; decide
+    else say "MemAvailable $(memavail) GB < 22 after 10 min: the rows / KL rules are NOT run - by hand later (quality_after in this script)"; fi
+  fi
+}
+
+# ================================================================ the gap
+open_gap "Qwen4 day one $NAME quality (dayone.py: $ARMS against R, $DATA; measurements only, P028x stays served, nothing switches)"
+kc open || close_gap
+say "1 the files: every listed shard re-hashed against its pin, then evicted"
+if [ "$(prm dl.n)" -gt 0 ]; then rehash_all || { say "a shard does not hash to its pin: nothing runs on it, the gap ends"; close_gap; }; fi
+evict_all start
+kc files || close_gap
+say "2 the quality arms: $ARMS ($(( $(left) / 60 )) min to the deadline)"
+for a in $ARMS; do qarm $a; done
+say "3 the rows and the KL rules (inside the gap when they fit)"
+if fits @@CMP_MIN@@; then quality_after 8; fi
+close_gap
+'''
+
+SPEED = r'''
+# ================================================================ before the gap (no GPU; 8080 untouched)
+SPD=$O/speed; KQ=@@KLDATA@@
+cfg_of() { case $1 in P) echo $X;; Q) echo $CFG;; esac; }
+exe_of() { case $1 in P) echo $X_EXE;; Q) echo $EXE;; esac; }
+ngpu_of() { case $1 in P) echo 2;; Q) echo $NGPU;; esac; }
+start_attempt
+need_files $CFG $EXE $X $X_EXE @@PACK@@/native_experts.txt @@DRAFTER@@ $KR/abarm.sh $KR/g17_rules.py /home/USER/ai-speed-testing/basalt-ab/scripts/abrun.py @@SHARDS@@
+[ "$(sha12 $X_EXE)" = $P028X_SHA ] || { say "engine-r22p028x is not P028x ($P028X_SHA) - not started"; exit 1; }
+$P -I -B $Q4R cfgcheck $CFG $PRM > $PRE/cfg.txt 2>&1 || { say "REFUSED: $(tail -1 $PRE/cfg.txt) - not started"; exit 1; }
+S=$O/summary.txt
+lossless_cfg lossless_cfg $CFG || { say "REFUSED: the lossless config check fails - not started"; exit 1; }
+mkdir -p $SPD
+say "QWEN4 DAY ONE SPEED ($(basename $0)): the 9-workload screen, Q = $NAME against P = x28h (P028x as served), 3 passes in turned order - the no-loss rule + Karl's 40-60 tok/s target (INFO) - measurements only, P028x stays served, nothing switches"
+[ -n "$PREV" ] && say "an earlier attempt's outputs moved to $PREV"
+gate rules INFO "q4_rules.py's docstring at the gap's start: gap-speed/rules.txt sha $(sha12 $O/rules.txt)"
+gate cfg PASS "$(tail -1 $PRE/cfg.txt | cut -c1-200)"
+sarm() {   # sarm ARM PASS: one 9-workload screen pass on a fresh test server (gap 17 / 18's harness), its engine's env checked
+  local a=$1 k=$2 n=$1$2 cfg L off
+  cfg=$(cfg_of $1)
+  fits @@SCR_MIN@@ || { say "skipped screen $n (@@SCR_MIN@@ min do not fit before the deadline, or a kernel check)"; return 1; }
+  L=$(elog $cfg); touch $L; off=$(stat -c %s $L)
+  say "screen $n ($(basename $cfg))"
+  $LIB/with_server.sh q4-$SHORT-$n $cfg -- "$P -I -B $KR/g17_rules.py envcheck $(exe_of $a) $cfg --ngpu $(ngpu_of $a) --gate env_scr$n --gates $G && bash $KR/abarm.sh http://127.0.0.1:8081 $off $SPD $n ${n}n=normal:1:W1,W2,W3 ${n}a=agent:1 ${n}r=research4:1" 8>&- 9>&- 2>&1 \
+    | grep -E "engine pid [0-9]+:|ENV CHECK|tok/s|ready|exited|refus|Error|GUARD|vram" | tee -a $S
+  tail -c +$((off + 1)) $L > $SPD/engine-$n.log
+  fatalchk scr$n $L $off q4-$SHORT-$n
+  kc scr-$n
+}
+decide() { $P -I -B $Q4R speeddecide $O --arm Q --base P --target @@TARGET@@ 8>&- 9>&- | tail -2 | tee -a $S; cp $O/decision.txt $R/decision-speed.txt 2> /dev/null; true; }
+after_gap() { :; }
+
+# ================================================================ the gap
+open_gap "Qwen4 day one $NAME speed screen (dayone.py: the 9-workload screen x3, Q vs P028x; measurements only, P028x stays served, nothing switches)"
+kc open || close_gap
+say "1 the files: every listed shard re-hashed against its pin"
+if [ "$(prm dl.n)" -gt 0 ]; then rehash_all || { say "a shard does not hash to its pin: nothing runs on it, the gap ends"; close_gap; }; fi
+kc files || close_gap
+say "2 speed: the 9-workload screen, 3 passes (P Q / Q P / P Q), a fresh test server each ($(( $(left) / 60 )) min to the deadline)"
+for k in 1 2 3; do
+  case $k in 2) order="Q P";; *) order="P Q";; esac
+  fits $(( 2 * @@SCR_MIN@@ )) || { say "screen pass $k not started ($(( 2 * @@SCR_MIN@@ )) min do not fit, or a kernel check)"; break; }
+  for a in $order; do sarm $a $k; done
+  if [ $k = 1 ]; then
+    [ -f $SPD/P1.startlog ] && $P -I -B $KR/g17_rules.py startlines base $SPD/P1.startlog $(slog q4-$SHORT-P1) --gate start_P --gates $G 8>&- 9>&- | tee -a $S
+    if [ -f $SPD/Q1.startlog ]; then
+      @@STARTQ@@
+      lossless_cfg lossless_log $CFG $SPD/engine-Q1.log
+      $P -I -B $Q4R slots $SPD/Q1.startlog --main @@PRED_MAIN@@ @@PRED_HELPER_ARG@@ --gate slots --gates $G 8>&- 9>&- | tee -a $S
+    fi
+  fi
+done
+close_gap
+'''
+
+STEPS = {
+    "exact": """# Steps (the series' exactness pattern, gap-ud31.sh section 2; q4_rules.py EXACTNESS):
+#   0 before the gap (no GPU, 8080 untouched) - REFUSES (exit 1) unless: no gpu-test.lock / other gap / model server other
+#     than the 8080 queue's P028x / 8081 listener; the kernel watcher runs; the download complete and verified (every shard
+#     at its pinned size with a SHA256SUMS line = the pinned oid); the pack finished; the config = the one dayone.py wrote
+#     (cfgcheck); the lossless config check (patchtest.sh lossless); exact7's prompt files in PROMPT_DIR
+#   1 port_gap4.sh begin; every shard re-hashed against its pin (a mismatch ends the gap: nothing runs on it); evict
+#   2 the CLI smoke (run.sh math 256): loads and generates; the lossless check on its engine log; slots INFO
+#   3 exact7 at the pin: X1 (@@E7REF_WHAT@@), X2 against X1 (7/7 + slots MATCHED); each engine's env checked
+#   4 q4_rules.py exactdecide -> decision.txt (REPEATABLE / NOT REPEATABLE / CHECK FAILED / VOID / NOT RUN); port_gap4.sh end""",
+    "kl": """# Steps (gap-ud31.sh sections 3 and 5 for a day-one file; q4_rules.py QUALITY):
+#   0 before the gap - REFUSES (exit 1) unless the preflight, the kernel watcher, the verified download, every arm's pack and
+#     config (cfgcheck on the candidates), the lossless config check on every arm but P, the prompt files
+#   1 port_gap4.sh begin; re-hash; evict
+#   2 the quality arms @@ARMS@@ (data @@KLDATA@@: @@KLDATA_WHAT@@), each engine's env checked; Karl 11-05's memory
+#     rule on every arm: memwait before it starts (its need: experts in RAM + 12 GiB floor + 6 GiB), memwatch while it
+#     runs (MemAvailable < 13 GiB, engine VmSwap > 0 or +4 MiB of swap-ins/outs -> its engine stopped by PID, "aborted:
+#     memory", the arm FAILs; never let it swap); R's --resident-budget-gib = the RAM tier - 5
+#   3 inside the gap when it fits (else after it, nice 19): the rows (@@ROWS_WHAT@@), q4_rules.py kldecide: the KL rules
+#     against R at the text level (8 distinct texts; ties / X vs P by ud31's text-level rule), text NLL INFO with the
+#     whole-text interval -> decision-kl.txt; port_gap4.sh end""",
+    "speed": """# Steps (gap-ud31.sh section 4 for a day-one file; q4_rules.py SPEED):
+#   0 before the gap - REFUSES (exit 1) unless the preflight, the kernel watcher, the verified download, the pack, the config
+#     (cfgcheck), the lossless config check, x28h's engine = P028x
+#   1 port_gap4.sh begin; re-hash
+#   2 the 9-workload screen (abarm.sh), 3 passes P Q / Q P / P Q, a fresh test server each (g17_rules.py envcheck); after
+#     pass 1: start lines (P: g17 base; Q: @@STARTQ_WHAT@@), the lossless check on Q's engine log, slots INFO
+#   3 q4_rules.py speeddecide (g17's wl_noloss, Q vs P; Karl's 40-60 tok/s target INFO) -> decision.txt; port_gap4.sh end""",
+}
+
+
+def render(tpl, v):
+    out = tpl
+    for k, val in v.items():
+        out = out.replace(f"@@{k}@@", str(val))
+    left = re.findall(r"@@[A-Z_0-9]+@@", out)
+    if left:
+        raise SystemExit(f"template keys not filled: {sorted(set(left))}")
+    return out
+
+
+def write_driver(path, kind, v):
+    body = {"exact": EXACT, "kl": KL, "speed": SPEED}[kind]
+    v = dict(v)
+    v["STEPS"] = render(STEPS[kind], v)
+    v["KIND"] = kind
+    v["FILE"] = Path(path).name
+    txt = render(COMMON, v) + render(body, v)
+    Path(path).write_text(txt)
+    os.chmod(path, 0o644)
+    r = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
+    return {"path": str(path), "bash_n": "OK" if r.returncode == 0 else r.stderr.strip()[:300], "sha256": sha256_file(path)[:12],
+            "ready_file": Path(str(path) + ".ready").exists()}
+
+
+# =====================================================================================================================
+# 7. the plan
+# =====================================================================================================================
+def slug(s, n=10):
+    h = hashlib.sha1(s.encode()).hexdigest()[:4]
+    return re.sub(r"[^a-z0-9]", "", s.lower())[:n - 4] + h
+
+
+def plan(a):
+    out = Path(a.out).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    tree = a.tree
+    pref, pref_why = (prefer_default() if a.prefer == "auto" else (a.prefer, "set on the command line"))
+    P = OrderedDict([("version", VERSION), ("when", now()), ("argv", sys.argv[1:]), ("out", str(out)),
+                     ("prefer", {"setting": a.prefer, "used": pref, "why": pref_why})])
+    # ---- 1 listings
+    listings = {}
+    for kv in a.listing or []:
+        k, _, f = kv.partition("=")
+        listings[k] = f
+    lsts, cands, sidecars = [], [], []
+    (out / "listing").mkdir(exist_ok=True)
+    for spec in a.repo or []:
+        repo, _, rev = spec.partition("@")
+        lst = list_repo(repo, rev or "main", listings.get(repo), a.offline)
+        tp = out / "listing" / f"{repo.replace('/', '--')}@{lst['commit'][:12]}.json"
+        tp.write_text(json.dumps(lst["entries"], indent=0))
+        lst["tree_json"] = str(tp)
+        dest_root = a.dest_root or str(WS / "models" / repo.split("/")[-1])
+        qs, side = quants_of(lst, dest_root)
+        for q in qs:
+            q["tree_json"] = str(tp)
+        cands += qs
+        sidecars += [dict(s, repo=repo) for s in side]
+        lsts.append({k: lst[k] for k in ("repo", "commit", "source", "tree_json")} | {"quants": len(qs), "sidecars": len(side)})
+        log(f"{repo}@{lst['commit'][:12]}: {len(qs)} model quants, {len(side)} side files ({lst['source']})")
+    for l_ in a.local or []:
+        cands.append(local_candidate(l_))
+    P["listings"] = lsts
+    P["sidecars"] = sidecars
+    global P_SIDECARS
+    P_SIDECARS = sidecars
+    # ---- 2 headers (reuse, then the offline fetch test)
+    hroot = Path(a.headers).resolve() if a.headers else out / "headers"
+    for c in cands:
+        c["hdr"] = header_state(c, hroot)
+    if a.fetch_test:   # exercise the range-request header fetch on a local copy (offline): label=LOCAL_DIR
+        lab, _, base = a.fetch_test.partition("=")
+        q = next(c for c in cands if c["label"] == lab and c["source"] == "listed")
+        tdir = KIT / "scratch-d" / "fetch-test"
+        shutil.rmtree(tdir, ignore_errors=True)
+        fetch_headers(q, tdir, base=base)
+        same = []
+        for f in q["files"]:
+            got = tdir / f["path"]
+            ref = hroot / f["path"]
+            same.append((Path(f["path"]).name, got.exists() and ref.exists() and got.read_bytes() == ref.read_bytes(),
+                         got.stat().st_size if got.exists() else None))
+        P["fetch_test"] = {"label": lab, "base": base, "dest": str(tdir),
+                           "files": [{"file": n, "identical_to_saved_header": s, "bytes": b} for n, s, b in same]}
+        log(f"header fetch test ({lab} from {base}): " + ", ".join(f"{n} {'=' if s else 'DIFFERS'}" for n, s, _ in same))
+    # ---- 3 day1 round 1
+    ready = [c for c in cands if c["hdr"]["state"] in ("disk", "headers")]
+    files_at = [(Path(c["hdr"]["path"]).name, c["dest"]) for c in ready if c["hdr"]["state"] == "headers"]
+    rep = run_day1([c["hdr"]["path"] for c in ready], out / "day1check", a.name, files_at, a)
+    by_path = {r["file"]: r for r in rep["files"]}
+    for c in ready:
+        c["rep"] = by_path.get(c["hdr"]["path"])
+    estimates(cands, by_path)
+    fitting = [c["rep"]["fit"]["experts_gib"] for c in ready if c.get("rep") and c["rep"].get("fit", {}).get("fits")
+               and c["rep"]["verdict"] != "REFUSED"]
+    room = min((c["rep"]["fit"]["room_total_gib"] for c in ready if c.get("rep") and c["rep"].get("fit")), default=72.0)
+    want = fetch_set(cands, max(fitting) if fitting else None, room)
+    P["prescreen"] = {"room_gib": room, "best_exact_fit_gib": max(fitting) if fitting else None,
+                      "fetch": [c["label"] for c in want], "offline": a.offline}
+    if want and not a.offline:
+        for c in want:
+            log(f"header fetch: {c['repo']} {c['label']} ({len(c['files'])} shards)")
+            fetch_headers(c, hroot)
+            c["hdr"] = header_state(c, hroot)
+        ready = [c for c in cands if c["hdr"]["state"] in ("disk", "headers")]
+        files_at = [(Path(c["hdr"]["path"]).name, c["dest"]) for c in ready if c["hdr"]["state"] == "headers"]
+        rep = run_day1([c["hdr"]["path"] for c in ready], out / "day1check", a.name, files_at, a)
+        by_path = {r["file"]: r for r in rep["files"]}
+        for c in ready:
+            c["rep"] = by_path.get(c["hdr"]["path"])
+        for c in cands:
+            c.pop("est", None)
+        estimates(cands, by_path)
+    # ---- 4 the pick
+    cand_of = {c["hdr"]["path"]: c for c in ready}
+    picks = []
+    for pk in rep["picks"]:
+        files, note = apply_prefer(pk, cand_of, pref, str(SERVED))
+        best = by_path.get(pk["pick"], {}).get("fit", {}).get("experts_gib") if pk.get("pick") else None
+        prov = [c for c in cands if c.get("est") and c["est"]["fits"] and best is not None
+                and c["est"]["experts_gib"] > best + a.tie_tol_gib]
+        picks.append({"group": pk["group"], "day1_pick": pk["pick"], "why": pk["why"].replace("**", ""), "tie": pk.get("tie"),
+                      "prefer_note": note, "final": files,
+                      "provisional": [{"label": c["label"], "repo": c["repo"], "est_experts_gib": round(c["est"]["experts_gib"], 2),
+                                       "est_margin_gib": round(c["est"]["margin_gib"], 2), "bytes": c["bytes"]} for c in prov]})
+    P["candidates"] = [{"label": c["label"], "publisher": c["publisher"], "source": c["source"], "repo": c["repo"],
+                        "bytes": c["bytes"], "shards": len(c["files"]), "header": c["hdr"]["state"], "header_why": c["hdr"]["why"],
+                        "verdict": (c.get("rep") or {}).get("verdict"),
+                        "experts_gib": round((c.get("rep") or {}).get("fit", {}).get("experts_gib", 0), 3) if c.get("rep") else None,
+                        "fits": (c.get("rep") or {}).get("fit", {}).get("fits") if c.get("rep") else None,
+                        "est": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in c["est"].items()} if c.get("est") else None}
+                       for c in cands]
+    P["picks"] = picks
+    if a.pick_only:
+        return finish_plan(out, P)
+    # ---- 5-9 per final file: slots, configs, disk, download, pack, params, drivers
+    cal = served_calibration(tree, (by_path.get(str(SERVED)) or {}).get("fit", {}).get("room_main_gib"))
+    P["slot_calibration"] = {"profile": cal["note"], "helper_today_gib": cal["helper_today_bytes"] / GIB,
+                             "rows": {k: {x: v[x] for x in ("uniform_auto", "sized_auto", "pin", "sized_pin", "main_room_gib")}
+                                      for k, v in cal["rows"].items()},
+                             "logged": F1}
+    helper_budget_today = cal["helper_today_bytes"]
+    params_dir, cfg_dir, drv_dir = out / "drivers", out / "configs", out / "drivers"
+    for d in (cfg_dir, drv_dir):
+        d.mkdir(exist_ok=True)
+    pieces = {}
+    for f in (out / "day1check" / "day1").glob("params-*.json"):
+        pj = json.loads(f.read_text())
+        pieces[Path(pj["files"][0]).name] = (f.stem[len("params-"):], pj)
+    P["files"] = []
+    ref = None
+    if a.kl_ref_gguf:
+        ref = analyse_ref(a, out)
+    for pk in picks:
+        group_files = []
+        for fpath in pk["final"]:
+            c = cand_of.get(fpath)
+            r = by_path.get(fpath)
+            if c is None or r is None:
+                continue
+            served = Path(fpath).resolve() == SERVED.resolve()
+            item = per_file(a, out, c, r, pieces.get(Path(fpath).name), served, helper_budget_today, ref)
+            P["files"].append(item)
+            group_files.append(item)
+        # the KL driver covers the whole pick set of a group (a tie: every tied file; swap mode: + P)
+        if group_files and not a.no_drivers:
+            pk["kl_driver"] = kl_driver(a, out, group_files, ref, pk, tie=len(pk["final"]) > 1)
+    return finish_plan(out, P)
+
+
+def analyse_ref(a, out):
+    rp = Path(a.kl_ref_gguf).absolute()   # not resolve(): an HF-cache file is a symlink to a blob named by its hash
+    rep = run_day1([rp], out / "day1check-ref", f"{a.name}-R", [], argparse.Namespace(**{**vars(a), "no_swap": True}))
+    r = rep["files"][0]
+    m = header_model(str(rp), a.tree)
+    ple = m.tensors.get("per_layer_token_embd.weight")
+    return {"label": f"{classify(rp.name)[1]} (local: {rp.parent})", "paths": [s["path"] for s in r["shards"]],
+            "ngram_path": r["shards"][ple.shard]["path"] if ple is not None else None,
+            "experts_gib": r["fit"]["experts_gib"], "compat": r["need_compat_bf16"], "hcq8": "Q8_0" in hc_types(m),
+            "verdict": r["verdict"], "tokens_sha": (r.get("tokenizer") or {}).get("tokens_sha"),
+            "pack": str(WS / f"bringup/out/{a.name}-R/pack"), "out_type": (m.tensors.get("output.weight").tname
+                                                                          if m.tensors.get("output.weight") else None),
+            "day1": str(out / "day1check-ref")}
+
+
+def per_file(a, out, c, r, piece, served, helper_today, ref):
+    """one final file: the slot model, the finished config, disk / download / pack plans, the params, two drivers"""
+    item = OrderedDict([("label", c["label"]), ("publisher", c["publisher"]), ("source", c["source"]), ("served", served),
+                        ("verdict", r["verdict"]), ("experts_gib", r["fit"]["experts_gib"]),
+                        ("room_gib", r["fit"]["room_total_gib"]),
+                        ("margin_gib", r["fit"]["room_total_gib"] - r["fit"]["experts_gib"])])
+    if served:
+        item["note"] = "the served file: its config is configs/P028x.json (x28h in tests) - no new pieces"
+        return item
+    if piece is None:
+        item["note"] = "day1.py wrote no pieces for it"
+        return item
+    name, d1p = piece
+    item["name"] = name
+    m = header_model(c["hdr"]["path"], a.tree)
+    blobs, ne = blobs_of(m)
+    swap = d1p.get("mode", "").startswith("same-model")
+    d1cfg = json.loads((out / "day1check" / "day1" / f"{name}.json").read_text(), object_pairs_hook=OrderedDict)
+    prof_path = argval(d1cfg["args"], "--expert-profile")
+    pairs, pnote = read_profile(prof_path, len(blobs), ne)
+    fit = r["fit"]
+    main_b = fit["room_main_gib"] * GIB
+    helper_room = (fit.get("room_helpers_gib") or [0])[0] * GIB
+    pin = 2500 if swap else (d1p.get("exact7") or {}).get("PIN_CACHE")
+    rule = a.helper_rule or ("today-count" if swap else "today-bytes")
+    budget = {"today-bytes": min(helper_today, helper_room), "max": helper_room,
+              "today-count": helper_room}[rule]
+    s = slot_model(blobs, ne, pairs, main_b, budget, a.main_margin_mib * MIB, pin)
+    s_today = slot_model(blobs, ne, pairs, main_b, min(helper_today, helper_room), a.main_margin_mib * MIB, None)["helper"]
+    s_max = slot_model(blobs, ne, pairs, main_b, helper_room, a.main_margin_mib * MIB, None)["helper"]
+    s["helper_by_rule"] = {"today-bytes": s_today, "max": s_max}
+    tpl_h = argval(d1cfg["args"], "--expert-cache-device1")
+    if rule == "today-count" and tpl_h and tpl_h.isdigit():
+        # P028x's count kept when its bytes (this file's next ranks) fit the helper's room
+        order = pairs if pairs else [(l, e) for e in range(ne) for l in blobs]
+        hb = sum(blobs.get(l, s["max_blob"]) for l, _ in order[s["sized_cfg"]:s["sized_cfg"] + int(tpl_h)])
+        s["helper_final"] = int(tpl_h) if hb <= helper_room else s["helper"]
+        s["helper_note"] = (f"the template's count {tpl_h} kept: its {hb / GIB:.3f} GiB fit the 4060 Ti's {helper_room / GIB:.2f} GiB "
+                            f"(rule today-count; today's 6.21 GiB would hold {s_today:,}, the room's maximum {s_max:,})" if hb <= helper_room else
+                            f"the template's {tpl_h} would take {hb / GIB:.3f} GiB > the room: {s['helper']:,}")
+    else:
+        s["helper_final"] = s["helper"] if helper_room > 0 else None
+        s["helper_note"] = (f"rule {rule}: the next ranks that fit {budget / GIB:.3f} GiB "
+                            + ("(today's 3,300 x Flash-Next's blobs = the measured-safe helper bytes)" if rule == "today-bytes"
+                               else "(the room: 7.56 GiB free - 512 MiB)") + f" -> {s['helper']:,} experts, {s['helper_gib']:.3f} GiB")
+    s["profile_note"] = pnote
+    hct = hc_types(m)
+    hcq8 = "Q8_0" in hct
+    cfg = finalize_config(d1cfg, s, hcq8, name, swap, rule)
+    cfg_p = out / "configs" / f"{name}.json"
+    cfg_p.write_text(json.dumps(cfg, indent=1) + "\n")
+    sh = out / "day1check" / "day1" / f"{name}.shared-settings.json"
+    if sh.exists():
+        shutil.copyfile(sh, out / "configs" / f"{name}.shared-settings.json")
+    item["config"] = str(cfg_p)
+    item["mode"] = "swap" if swap else "stock"
+    item["slots"] = {k: v for k, v in s.items()}
+    item["hc_types"], item["hc_q8"] = hct, hcq8
+    # disk / download
+    shards_final = d1p["files"]
+    listed = c["source"] == "listed"
+    todo = sum(f["size"] for f in c["files"]) if listed and c["hdr"]["state"] != "disk" else 0
+    dense_pack = fit.get("dense_gpu_gib", 0) * GIB + 0.2 * GIB
+    ref_pack = 4.5 * GIB if ref and not Path(ref["pack"], "index.txt").exists() else 0
+    splice = (a.splice_gb or 0) * 1e9
+    drafter = 0
+    mtp = None
+    if "--mtp" not in cfg.get("args", []):
+        # QWEN4-DAY1-PLAN "Drafter fallback": the publisher's MTP GGUF (BF16: the only form that rebuilds our rt bit for
+        # bit) -> work/qwen4-kit/mtp_from_gguf.py convert -> an rt dir; the config points at it, the drivers refuse
+        # until it exists
+        bf16 = [s_ for s_ in (P_SIDECARS or []) if s_["kind"] == "mtp" and "BF16" in s_["path"].upper()
+                and s_["repo"] == c["repo"]]
+        if bf16:
+            mf = min(bf16, key=lambda x: x["size"])
+            mdest = Path(c["dest"]).parent / "MTP"
+            mpath = mdest / Path(mf["path"]).name
+            here = mpath.exists() and mpath.stat().st_size == mf["size"] and sums_of(mdest).get(mpath.name) == mf["oid"]
+            rt = WS / f"bringup/out/{name}/mtp-rt"
+            drafter = (0 if here else mf["size"]) + 1.0e9
+            args = cfg["args"]
+            i = args.index("--prefill") + 2 if "--prefill" in args[:-1] else len(args)
+            args[i:i] = ["--spec", "7", "--spec-min-p", "0.5", "--mtp", str(rt)]
+            cfg["_dayone"]["drafter"] = (f"--spec 7 --spec-min-p 0.5 --mtp {rt}: converted from {mf['path']} (BF16, "
+                                         f"{mf['size'] / 1e9:.2f} GB) by mtp_from_gguf.py - the drivers refuse until it exists")
+            mtp = {"file": mf["path"], "size": mf["size"], "oid": mf["oid"], "dest": str(mdest), "here_verified": here,
+                   "rt": str(rt),
+                   "inspect": f"nice -n 19 {PY} -I -B {KIT}/mtp_from_gguf.py inspect {mpath}",
+                   "convert": (f"bash {WS}/work/r23/nogap-run.sh {out}/drafter-{name}.log {PY} -I -B {KIT}/mtp_from_gguf.py "
+                               f"convert {mpath} --out {rt}"),
+                   "check": ("no reference rt for a new model: CHECK-PLAN.md's acceptance check (results/qwen4-kit/"
+                             "mtp-fallback/, ~45 min with 8080 down) before trusting its speed numbers")}
+            cfg_p.write_text(json.dumps(cfg, indent=1) + "\n")
+        else:
+            cfg["_dayone"]["drafter"] = "none: no --mtp and no BF16 MTP GGUF in the listing - --spec off, say so in the speed numbers"
+            cfg_p.write_text(json.dumps(cfg, indent=1) + "\n")
+    du = shutil.disk_usage(WS / "models")
+    after = du.free - todo - dense_pack - ref_pack - splice - drafter
+    item["disk"] = {"free_gb": round(du.free / 1e9, 1), "download_gb": round(todo / 1e9, 1), "pack_gb": round(dense_pack / 1e9, 1),
+                    "ref_pack_gb": round(ref_pack / 1e9, 1), "splice_gb": round(splice / 1e9, 1),
+                    "drafter_gb": round(drafter / 1e9, 1), "free_after_gb": round(after / 1e9, 1), "ok": after >= 100e9,
+                    "floor_gb": 100}
+    if mtp:
+        item["drafter_fallback"] = mtp
+    dl = {"n": 0, "items": []}
+    if listed:
+        paths = [f["path"] for f in c["files"]]
+        gd = [str(PY), "-I", "-B", str(KIT / "gentle_dl.py"), "--tree", c["tree_json"], "--repo", c["repo"], "--commit",
+              c["commit"], "--dest", c["dest"], "--rate", str(a.rate)]
+        win = ["--window", a.window] + sum((["--gap-match", g] for g in a.gap_match or []), [])
+        dl = {"n": 1, "items": [{"dest": c["dest"], "tree": c["tree_json"], "paths_csv": ",".join(paths)}]}
+        if mtp:
+            dl["n"] += 1
+            dl["items"].append({"dest": mtp["dest"], "tree": c["tree_json"], "paths_csv": mtp["file"]})
+            gm = [str(PY), "-I", "-B", str(KIT / "gentle_dl.py"), "--tree", c["tree_json"], "--repo", c["repo"], "--commit",
+                  c["commit"], "--dest", mtp["dest"], "--rate", str(a.rate)]
+            mtp["download"] = " ".join(shlex.quote(x) for x in gm + ["--window", a.window]
+                                       + sum((["--gap-match", g] for g in a.gap_match or []), []) + [mtp["file"]])
+        pr = subprocess.run(gd + ["--plan"] + paths, capture_output=True, text=True)
+        item["download"] = {"plan_rc": pr.returncode, "plan": pr.stdout.strip().splitlines()[:-1],
+                            "command": " ".join(shlex.quote(x) for x in gd + win + paths),
+                            "unit": (f"systemd-run --user --unit {name}-download --collect -p MemoryHigh=2G -p Nice=19 "
+                                     + " ".join(shlex.quote(x) for x in gd + win + paths)),
+                            "window": a.window, "gap_match": a.gap_match or [],
+                            "note": ({"measure": "Karl 11-05: starts at once, pauses only while a gap is open (measuring) and "
+                                                 "resumes when it closes; no fixed cap - while an LDR run holds bench.lock it "
+                                                 "leaves 25 % of the measured line (35 MB/s before a measurement)",
+                                      "gap": "--window gap (the 11-04 rule) needs --gap-match (a NON-TIMED gap's hold text)",
+                                      "any": "--window any: never pauses"}[a.window])}
+    else:
+        item["download"] = {"note": "a local file: nothing to download (not pinned: no listing)"}
+    # pack
+    rel_tree = Path(a.rel or a.tree)
+    pack_dir = WS / f"bringup/out/{name}/pack"
+    ggpy = (rel_tree / "third_party/llama.cpp/gguf-py") if (rel_tree / "third_party/llama.cpp/gguf-py").exists() else \
+        WS / "strata/third_party/llama.cpp/gguf-py"
+    pk_cmd = (f"env PYTHONDONTWRITEBYTECODE=1 STRATA_GGUF_PY={ggpy} {PY} -I -B {rel_tree}/tools/iq_pack.py --gguf {shards_final[0]} "
+              f"--out {pack_dir}" + (" --compat-bf16" if r["need_compat_bf16"] else ""))
+    item["pack"] = {"dir": str(pack_dir), "compat_bf16": r["need_compat_bf16"],
+                    "maybe_compat": r.get("maybe_compat_bf16"),
+                    "command": f"bash {WS}/work/r23/nogap-run.sh {out}/pack-{name}.log {pk_cmd}",
+                    "est_gb": round(dense_pack / 1e9, 1), "exists": (pack_dir / "native_experts.txt").exists()}
+    # params for the drivers
+    ctx_ratio = max(1.0, ((fit.get("tiers") or {}).get("compute_ratio") or 1.0))
+    mins = {k: math.ceil(v * ctx_ratio) for k, v in MIN.items()}
+    ngpu = len([x for x in (cfg.get("env", {}).get("CUDA_VISIBLE_DEVICES") or "").split(",") if x]) or 1
+    exe = cfg.get("exe", "")
+    short = slug(name)
+    prm = OrderedDict([
+        ("version", VERSION), ("name", name), ("label", c["label"]), ("mode", item["mode"]), ("config", str(cfg_p)),
+        ("config_sha256", {str(cfg_p): sha256_file(cfg_p)}), ("exe", exe), ("ngpu", ngpu), ("files", shards_final),
+        ("pack", str(pack_dir)), ("hc_q8", hcq8), ("prompt_dir", d1p["prompts"]["dir"]),
+        ("retok_needed", d1p["prompts"]["retok_needed"]), ("pin", pin),
+        ("slots", {"main": s["sized_cfg"], "main_uniform": s["uniform_cfg"], "pin_sized": s.get("sized_pin"),
+                   "helper": s.get("helper_final")}),
+        ("dl", dl), ("drafter_rt", (mtp or {}).get("rt")), ("minutes", mins), ("target", [40, 60])])
+    prm_p = out / "drivers" / f"params-{name}.json"
+    prm_p.write_text(json.dumps(prm, indent=1) + "\n")
+    item["params"] = str(prm_p)
+    item["minutes"] = mins
+    item["_prm"] = prm
+    item["_c"] = c
+    item["_ref"] = ref
+    if a.no_drivers:
+        return item
+    tree_rel = str(rel_tree)
+    base_v = {"VERSION": VERSION, "WHEN": now(), "NAME": name, "LABEL": c["label"], "SHORT": short,
+              "MODE": "same-model swap of the served file" if swap else "a new model (stock config)", "MODE_KEY": item["mode"],
+              "PARAMS": str(prm_p), "CFG": str(cfg_p), "EXE": exe, "NGPU": ngpu, "TREE": tree_rel,
+              "ENGINES": " ".join(dict.fromkeys(["strata", "strata-host", "strata-vision", "strata-dsv41", "llama-server",
+                                                  "ollama"] + ([Path(exe).name[:15]] if exe and not exe.startswith("<") else []))),
+              "RESULTS": str(out / "gaps" / name), "PROMPT_DIR": d1p["prompts"]["dir"], "EVICT": " ".join(shards_final),
+              "SHARDS": " ".join(shards_final), "PACK": str(pack_dir), "PIN": pin,
+              "E7REF": "x28h-e7a" if swap else "c13", "E7REF_WHAT": "against P028x's x28h-e7a, INFO" if swap else
+              "the first run: exact7.sh's built-in C*13 hashes as its INFO line only (new weights: X2 against X1 is the test)",
+              "PRED_MAIN": s["sized_cfg"], "PRED_PIN": s.get("sized_pin") or 0,
+              "DRAFTER": (f"{mtp['rt']}/dense.txt {mtp['rt']}/experts.bin" if mtp else ""),
+              "PRED_HELPER_ARG": f"--helper {s['helper_final']}" if s.get("helper_final") else "",
+              "E7_MIN": mins["e7"], "SMOKE_MIN": mins["smoke"], "SCR_MIN": mins["scr"], "TARGET": "40,60",
+              "KLDATA": "-", "STARTQ": (f"$P -I -B $KR/g17_rules.py startlines base $SPD/Q1.startlog $(slog q4-$SHORT-Q1) --gate start_Q --gates $G 8>&- 9>&- | tee -a $S"
+                                        if swap else "$P -I -B $Q4R startcheck $SPD/Q1.startlog $(slog q4-$SHORT-Q1) --gate start_Q --gates $G 8>&- 9>&- | tee -a $S"),
+              "STARTQ_WHAT": "g17 base (the series' switches apply)" if swap else "q4_rules startcheck (unwanted lines only; the series' switches are off by design)"}
+    if base_v["EXE"].startswith("<"):
+        base_v["EXE"] = shlex.quote(exe)
+    item["drivers"] = {}
+    for kind, maxm in (("exact", 6 + 2 * mins["e7"] + mins["smoke"] + 8), ("speed", 6 + 6 * mins["scr"] + 8)):
+        v = dict(base_v, MAXM=maxm, WHAT={"exact": "the EXACTNESS SMOKE", "speed": "the SPEED SCREEN"}[kind]
+                 + f" of {name}")
+        if kind == "speed":   # with_server.sh evicts both arms' files before each start (cold page cache)
+            v["EVICT"] = " ".join(shards_final + [str(SERVED.parent / "*.gguf")])
+        item["drivers"][kind] = write_driver(out / "drivers" / f"gap-{name}-{kind}.sh", kind, v)
+    return item
+
+
+P_SIDECARS: list = []
+
+
+def kl_driver(a, out, items, ref, pk, tie=False):
+    items = [x for x in items if x.get("name")]
+    if not items:
+        return None
+    swap = all(x["mode"] == "swap" for x in items)
+    name = items[0]["name"] if len(items) == 1 else f"{a.name}-tie"
+    data = a.kl_data
+    if data == "auto":
+        data = "dump" if swap and ref and ref.get("out_type") in ("Q6_K", "Q8_0") else "pfy"
+    cands = [f"X{i + 1}" for i in range(len(items))] if len(items) > 1 else ["X"]
+    base = "P" if swap else ""
+    arms = (["P"] if base else []) + cands + ["R"]
+    cfg = {x: it["config"] for x, it in zip(cands, items)}
+    pack = {x: it["pack"]["dir"] for x, it in zip(cands, items)}
+    exe = {x: it["_prm"]["exe"] for x, it in zip(cands, items)}
+    ngpu = {x: it["_prm"]["ngpu"] for x, it in zip(cands, items)}
+    mins = items[0]["minutes"]
+    mn = {x: mins["q" if data == "dump" else "pfy"] for x in cands}
+    if base:
+        cfg["P"], pack["P"], exe["P"], ngpu["P"], mn["P"] = str(X28H), str(WS / "bringup/out/r20a/pack"), \
+            str(WS / "engine-r22p028x/strata"), 2, mins["q" if data == "dump" else "pfy"]
+    ref_note = None
+    if ref:
+        rcfg = ref_config(json.loads(Path(items[0]["config"]).read_text(), object_pairs_hook=OrderedDict), ref, name,
+                          items[0]["_c"]["rep"]["fit"]["room_ram_gib"], a.ref_resident_margin_gib)
+        rp = out / "configs" / f"{name}-R.json"
+        rp.write_text(json.dumps(rcfg, indent=1) + "\n")
+        cfg["R"], pack["R"], exe["R"], ngpu["R"] = str(rp), ref["pack"], rcfg["exe"], 1
+        mn["R"] = mins["qr" if data == "dump" else "pfyr"]
+        bigger = all(ref["experts_gib"] > it["experts_gib"] for it in items)
+        same_tok = all(ref["tokens_sha"] == (it["_c"]["rep"].get("tokenizer") or {}).get("tokens_sha") for it in items)
+        ref_note = {"label": ref["label"], "experts_gib": ref["experts_gib"], "larger_than_every_candidate": bigger,
+                    "same_vocabulary": same_tok, "config": str(rp), "pack": ref["pack"], "pack_compat_bf16": ref["compat"],
+                    "pack_command": (f"bash {WS}/work/r23/nogap-run.sh {out}/pack-{name}-R.log env PYTHONDONTWRITEBYTECODE=1 "
+                                     f"STRATA_GGUF_PY={WS / 'strata/third_party/llama.cpp/gguf-py'} {PY} -I -B "
+                                     f"{Path(a.rel or a.tree)}/tools/iq_pack.py --gguf {ref['paths'][0]} --out {ref['pack']}"
+                                     + (" --compat-bf16" if ref["compat"] else "")),
+                    "hc_q8": ref["hcq8"], "data": data}
+    else:
+        cfg["R"], pack["R"], exe["R"], ngpu["R"], mn["R"] = "<SET: --kl-ref-gguf / --kl-ref-config>", "<SET>", "<SET>", 1, mins["qr"]
+    tags = [x for x, it in zip(cands, items) if it["hc_q8"] and it["pack"]["compat_bf16"]]
+    if ref and ref["hcq8"] and ref["compat"]:
+        pass   # R's own rounding sits on R's side of every KL row (ud31_rules.py: noted, not a tag on a candidate)
+    # the KL params: the first item's params + kl.* (one file the driver reads)
+    prm = json.loads(json.dumps(items[0]["_prm"]))
+    prm["config_sha256"] = {it["config"]: sha256_file(it["config"]) for it in items}
+    if ref:
+        prm["config_sha256"][cfg["R"]] = sha256_file(cfg["R"])
+    prm["dl"] = {"n": sum(it["_prm"]["dl"]["n"] for it in items),
+                 "items": [x for it in items for x in it["_prm"]["dl"]["items"]]}
+    room_ram = items[0]["_c"]["rep"]["fit"]["room_ram_gib"]
+    need = {x: round(min(it["experts_gib"], room_ram) + 18.0, 1) for x, it in zip(cands, items)}
+    if base:
+        need["P"] = round(46.84 + 18.0, 1)
+    need["R"] = round((int(room_ram - a.ref_resident_margin_gib) if ref and ref["experts_gib"] > room_ram
+                       else (ref or {}).get("experts_gib", room_ram)) + 18.0, 1)
+    prm["kl"] = {"data": data, "cands": cands, "base": base or None, "arms": arms, "cfg": cfg, "pack": pack, "exe": exe,
+                 "ngpu": ngpu, "min": mn, "memneed": need,
+                 "memneed_why": "experts held in RAM (R: its --resident-budget-gib) + the 12 GiB floor + 6 GiB for the engine's other host memory", "ref_label": ref["label"] if ref else "<none named>",
+                 "published": a.kl_published or "none recorded (the publisher's KLD table: record its number and source)",
+                 "tag_pack": tags, "files": {x: it["label"] for x, it in zip(cands, items)}}
+    prm_p = out / "drivers" / f"params-{name}-kl.json"
+    prm_p.write_text(json.dumps(prm, indent=1) + "\n")
+    maxm = 6 + sum(mn.values()) + mins["cmp"] + 8
+    it0 = items[0]
+    shards = " ".join(sorted({s for it in items for s in it["_prm"]["files"]} | (set(ref["paths"]) if ref else set())))
+    evict = shards + (" " + str(SERVED.parent / "*.gguf") if base else "")
+    v = {"VERSION": VERSION, "WHEN": now(), "NAME": name, "LABEL": ", ".join(it["label"] for it in items), "SHORT": slug(name),
+         "MODE": ("same-model swap" if swap else "a new model") + f"; data {data}", "MODE_KEY": "swap" if swap else "stock",
+         "PARAMS": str(prm_p), "CFG": it0["config"], "EXE": shlex.quote(it0["_prm"]["exe"]), "NGPU": it0["_prm"]["ngpu"],
+         "TREE": str(Path(a.rel or a.tree)), "ENGINES": "strata strata-host strata-vision strata-dsv41 llama-server ollama",
+         "RESULTS": str(out / "gaps" / name), "PROMPT_DIR": it0["_prm"]["prompt_dir"], "EVICT": evict, "SHARDS": shards,
+         "MAXM": maxm, "WHAT": f"QUALITY - {', '.join(cands)} against the named local reference R",
+         "KLDATA": data, "KLDATA_WHAT": "score.py run --set long11 --rows all:8, every 8th prompt row of 11 long texts"
+         if data == "dump" else "pf_yardstick long40 through day1.py pfy PROMPT_DIR, the engine's own logits after 40 cuts",
+         "ROWS_WHAT": "validate per arm with its own head, the head check on P, ud31_rules.py compare" if data == "dump"
+         else "q4_rules.py pfyrows: KL(R || X), changed top-1, the next token's NLL per cut",
+         "CANDS": " ".join(cands), "BASE": base or "none", "ARMS": " ".join(arms), "CMP_BASE": base or cands[0],
+         "KLD_BASE": ("--base P" if base else "") + (" --tie" if tie else ""),
+         "KLD_TAG": f"--tag-pack {','.join(tags)}" if tags else "",
+         "CMP_MIN": mins["cmp"]}
+    d = write_driver(out / "drivers" / f"gap-{name}-kl.sh", "kl", v)
+    d["params"] = str(prm_p)
+    d["reference"] = ref_note
+    d["arms"] = {x: (prm["kl"]["files"].get(x) or ("P028x (x28h)" if x == "P" else (ref or {}).get("label", "R: NONE NAMED")))
+                 for x in arms}
+    return d
+
+
+def finish_plan(out, P):
+    def clean(x):
+        if isinstance(x, dict):
+            return {k: clean(v) for k, v in x.items() if not str(k).startswith("_")}
+        if isinstance(x, list):
+            return [clean(v) for v in x]
+        if isinstance(x, float):
+            return round(x, 4)
+        return x
+    P = clean(P)
+    (out / "plan.json").write_text(json.dumps(P, indent=1, default=str) + "\n")
+    (out / "PLAN.md").write_text(plan_md(P))
+    log(f"plan: {out / 'plan.json'}, {out / 'PLAN.md'}")
+    return P
+
+
+def plan_md(P):
+    L = []
+    w = L.append
+    w(f"# Day-one plan ({P['when']}, {P['version']})")
+    w("")
+    w(f"`dayone.py {' '.join(shlex.quote(x) for x in P['argv'])}`")
+    w("")
+    w("No GPU, no engine run, nothing downloaded or packed by `plan`. Each step below runs on its own "
+      "(`dayone.py execute STEP --plan ...`), after Karl's go.")
+    w("")
+    w("## Listing and candidates")
+    w("")
+    for l_ in P.get("listings", []):
+        w(f"- `{l_['repo']}` at commit `{l_['commit']}` ({l_['source']}): {l_['quants']} model quants, {l_['sidecars']} side files")
+    w("")
+    w("| quant | publisher | source | GB | header | verdict | experts GiB | fits | estimate (no header) |")
+    w("|---|---|---|---|---|---|---|---|---|")
+    for c in sorted(P["candidates"], key=lambda c: -(c["experts_gib"] or (c["est"] or {}).get("experts_gib") or 0)):
+        e = c["est"]
+        w(f"| {c['label']} | {c['publisher']} | {c['source']} | {c['bytes'] / 1e9:.1f} | {c['header']} | {c['verdict'] or '-'} | "
+          f"{c['experts_gib'] if c['experts_gib'] is not None else '-'} | {c['fits'] if c['fits'] is not None else '-'} | "
+          + (f"{e['experts_gib']} GiB, {'fits' if e['fits'] else 'over'} (margin {e['margin_gib']}; from {e['from']})" if e else "-") + " |")
+    w("")
+    ps = P.get("prescreen", {})
+    w(f"Pre-screen: room {ps.get('room_gib', 0):.2f} GiB, the largest header-read fit {ps.get('best_exact_fit_gib')} GiB; headers "
+      f"to read before trusting the pick: {', '.join(ps.get('fetch') or []) or 'none'}"
+      + (" (offline: not fetched)" if ps.get("offline") and ps.get("fetch") else ""))
+    if P.get("fetch_test"):
+        ft = P["fetch_test"]
+        w("")
+        w(f"Header fetch path exercised offline on {ft['label']} (range reads from `{ft['base']}`): "
+          + ", ".join(f"{x['file']} {'identical to the saved header' if x['identical_to_saved_header'] else 'DIFFERS'}" for x in ft["files"]))
+    w("")
+    w(f"## The pick (--prefer {P['prefer']['setting']} -> {P['prefer']['used']}: {P['prefer']['why']})")
+    w("")
+    for pk in P["picks"]:
+        w(f"- group {pk['group'][:3]}: {pk['why']}")
+        w(f"  - {pk['prefer_note']}; final: {', '.join(Path(f).name for f in pk['final']) or 'none'}")
+        pvs = sorted(pk.get("provisional") or [], key=lambda x: -x["est_experts_gib"])
+        if pvs:
+            top = pvs[0]
+            w(f"  - **PROVISIONAL - the rule's pick by size would be `{top['label']}`** ({top['repo']}): about "
+              f"{top['est_experts_gib']} GiB of experts by the size estimate, margin {top['est_margin_gib']} GiB"
+              + (" (TIGHT)" if top["est_margin_gib"] < 2 else "") + "; its header must be read (a live `plan` fetches it; "
+              "offline it was not) before the pick above stands. Also larger than the header-read pick: "
+              + (", ".join(f"`{x['label']}` (~{x['est_experts_gib']} GiB)" for x in pvs[1:]) or "none"))
+        if pk.get("kl_driver"):
+            k = pk["kl_driver"]
+            w(f"  - KL driver `{Path(k['path']).name}` (bash -n {k['bash_n']}; arms {k['arms']}; reference "
+              f"{(k['reference'] or {}).get('label', 'NONE NAMED')})")
+    w("")
+    if P.get("slot_calibration"):
+        sc = P["slot_calibration"]
+        w("## Slot model calibration (the served file, F1-frame-pools.md's logged numbers)")
+        w("")
+        for k, v in sc["rows"].items():
+            w(f"- {k}: room {v['main_room_gib']:.3f} GiB -> uniform {v['uniform_auto']:,}, sized {v['sized_auto']:,} "
+              f"(logged 3,526 / 4,583); pin {v['pin']} -> {v['sized_pin']:,} (logged 3,238)")
+        w(f"- the 4060 Ti's 3,300 today = {sc['helper_today_gib']:.4f} GiB (F1: 6.206 GiB)")
+        w("")
+    for it in P.get("files", []):
+        w(f"## {it.get('name') or it['label']}")
+        w("")
+        if it.get("note"):
+            w(f"- {it['note']}")
+            w("")
+            continue
+        s = it["slots"]
+        w(f"- {it['label']} ({it['publisher']}, {it['source']}), {it['mode']} mode; {it['verdict']}; experts {it['experts_gib']:.2f} "
+          f"GiB in {it['room_gib']:.2f} GiB of room (margin {it['margin_gib']:.2f})")
+        w(f"- config `{it['config']}`: --expert-cache {s['uniform_cfg']:,} (expected {s['sized_cfg']:,} slots; auto would be "
+          f"{s['uniform_auto']:,} / {s['sized_auto']:,}), --expert-cache-device1 {s.get('helper_final')} ({s.get('helper_note')}); "
+          f"{s['profile_note']}; HC types {it['hc_types']}{' -> STRATA_HC_Q8=1' if it['hc_q8'] else ''}")
+        dk = it["disk"]
+        w(f"- disk: {dk['free_gb']} GB free - download {dk['download_gb']} - pack {dk['pack_gb']} - reference pack "
+          f"{dk['ref_pack_gb']} - splice {dk['splice_gb']} - drafter {dk['drafter_gb']} = **{dk['free_after_gb']} GB** after "
+          f"(floor 100: {'OK' if dk['ok'] else 'FAILS - freeing space is Karl decision'})")
+        if it.get("drafter_fallback"):
+            df = it["drafter_fallback"]
+            w(f"- drafter fallback (no --mtp given): `{df['file']}` ({df['size'] / 1e9:.2f} GB, BF16; "
+              f"{'here, verified' if df['here_verified'] else 'to download: ' + df['download']}) -> `{df['rt']}`; the config "
+              f"carries --spec 7 --spec-min-p 0.5 --mtp to it and the drivers refuse until it exists. Steps: `{df['inspect']}`; "
+              f"`{df['convert']}`; then {df['check']}")
+        dl = it.get("download", {})
+        if dl.get("command"):
+            w(f"- download (plan, rc {dl['plan_rc']}): " + "; ".join(dl["plan"][-1:]))
+            w(f"  - `{dl['command']}`" + (f"  ({dl['note']})" if dl.get("note") else ""))
+        else:
+            w(f"- download: {dl.get('note')}")
+        pkk = it["pack"]
+        w(f"- pack ({'--compat-bf16' if pkk['compat_bf16'] else 'no --compat-bf16'}; ~{pkk['est_gb']} GB; "
+          f"{'exists' if pkk['exists'] else 'not made yet'}): `{pkk['command']}`")
+        for kind, d in (it.get("drivers") or {}).items():
+            w(f"- driver {kind}: `{d['path']}` (bash -n {d['bash_n']}; .ready file: {'PRESENT' if d['ready_file'] else 'none'})")
+        w(f"- params: `{it['params']}`; minutes {it['minutes']}")
+        w("")
+    return "\n".join(L) + "\n"
+
+
+# =====================================================================================================================
+# 8. commands
+# =====================================================================================================================
+def common_args(p):
+    p.add_argument("--repo", action="append", help="OWNER/NAME[@REV] (a branch or tag is resolved to its commit)")
+    p.add_argument("--listing", action="append", metavar="REPO=FILE", help="a saved tree listing for REPO (offline)")
+    p.add_argument("--local", action="append", help="shard 1 of a local model file (a candidate already on disk)")
+    p.add_argument("--headers", help="folder of saved headers (DIR/<repo path> + .size)")
+    p.add_argument("--offline", action="store_true", help="no network: listings from --listing, headers only as saved")
+    p.add_argument("--fetch-test", metavar="LABEL=DIR", help="exercise the header fetch on a local copy of LABEL's files")
+    p.add_argument("--name", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--dest-root", help="where downloads land: DIR/<quant>/ (default models/<repo name>)")
+    p.add_argument("--prefer", default="auto", choices=["auto", "ista", "unsloth", "any"])
+    p.add_argument("--tie-tol-gib", type=float, default=0.10)
+    p.add_argument("--tree", default=str(WS / "strata-r22p0210"), help="engine source tree for day1's type tables")
+    p.add_argument("--rel", help="the release's tree (its tools/iq_pack.py; patchtest TREE=); default --tree")
+    p.add_argument("--exe")
+    p.add_argument("--server")
+    p.add_argument("--mtp")
+    p.add_argument("--no-swap", action="store_true", help="never the same-model swap (a new model's stock config)")
+    p.add_argument("--kl-ref-gguf", help="shard 1 of the named local KL reference (a larger quant)")
+    p.add_argument("--kl-published", help="the publisher's KLD / top-1 for the pick (text, with its source)")
+    p.add_argument("--kl-data", default="auto", choices=["auto", "dump", "pfy"])
+    p.add_argument("--main-margin-mib", type=float, default=64)
+    p.add_argument("--ref-resident-margin-gib", type=float, default=5.0, help="R's --resident-budget-gib = RAM tier - this")
+    p.add_argument("--helper-rule", choices=["today-bytes", "today-count", "max"])
+    p.add_argument("--rate", type=float, default=0, help="a fixed download cap, MB/s (0 = none: Karl 11-05)")
+    p.add_argument("--window", default="measure", choices=["measure", "gap", "any"],
+                   help="measure (Karl 11-05): at once, paused only while a gap is open")
+    p.add_argument("--gap-match", action="append")
+    p.add_argument("--splice-gb", type=float, default=0)
+    p.add_argument("--pick-only", action="store_true")
+    p.add_argument("--no-drivers", action="store_true")
+
+
+def cmd_plan(a):
+    if a.rel is None:
+        a.rel = a.tree
+    return 0 if plan(a) else 1
+
+
+def cmd_execute(a):
+    P = json.loads(Path(a.plan).read_text())
+    cmds = []
+    for it in P.get("files", []):
+        if a.step == "download" and (it.get("download") or {}).get("command"):
+            cmds.append(it["download"]["unit"])
+        if a.step == "pack" and it.get("pack"):
+            cmds.append(it["pack"]["command"])
+        df = it.get("drafter_fallback")
+        if df and a.step == "download" and not df["here_verified"]:
+            cmds.append(df["download"])
+        if df and a.step == "drafter":
+            cmds += [df["inspect"], df["convert"]]
+    if a.step == "pack":
+        for pk in P.get("picks", []):
+            ref = (pk.get("kl_driver") or {}).get("reference")
+            if ref and ref.get("pack_command"):
+                cmds.append(ref["pack_command"])
+    for c in cmds:
+        print(c)
+    if not a.go:
+        print(f"# {len(cmds)} command(s) printed, nothing started (--go runs them; the download starts at once and pauses "
+              "only while a gap is open - Karl 11-05)")
+        return 0
+    for c in cmds:
+        rc = subprocess.run(c, shell=True).returncode
+        if rc != 0:
+            print(f"rc {rc}: {c}")
+            return rc
+    return 0
+
+
+def cmd_selftest(a):
+    fails = []
+    cal = served_calibration(str(WS / "strata-r22p0210"))
+    row = cal["rows"]["logged budget (3,526 x largest)"]
+    for what, got, want in (("uniform auto", row["uniform_auto"], F1["uniform_auto"]), ("sized auto", row["sized_auto"], F1["sized_auto"]),
+                            ("sized at pin 2500", row["sized_pin"], F1["sized_pin"])):
+        ok = got == want
+        print(f"{'ok  ' if ok else 'FAIL'} slot model, served file, {what}: {got:,} (F1 logged {want:,})")
+        fails += [] if ok else [what]
+    hb = cal["helper_today_bytes"] / GIB
+    ok = abs(hb - F1["helper_gib"]) < 1e-6
+    print(f"{'ok  ' if ok else 'FAIL'} slot model, the 4060 Ti's 3,300 = {hb:.9f} GiB (F1 6.206154823)")
+    fails += [] if ok else ["helper bytes"]
+    s = slot_model(cal["blobs"], cal["n_exp"], cal["pairs"], F1["uniform_auto"] * max(cal["blobs"].values()) + 1,
+                   cal["helper_today_bytes"], 0, None)
+    ok = s["helper"] == F1["helper"]
+    print(f"{'ok  ' if ok else 'FAIL'} slot model, helper count at today's bytes: {s['helper']:,} (3,300)")
+    fails += [] if ok else ["helper count"]
+    s2 = slot_model(cal["blobs"], cal["n_exp"], None, F1["uniform_auto"] * max(cal["blobs"].values()) + 1, 1 << 40, 0, None)
+    ok = s2["sized_auto"] == F1["uniform_auto"]
+    print(f"{'ok  ' if ok else 'FAIL'} slot model without a profile: uniform slots only ({s2['sized_auto']:,} = 3,526)")
+    fails += [] if ok else ["no profile"]
+    # the pick: a tie broken by --prefer, kept by any
+    pk = {"pick": "/x/A-UD-IQ3_XXS-00001-of-00004.gguf", "tie": ["/x/A-UD-IQ3_XXS-00001-of-00004.gguf", "/y/ISTA/B-IQ3_S-00001-of-00002.gguf"]}
+    co = {pk["tie"][0]: {"publisher": "unsloth"}, pk["tie"][1]: {"publisher": "ista"}}
+    for pr, want in (("ista", [pk["tie"][1]]), ("unsloth", [pk["tie"][0]]), ("any", pk["tie"])):
+        got, _ = apply_prefer(pk, co, pr, "")
+        ok = got == want
+        print(f"{'ok  ' if ok else 'FAIL'} --prefer {pr}: {[Path(x).name for x in got]}")
+        fails += [] if ok else [f"prefer {pr}"]
+    for path, want in (("UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf", ("model", "UD-IQ3_XXS")),
+                       ("MTP/mtp-Qwen3.8-Flash-Next-shared-BF16.gguf", ("mtp", "BF16")),
+                       ("Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf", ("model", "IQ3_S")),
+                       ("Q8_0/Qwen3.8-Flash-Next-Q8_0-00001-of-00006.gguf", ("model", "Q8_0")),
+                       ("UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00002-of-00004.gguf", ("model", "UD-Q4_K_XL")),
+                       ("mmproj-BF16.gguf", ("mmproj", "BF16")),
+                       ("engram/Qwen3.8-Flash-Next-engram-Q5_1.gguf_file", ("engram", "Q5_1")),
+                       ("imatrix_unsloth.gguf_file", ("imatrix", "imatrix_unsloth"))):
+        k, lab, _ = classify(path)
+        ok = (k, lab) == want
+        print(f"{'ok  ' if ok else 'FAIL'} classify {path}: {k} {lab}")
+        fails += [] if ok else [f"classify {path}"]
+    print(f"selftest: {len(fails)} failure(s)" + (f": {fails}" if fails else ""))
+    return 1 if fails else 0
+
+
+def lossless_mirror(cfg_path):
+    """bringup/patchtest.sh lossless_cfg's rule, mirrored read-only for the dry run (the drivers run the script itself)"""
+    c = json.loads(Path(cfg_path).read_text())
+    e, args, bad = c.get("env", {}), c.get("args", []), []
+    for k, v in {"STRATA_ROUTE_TAIL_SKIP": "0", "STRATA_ADAPT_ASYNC": "0"}.items():
+        if e.get(k) != v:
+            bad.append(f"{k}={e.get(k, 'unset')}")
+    if e.get("STRATA_PREFILL_CPU_SHARE") is None:
+        bad.append("STRATA_PREFILL_CPU_SHARE unset")
+    bad += [f"{k} unset" for k in ("STRATA_ROUTE_PRIOR", "STRATA_PROMPT_ATTN_IMMA", "STRATA_GR_V3", "STRATA_PREFILL_LAYER_MAJOR")
+            if k not in e]
+    if "STRATA_PLE_AUTO_RAM" not in e and "--ple-io" not in args:
+        bad.append("STRATA_PLE_AUTO_RAM unset and no --ple-io")
+    return ("PASS" if not bad else "FAIL " + ", ".join(bad))
+
+
+def dryrun_checks(out, tag):
+    """the non-GPU checks of a plan's pieces: cfgcheck / predl (the kit's, read-only, no gates file), the lossless rule
+    (mirror), bash -n (done at generation), no .ready file, the execute steps in print-only mode"""
+    P = json.loads((out / "plan.json").read_text())
+    L = []
+    for it in P.get("files", []):
+        if not it.get("config"):
+            continue
+        r = subprocess.run([str(PY), "-I", "-B", str(KIT / "q4_rules.py"), "cfgcheck", it["config"], it["params"]],
+                           capture_output=True, text=True)
+        L.append(f"cfgcheck {Path(it['config']).name}: rc {r.returncode}: {r.stdout.strip()[-260:]}")
+        L.append(f"lossless rule (mirror of patchtest.sh lossless_cfg) {Path(it['config']).name}: {lossless_mirror(it['config'])}")
+        prm = json.loads(Path(it["params"]).read_text())
+        for x in prm["dl"]["items"]:
+            r = subprocess.run([str(PY), "-I", "-B", str(KIT / "q4_rules.py"), "predl", x["dest"], x["tree"], "--paths",
+                                x["paths_csv"]], capture_output=True, text=True)
+            L.append(f"predl {Path(x['dest']).name}: rc {r.returncode}: {r.stdout.strip()[-200:]}")
+        for kind, d in (it.get("drivers") or {}).items():
+            L.append(f"driver {Path(d['path']).name}: bash -n {d['bash_n']}; .ready file "
+                     f"{'PRESENT' if Path(d['path'] + '.ready').exists() else 'none'}; sha {d['sha256']}")
+    for pk in P.get("picks", []):
+        k = pk.get("kl_driver")
+        if k:
+            L.append(f"driver {Path(k['path']).name}: bash -n {k['bash_n']}; .ready file "
+                     f"{'PRESENT' if Path(k['path'] + '.ready').exists() else 'none'}; sha {k['sha256']}")
+            ref = k.get("reference") or {}
+            if ref.get("config"):
+                r = subprocess.run([str(PY), "-I", "-B", str(KIT / "q4_rules.py"), "cfgcheck", ref["config"], k["params"],
+                                    "--quality-only"], capture_output=True, text=True)
+                L.append(f"cfgcheck --quality-only {Path(ref['config']).name}: rc {r.returncode}: {r.stdout.strip()[-220:]}")
+                L.append(f"lossless rule (mirror) {Path(ref['config']).name}: {lossless_mirror(ref['config'])}")
+            L.append(f"reference: {ref.get('label')}, {ref.get('experts_gib', 0):.2f} GiB of experts, larger than every candidate: "
+                     f"{ref.get('larger_than_every_candidate')}, same vocabulary: {ref.get('same_vocabulary')}, data {ref.get('data')}")
+    for step in ("download", "pack", "drafter"):
+        r = subprocess.run([str(PY), "-I", "-B", str(KIT / "dayone.py"), "execute", step, "--plan", str(out / "plan.json")],
+                           capture_output=True, text=True)
+        (out / f"execute-{step}.txt").write_text(r.stdout + r.stderr)
+        L.append(f"execute {step} (print only, no --go): rc {r.returncode}, {len([x for x in r.stdout.splitlines() if not x.startswith('#')])} "
+                 f"command(s) -> execute-{step}.txt")
+    (out / "CHECKS.txt").write_text("\n".join(L) + "\n")
+    return L
+
+
+def cmd_dryrun(a):
+    """the Flash-Next stand-in: the v3.1 listing (pinned d9620119) + its saved headers + our ISTA file; the KL
+    reference = the HF cache's UD-Q4_K_XL (as gap-ud31.sh); offline; three plans"""
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    v31 = KIT / "unsloth-v31"
+    common = ["--repo", "unsloth/Qwen3.8-Flash-Next-GGUF@d96201194f103c906994f283f504209dc8d2a10c",
+              "--listing", f"unsloth/Qwen3.8-Flash-Next-GGUF={v31 / 'dl/tree.json'}", "--headers", str(v31 / "headers"),
+              "--local", str(SERVED), "--dest-root", str(WS / "models/unsloth-v31"), "--offline",
+              "--kl-ref-gguf", ("/home/USER/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/"
+                                "38bb39ee97821de2c9009abb7e93950eec396e66/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf"),
+              "--rel", str(WS / "strata-r22p028x"), "--exe", str(WS / "engine-r22p028x/strata"),
+              "--server", str(WS / "strata-r22p028x/serve/server.py")]
+    runs = [("A-swap", ["--name", "fn31a", "--fetch-test", f"UD-IQ3_XXS={WS / 'models/unsloth-v31/UD-IQ3_XXS'}"]),
+            ("B-stock", ["--name", "fn31b", "--no-swap", "--prefer", "unsloth", "--kl-data", "pfy"])]
+    res = {}
+    for tag, extra in runs:
+        ap = argparse.ArgumentParser()
+        common_args(ap)
+        ns = ap.parse_args(common + extra + ["--out", str(out / tag)])
+        if ns.rel is None:
+            ns.rel = ns.tree
+        log(f"=== dry run {tag}: {' '.join(extra)}")
+        res[tag] = plan(ns)
+        for ln in dryrun_checks(out / tag, tag):
+            log(f"  {ln[:200]}")
+    pv = {}
+    for pr in ("auto", "ista", "unsloth", "any"):
+        ap = argparse.ArgumentParser()
+        common_args(ap)
+        ns = ap.parse_args(common + ["--name", "fn31p", "--prefer", pr, "--pick-only", "--out", str(out / "prefer" / pr)])
+        ns.rel = ns.rel or ns.tree
+        r = plan(ns)
+        pv[pr] = [{"final": [Path(f).name for f in pk["final"]], "note": pk["prefer_note"]} for pk in r["picks"]]
+    (out / "prefer" / "variants.json").write_text(json.dumps(pv, indent=1) + "\n")
+    # the provisional pick's download plan (header not read offline): the disk floor with a ~111 GB quant
+    tree = out / "A-swap" / "listing" / "unsloth--Qwen3.8-Flash-Next-GGUF@d96201194f10.json"
+    paths = [e["path"] for e in json.loads(tree.read_text()) if e.get("type") == "file" and e["path"].startswith("UD-Q4_K_XL/")]
+    r = subprocess.run([str(PY), "-I", "-B", str(KIT / "gentle_dl.py"), "--tree", str(tree), "--repo",
+                        "unsloth/Qwen3.8-Flash-Next-GGUF", "--commit", "d96201194f103c906994f283f504209dc8d2a10c", "--dest",
+                        str(WS / "models/unsloth-v31/UD-Q4_K_XL"), "--plan"] + paths, capture_output=True, text=True)
+    (out / "provisional-UD-Q4_K_XL-download-plan.txt").write_text(f"rc {r.returncode}\n" + r.stdout + r.stderr)
+    log(f"provisional UD-Q4_K_XL download plan: rc {r.returncode}: {r.stdout.strip().splitlines()[-2][:220] if r.stdout.strip() else r.stderr[-200:]}")
+    log(f"dry run: {out}")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+    common_args(sp.add_parser("plan"))
+    e = sp.add_parser("execute")
+    e.add_argument("step", choices=["download", "pack", "drafter"])
+    e.add_argument("--plan", required=True)
+    e.add_argument("--go", action="store_true")
+    sp.add_parser("dryrun").add_argument("--out", default=str(WS / "results/qwen4-kit/dayone-dryrun"))
+    sp.add_parser("selftest")
+    a = ap.parse_args()
+    return {"plan": cmd_plan, "execute": cmd_execute, "dryrun": cmd_dryrun, "selftest": cmd_selftest}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

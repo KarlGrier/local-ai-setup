@@ -1,0 +1,25 @@
+[
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o01",
+   "o02",
+   "o03"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p4s9",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims",
+   "fix:steps"
+  ],
+  "open_min": 171,
+  "checkable_min": 47
+ }
+]

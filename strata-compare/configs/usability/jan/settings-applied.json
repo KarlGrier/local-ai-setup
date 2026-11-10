@@ -1,0 +1,106 @@
+{
+ "model-provider": {
+  "added": {
+   "active": true,
+   "provider": "Strata",
+   "base_url": "http://127.0.0.1:8080/v1",
+   "models": [
+    {
+     "id": "strata-qwen3.8-flash-next-iq3s",
+     "name": "Qwen3.8 Flash (Strata C*18, IQ3_S)",
+     "capabilities": [
+      "completion",
+      "tools"
+     ]
+    }
+   ],
+   "settings": [
+    {
+     "key": "api-key",
+     "title": "API Key",
+     "description": "Strata on 127.0.0.1 needs no key.",
+     "controller_type": "input",
+     "controller_props": {
+      "placeholder": "Insert API Key",
+      "value": "",
+      "type": "password",
+      "input_actions": [
+       "unobscure",
+       "copy"
+      ]
+     }
+    },
+    {
+     "key": "base-url",
+     "title": "Base URL",
+     "description": "The base OpenAI-compatible endpoint.",
+     "controller_type": "input",
+     "controller_props": {
+      "placeholder": "http://127.0.0.1:8080/v1",
+      "value": "http://127.0.0.1:8080/v1"
+     }
+    }
+   ]
+  },
+  "deactivated": [
+   "openai",
+   "azure",
+   "anthropic",
+   "openrouter",
+   "mistral",
+   "groq",
+   "xai",
+   "gemini",
+   "minimax",
+   "huggingface",
+   "nvidia"
+  ],
+  "selected": [
+   "Strata",
+   "strata-qwen3.8-flash-next-iq3s"
+  ]
+ },
+ "setting-general": {
+  "autoUpdateCheck": false
+ },
+ "setting-appearance": {
+  "autoGenerateTitle": false
+ },
+ "productAnalyticPrompt": {
+  "productAnalyticPrompt": false
+ },
+ "productAnalytic": {
+  "productAnalytic": false
+ },
+ "setting-web-search": {
+  "webSearchEnabled": true,
+  "searchProvider": "searxng",
+  "endpoints": {
+   "searxng": "http://127.0.0.1:8888"
+  }
+ },
+ "assistant jan": {
+  "parameters": {
+   "temperature": 1.0,
+   "top_p": 0.95,
+   "top_k": 20,
+   "min_p": 0.05,
+   "reasoning_effort": "medium",
+   "max_context_tokens": 100000,
+   "auto_compact": true
+  }
+ },
+ "assistant deep-think": {
+  "created": "2026-10-17",
+  "name": "Deep think",
+  "parameters": {
+   "temperature": 1.0,
+   "top_p": 0.95,
+   "top_k": 20,
+   "min_p": 0.05,
+   "reasoning_effort": "xhigh",
+   "max_context_tokens": 100000,
+   "auto_compact": true
+  }
+ }
+}

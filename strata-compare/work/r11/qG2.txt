@@ -1,0 +1,15 @@
+cp engine-cstar13/SHA256 tmp/r11/c13-measured.sha256; cat tmp/r11/c13-measured.sha256
+work/r11/build-cstar13.sh v39-final
+echo "measured: $(cut -c1-64 tmp/r11/c13-measured.sha256)"; echo "rebuilt:  $(cut -c1-64 engine-cstar13/SHA256)"; [ "$(cut -c1-64 tmp/r11/c13-measured.sha256)" = "$(cut -c1-64 engine-cstar13/SHA256)" ] && echo "ENGINE IDENTICAL" || echo "ENGINE DIFFERS"
+.venv/bin/python work/r11/buildrec.py Cstar13 configs/Cstar13.json "C*13 final: v0.1.39 + patches/r11c39 (38 patches, + the #567 test-name fix; clean clone)"
+work/r11/servertests.sh /home/USER/ai-speed-testing/strata-compare/strata-cstar13; cd strata-cstar13 && ../.venv/bin/python -m unittest tools.test_strata_tokenizer 2>&1 | tail -3
+work/r11/tagcheck.sh "Phase G soak start"; work/r11/basecheck.sh
+STRATA_CONFIG=configs/Cstar13.json work/r11/soak13.sh 120
+work/r11/soakdec.sh SDEC13 configs/Cstar13.json
+.venv/bin/python work/r11/ab_table.py fresh=GD-13a,GD-13b soaked=SDEC13 | tee results/r11/ab-G-soaked-vs-fresh.md
+STRATA_PORT=8080 ./run-strata.sh stop
+echo "=== $(date -Is) MARK qG2"
+work/r11/hold.sh G3
+work/r11/promote-c13.sh 2>&1 | tee logs/r11/promote-c13.log
+work/r11/phase_end.sh pG keep
+echo "=== $(date -Is) MARK qG3"

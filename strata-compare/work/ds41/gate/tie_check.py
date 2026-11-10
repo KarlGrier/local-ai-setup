@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""tie_check.py OUTDIR - 11-04 (Karl, on the second gate's greedy result: C1f / C2f differ from C0f on G-P4K0 from char
+126; "If it's a near-tie within rounding, C isn't disqualified: run its speed arms in a later DeepSeek gap with our normal
+sampling settings ... Only if C beats A's decode beyond the noise: build the sampled distribution harness, and propose a
+1017-matched small drafter"). Inside an open gap only (gate.sh csample, step TIE). The greedy runs kept only text, no
+log-probabilities, so this measures them, on C's frozen placement exactly as C0f / C1f ran (the gate-1104-0725 configs,
+the drafter loaded; work/ds41/gate/cliarm.sh keeps the config's args, unlike scorearm.sh):
+  1 G-P4K0's prompt ids rendered with the server's own code (serve/frontend.ChatTemplate, serve/dsml.pick_template, the
+    pack's tokenizer with its "deepseek3" pre-tokenizer; thinking off as greedy_client.py sent it; server.py's
+    render_prompt rule) - accepted only if its length is the 4,115 tokens C0f's engine logged
+  2 C0f's path on the command line (cfg-C0f: --dspark off, frozen): a 512-token greedy decode; its text must equal C0f's
+    served text (results/ds41/gate-1104-0725/C0f greedy.jsonl) - else the reproduction failed (exit 2)
+  3 C1f's path the same way (cfg-C1f: DSpark, 1 draft a round): the first token where it leaves C0f's ids (j); the
+    served texts say char 126 ("... Version 2.0 text" vs "... Version 2.0 terms")
+  4 teacher-forced scoring of the prompt + C0f's ids up to j + 2 on cfg-C0f (DS4_SCORE_PREFIX = the prompt: read as one
+    chunked prompt, as served): --window 1 (each position computed alone, as C0f's decode did: its top-1 must equal
+    C0f's token at every position) and --window 2 at both alignments (2-row windows, as C1f's verify rounds compute a
+    draft and its check together): the top-64 log-probabilities at every generated position up to j
+The rule (written to OUTDIR/rule.txt before any engine run): the divergence is "a near-tie within rounding" when, in
+C0f's own numbers (the window-1 scoring), the log-probability gap between C0f's token and C1f's token at position j is
+<= the largest such gap among the positions where A's own placement variants flipped the top-1 in the KL harness - Aa
+(2 % fewer VRAM experts) and Ab (warmed by a W1 decode) against A, 69 flips: A's log-probability of its top-1 minus its
+log-probability of the variant's top-1, largest 4.331 nats (Aa, segment t3o1, position 12211; its KL 0.49; median of
+the 69: 0.20, p90 0.59). The largest because Karl's noise-band rule for B takes the largest pair too: a gap that
+rounding-level placement changes of A did overturn is one rounding can overturn. The number is recomputed here from the
+stored scores before any run. Reported with it: the gap at every earlier generated position, and whether a 2-row window
+flips position j to C1f's token. -> OUTDIR/rule.txt, tie.json, tie.md. Exit 0 within rounding, 1 not, 2 could not run or
+reproduce, 3 kernel error.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+SC = "/home/USER/ai-speed-testing/strata-compare"
+G = f"{SC}/work/ds41/gate"
+G1 = f"{SC}/results/ds41/gate-1103-1354"
+G2 = f"{SC}/results/ds41/gate-1104-0725"
+TP = f"{SC}/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw-lucebox-q2k/tokenizer"
+PROMPT_TOKENS = 4115
+sys.path.insert(0, f"{SC}/strata-v026")
+sys.path.insert(0, f"{SC}/strata-v026/tools")
+sys.path.insert(0, f"{SC}/strata-v024/tools")
+sys.path.insert(0, "/home/USER/ai-speed-testing/basalt-ab/scripts")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # 11-05: greedy_client etc. (python -I drops the script dir)
+
+
+def threshold():
+    import quant_quality as qq
+    A = qq.read_run(f"{G1}/kl/base/score.tsv")
+    m = []
+    for v in ("Aa", "Ab"):
+        V = qq.read_run(f"{G2}/kl-noise/{v}/score.tsv")
+        for name, rr in A.items():
+            for q in sorted(set(rr) & set(V.get(name, {}))):
+                ta, _, topa, ka = rr[q]
+                _, _, topv, _ = V[name][q]
+                if topa != topv:
+                    da = dict(ka)
+                    m.append((da[topa] - da.get(topv, min(x for _, x in ka)), v, name, q))
+    m.sort()
+    return m[-1], len(m), m[len(m) // 2][0], m[int(0.9 * (len(m) - 1))][0]
+
+
+def tokenizer():
+    import strata_tokenizer as ST
+    vocab = json.load(open(f"{TP}/vocab.json", encoding="utf-8"))
+    toks = [None] * len(vocab)
+    for t, i in vocab.items():
+        toks[i] = t
+    tc = json.load(open(f"{TP}/tokenizer.json", encoding="utf-8"))
+    return ST.Tokenizer(toks, open(f"{TP}/merges.txt", encoding="utf-8").read().split("\n"),
+                        json.load(open(f"{TP}/token_type.json")), tc.get("pre") or "qwen35", tc.get("special_ids") or None)
+
+
+def render(tok):
+    """G-P4K0's ids as the server built them (render_prompt with and without its effort_end split; thinking off)"""
+    from pathlib import Path
+    from serve import dsml
+    from serve.frontend import ChatTemplate
+    import greedy_client as GC
+    msgs = next(p for p in GC.prompts() if p["id"] == "G-P4K0")["messages"]
+    tpl = ChatTemplate(dsml.pick_template(Path(TP) / "chat_template.jinja")[0])
+    kw = {"enable_thinking": False}
+    full = tpl.render(msgs, tools=None, **kw)
+    base = {k: v for k, v in kw.items() if k not in ("reasoning_effort", "enable_thinking")}
+    hist = tpl.render(msgs, tools=None, add_generation_prompt=False, **base)
+    mine = tpl.render(msgs, tools=None, add_generation_prompt=False, **kw)
+    cands = [full] + ([hist + full[len(mine):]] if full.startswith(mine) else [])
+    for c in cands:
+        ids = tok.encode(c, parse_special=True)
+        if len(ids) == PROMPT_TOKENS:
+            return ids
+    raise SystemExit(f"could not reproduce G-P4K0's prompt: {[len(tok.encode(c, parse_special=True)) for c in cands]} tokens, "
+                     f"the server's {PROMPT_TOKENS}")
+
+
+def served_text(arm):
+    for l in open(f"{os.path.realpath(f'{G2}/{arm}')}/greedy.jsonl"):
+        r = json.loads(l)
+        if r["id"] == "G-P4K0":
+            return r["text"]
+    raise SystemExit(f"no G-P4K0 in {arm}")
+
+
+def run(o, name, cfg, *args, env=()):
+    """one cliarm.sh run; the profile the config names gets the gate's snapshot first (a CLI decode writes it back)"""
+    c = json.load(open(cfg))
+    shutil.copy(f"{G2}/profile-snapshot.bin", c["args"][c["args"].index("--expert-profile") + 1])
+    d = f"{o}/{name}"
+    rc = subprocess.run(["bash", f"{G}/cliarm.sh", d, cfg, *env, "--", *args]).returncode
+    if rc == 3:
+        print(f"KERNEL ERROR in {name}"); sys.exit(3)
+    if rc != 0:
+        why = open(f"{d}/GUARD").read().strip() if os.path.exists(f"{d}/GUARD") else \
+            (open(f"{d}/engine.out", errors="replace").read().strip().splitlines() or [""])[-1][:300]
+        print(f"{name} failed (rc {rc}): {why}"); sys.exit(2)
+    return d
+
+
+def gen_ids(d):
+    lines = [l for l in open(f"{d}/engine.stdout").read().splitlines() if l.strip().endswith(",")]
+    return [int(x) for x in lines[-1].strip().strip(",").split(",")] if lines else []
+
+
+def main():
+    o = sys.argv[1]
+    if os.environ.get("GATE_IN_GAP") != "1":   # 11-05: run only by gate.sh inside ITS gap - an open gap of another driver
+        print("tie_check.py: run only by gate.sh csample inside its own gap (GATE_IN_GAP=1) - nothing runs"); return 2
+    lp = f"{SC}/tmp/port-gap.lockpid"
+    if not (os.path.exists(lp) and os.path.getsize(lp) > 0):
+        print("tie_check.py: no gap is open - nothing runs"); return 2
+    os.makedirs(o, exist_ok=True)
+    (mx, v, seg, pos), nflip, med, p90 = threshold()
+    rule = [f"tie_check.py rule, written before any engine run", "",
+            f"near-tie within rounding iff, in C0f's window-1 scoring, logprob(C0f's token) - logprob(C1f's token) at the first "
+            f"divergent position <= {p90:.4f} nats: the 90th percentile of the A-side gaps of the {nflip} top-1 flips of A's "
+            f"placement variants Aa / Ab in the KL harness (Karl 11-04: 'C's threshold: 0.59 nats (the 90th percentile), with "
+            f"the verdict also reported under the maximum (4.33)'; median {med:.3f}, max {mx:.4f} at {v}, {seg}, position {pos}). "
+            "The verdict that decides is the p90 one; the max one is reported beside it"]
+    open(f"{o}/rule.txt", "w").write("\n".join(rule) + "\n")
+    print("\n".join(rule), flush=True)
+    tok = tokenizer()
+    pids = render(tok)
+    open(f"{o}/prompt.ids", "w").write(",".join(map(str, pids)))
+    c0, c1 = f"{G2}/cfg-C0f.json", f"{G2}/cfg-C1f.json"
+    joined = ",".join(map(str, pids))
+    d0 = run(o, "decode-C0f", c0, "--ids", joined, "--n", "512")
+    d1 = run(o, "decode-C1f", c1, "--ids", joined, "--n", "512")
+    i0, i1 = gen_ids(d0), gen_ids(d1)
+    t0, t0s, t1s = tok.decode(i0), served_text("C0f"), served_text("C1f")
+    repro = t0 == t0s or t0.startswith(t0s) or t0s.startswith(t0)
+    if not repro:
+        k = next((x for x in range(min(len(t0), len(t0s))) if t0[x] != t0s[x]), None)
+        print(f"C0f's path not reproduced on the command line (texts differ at char {k}) - no verdict"); return 2
+    j = next((x for x in range(min(len(i0), len(i1))) if i0[x] != i1[x]), None)
+    c = next((x for x in range(min(len(t0s), len(t1s))) if t0s[x] != t1s[x]), None)
+    if j is None:
+        print("C1f's command-line path does not leave C0f's within 512 tokens (the served one did at char "
+              f"{c}) - reported, no verdict"); return 2
+    alt = i1[j]
+    seg = {"version": "tie", "segments": [{"name": "p4k0", "ids": pids + i0[:j + 2]}]}
+    json.dump(seg, open(f"{o}/tie.ids.json", "w"))
+    P = len(pids)
+    runs = {}
+    for name, w, pre in (("w1", 1, P), ("w2a", 2, P), ("w2b", 2, P + 1)):
+        d = run(o, f"score-{name}", c0, "--score", f"{o}/tie.ids.json", "--score-out", f"{o}/score-{name}.tsv",
+                "--window", str(w), env=(f"DS4_SCORE_PREFIX={pre}",))
+        import quant_quality as qq
+        runs[name] = qq.read_run(f"{o}/score-{name}.tsv").get("p4k0", {})
+    p = P + j - 1                         # the row that predicts generated token j
+    rows, ok_path = [], True
+    for g in range(1, j + 1):             # (generated token 0 is predicted inside the prompt read: not scored)
+        r = runs["w1"].get(P + g - 1)
+        if not r:
+            continue
+        tgt, lt, top, kk = r
+        two = sorted(kk, key=lambda x: -x[1])[:2]
+        rows.append({"gen": g, "target": tgt, "top1": top, "top2": two, "gap": two[0][1] - two[1][1]})
+        if g < j and top != tgt:
+            ok_path = False
+    def at(name):
+        r = runs[name].get(p)
+        if not r:
+            return None
+        tgt, lt, top, kk = r
+        d = dict(kk)
+        fl = min(x for _, x in kk)
+        return {"top1": top, "lp_c0f_token": d.get(i0[j], fl), "lp_c1f_token": d.get(alt, fl),
+                "gap_c0f_minus_c1f": d.get(i0[j], fl) - d.get(alt, fl), "top5": sorted(kk, key=lambda x: -x[1])[:5]}
+    res = {n: at(n) for n in runs}
+    g0 = (res["w1"] or {}).get("gap_c0f_minus_c1f")
+    within = g0 is not None and g0 <= p90            # Karl 11-04: the deciding threshold is the p90 (0.59 nats)
+    within_max = g0 is not None and g0 <= mx         # reported beside it: the maximum (4.33 nats)
+    out = {"rule_gap": p90, "rule_max_gap": mx, "within_rounding_under_max": within_max, "prompt_tokens": P, "j": j, "char": c, "c0f_token": i0[j], "c1f_token": alt,
+           "c0f_token_text": tok.decode([i0[j]]), "c1f_token_text": tok.decode([alt]), "at_j": res,
+           "window1_reproduces_c0f_path": ok_path and (res["w1"] or {}).get("top1") == i0[j], "positions": rows,
+           "within_rounding": within, "times": {n: open(f"{o}/{d}/run.txt").read().strip()
+                                               for n, d in (("decode-C0f", "decode-C0f"), ("decode-C1f", "decode-C1f"),
+                                                            ("w1", "score-w1"), ("w2a", "score-w2a"), ("w2b", "score-w2b"))}}
+    json.dump(out, open(f"{o}/tie.json", "w"), indent=1)
+    L = ["# C's greedy divergence on G-P4K0: a near-tie within rounding?", "",
+         f"Verdict: **{'within rounding - C is not disqualified (its speed arms run under sampling)' if within else 'NOT within rounding - C stays out'}**", "",
+         f"- first divergent generated token j = {j} (served texts: char {c}): C0f {out['c0f_token_text']!r} vs C1f {out['c1f_token_text']!r}",
+         f"- rule: gap <= {p90:.4f} nats, the p90 (rule.txt; Karl 11-04); C0f's own gap (window 1): {g0}",
+         f"- under the maximum ({mx:.4f} nats, reported only): {'within' if within_max else 'NOT within'}",
+         f"- window 1 reproduces C0f's path at every position before j: {out['window1_reproduces_c0f_path']}"]
+    for n, r in res.items():
+        if r:
+            L.append(f"- {n}: top-1 {tok.decode([r['top1']])!r}; logprob C0f's token {r['lp_c0f_token']:.4f}, C1f's "
+                     f"{r['lp_c1f_token']:.4f}, gap {r['gap_c0f_minus_c1f']:.4f}; top-5 "
+                     + ", ".join(f"{tok.decode([i])!r} {x:.3f}" for i, x in r["top5"]))
+    L += ["", "| generated token | target | top-1 = target | top-2 gap (nats) |", "|---|---|---|---|"]
+    L += [f"| {r['gen']} | {tok.decode([r['target']])!r} | {r['top1'] == r['target']} | {r['gap']:.4f} |" for r in rows]
+    open(f"{o}/tie.md", "w").write("\n".join(L) + "\n")
+    print("\n".join(L), flush=True)
+    return 0 if within else 1
+
+
+if __name__ == "__main__":
+    # 11-05: any crash exits 2 ("could not run"), never 1 - the 11-05 run crashed on an import and its exit 1 was read
+    # as "not within rounding"
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException:
+        import traceback
+        traceback.print_exc()
+        sys.exit(2)

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=DS Harness
+Comment=Open DS Harness in your browser (both local models). It runs in the background and keeps running across model switches.
+Exec=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/ds-harness open
+Icon=applications-internet
+Terminal=false
+Categories=Utility;

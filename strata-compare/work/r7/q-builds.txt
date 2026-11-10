@@ -1,0 +1,4 @@
+work/r7/build-r7c.sh strata-r7 engine-r7c
+work/r7/build-r7c.sh strata-r7m engine-r7m
+work/r7/build-r7c.sh strata-r7o engine-r7o
+BDIR=build-trace CMAKE_EXTRA="-DCMAKE_CXX_FLAGS=-DSTRATA_NVTX" work/r7/build-r7c.sh strata-r7o engine-r7o-trace

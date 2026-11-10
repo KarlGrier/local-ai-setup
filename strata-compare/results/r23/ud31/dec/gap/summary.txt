@@ -1,0 +1,63 @@
+=== 2026-11-06 08:47:21 v3.1 FOLLOW-UP (work/r23/gap-ud31-dec.sh): U's decode-path teacher-forced score with STRATA_HC_Q8=1 against the decode-path gap's P rows, judged at the text level (Karl 11-05) - measurements only, P028x stays served, nothing switches
+=== 2026-11-06 08:47:21   gate pre PASS PASS the v3.1 decision asks for it (WANTED); the decode-path gap's dec arm: 8 texts (pp4k 4096, rep9k 9010, ldrsyn20k 16110, 32k 32768, tf-long64k 32768, tf-long28k 28672, tf-long112k 32768, tf-long40k 32768), L 32768; U's config, pack and shards as the v3.1 gap used them
+=== 2026-11-06 08:47:21 => U DECODE-PATH FOLLOW-UP: WANTED (U's KL verdict INSIDE THE MARGIN, ABOVE P: inside the margin (ABOVE P by the pooled mean KL); work/r23/gap-ud31-dec.sh scores U's decode path with STRATA_HC_Q8=1 against the decode-path gap's P rows -> results/r23/ud31/dec/decision.txt decides)
+2026-11-06 08:47:21 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 2964979 (engine 2965010)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-06 09:48:20 port_gap4: gap open: test lock held (pid 3041266), 8080 stopped
+=== 2026-11-06 09:48:20 8080 down: engines left: none, MemAvailable 86 GB
+=== 2026-11-06 09:48:20 2 arm U: the decode path with STRATA_HC_Q8=1 (ud31-U.json, logpos, the decode-path gap's dec texts and cuts), budget 52 min (70 min to the deadline)
+engine pid 3041641: 29 env keys, STRATA_ROUTE_TAIL_SKIP=0 -> ENV OK
+ENV CHECK OK: 1 start(s), 29 env keys as configured (+ the yardstick's fixed env), logpos hooks, the runner's args
+  U: plan ud31dec (the decode-path gap's dec reads, /home/USER/ai-speed-testing/strata-compare/results/r23/decpath/gap/dec): pp4k.tokens 4096, rep9k.tokens 9010, ldrsyn20k.tokens 16110, 32k.tokens 32768, tf-long64k.prompt 32768, tf-long28k.prompt 28672, t
+  U: pp4k-4096: 4096 tokens in 57 s (71.7 tok/s); model scale 0.80
+  U: rep9k-9010: 9010 tokens in 125 s (72.3 tok/s); model scale 0.77
+  U: ldrsyn20k-16110: 16110 tokens in 238 s (67.8 tok/s); model scale 0.78
+  U: 32k-32768: 32768 tokens in 489 s (67.0 tok/s); model scale 0.74
+  U: tf-long64k-32768: 32768 tokens in 479 s (68.4 tok/s); model scale 0.72
+  U: tf-long28k-28672: 28672 tokens in 436 s (65.7 tok/s); model scale 0.73
+  U: tf-long112k-32768: 32768 tokens in 482 s (68.0 tok/s); model scale 0.72
+  U: tf-long40k-32768: 32768 tokens in 488 s (67.2 tok/s); model scale 0.72
+  U: 8 texts read (188960 tokens) in 2805 s; skipped 0
+=== 2026-11-06 10:35:06   gate run_decU PASS rc 0: 8 texts read (188960 tokens) in 2805 s; skipped 0
+DEC ARGS OK: U's engine args = the decode-path gap's dec arm's, except U's three paths
+HCQ8 OK: ud31-U.json (on): 1 engine start(s) with 'STRATA_HC_Q8=1: 0.63 GiB of Q8_0 hyper-connection projections'; the GGUF's own Q8_0 hc: 194 tensors, 675,430,400 B = 0.63 GiB, 192 of 192 layer down/up rows Q8_0 in the file
+=== 2026-11-06 10:35:06 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-06 10:35:11 port_gap4: memory back: MemAvailable 87 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-06 10:35:29 port_gap4: WARNING: 958 MB swapped out while P028x started
+2026-11-06 10:35:29 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-06 10:35:29 v3.1 follow-up gap: 47 min with 8080 down
+=== 2026-11-06 10:35:29 after the gap (CPU, nice 19): dec-compare, dec-decide
+  22597 positions in 8 texts; target mismatches P 0, U 0; pooled d_dec +0.0207 (whole-text se 0.2398); rounding cost at 22597 positions
+Unsloth v3.1 U on the decode path (the v3.1 gap's follow-up) - decision (2026-11-06 10:38:23; rules work/r23/ud31_rules.py, THE DECODE-PATH FOLLOW-UP (Karl's rule, 11-05), sha 6c68d8b69d6c)
+WHY: the v3.1 gap (/home/USER/ai-speed-testing/strata-compare/results/r23/ud31/decision.txt, 2026-11-06 08:46:37): U's KL rules vs P (text level, against R, prompt path) INSIDE THE MARGIN, ABOVE P -> RECORDED AS INCLUDES PACK ROUNDING (inside the margin (ABOVE P by the pooled mean KL)). Karl 11-05: before deciding, U's decode-path teacher-forced score with STRATA_HC_Q8=1.
+DECODE PATH: engine-r22p028x, 2-row verify windows, STRATA_LOGPOS top 64 (decpath_rules.py run, with the decode-path gap's dec texts, cuts and length); U = results/r23/ud31/configs/ud31-U.json (STRATA_HC_Q8=1: the verify read takes the file's own Q8_0 hyper-connections, the final mixer included); P = the decode-path gap's dec rows (configs/x28h.json as served, the switch off: its BF16 hyper-connections are the file's own)
+  env_decU PASS 1 start(s), 29 env keys as configured (+ the yardstick's fixed env), logpos hooks, the runner's args [decpath 11-06 10:35]
+  run_decU PASS rc 0: 8 texts read (188960 tokens) in 2805 s; skipped 0 [ud31dec 11-06 10:35]
+  dec_args PASS U's engine args = the decode-path gap's dec arm's, except U's three paths [ud31 11-06 10:35]
+  hcq8_dec_U PASS ud31-U.json (on): 1 engine start(s) with 'STRATA_HC_Q8=1: 0.63 GiB of Q8_0 hyper-connection projections'; the GGUF's own Q8_0 hc: 194 tensors, 675,430,400 B = 0.63 GiB, 1
+  compare PASS result.json: 22597 positions, 8 texts [ud31 11-06 10:38]
+positions: 22597 (every 8th from 1,024; targets checked on both) in the 8 texts both U and P have: pp4k, rep9k, ldrsyn20k, 32k, tf-long64k, tf-long28k, tf-long112k, tf-long40k
+NO PACK-ROUNDING CAVEAT on this verdict: on the decode path U reads its file's Q8_0 hyper-connections and P its file's BF16. pack-u's injects: 96 inject F32->BF16 exact -> unrounded. Left: the hc read kernel (upstream's Q8_0 read vs our fork's: a summation order).
+rule (Karl 11-05, written before any run): per text, U's decode-path text NLL vs P's on the same positions - lower / higher (a tie, |d_t| < 1e-06, counts as neither); U lower in >= 6 and higher in <= 1 of the 8 texts: BETTER THAN P; the mirror image: WORSE THAN P; anything else: INCONCLUSIVE
+  pp4k           384 positions: NLL U 2.7801 P 2.3621, d_t +0.4180 -> higher | top-1 agree 74.5 % | KL(P || U) top-64 0.4800
+  rep9k          999 positions: NLL U 7.4503 P 11.4007, d_t -3.9504 -> lower | top-1 agree 99.9 % | KL(P || U) top-64 0.0017
+  ldrsyn20k     1886 positions: NLL U 4.8876 P 4.9034, d_t -0.0159 -> lower | top-1 agree 72.0 % | KL(P || U) top-64 0.6388
+  32k           3968 positions: NLL U 3.3479 P 2.8329, d_t +0.5150 -> higher | top-1 agree 71.6 % | KL(P || U) top-64 0.8207
+  tf-long64k    3968 positions: NLL U 4.4698 P 3.9354, d_t +0.5344 -> higher | top-1 agree 77.0 % | KL(P || U) top-64 0.5861
+  tf-long28k    3456 positions: NLL U 2.2069 P 2.1453, d_t +0.0616 -> higher | top-1 agree 79.7 % | KL(P || U) top-64 0.5309
+  tf-long112k   3968 positions: NLL U 3.0045 P 3.1183, d_t -0.1137 -> lower | top-1 agree 79.0 % | KL(P || U) top-64 0.3933
+  tf-long40k    3968 positions: NLL U 4.1770 P 4.0866, d_t +0.0904 -> higher | top-1 agree 82.1 % | KL(P || U) top-64 0.5194
+  pooled (INFO): d_dec +0.0207: whole-text bootstrap se 0.2398 CI [-0.5874, +0.3489] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.1014 CI [-0.1922, +0.2104], 93 blocks]; top-1 agree 78.3 %; KL(P || U) top-64 0.5500
+  [1-4K] INFO 3072 positions, 8 texts: d_dec -0.3373 [2,048-token blocks - not used for the verdict: se 0.3795 CI [-1.1668, +0.2789]] | top-1 agree 78.6 % | KL(P || U) 0.4762
+  [4-16K] INFO 9797 positions, 7 texts: d_dec +0.0435 [2,048-token blocks - not used for the verdict: se 0.1859 CI [-0.3423, +0.3882]] | top-1 agree 77.4 % | KL(P || U) 0.6088
+  [16-32K] INFO 9728 positions, 5 texts: d_dec +0.1108 [2,048-token blocks - not used for the verdict: se 0.0590 CI [-0.0023, +0.2291]] | top-1 agree 79.0 % | KL(P || U) 0.5142
+=> U vs P, text NLL on the decode path: INCONCLUSIVE (lower in 3, higher in 5 of 8 texts) - if the file choice hinges on it, Karl decides on a separate R decode-path gap
+INFO ONLY - the rounding cost per text, (U decode - U prompt) - (P decode - P prompt) text NLL at the 22597 positions all four have (U decode: this gap's U rows; U prompt: the v3.1 gap's U many-positions rows, rows.tsv nll_U; P decode: the decode-path gap's dec rows; P prompt: the NLL gap's ref rows = x28h, rows.tsv nll_ref). P's HC weights are native BF16 on both paths, so this isolates what the BF16 rounding costs U, plus path noise. Negative = U's prompt path is worse, relative to its decode path, than P's:
+  per text: pp4k:+0.1829(+) rep9k:-0.9483(-) ldrsyn20k:-0.0112(-) 32k:+0.4666(+) tf-long64k:+0.1495(+) tf-long28k:-0.0548(-) tf-long112k:+0.1648(+) tf-long40k:-0.0029(-); signs - 4, + 4 of 8
+  pooled rounding cost +0.0885: whole-text bootstrap se 0.0911 CI [-0.1079, +0.2490] (8 texts); [2,048-token blocks - not used for the verdict; understates: se 0.0404 CI [+0.0103, +0.1676], 93 blocks]
+  cross-check: the v3.1 gap's own P rows vs the NLL gap's ref rows at 22597 positions: max |difference| 0.000000 (same build and rows: 0 expected)
+NOTHING SWITCHES: P028x stays served; any use of v3.1 is Karl's call.
+=== 2026-11-06 10:38:23 v3.1 follow-up done

@@ -1,0 +1,40 @@
+work/r11/tagcheck.sh "Phase A start"; work/r11/basecheck.sh
+BDIR=build work/r11/build.sh strata-r11a650 engine-r11a650 && .venv/bin/python work/r11/buildrec.py A650 configs/A650.json "A.1 #650: r11-base + b1183d4 (the arena 2 MiB-aligned + MADV_HUGEPAGE; STRATA_NO_LARGEPAGES=1 = 4 KB pages)"
+.venv/bin/python work/r11/buildrec.py R11A2 configs/R11A2.json "A.2: r11-base + 6940855 6f77911 7360ea7 7aea44a (STRATA_ROUTER_Q8K: the doorbell writes the pool's Q8_K rows, bitwise ggml)"
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r11/exact7.sh a1g configs/R11-G.json
+[ -x engine-r11a650/strata ] && work/r11/exact7.sh a650 configs/A650.json; grep -h 'expert arena' logs/r11/prof/a650-x-math.err | tail -1
+work/r11/exact7.sh a2on configs/R11A2.json; grep -h 'STRATA_ROUTER_Q8K' logs/r11/prof/a2on-x-math.err | tail -1
+work/r11/exact7.sh a2off configs/R11A2-off.json
+work/r11/hold.sh A1ab
+work/r11/ldrscreen.sh A1g-C1 configs/R11-C121.json
+work/r11/ldrscreen.sh A1g-G1 configs/R11-G.json
+work/r11/ldrscreen.sh A1g-G2 configs/R11-G.json
+work/r11/ldrscreen.sh A1g-C2 configs/R11-C121.json
+.venv/bin/python work/r11/ldr_table.py base=A1g-C1,A1g-C2 gather=A1g-G1,A1g-G2 | tee results/r11/ab-A1-gather.md
+work/r11/ldrscreen.sh A1p-0a configs/R11-P0.json
+work/r11/ldrscreen.sh A1p-1a configs/R11-P1.json
+work/r11/ldrscreen.sh A1p-2a configs/R11-C121.json
+work/r11/ldrscreen.sh A1p-4a configs/R11-P4.json
+work/r11/ldrscreen.sh A1p-4b configs/R11-P4.json
+work/r11/ldrscreen.sh A1p-2b configs/R11-C121.json
+work/r11/ldrscreen.sh A1p-1b configs/R11-P1.json
+work/r11/ldrscreen.sh A1p-0b configs/R11-P0.json
+.venv/bin/python work/r11/ldr_table.py pf2048=A1p-2a,A1p-2b pf0=A1p-0a,A1p-0b pf1024=A1p-1a,A1p-1b pf4096=A1p-4a,A1p-4b | tee results/r11/ab-A1-prefetch.md
+[ -x engine-r11a650/strata ] && work/r11/ldrscreen.sh A1t-4k1 configs/A650-4k.json
+[ -x engine-r11a650/strata ] && work/r11/ldrscreen.sh A1t-thp1 configs/A650.json; grep -h 'expert arena' logs/engine-A650.log | tail -1; grep AnonHugePages /proc/meminfo
+[ -x engine-r11a650/strata ] && work/r11/ldrscreen.sh A1t-thp2 configs/A650.json
+[ -x engine-r11a650/strata ] && work/r11/ldrscreen.sh A1t-4k2 configs/A650-4k.json
+.venv/bin/python work/r11/ldr_table.py pages4k=A1t-4k1,A1t-4k2 thp=A1t-thp1,A1t-thp2 | tee results/r11/ab-A1-thp.md
+work/r11/ldrscreen.sh A2-off1 configs/R11A2-off.json
+work/r11/ldrscreen.sh A2-on1 configs/R11A2.json
+work/r11/ldrscreen.sh A2-on2 configs/R11A2.json
+work/r11/ldrscreen.sh A2-off2 configs/R11A2-off.json
+.venv/bin/python work/r11/ldr_table.py off=A2-off1,A2-off2 q8k=A2-on1,A2-on2 | tee results/r11/ab-A2-ldr.md
+work/r11/decscreen.sh A2d-off1 configs/R11A2-off.json
+work/r11/decscreen.sh A2d-on1 configs/R11A2.json
+work/r11/decscreen.sh A2d-on2 configs/R11A2.json
+work/r11/decscreen.sh A2d-off2 configs/R11A2-off.json
+.venv/bin/python work/r11/ab_table.py off=A2d-off1,A2d-off2 q8k=A2d-on1,A2d-on2 | tee results/r11/ab-A2-decode.md
+work/r11/phase_end.sh pA1 keep
+echo "=== $(date -Is) MARK qA1"

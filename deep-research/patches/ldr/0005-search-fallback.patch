@@ -1,0 +1,108 @@
+--- a/local_deep_research/web_search_engines/engines/search_engine_searxng.py
++++ b/local_deep_research/web_search_engines/engines/search_engine_searxng.py
+@@ -1,4 +1,5 @@
+ import enum
++import os
+ import json
+ from typing import Any, Dict, List, Optional
+ 
+@@ -12,6 +13,25 @@
+ from ...security.secure_logging import logger
+ from ._searxng_rate_limiter import respect_rate_limit
+ 
++# --- deep-research workspace patch 0005, part 2 (2026-10-21, the user: "a research run whose searches mostly fail must
++# stop and be marked FAILED with the reason, not write a report from the model's own knowledge"): one line per search
++# in logs/search-events.jsonl - time, pid, results after any fallback (n), SearXNG's own count (sx_n) and its error -
++# never the query. The research runner and tools/ldr-client.py read it (research_common.search_health) and stop a run
++# whose searches mostly fail. Logging only: what LDR searches and returns is unchanged.
++import threading as _dr_threading
++
++_dr_tls = _dr_threading.local()
++
++
++def _dr_search_event(n: int, sx_n: int) -> None:
++    try:
++        import time as _dr_time
++        with open("/home/USER/ai/deep-research/logs/search-events.jsonl", "a", encoding="utf-8") as _f:
++            _f.write(json.dumps({"t": round(_dr_time.time(), 3), "pid": os.getpid(), "n": n, "sx_n": sx_n,
++                                 "err": getattr(_dr_tls, "err", None)}) + "\n")
++    except OSError:
++        pass
++
+ # The operator-approval resolver lives in security/egress/validators.py next
+ # to the allowlist matcher it consults (dependency direction: engine →
+ # security, same as everything else here). Re-exported under the historical
+@@ -356,6 +376,7 @@
+             return []
+ 
+         logger.info(f"SearXNG running search for query: {query}")
++        _dr_tls.err = None  # patch 0005 part 2
+ 
+         try:
+             self._respect_rate_limit()
+@@ -557,6 +578,7 @@
+                 logger.error(
+                     f"SearXNG returned status code {response.status_code}"
+                 )
++                _dr_tls.err = f"HTTP {response.status_code}"  # patch 0005 part 2
+                 return []
+ 
+         except Exception as e:
+@@ -564,6 +586,7 @@
+             logger.exception(
+                 f"Error getting SearXNG results ({type(e).__name__}): {safe_msg}"
+             )
++            _dr_tls.err = type(e).__name__  # patch 0005 part 2
+             return []
+ 
+     def _parse_json_results(
+@@ -656,11 +679,36 @@
+             logger.warning(
+                 "SearXNG engine is disabled (no instance URL provided)"
+             )
++            _dr_tls.err = "engine unavailable"  # patch 0005 part 2
++            _dr_search_event(0, 0)
+             return []
+ 
+         logger.info(f"Getting SearXNG previews for query: {query}")
+ 
+         results = self._get_search_results(query)
++        _dr_sx_n = len(results or [])  # patch 0005 part 2
++
++        # --- deep-research workspace patch 0005 (2026-10-19), phase 4 item 7 (staged 10-29): with LDR_SEARCH_FALLBACK=1
++        # (set by the Jan research runner and by an item 7 test run, never by the other measurements) SearXNG's results
++        # go to tools/paid_search.py: it routes the query (search_route.py + paid-route.json; off by default = today's
++        # fallback, Exa then Tavily when SearXNG returns fewer than 5), answers repeats from its cache (paid_cache.py)
++        # and asks a paid provider only within Karl's rule (exa_fallback / tavily_fallback -> paid_budget.py: run caps,
++        # month thresholds, never log the keys). It returns only results new to this list.
++        if os.environ.get("LDR_SEARCH_FALLBACK") == "1":
++            try:
++                import sys as _sys
++                if "/home/USER/ai/deep-research/tools" not in _sys.path:
++                    _sys.path.insert(0, "/home/USER/ai/deep-research/tools")
++                import paid_search as _ps
++                extra = _ps.search(query, results, client="ldr", max_results=10)
++                results = list(results or []) + [
++                    {"title": x["title"], "url": x["url"], "content": x["content"], "engine": x["engine"],
++                     "category": "general"} for x in extra]
++                if extra:
++                    logger.info(f"{extra[0]['engine']} added {len(extra)} results for query: {query}")
++            except Exception:  # noqa: BLE001 - SearXNG's results stand
++                logger.exception("paid search route failed")
++        _dr_search_event(len(results or []), _dr_sx_n)  # patch 0005 part 2
+ 
+         if not results:
+             logger.warning(f"No SearXNG results found for query: {query}")
+@@ -733,9 +781,12 @@
+             List of search result dictionaries
+         """
+         if not self._is_available:
++            _dr_tls.err = "engine unavailable"  # patch 0005 part 2
++            _dr_search_event(0, 0)
+             return []
+ 
+         results = self._get_search_results(query, max_results=max_results)
++        _dr_search_event(len(results or []), len(results or []))  # patch 0005 part 2
+ 
+         formatted_results = []
+         for result in results:

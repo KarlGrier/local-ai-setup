@@ -1,0 +1,33 @@
+work/r9/tagcheck.sh "v0.1.34 port: build"
+work/r9/basecheck.sh
+BDIR=build work/r9/build.sh strata-r11 engine-r11c
+BDIR=build work/r9/build.sh strata-r11m engine-r11m
+.venv/bin/python work/r9/buildrec.py R11 configs/R11.json "v0.1.34 port (worktree build, r11-port) - measured on its own"
+.venv/bin/python work/r9/buildrec.py R11m configs/R11b-tf3500-helper.json "v0.1.34 port's measurement twin (r11-meas)"
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r9/exact7.sh e11 configs/R11.json
+work/r9/exact7.sh e11-v3 configs/R11-v3.json
+.venv/bin/python work/r9/hashcmp.py e11-v3 e10-v3 "v3 on .34 = v3 on .32" | tee results/r9/e11-v3.txt
+work/r9/tf.sh R11btf3500-helper configs/R11b-tf3500-helper.json engine-r11m/strata math corpus long16k long24k long28k long40k long64k
+work/r9/tf.sh R11btf3500-single configs/R11b-tf3500-single.json engine-r11m/strata math corpus long16k long24k long28k long40k long64k
+.venv/bin/python work/r9/tf_compare9.py R11btf3500-helper=R10btf3500-helper R11btf3500-single=R10btf3500-single | tee results/r9/tf-r11-vs-r10.txt
+work/r9/with_server.sh RT34-direct configs/R11b-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py direct small r34-ours-direct1"
+work/r9/with_server.sh RT34-direct configs/R11b-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py direct small r34-ours-direct2"
+work/r9/with_server.sh RT34-park configs/R11b-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py park small r34-ours-park"
+work/r9/with_server.sh RT34-editref configs/R11b-rt-ours.json -- ".venv/bin/python work/r9/roundtrip.py editref small r34-ours-editref"
+.venv/bin/python work/r9/rt_compare.py r34-ours > results/r9/roundtrip-r11.md; cat results/r9/roundtrip-r11.md
+work/r9/with_server.sh FAIL34 configs/R11.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r9/tagcheck.sh "v0.1.34 port: gates done"
+work/r9/decscreen.sh P34d-a configs/R11.json
+work/r9/decscreen.sh C10d-e configs/R9-C10.json
+work/r9/decscreen.sh C10d-f configs/R9-C10.json
+work/r9/decscreen.sh P34d-b configs/R11.json
+work/r9/screen.sh P34-a configs/R11.json
+work/r9/screen.sh C10-e configs/R9-C10.json
+work/r9/screen.sh C10-f configs/R9-C10.json
+work/r9/screen.sh P34-b configs/R11.json
+.venv/bin/python work/r9/ab_table.py C10=C10d-e,C10d-f P34=P34d-a,P34d-b | tee results/r9/ab-p34-vs-c10.md
+.venv/bin/python work/r9/ab_table.py C10=C10-e,C10-f P34=P34-a,P34-b | tee -a results/r9/ab-p34-vs-c10.md
+work/r9/tagcheck.sh "v0.1.34 port: A/B vs C*10 done"
+work/r9/phase_end.sh p034 keep
+work/r9/hold.sh phaseC34

@@ -1,0 +1,870 @@
+#!/usr/bin/env python3
+"""p5.py - Phase 5 holdout tooling (staged 2026-10-29 in staging/phase5). Nothing here calls the model, LDR, the
+proxy or SearXNG and nothing uses the GPU: it reads the config, question files, run folders and (tally only, after
+every grade is written) the blind keys and the frozen answers for the string cross-check.
+
+  plan [--out PATH] [--allow-placeholder]
+        the queue plan (bench2-queue.sh / bench2.py format) for both arms from p5.json; refuses PLACEHOLDER values and
+        items the queue cannot switch
+  check-engine      the server on 8080 (if up) and the promoted config (what strata-ensure.sh starts on demand) must
+                    both be p5.json's engine.config, with sha256(exe)[:12] = engine.sha12
+  check-frozen      every sha256 line of the FROZEN-*.txt files the holdout uses still matches
+  swap-mark         remember /proc/vmstat's swap counters (p5-start.sh, at the start); `status` prints the change
+  status            per arm and set: done / failed / not yet, wall time so far, swap since swap-mark
+  packets [--out DIR] [--allow-missing] [--force]
+        blind packets. checkable/<id>/question.md + A.md, B.md: each run's Answer section ("## Answer", else "## Key
+        findings", else the report's lead before its sources), cleaned by tools/blind-open.py's clean() (title, inline
+        check marks, setup-check notes, dropped sections), then citations, links and heading marks taken out; labels in
+        a random order per question; checkable/KEY-do-not-open-before-grading.json; MANIFEST.json (no setup names);
+        grader-<batch>.md per batch. open/<id>/A.md, B.md through tools/blind-open.py (BLIND_OUT=<out>/open,
+        BLIND_DROP from p5.json) + open/grader-<id>.md
+  tally [--out DIR] [--partial]
+        refuses until every packet has a grade (checkable/grades/<id>.json, open/grades-<id>.json); then opens the keys
+        and writes REPORT.md + p5-results.json: the checkable (25) line, the harder line (each of the four per setup),
+        correct / wrong commitment / hedged / non-answer in their own columns, the open questions' totals, the string
+        cross-check, engine and wall time per run
+
+--config PATH (default: p5.json next to this file) works for every command; the tests use their own.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+import random
+import re
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+sys.dont_write_bytecode = True      # loading tools/bench2.py / blind-open.py must not write tools/__pycache__
+WS = Path("/home/USER/ai/deep-research")
+B = WS / "results" / "bench2"
+SC = Path("/home/USER/ai-speed-testing/strata-compare")
+HERE = Path(__file__).resolve().parent
+PY = str(WS / ".venv" / "bin" / "python")
+BLIND_OPEN = WS / "tools" / "blind-open.py"
+BENCH2 = WS / "tools" / "bench2.py"
+P4S7_PLAN = B / "queue-plan-p4s7.json"
+KEY_NAME = "KEY-do-not-open-before-grading.json"
+CLASSES = ["correct", "wrong commitment", "hedged", "non-answer"]
+CLASS_ALIASES = {"wrong": "wrong commitment", "wrong_commitment": "wrong commitment", "wrong-commitment":
+                 "wrong commitment", "non answer": "non-answer", "nonanswer": "non-answer", "non_answer": "non-answer",
+                 "no answer": "non-answer", "hedge": "hedged"}
+# what bench2-queue.sh can switch (its ITEMENV cases, 10-28)
+KNOWN_ITEMS = {"setup", "critic", "verify2", "tried", "notyet", "code", "fixes", "read", "claims"}
+LABELS = "ABCD"
+
+
+# -- config ----------------------------------------------------------------------------------------------------------------
+def load_cfg(path: str | None) -> dict:
+    p = Path(path) if path else HERE / "p5.json"
+    cfg = json.loads(p.read_text())
+    cfg["_path"] = str(p)
+    return cfg
+
+
+def placeholders(x, where: str = "") -> list[str]:
+    """Every value (not under a "_" key) that still says PLACEHOLDER."""
+    out = []
+    if isinstance(x, dict):
+        for k, v in x.items():
+            if not k.startswith("_"):
+                out += placeholders(v, f"{where}.{k}" if where else k)
+    elif isinstance(x, list):
+        for i, v in enumerate(x):
+            out += placeholders(v, f"{where}[{i}]")
+    elif isinstance(x, str) and "PLACEHOLDER" in x:
+        out.append(where)
+    return out
+
+
+def folder(set_: str, arm: dict) -> str:
+    """The runs folder bench2.py uses: <set>-<profile>[-<label>]."""
+    return f"{set_}-{arm['profile']}" + (f"-{arm['label']}" if arm.get("label") else "")
+
+
+def load_jsonl(p: Path) -> list[dict]:
+    return [json.loads(l) for l in p.read_text().splitlines() if l.strip()] if p.exists() else []
+
+
+def set_questions(set_: str) -> list[dict]:
+    p = B / f"questions-{set_}.jsonl"
+    if not p.exists():
+        raise SystemExit(f"no question file {p}")
+    return load_jsonl(p)
+
+
+def line_entries(cfg: dict) -> dict[str, list[tuple[str, dict]]]:
+    """{line: [(set, question), ...]} in config order; o01 joins the open line only with include_o01."""
+    out = {}
+    for name, line in cfg["lines"].items():
+        rows = []
+        for ent in line["sets"]:
+            for q in set_questions(ent["set"]):
+                if ent.get("ids") and q["id"] not in ent["ids"]:
+                    continue
+                if ent.get("kind") and q.get("kind", "checkable") != ent["kind"]:
+                    continue
+                rows.append((ent["set"], q))
+        out[name] = rows
+    if cfg.get("include_o01"):
+        ent = cfg["o01_line"]
+        out.setdefault("open", []).extend((ent["set"], q) for q in set_questions(ent["set"]) if q["id"] == "o01")
+    return out
+
+
+def check_counts(cfg: dict, entries: dict) -> list[str]:
+    bad = []
+    for name, line in cfg["lines"].items():
+        want = line.get("expect")
+        have = len(entries.get(name, []))
+        if name == "open" and cfg.get("include_o01") and want is not None:
+            want += 1
+        if want is not None and have != want:
+            bad.append(f"line {name}: {have} questions, expected {want}")
+    ids = [q["id"] for rows in entries.values() for _, q in rows]
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    if dup:
+        bad.append(f"ids in more than one line: {dup}")
+    return bad
+
+
+# -- plan ----------------------------------------------------------------------------------------------------------------
+def build_plan(cfg: dict) -> list[dict]:
+    entries = line_entries(cfg)
+    t = cfg["timing"]
+    steps = []
+    for name in cfg["plan_order"]:
+        sets_in_line = []
+        for set_, _ in entries.get(name, []):
+            if set_ not in sets_in_line:
+                sets_in_line.append(set_)
+        for set_ in sets_in_line:
+            ids = [q["id"] for s, q in entries[name] if s == set_]
+            for arm in cfg["arms"]:
+                st = {"set": set_, "profile": arm["profile"], "ids": ids}
+                if cfg["needs"].get(set_):
+                    st["needs"] = cfg["needs"][set_]
+                for k in ("effort", "verify_effort"):
+                    if arm.get(k):
+                        st[k] = arm[k]
+                st["label"] = arm.get("label", "")
+                if arm.get("items"):
+                    st["items"] = arm["items"] if isinstance(arm["items"], list) else [arm["items"]]
+                st["open_min"], st["checkable_min"] = t["open_min"], t["checkable_min"]
+                steps.append(st)
+    return steps
+
+
+def plan_problems(cfg: dict, allow_placeholder: bool) -> list[str]:
+    bad = []
+    ph = placeholders({k: cfg[k] for k in ("arms", "engine", "timing")})
+    if ph and not allow_placeholder:
+        bad.append("PLACEHOLDER still in p5.json: " + ", ".join(ph))
+    for arm in cfg["arms"]:
+        items = arm.get("items") or []
+        if isinstance(items, str):
+            items = [] if "PLACEHOLDER" in items else [items]
+        unknown = sorted(set(items) - KNOWN_ITEMS)
+        if unknown:
+            bad.append(f"arm {arm['name']}: items {unknown} are not switched by bench2-queue.sh (known: "
+                       f"{' '.join(sorted(KNOWN_ITEMS))}) - the queue needs support for them first")
+        if arm["profile"] == "baseline" and (items or arm.get("effort")):
+            bad.append(f"arm {arm['name']}: the baseline profile takes no items or effort")
+        if not arm.get("label") and cfg.get("require_labels", True):
+            bad.append(f"arm {arm['name']}: needs a label (its own runs folders)")
+    if len({folder('x', a) for a in cfg["arms"]}) != len(cfg["arms"]):
+        bad.append("two arms would share runs folders")
+    try:
+        p4 = json.loads(P4S7_PLAN.read_text())
+        want = {(s["open_min"], s["checkable_min"]) for s in p4}
+        have = (cfg["timing"]["open_min"], cfg["timing"]["checkable_min"])
+        if want != {have}:
+            bad.append(f"timing {have} differs from queue-plan-p4s7.json's {sorted(want)}")
+    except (OSError, KeyError, ValueError) as e:
+        bad.append(f"cannot read {P4S7_PLAN}: {e}")
+    entries = line_entries(cfg)
+    bad += check_counts(cfg, entries)
+    for name, rows in entries.items():
+        for set_, _ in rows:
+            n = cfg["needs"].get(set_)
+            if n and not (B / n).exists():
+                bad.append(f"set {set_} needs {n}, which does not exist (not frozen yet)")
+                break
+    return bad
+
+
+def estimate_h(cfg: dict) -> dict[str, float]:
+    """Rough GPU hours: final arm at its budgets (Fix 6: the whole run within the budget; p4s7's hard runs took 38-50 min
+    of 47), the baseline from phase 3 (checkable ~1.5 min, open ~30 min)."""
+    e = line_entries(cfg)
+    nc = sum(1 for rows in e.values() for _, q in rows if q.get("kind", "checkable") == "checkable")
+    no = sum(1 for rows in e.values() for _, q in rows if q.get("kind") == "open")
+    out = {}
+    for arm in cfg["arms"]:
+        if arm["profile"] == "baseline":
+            out[arm["name"]] = round((nc * 1.5 + no * 30) / 60, 1)
+        else:
+            out[arm["name"]] = round((nc * cfg["timing"]["checkable_min"] + no * cfg["timing"]["open_min"]) / 60, 1)
+    return out
+
+
+def cmd_plan(a, cfg) -> int:
+    bad = plan_problems(cfg, a.allow_placeholder)
+    if bad:
+        print("plan NOT written:\n  " + "\n  ".join(bad), file=sys.stderr)
+        return 1
+    steps = build_plan(cfg)
+    text = "[" + ",\n ".join(json.dumps(s) for s in steps) + "]\n"
+    if a.out:
+        Path(a.out).write_text(text)
+        print(f"plan written: {a.out} ({len(steps)} steps)")
+    else:
+        sys.stdout.write(text)
+    est = estimate_h(cfg)
+    print("estimate (GPU hours): " + ", ".join(f"{k} ~{v}" for k, v in est.items()) + f", total ~{sum(est.values()):.0f}",
+          file=sys.stderr)
+    return 0
+
+
+# -- engine ----------------------------------------------------------------------------------------------------------------
+def sha12(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()[:12]
+
+
+def served_config() -> Path | None:
+    """The --config of the server listening on 8080 (None when nothing listens)."""
+    r = subprocess.run(["ss", "-H", "-ltnp", "( sport = :8080 )"], capture_output=True, text=True)
+    m = re.search(r"pid=(\d+)", r.stdout)
+    if not m:
+        return None
+    pid = m.group(1)
+    cmd = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    if b"--config" not in cmd:
+        return Path("?no-config")
+    cwd = os.readlink(f"/proc/{pid}/cwd")
+    return (Path(cwd) / cmd[cmd.index(b"--config") + 1].decode()).resolve()
+
+
+def promoted_config() -> Path | None:
+    """What strata-ensure.sh starts on demand: phase_end.sh takes switch-model.sh's STRATA_CONFIG default."""
+    try:
+        t = (SC / "switch-model.sh").read_text()
+    except OSError:
+        return None
+    m = re.search(r"CFG=\$\{STRATA_CONFIG:-([^}]*)\}", t)
+    return Path(m.group(1).replace("$WS", str(SC))).resolve() if m else None
+
+
+def cmd_check_engine(a, cfg) -> int:
+    e = cfg["engine"]
+    if placeholders(e):
+        print("engine: PLACEHOLDER in p5.json (engine.config / engine.sha12) - fill in the final engine first")
+        return 1
+    want = (SC / e["config"]).resolve() if not Path(e["config"]).is_absolute() else Path(e["config"]).resolve()
+    ok = True
+    try:
+        exe = Path(json.loads(want.read_text())["exe"])
+        h = sha12(exe)
+    except (OSError, KeyError, ValueError) as err:
+        print(f"engine: cannot read {want} or its exe: {err}")
+        return 1
+    print(f"engine wanted: {want.name}, exe {exe} sha12 {h} (p5.json: {e['sha12']})")
+    if h != e["sha12"]:
+        print("  MISMATCH: the config's exe is not the engine p5.json names")
+        ok = False
+    sv, pr = served_config(), promoted_config()
+    print(f"8080 serves: {sv.name if sv else 'nothing (Strata stopped; it starts the promoted config on demand)'}")
+    if sv and sv != want:
+        print("  MISMATCH: 8080 runs another config - switch it (strata-compare switch-model / run-strata.sh) first")
+        ok = False
+    print(f"promoted (started on demand): {pr.name if pr else '?'}")
+    if pr != want:
+        print("  MISMATCH: strata-ensure.sh would start another config after an idle stop - promote the final one first")
+        ok = False
+    return 0 if ok else 1
+
+
+# -- frozen ----------------------------------------------------------------------------------------------------------------
+def frozen_lines(name: str) -> list[tuple[str, str]]:
+    out = []
+    for l in (B / name).read_text().splitlines():
+        m = re.match(r"^([0-9a-f]{64})\s+(\S+)\s*$", l)
+        if m:
+            out.append((m.group(1), m.group(2)))
+    return out
+
+
+def cmd_check_frozen(a, cfg) -> int:
+    names = list(cfg["frozen_files"]) + (["FROZEN-p5-o01.txt"] if cfg.get("include_o01") else [])
+    ok = True
+    for n in names:
+        if not (B / n).exists():
+            print(f"{n}: MISSING")
+            ok = False
+            continue
+        for h, rel in frozen_lines(n):
+            p = B / rel
+            have = hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "missing"
+            good = have == h
+            ok &= good
+            print(f"{n}: {rel} {'ok' if good else 'CHANGED' if have != 'missing' else 'MISSING'}")
+    return 0 if ok else 1
+
+
+# -- status ------------------------------------------------------------------------------------------------------------------
+SWAP_MARK = B / "p5-swap-start.json"
+
+
+def vmstat_swap() -> dict[str, int]:
+    d = {}
+    for l in open("/proc/vmstat"):
+        k, v = l.split()
+        if k in ("pswpin", "pswpout"):
+            d[k] = int(v)
+    return d
+
+
+def engine_vmswap_kb() -> dict[str, int]:
+    """VmSwap of every running Strata engine process (comm 'strata')."""
+    out = {}
+    for p in Path("/proc").iterdir():
+        if not p.name.isdigit():
+            continue
+        try:
+            if (p / "comm").read_text().strip() != "strata":
+                continue
+            for l in (p / "status").read_text().splitlines():
+                if l.startswith("VmSwap:"):
+                    out[p.name] = int(l.split()[1])
+        except OSError:
+            continue
+    return out
+
+
+def cmd_swap_mark(a, cfg) -> int:
+    SWAP_MARK.write_text(json.dumps({"at": datetime.now().isoformat(timespec="seconds"), **vmstat_swap()}))
+    print(f"swap counters remembered in {SWAP_MARK}")
+    return 0
+
+
+def run_state(run: Path) -> str:
+    if (run / "bench.json").exists():
+        return "done"
+    if (run / "bench-fail.json").exists():
+        return "failed"
+    return "not yet"
+
+
+def cmd_status(a, cfg) -> int:
+    entries = line_entries(cfg)
+    print(f"{'line':10} {'set':13} {'arm':9} done failed notyet  wall_h")
+    for name, rows in entries.items():
+        sets_ = []
+        for s, _ in rows:
+            if s not in sets_:
+                sets_.append(s)
+        for s in sets_:
+            qs = [q for ss, q in rows if ss == s]
+            for arm in cfg["arms"]:
+                st = [run_state(B / "runs" / folder(s, arm) / q["id"]) for q in qs]
+                wall = 0.0
+                for q in qs:
+                    bj = B / "runs" / folder(s, arm) / q["id"] / "bench.json"
+                    if bj.exists():
+                        wall += json.loads(bj.read_text()).get("wall_s", 0) / 3600
+                print(f"{name:10} {s:13} {arm['name']:9} {st.count('done'):4} {st.count('failed'):6} "
+                      f"{st.count('not yet'):6}  {wall:6.1f}")
+    if SWAP_MARK.exists():
+        m, now = json.loads(SWAP_MARK.read_text()), vmstat_swap()
+        dk = {k: (now[k] - m.get(k, now[k])) * 4 for k in now}
+        print(f"swap since {m['at']}: in {dk.get('pswpin', 0)} KiB, out {dk.get('pswpout', 0)} KiB"
+              + ("  <- check the swap rule (engine VmSwap / streaks)" if any(dk.values()) else ""))
+    vs = engine_vmswap_kb()
+    if vs:
+        print("engine VmSwap: " + ", ".join(f"pid {k} {v} kB" for k, v in vs.items())
+              + ("  <- swap rule: VmSwap > 0 fails" if any(vs.values()) else ""))
+    return 0
+
+
+# -- packets ----------------------------------------------------------------------------------------------------------------
+def blind_open_module(drop: list[str]):
+    spec = importlib.util.spec_from_file_location("blind_open_p5", BLIND_OPEN)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.DROP = drop                       # clean() reads the module's DROP at call time
+    return mod
+
+
+def report_text(run: Path) -> str | None:
+    for p in (run / "deep" / "report.md", run / "report.md"):
+        if p.exists():
+            return p.read_text(encoding="utf-8", errors="replace")
+    return None
+
+
+LINK_CITE = re.compile(r"\[\[\d{1,4}\]\]\((?:[^()\s]|\([^()\s]*\))*\)")          # LDR's [[95]](https://...)
+NUM_CITE = re.compile(r"[\[【]\d{1,4}(?:\s*[,–-]\s*\d{1,4})*[\]】]")             # [92], [1, 2], [3-5], 【4】
+MD_LINK = re.compile(r"\[([^\]\n]+)\]\((?:https?://|www\.)(?:[^()\s]|\([^()\s]*\))*\)")   # [text](url) -> text
+BARE_URL = re.compile(r"<?\bhttps?://[^\s<>)\]]+>?")
+END_SECTIONS = r"(?:Sources|References|Research Metrics|Citation check)"
+
+
+def answer_section(raw: str, bo) -> tuple[str, str]:
+    """(text, where): the report's "## Answer" section, else "## Key findings", else its lead before the sources (plain
+    LDR's quick summary often has neither heading), each after blind-open.py's clean()."""
+    t = bo.clean(raw)
+    for title, where in (("Answer", "answer"), ("Key findings", "key findings")):
+        m = re.search(rf"(?ms)^## {title}[ \t]*\n(.*?)(?=^## |\Z)", t)
+        if m and m.group(1).strip():
+            return m.group(1), where
+    m = re.search(rf"(?ms)\A(.*?)(?=^## {END_SECTIONS}\b|\Z)", t)
+    lead = m.group(1) if m else ""
+    return (lead, "lead") if lead.strip() else ("", "none")
+
+
+def strip_cues(s: str) -> str:
+    """Citations, links and heading marks out: the two setups cite differently (LDR's inline [[n]](url) links vs
+    deep's [n]), which would give them away; nothing the answer commits to is lost."""
+    s = LINK_CITE.sub("", s)
+    s = MD_LINK.sub(r"\1", s)
+    s = BARE_URL.sub("", s)
+    s = NUM_CITE.sub("", s)
+    s = re.sub(r"(?m)^#{1,6}[ \t]+", "", s)
+    s = re.sub(r"\(\s*\)", "", s)                              # "( )" left by a removed citation
+    s = re.sub(r"[ \t]+([.,;:)])", r"\1", s)
+    s = re.sub(r"[ \t]{2,}", " ", s)
+    s = re.sub(r"[ \t]+\n", "\n", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+
+def packet_text(raw: str | None, bo) -> tuple[str, str]:
+    if raw is None:
+        return "(The report has no answer text.)\n", "none"
+    text, where = answer_section(raw, bo)
+    text = strip_cues(text)
+    if not text:
+        return "(The report has no answer text.)\n", "none"
+    return f"## Answer section\n\n{text}\n", where
+
+
+def render(template: Path, **kv) -> str:
+    t = template.read_text()
+    for k, v in kv.items():
+        t = t.replace("{" + k + "}", str(v))
+    return t
+
+
+def cmd_packets(a, cfg) -> int:
+    out = Path(a.out) if a.out else WS / cfg["out"]
+    ck, op = out / "checkable", out / "open"
+    key_path = ck / KEY_NAME
+    if key_path.exists():
+        if any((ck / "grades").glob("*.json")):
+            raise SystemExit(f"grades exist in {ck / 'grades'}: packets are never rebuilt after grading started "
+                             "(new labels would not match the grades)")
+        if not a.force:
+            raise SystemExit(f"{key_path} exists: packets were built already (--force rebuilds before any grade)")
+    entries = line_entries(cfg)
+    bad = check_counts(cfg, entries)
+    if bad and not a.allow_missing:
+        raise SystemExit("question lines do not match p5.json:\n  " + "\n  ".join(bad))
+    arms = cfg["arms"]
+    # every run must be done first (or --allow-missing: the missing ones become "not run" in the report)
+    missing = []
+    for name, rows in entries.items():
+        for set_, q in rows:
+            for arm in arms:
+                if run_state(B / "runs" / folder(set_, arm) / q["id"]) != "done":
+                    missing.append(f"{folder(set_, arm)}/{q['id']}")
+    if missing and not a.allow_missing:
+        raise SystemExit(f"{len(missing)} runs not done yet (--allow-missing builds the rest): " + " ".join(missing[:12])
+                         + (" ..." if len(missing) > 12 else ""))
+    bo = blind_open_module([s for s in cfg.get("blind_drop", "").split(",") if s])
+    rnd = random.SystemRandom()
+    key, manifest = {}, {"built": datetime.now().isoformat(timespec="seconds"), "lines": {}, "packets": {}}
+    ck.mkdir(parents=True, exist_ok=True)
+    (ck / "grades").mkdir(exist_ok=True)
+    for name in ("checkable", "harder"):
+        manifest["lines"][name] = []
+        for set_, q in entries.get(name, []):
+            qid = q["id"]
+            have = [arm for arm in arms if run_state(B / "runs" / folder(set_, arm) / qid) == "done"]
+            order = have[:]
+            rnd.shuffle(order)
+            d = ck / qid
+            if d.exists():
+                for f in d.glob("*.md"):
+                    f.unlink()
+            d.mkdir(exist_ok=True)
+            (d / "question.md").write_text(f"# Question {qid}\n\n{q['question']}\n")
+            labels, src, sums = {}, {}, {}
+            for lab, arm in zip(LABELS, order):
+                text, where = packet_text(report_text(B / "runs" / folder(set_, arm) / qid), bo)
+                (d / f"{lab}.md").write_text(text)
+                labels[lab], src[lab] = arm["name"], where
+                sums[lab] = hashlib.sha256(text.encode()).hexdigest()[:16]
+            key[qid] = {"line": name, "set": set_, "labels": labels, "source": src,
+                        "folders": {arm["name"]: folder(set_, arm) for arm in arms},
+                        "missing": [arm["name"] for arm in arms if arm not in have]}
+            manifest["lines"][name].append(qid)
+            manifest["packets"][qid] = {"labels": sorted(labels), "sha16": sums}
+    n = int(cfg.get("checkable_batch", 5))
+    batches = [manifest["lines"]["checkable"][i:i + n] for i in range(0, len(manifest["lines"]["checkable"]), n)]
+    if manifest["lines"]["harder"]:
+        batches.append(manifest["lines"]["harder"])
+    manifest["batches"] = {f"b{i + 1}": b for i, b in enumerate(batches)}
+    for f in ck.glob("grader-b*.md"):
+        f.unlink()
+    for bname, ids in manifest["batches"].items():
+        (ck / f"grader-{bname}.md").write_text(render(HERE / "grader-checkable.md", BATCH=bname, QIDS=" ".join(ids),
+                                                      OUT=str(out)))
+    key_path.write_text(json.dumps(key, indent=1))
+    (ck / "MANIFEST.json").write_text(json.dumps(manifest, indent=1))
+    print(f"checkable packets: {sum(len(v) for v in manifest['lines'].values())} questions in {ck} "
+          f"({', '.join(f'{k} {len(v)}' for k, v in manifest['lines'].items())}); batches: "
+          + "; ".join(f"{k} {' '.join(v)}" for k, v in manifest["batches"].items()))
+    if missing:
+        print(f"  not run (left out of the packets, 'not run' in the report): {' '.join(missing)}")
+    # the open questions: tools/blind-open.py as in phase 4 (its own key in <out>/open)
+    op.mkdir(parents=True, exist_ok=True)
+    okey = json.loads((op / KEY_NAME).read_text()) if (op / KEY_NAME).exists() else {}
+    env = {**os.environ, "BLIND_OUT": str(op), "BLIND_DROP": cfg.get("blind_drop", "")}
+    for set_, q in entries.get("open", []):
+        qid = q["id"]
+        if qid in okey and not a.force:
+            print(f"open {qid}: packets exist, kept")
+            continue
+        if (op / f"grades-{qid}.json").exists():
+            raise SystemExit(f"open {qid} is graded already: not rebuilt")
+        have = [folder(set_, arm) for arm in arms if run_state(B / "runs" / folder(set_, arm) / qid) == "done"]
+        if not have:
+            print(f"open {qid}: no run done - no packet")
+            continue
+        r = subprocess.run([PY, "-I", str(BLIND_OPEN), qid, *have], env=env, capture_output=True, text=True)
+        if r.returncode:
+            raise SystemExit(f"blind-open.py {qid} failed: {r.stderr.strip()[-400:]}")
+        print("open " + r.stdout.strip())
+        ref, n_items = cfg["open_refs"][qid]
+        refp = B / "my-research" / ref
+        labs = sorted(p.stem for p in (op / qid).glob("*.md"))
+        ended = [json.loads((B / "runs" / f / qid / "bench.json").read_text()).get("ended", "")[:10] for f in have]
+        note = cfg.get("open_ref_notes", {}).get(qid, "")
+        (op / f"grader-{qid}.md").write_text(render(
+            HERE / "grader-open.md", QID=qid, REF=ref, N_ITEMS=n_items, MAX=2 * n_items, OUT=str(out),
+            LABELS=", ".join(labs), LABEL_FILES=", ".join(f"{l}.md" for l in labs),
+            REF_DATE=datetime.fromtimestamp(refp.stat().st_mtime).strftime("%Y-%m-%d") if refp.exists() else "?",
+            REF_NOTE=(" " + note) if note else "",
+            QDATE=f"the runs ended {max(ended) if ended else '?'}"))
+    return 0
+
+
+# -- tally ----------------------------------------------------------------------------------------------------------------
+def norm_class(c) -> str | None:
+    if not isinstance(c, str):
+        return None
+    c = c.strip().lower()
+    c = CLASS_ALIASES.get(c, c)
+    return c if c in CLASSES else None
+
+
+def bench2_module():
+    spec = importlib.util.spec_from_file_location("bench2_p5", BENCH2)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def run_info(run: Path) -> dict:
+    d = {"state": run_state(run)}
+    try:
+        bj = json.loads((run / "bench.json").read_text())
+        d.update(wall_min=round(bj.get("wall_s", 0) / 60, 1), rc=bj.get("rc"), ended=bj.get("ended"),
+                 efforts=bj.get("ldr_efforts"))
+        if bj.get("search_trip"):      # 11-06 (Karl): tripped the client's search rule, end check passed -> complete
+            d["flag"] = "search trip, end check passed"
+            d["search_trip"] = {k: bj["search_trip"].get(k) for k in ("at", "rule", "empty_in_a_row", "outage_from",
+                                                                      "searches_back_at")}
+    except (OSError, ValueError):
+        pass
+    try:
+        mk = json.loads((run / "marks.json").read_text())
+        d["engine_log"] = Path(mk.get("engine_log") or "?").name
+        d["min_avail_gb"] = mk.get("min_avail_gb")
+    except (OSError, ValueError):
+        pass
+    return d
+
+
+def cmd_tally(a, cfg) -> int:
+    out = Path(a.out) if a.out else WS / cfg["out"]
+    ck, op = out / "checkable", out / "open"
+    manifest = json.loads((ck / "MANIFEST.json").read_text())
+    arms = [arm["name"] for arm in cfg["arms"]]
+    # 1 every grade first - the keys stay closed until then
+    grades, problems = {}, []
+    for line, ids in manifest["lines"].items():
+        for qid in ids:
+            gp = ck / "grades" / f"{qid}.json"
+            if not gp.exists():
+                problems.append(f"{qid}: no grade")
+                continue
+            g = json.loads(gp.read_text())
+            labs = manifest["packets"][qid]["labels"]
+            cls = {lab: norm_class((g.get("class") or {}).get(lab)) for lab in labs}
+            if g.get("id") != qid or any(v is None for v in cls.values()):
+                problems.append(f"{qid}: grade file incomplete (id / a class per label {labs}, one of {CLASSES})")
+                continue
+            grades[qid] = {**g, "class": cls}
+    okey_path = op / KEY_NAME
+    # the open questions from their packet folders (the key file stays closed until every grade is in)
+    open_ids = sorted(d.name for d in op.iterdir() if d.is_dir() and (d / "A.md").exists()) if op.exists() else []
+    ogrades = {}
+    for qid in open_ids:
+        gp = op / f"grades-{qid}.json"
+        if not gp.exists():
+            problems.append(f"open {qid}: no grade")
+            continue
+        g = json.loads(gp.read_text())
+        labs = sorted(p.stem for p in (op / qid).glob("*.md"))
+        if any(lab not in (g.get("totals") or {}) for lab in labs):
+            problems.append(f"open {qid}: totals missing for some of {labs}")
+            continue
+        ogrades[qid] = g
+    if problems and not a.partial:
+        print("not tallied - keys left closed:\n  " + "\n  ".join(problems), file=sys.stderr)
+        return 2
+    # blind-open.py --reveal's convention: a summary line per graded open question in grades.jsonl
+    gl = op / "grades.jsonl"
+    done = {json.loads(l)["id"] for l in gl.read_text().splitlines() if l.strip()} if gl.exists() else set()
+    with open(gl, "a") as f:
+        for qid, g in ogrades.items():
+            if qid not in done:
+                f.write(json.dumps({k: g.get(k) for k in ("id", "graded", "rank", "checklist", "totals",
+                                                          "wrong_claims")}) + "\n")
+    # 2 the keys
+    key = json.loads((ck / KEY_NAME).read_text())
+    okey = json.loads(okey_path.read_text()) if okey_path.exists() else {}
+    folder_arm = {}
+    for arm in cfg["arms"]:
+        for s in {ent["set"] for line in cfg["lines"].values() for ent in line["sets"]} | {cfg["o01_line"]["set"]}:
+            folder_arm[folder(s, arm)] = arm["name"]
+    bench2 = bench2_module()
+    ans = {x["id"]: x for f in cfg["answer_files"] for x in load_jsonl(B / f)}
+    res = {"tallied": datetime.now().isoformat(timespec="seconds"), "arms": arms, "partial": bool(problems),
+           "problems": problems, "lines": {}, "questions": {}, "open": {}}
+    for line, ids in manifest["lines"].items():
+        counts = {arm: {c: 0 for c in CLASSES + ["not run", "ungraded"]} for arm in arms}
+        by_set = {}
+        for qid in ids:
+            k = key[qid]
+            row = {"line": line, "set": k["set"], "class": {}, "committed_to": {}, "why": {}, "match": {}, "run": {}}
+            inv = {arm: lab for lab, arm in k["labels"].items()}
+            for arm in arms:
+                run = B / "runs" / k["folders"][arm] / qid
+                row["run"][arm] = run_info(run)
+                if arm in k["missing"] or arm not in inv:
+                    c = "not run"
+                elif qid not in grades:
+                    c = "ungraded"
+                else:
+                    lab = inv[arm]
+                    c = grades[qid]["class"][lab]
+                    row["committed_to"][arm] = (grades[qid].get("committed_to") or {}).get(lab)
+                    row["why"][arm] = (grades[qid].get("why") or {}).get(lab)
+                row["class"][arm] = c
+                counts[arm][c] += 1
+                by_set.setdefault(k["set"], {a_: {c_: 0 for c_ in CLASSES + ["not run", "ungraded"]} for a_ in arms})
+                by_set[k["set"]][arm][c] += 1
+                if c != "not run" and qid in ans:
+                    txt = bench2.answer_text(run, "deep")
+                    row["match"][arm] = bool(txt and bench2.matches(txt, ans[qid]))
+            if qid in grades and grades[qid].get("key_doubt"):
+                row["key_doubt"] = grades[qid]["key_doubt"]
+            res["questions"][qid] = row
+        res["lines"][line] = {"title": cfg["lines"][line]["title"], "ids": ids, "counts": counts, "by_set": by_set}
+    for qid in open_ids:
+        g = ogrades.get(qid)
+        n_items = cfg["open_refs"].get(qid, [None, 0])[1]
+        row = {"max": 2 * n_items, "totals": {}, "wrong_claims": {}, "rank": None, "run": {}}
+        for lab, fold in okey.get(qid, {}).items():
+            arm = folder_arm.get(fold, fold)
+            row["run"][arm] = run_info(B / "runs" / fold / qid)
+            if g:
+                row["totals"][arm] = g["totals"].get(lab)
+                row["wrong_claims"][arm] = (g.get("wrong_claims") or {}).get(lab)
+        if g:
+            rank = g.get("rank") or []
+            row["rank"] = [folder_arm.get(okey[qid].get(x, x), x) for x in rank]
+        res["open"][qid] = row
+    (out / "p5-results.json").write_text(json.dumps(res, indent=1, ensure_ascii=False))
+    (out / "REPORT.md").write_text(report_md(cfg, res))
+    print(f"tallied: {out / 'REPORT.md'}, {out / 'p5-results.json'}" + (" (PARTIAL)" if problems else ""))
+    return 0
+
+
+def report_md(cfg: dict, res: dict) -> str:
+    arms = res["arms"]
+    arm_desc = []
+    for arm in cfg["arms"]:
+        items = arm.get("items")
+        items = ", ".join(items) if isinstance(items, list) else (items or "none")
+        arm_desc.append(f"**{arm['name']}** = profile {arm['profile']}"
+                        + (f", report {arm['effort']} / citation check {arm.get('verify_effort', arm['effort'])}"
+                           if arm.get("effort") else "")
+                        + f", items {items}, runs folders `<set>-{arm['profile']}"
+                        + (f"-{arm['label']}" if arm.get("label") else "") + "`")
+    L = [f"# Phase 5 holdout - {' vs '.join(arms)} (tallied {res['tallied']})", ""]
+    if res["partial"]:
+        L += ["**PARTIAL** - not every packet is graded: " + "; ".join(res["problems"]), ""]
+    L += ["Arms: " + "; ".join(arm_desc) + ".", "",
+          "Checkable questions: the Answer-section rule (hard-build-p5/PHASE5-CHECKABLE-RULES.md), graded blind from "
+          "packets of each run's Answer section (staging/phase5/p5.py packets: tools/blind-open.py's cleaning, citations "
+          "and links out, labels shuffled per question); grades written before the key was opened. Only **correct** "
+          "scores; wrong commitments (an answer that is not the key's) and non-answers (none, or 'could not determine') "
+          "are counted apart. The string match is the old whole-Answer cross-check only, never the score. Open "
+          "questions: tools/blind-open.py packets, one fresh grader per question against my-research/, as blind-p4s7.",
+          ""]
+    hdr = "| | correct | wrong commitment | hedged | non-answer | not run | string match (cross-check) | mean wall min |"
+    for line in ("checkable", "harder"):
+        if line not in res["lines"]:
+            continue
+        ln = res["lines"][line]
+        L += [f"## {ln['title']}", "", hdr, "|---|---|---|---|---|---|---|---|"]
+        for arm in arms:
+            c = ln["counts"][arm]
+            n = len(ln["ids"])
+            m = sum(1 for q in ln["ids"] if res["questions"][q]["match"].get(arm))
+            walls = [res["questions"][q]["run"][arm].get("wall_min") for q in ln["ids"]
+                     if res["questions"][q]["run"][arm].get("wall_min") is not None]
+            ung = f" (+{c['ungraded']} ungraded)" if c["ungraded"] else ""
+            L.append(f"| {arm} | **{c['correct']}** of {n}{ung} | {c['wrong commitment']} | {c['hedged']} | "
+                     f"{c['non-answer']} | {c['not run']} | {m} | "
+                     f"{(sum(walls) / len(walls)) if walls else 0:.0f} |")
+        if len(ln["by_set"]) > 1:
+            for s, per in ln["by_set"].items():
+                n = sum(1 for q in ln["ids"] if res["questions"][q]["set"] == s)
+                L.append(f"| *of which {s} ({n})* | " + " / ".join(f"{arm} {per[arm]['correct']}" for arm in arms)
+                         + " | " + " / ".join(f"{per[arm]['wrong commitment']}" for arm in arms)
+                         + " | " + " / ".join(f"{per[arm]['hedged']}" for arm in arms)
+                         + " | " + " / ".join(f"{per[arm]['non-answer']}" for arm in arms)
+                         + " | " + " / ".join(f"{per[arm]['not run']}" for arm in arms) + " | | |")
+        L.append("")
+        if line == "harder":
+            L += ["Per question (class; a wrong commitment shows what it committed to):", "",
+                  "| question | " + " | ".join(arms) + " |", "|---|" + "---|" * len(arms)]
+            for q in ln["ids"]:
+                row = res["questions"][q]
+                cells = []
+                for arm in arms:
+                    c = row["class"][arm]
+                    if c == "wrong commitment" and row["committed_to"].get(arm):
+                        c += f" ({row['committed_to'][arm]})"
+                    cells.append(c)
+                L.append(f"| {q} | " + " | ".join(cells) + " |")
+            L.append("")
+    if res["open"]:
+        ol = cfg["lines"].get("open", {})
+        otitle = ol["title"] if ol.get("title") and len(res["open"]) == ol.get("expect") else f"open ({len(res['open'])})"
+        L += [f"## {otitle}", "",
+              "| question (out of) | " + " | ".join(arms) + " | wrong claims found, " + " / ".join(arms) + " | rank |",
+              "|---|" + "---|" * len(arms) + "---|---|"]
+        tot = {arm: 0.0 for arm in arms}
+        wc = {arm: 0 for arm in arms}
+        mx = 0
+        for q, row in res["open"].items():
+            mx += row["max"]
+            vals = []
+            for arm in arms:
+                v = row["totals"].get(arm)
+                vals.append("-" if v is None else f"{v:g}")
+                tot[arm] += v or 0
+                wc[arm] += row["wrong_claims"].get(arm) or 0
+            L.append(f"| {q} ({row['max']}) | " + " | ".join(vals) + " | "
+                     + " / ".join(str(row["wrong_claims"].get(arm, "-")) for arm in arms) + " | "
+                     + (" > ".join(row["rank"]) if row["rank"] and row["rank"] != ["tie"] else "tie" if row["rank"] else "-")
+                     + " |")
+        L.append(f"| open total ({mx}) | " + " | ".join(f"**{tot[arm]:g}**" for arm in arms) + " | "
+                 + " / ".join(str(wc[arm]) for arm in arms) + " | |")
+        L.append("")
+    if "checkable" in res["lines"]:
+        ln = res["lines"]["checkable"]
+        L += [f"## Detail: {ln['title']} per question", "", "| question | set | " + " | ".join(arms) + " |",
+              "|---|---|" + "---|" * len(arms)]
+        for q in ln["ids"]:
+            row = res["questions"][q]
+            cells = []
+            for arm in arms:
+                c = row["class"][arm]
+                if c == "wrong commitment" and row["committed_to"].get(arm):
+                    c += f" ({row['committed_to'][arm]})"
+                cells.append(c)
+            L.append(f"| {q} | {row['set']} | " + " | ".join(cells) + " |")
+        L.append("")
+    dis = []
+    for q, row in res["questions"].items():
+        for arm in arms:
+            c = row["class"].get(arm)
+            if arm in row["match"] and c not in ("not run", "ungraded") and row["match"][arm] != (c == "correct"):
+                dis.append(f"- {q} / {arm}: graded {c}, string match {'hit' if row['match'][arm] else 'no hit'}")
+    L += ["## Blind grade vs the string cross-check", ""] + (dis or ["- none: they agree on every graded answer"]) + [""]
+    doubts = [f"- {q}: {row['key_doubt']}" for q, row in res["questions"].items() if row.get("key_doubt")]
+    if doubts:
+        L += ["## Key doubts raised by graders (the class stays against the key)", ""] + doubts + [""]
+    eng = {}
+    for row in list(res["questions"].values()) + list(res["open"].values()):
+        for arm, ri in row["run"].items():
+            if ri.get("engine_log"):
+                eng.setdefault(arm, {}).setdefault(ri["engine_log"], 0)
+                eng[arm][ri["engine_log"]] += 1
+    bad_rc = [f"{q}/{arm} rc {ri.get('rc')}" for q, row in list(res["questions"].items()) + list(res["open"].items())
+              for arm, ri in row["run"].items() if ri.get("state") == "done" and ri.get("rc") not in (0, None)]
+    flagged = [f"{q}/{arm}: {ri['flag']} (trip at {(ri.get('search_trip') or {}).get('at')})"
+               for q, row in list(res["questions"].items()) + list(res["open"].items())
+               for arm, ri in row["run"].items() if ri.get("flag")]
+    L += ["## Runs", "",
+          "- engine log per arm (marks.json): " + "; ".join(
+              f"{arm}: " + ", ".join(f"{k} x{v}" for k, v in sorted(d.items())) for arm, d in eng.items()),
+          "- one engine for every run: " + ("yes" if len({k for d in eng.values() for k in d}) <= 1 else
+                                            "**NO - the arms or runs differ in engine; see p5-results.json**"),
+          f"- engine wanted (p5.json): {cfg['engine'].get('config')} / {cfg['engine'].get('sha12')}",
+          "- runs with rc != 0: " + (", ".join(bad_rc) if bad_rc else "none"),
+          "- flagged runs (11-06): " + (", ".join(flagged) if flagged else "none"), ""]
+    return "\n".join(L)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--config", default=None)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+    p = sp.add_parser("plan")
+    p.add_argument("--out", default=None)
+    p.add_argument("--allow-placeholder", action="store_true")
+    sp.add_parser("check-engine")
+    sp.add_parser("check-frozen")
+    sp.add_parser("swap-mark")
+    sp.add_parser("status")
+    p = sp.add_parser("packets")
+    p.add_argument("--out", default=None)
+    p.add_argument("--allow-missing", action="store_true")
+    p.add_argument("--force", action="store_true")
+    p = sp.add_parser("tally")
+    p.add_argument("--out", default=None)
+    p.add_argument("--partial", action="store_true")
+    a = ap.parse_args()
+    cfg = load_cfg(a.config)
+    return {"plan": cmd_plan, "check-engine": cmd_check_engine, "check-frozen": cmd_check_frozen,
+            "swap-mark": cmd_swap_mark, "status": cmd_status, "packets": cmd_packets, "tally": cmd_tally}[a.cmd](a, cfg)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

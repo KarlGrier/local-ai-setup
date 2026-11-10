@@ -1,0 +1,6 @@
+=== 2026-11-05 08:31:32 DECODE-PATH CHECK (work/r23/gap-decpath.sh): the prompt variants against the decode path, by prompt length - measurements only, P028x stays served, nothing switches (Karl 11-05)
+=== 2026-11-05 08:31:32 an earlier attempt's outputs moved to /home/USER/ai-speed-testing/strata-compare/results/r23/decpath/prev-1105-083132
+=== 2026-11-05 08:31:32   gate pre PASS PASS variants' rows present (default, ref, s210, unfused, x28h-unfused, s210unf, cpushare, x28h-cpushare, s210cpu, v2, gdn); optional missing: none; rules.txt = the script's
+=== 2026-11-05 08:31:32   gate configs PASS configs OK: x28h-twin, spd-def, spd-unf, spd-sh0, vistest
+=== 2026-11-05 08:31:32 optional engines: twin (1-row windows) ok; stock ok; engine-r23decode is the part-a build
+2026-11-05 08:31:32 port_gap4: hold set; waiting for the running research run to finish

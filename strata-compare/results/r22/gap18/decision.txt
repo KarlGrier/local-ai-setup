@@ -1,0 +1,7 @@
+base repeat exact7: 7/7 (MATCHED)
+B: decode 155.97 (spread 2.6 %), prompt 2,107 (spread 0.9 %)
+pdl: exact7 7/7 (MATCHED); decode 156.19 (+0.15 %, noise 3.9 %), prompt 2,101 (-0.29 %, noise 0.9 %) -> PASS
+gather: exact7 7/7 (MATCHED); decode 157.21 (+0.80 %, noise 3.2 %), prompt 2,108 (+0.03 %, noise 0.9 %) -> PASS
+prio: exact7 7/7 (MATCHED); decode 155.86 (-0.06 %, noise 2.6 %), prompt 2,101 (-0.31 %, noise 1.1 %) -> PASS
+fwait: exact7 7/7 (MATCHED); decode 154.61 (-0.87 %, noise 2.6 %), prompt 2,111 (+0.16 %, noise 0.9 %) -> PASS
+all: exact7 7/7 (MATCHED); decode 156.27 (+0.20 %, noise 2.6 %), prompt 2,098 (-0.47 %, noise 0.9 %) -> PASS

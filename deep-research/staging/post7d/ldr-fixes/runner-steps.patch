@@ -1,0 +1,38 @@
+--- a/tools/research-runner.py
++++ b/tools/research-runner.py
+@@ -265,6 +265,11 @@
+     return start.returncode == 0
+ 
+ 
++# 2026-11-04 (Karl): LDR_DEEP_FIX for Jan's deep jobs, and the run/ldr.items name run-ldr.sh gives it ("fix:<list>")
++JOB_DEEP_FIX = "steps"
++JOB_DEEP_ITEMS = ["fix:steps"]
++
++
+ def run_ldr(cmd: str, profile: str = "deep") -> tuple[int, str]:
+     env = clean_env()
+     env["LDR_PROFILE"] = profile
+@@ -289,9 +294,14 @@
+     if profile == "deep":
+         env["LDR_DEEP_SETUP_PROFILE"] = str(WS / "user-setup.md")
+         env["LDR_DEEP_CRITIC"] = "1"
++        # 2026-11-04 (Karl): the subagent step fix (LDR patch 0008, item "steps") for Jan's deep research too, from the
++        # same install as the bench's; "steps" alone switches none of the six fixes (checks.fix_on / fixes_on);
++        # run-ldr.sh stamps it "fix:steps" in run/ldr.items
++        env["LDR_DEEP_FIX"] = JOB_DEEP_FIX
+     else:
+         env.pop("LDR_DEEP_SETUP_PROFILE", None)
+         env.pop("LDR_DEEP_CRITIC", None)
++        env.pop("LDR_DEEP_FIX", None)
+     r = subprocess.run([str(WS / "run-ldr.sh"), cmd], cwd=WS, env=env, capture_output=True, text=True,
+                        timeout=300)
+     return r.returncode, (r.stdout + r.stderr).strip()
+@@ -322,7 +332,7 @@
+         why.append(f"efforts {stamp('ldr.efforts', '') or '?'} -> {DEEP_LDR_EFFORTS_FILE}")
+     it_f = run_dir / "ldr.items"           # phase 4 items: setup + critic for deep jobs since 10-23 (run_ldr)
+     items_have = sorted(it_f.read_text().split()) if it_f.exists() else []
+-    items_want = ["critic", "setup"] if want == "deep" else ["off"]
++    items_want = sorted(["critic", "setup"] + JOB_DEEP_ITEMS) if want == "deep" else ["off"]   # 11-04: + fix:steps
+     if items_have != items_want:
+         why.append(f"items {' '.join(items_have) or '?'} -> {' '.join(items_want)}")
+     mp = rf.modelprofile_mismatch(WANT_MODEL_PROFILE, run_dir)

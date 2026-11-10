@@ -1,0 +1,169 @@
+[
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o01",
+   "o02"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7b",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7b"
+ },
+ {
+  "set": "hard-screen",
+  "profile": "deep",
+  "ids": [
+   "h02",
+   "h04",
+   "h05",
+   "h06",
+   "h08"
+  ],
+  "needs": "FROZEN-hard.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7b",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7b"
+ },
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o03"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7b",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7b"
+ },
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o01",
+   "o02",
+   "o03"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7c",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7c"
+ },
+ {
+  "set": "hard-screen",
+  "profile": "deep",
+  "ids": [
+   "h02",
+   "h04",
+   "h05",
+   "h06",
+   "h08"
+  ],
+  "needs": "FROZEN-hard.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7c",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7c"
+ },
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o01",
+   "o02",
+   "o03"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7a",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7a"
+ },
+ {
+  "set": "hard-screen",
+  "profile": "deep",
+  "ids": [
+   "h02",
+   "h04",
+   "h05",
+   "h06",
+   "h08"
+  ],
+  "needs": "FROZEN-hard.txt",
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7a",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7a"
+ }
+]

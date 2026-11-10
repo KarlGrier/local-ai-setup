@@ -1,0 +1,34 @@
+#!/bin/bash
+# build_memguard.sh [SECONDS] - round 22 (the user, 10-19: "make sure the 0.2.0 build can't push free memory under the
+# floor"): watches the port's builds (ninja processes whose working directory is strata-r22port) for SECONDS (default
+# until none has run for 10 minutes). Free memory (MemAvailable) below PAUSE_GB: ninja is paused (SIGSTOP) - the
+# compilers already running finish and free their memory, no new ones start; ninja continues above RESUME_GB. Below
+# KILL_GB the build is stopped (SIGTERM to ninja, which ends its compilers): the floor is 16 GB.
+# Log: logs/r22/build-memguard.log (lowest MemAvailable, pauses, kills).
+WS=/home/USER/ai-speed-testing/strata-compare
+PAUSE_GB=${PAUSE_GB:-24} RESUME_GB=${RESUME_GB:-32} KILL_GB=${KILL_GB:-18}
+LOG=$WS/logs/r22/build-memguard.log; mkdir -p $WS/logs/r22
+say() { echo "$(date '+%F %T') $*" >> $LOG; }
+ninjas() { for p in $(pgrep -x ninja); do [ "$(readlink /proc/$p/cwd 2>/dev/null)" ] && case $(readlink /proc/$p/cwd) in $WS/strata-r22port*) echo $p ;; esac; done; }
+avail_mb() { awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo; }
+end=$(( $(date +%s) + ${1:-86400} )); idle=0; low=999999; paused=""
+say "start (pause < $PAUSE_GB GB, resume > $RESUME_GB GB, stop the build < $KILL_GB GB)"
+while [ $(date +%s) -lt $end ]; do
+  a=$(avail_mb); n=$(ninjas)
+  if [ -z "$n" ]; then
+    [ -n "$paused" ] && paused=""
+    idle=$((idle + 1)); [ $idle -ge 1200 ] && break; sleep 0.5; continue
+  fi
+  idle=0; [ $a -lt $low ] && low=$a
+  if [ $a -lt $((KILL_GB * 1024)) ]; then
+    for p in $n; do kill -CONT $p 2>/dev/null; kill -TERM $p 2>/dev/null; done
+    say "MemAvailable $a MB < $KILL_GB GB: build STOPPED (ninja $n)"; paused=""
+  elif [ $a -lt $((PAUSE_GB * 1024)) ] && [ -z "$paused" ]; then
+    for p in $n; do kill -STOP $p; done; paused=$n; say "MemAvailable $a MB < $PAUSE_GB GB: ninja $n paused"
+  elif [ -n "$paused" ] && [ $a -gt $((RESUME_GB * 1024)) ]; then
+    for p in $paused; do kill -CONT $p 2>/dev/null; done; say "MemAvailable $a MB: ninja $paused resumed"; paused=""
+  fi
+  sleep 0.5
+done
+for p in $paused; do kill -CONT $p 2>/dev/null; done
+say "end: lowest MemAvailable during the builds $low MB"

@@ -1,0 +1,5 @@
+# Frozen 2026-10-28 07:20 - item 7e (Exa shopping) product questions, sha256. Do not edit; a change needs a new version.
+# Karl picked s1, s2, s3, s4 on 10-28 (s5 dropped) and said to freeze them as written (text copied from
+# ITEM7E-QUESTIONS-DRAFT.md). Region decided 10-27: United States, prices in USD (not part of the question text).
+# Answer keys: my-research/s1..s4-*.md, built from primary sources before any run (hashes in my-research/WRITTEN-7e.txt).
+b532d7d09ba2f6555010ba1e93b6c8dbd47b72adb93b21e5ddebfcac235a9bb8  questions-shop-7e.jsonl

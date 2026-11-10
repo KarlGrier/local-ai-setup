@@ -1,0 +1,369 @@
+# HANDOFF — strata-compare, written 2026-10-15 23:29 CDT before an overnight shutdown
+
+Read this file first. When the user says **"continue"**, work through the **MORNING QUEUE** at the bottom, in order.
+Project folder: `/home/USER/ai-speed-testing/strata-compare` (it is NOT a git repo; Strata's own clones/worktrees
+inside it are). Chronological notes: `NOTES.md` (append to it as you go). Main report: `REPORT.md`.
+
+## STATUS 2026-11-09 22:30 — overnight shutdown at a clean point (supersedes every STATUS block below)
+
+Nothing was mid-build or holding anything at shutdown. There was no bench2.hold, port-gap.lockpid, ds-session, pause or
+quiet window, or KERNEL_ERROR; gpu-test.lock, bench.lock and heavy.lock were free; there were no gap units or builds
+and no active Jan job. The Phase 5 bench queue finished 11-09 07:06; its unit is enabled and should find nothing to do
+at boot.
+
+**Served (8080):**
+- configs/P028x.json = P028x on the **fetch build engine-r23afetch 153ce47d3ef0** with **STRATA_ADAPT_FETCH=2** and
+  STRATA_HC_UPMIX=1, plus the model guard.
+- Adopted 11-09 20:06 as Karl's recorded owner exception: results/r23/adaptfetch/OWNER-EXCEPTION-1109.md, results in
+  results/r23/afetch-adopt/.
+- **Rollback / switch:** `work/r23/afetch-adopt/served-afetch.sh p028x | afetch1 | afetch2`. It waits for a quiet
+  boundary.
+- **Engine checks** accept the engine the config names (f4c4f654fb24 or 153ce47d3ef0): port_gap4.sh end, dayone.py's
+  8080 preflight, and deep-research staging/post7d/boot-resume.sh. Older work/r23/gap-*.sh drivers still pin
+  f4c4f654fb24; any new driver copied from them must accept 153ce47d3ef0.
+
+**Built 11-09, all tested:**
+- **Stop model icon** (desktop + app menu) = `configs/usability/bin/deepseek-session.sh stop-model`.
+  - A real stop and a return via Jan were done by Karl 22:13-22:21: VRAM 17 / 15 MiB, 86.8 GiB RAM free, and the full
+    Back to Qwen path on opening Jan.
+  - Design and tests: memory deepseek-session-launcher.md; work/ds-launcher/stop-model/test_stop_model.sh (51/51) and
+    work/ds-launcher/test_deepseek_session.sh (67/67).
+- **Pause / Resume research:** removed from the desktop and kept in the app menu. They hold only the test queue and the
+  gaps, not Jan jobs.
+- **The v0.2.13 port carries the ADAPT_FETCH patch:** r23-port0213 6dd81ecd1, engine-r23p0213 639dfb1b7042. It is not
+  run yet. The pre-patch engine is kept as engine-r23p0213-pre-afetch.
+
+**Next steps (in order unless Karl says otherwise):**
+1. **Morning status for Karl**, short (his standing rule: only alerts or decisions, plus a short morning status).
+2. **Decided (Karl 11-10):** while the model is stopped, OpenCode and Codex stay refused; only Jan and DS Harness bring
+   Qwen back. No change needed.
+3. **Version check (backlog J):** the desk fix, then a replay on the stored reports. Re-enable it in Jan's deep jobs
+   only when the replay shows no false marks on the new questions and on o01.
+4. **T:** judge it on a real LDR workload, by its net effect per research run (prefix-cache reuse matters).
+5. **C:** a retry without K.
+6. **The v0.2.13 port's switch requirements**, on engine-r23p0213 639dfb1b7042. Upstream has a newer tag, v0.2.13.1:
+   flag it only, never install or switch.
+7. **Qwen4 day one** (the watch runs to 11-30): the kit, the profile pack (RELEASE-DAY-ONLY item 23) and the priority
+   rule (day-one work before any held gap).
+8. **Not posted** (Karl posts them himself, after his typed OK):
+   - results/r23/ISSUE-DRAFT-adaptfetch-async-1109.md
+   - results/r23/port-0213/ISSUE-DRAFT-geometry-tests-1109.md
+9. **Small things:**
+   - boot-resume's sandbox suite has 4 failures; they are the same with the old script, so they predate 11-09.
+   - research-pause's suite has 1 failure ("the wait names the question"), also older.
+   - Disk items are kept until Qwen4 (memory disk-pending-1106.md).
+
+**After the boot, check:**
+- `bringup/lib/kcheck.sh` is clean.
+- boot-check has passed.
+- boot-resume's log (deep-research logs/boot-resume.log) says 8080 is up with engine 153ce47d3ef0. This is the first
+  boot with its new engine check.
+- `configs/usability/bin/deepseek-session.sh status` shows Qwen, no session and no hold.
+- kwatch, deep-research-runner, ram-dip, alert-push and strata-tagwatch are active.
+
+## STATUS 2026-10-20 ~17:00 — paused for a Windows boot; RESUMED 21:10 (queue on o01, stage 1 waiting; supersedes the STATUS blocks below)
+
+- **8080 = P021** (0.2.1 port, engine sha c9fe314316c4, pictures + answer_room on), chat-cache policy on
+  (deep-research run/chat-cache-policy.json). Rollback `STRATA_CONFIG=configs/Cstar18t.json`. Started on demand.
+- **Phase 4 queue (deep-research-bench.service, BENCH2_PLAN=queue-plan-p4.json) is STOPPED** by
+  `~/ai/deep-research/tmp/bench2.stop` (the service exits on it at boot too). Done: screen-extra/deep/p4base/o07.
+  Left: screen o01-o03, hard-screen h02 h04 h05 h06 h08 (label p4base, medium, citation check xhigh), ~9 h.
+- **Concurrency test on 0.2.1** (the user's 10-20 request): work/r22/conc21.sh, results in results/r22/conc/
+  (summary.txt, tables.md). Ran 16:09-16:23, reported 10-20: --batch 4 does not beat one at a time (NOTES.md).
+- **Stage 1 replays (Phase 4 items 1-3)**: ~/ai/deep-research/tools/p4-stage1.sh, stopped by PID while it waited
+  (nothing ran). It starts its work when the queue logs "queue finished (queue-plan-p4.json)" after its own start.
+
+**Resume (when the user says so):**
+1. `bringup/lib/kcheck.sh resume` clean; `systemctl --user is-active` strata-tagwatch strata-gyrol-watch ram-dip
+   deep-research-runner; MemAvailable sane.
+2. `rm ~/ai/deep-research/tmp/bench2.stop` (and tmp/bench2.hold if present), then
+   `systemctl --user start deep-research-bench.service` -> it picks screen/deep/p4base/o01 next.
+3. Restart the stage 1 runner from ~/ai/deep-research: `setsid nohup bash tools/p4-stage1.sh > /dev/null 2>&1 &`
+   (log logs/p4-stage1.log; keep pattern text off the line).
+4. Open with the user: drop frame check #5 (o07's frame came at the lead's wrap-up, call 650, not the plan)?;
+   v0.2.1.3 fold-in proposal unanswered; ~/ai/deep-research/user-setup.md is theirs to edit (names the board).
+
+## STATUS 2026-10-17 (round 21 done; this supersedes "State at shutdown" and the MORNING QUEUE below)
+
+- **The 10-16 morning queue (items 1-8) is finished.** Report: REPORT.md "Round 21" + results/round21-summary.md.
+- **8080 = C\*18t** (`configs/Cstar18t.json` = C\*18 + think-fix commit d9e2c3a5, serve tree `strata-r21think/`), the
+  switch-model.sh / run-strata.sh default since 10-16 09:55. Rollback: `STRATA_CONFIG=configs/Cstar18.json`.
+  Standing guard via `phase_end.sh NAME keep`: GUARD_VRAM_MODE=warn60 + GUARD_FOLLOW_PORT=8080.
+- **Sampling (since 10-16 21:53):** every path T 1.0 / top-p 0.95 / top-k 20 / min-p 0.05 (config "sampling" blocks of
+  Cstar18t / Cstar18 / Cstar18-single, OpenCode's body; backups work/r21/*.before-sampling). New configs need a copy of
+  the base's `.shared-settings.json` and the same "sampling" block; check both `[strata]` start lines before long runs
+  (in bringup/out/logs/server_*.log the first one is glued to the config dump's "}" - don't anchor greps with ^).
+  Presence penalty (Karl 11-09, by choice): with thinking OFF the server adds the model card's presence_penalty 1.5 (Qwen's own setting for that mode; serve/server.py MODEL_CARD_SAMPLING "instruct") unless the request or the config's sampling block sets one - P028x.json leaves it, and none of our paths use thinking off (thinking on: no penalty).
+- **10-17 (user's plans, done 13:4x):** C\*18t on 8080, kwatch running. Suite quick at medium: IQ3_S 94.5, NVFP4 94.3
+  (xhigh 90.7 / 86.8), ~1/3 of the time; IQ3_S low 91.4 (below medium in 3 categories) -> **reasoning effort medium is
+  the default on every path since 13:24** (work/r21/effort_default.sh; 8080 Chat settings via POST /settings, rollback
+  configs' files, OpenCode + variants, Codex, dsh, Jan; backups work/r21/effort-default-backup/; checked with
+  client_check.py). The chat page's own drawer level is the user's to switch. Hosted Flash ignores the effort (probe
+  $0.04): no hosted medium run. Harness r5/r6 at T 1.0: 4/4 green. REPORT.md / round21-summary.md filled. Q8_0 honesty
+  run DROPPED. v0.1.45 NOT ported (port once, to the big release; hourly tag watch work/r21/tagwatch.sh; summary first,
+  then wait for the go). Standing rule: no run over ~30 min between 23:00 and 09:00 unless the user says so.
+  Harness/suite runs that must compare with older xhigh runs now need the level set explicitly.
+- **Settled 10-17 13:4x:** Xorg root config skipped; fit_max_tokens stays off; Q8_0 shards (models/r15/Q8_0) and
+  models/fp4local deleted (412 GiB free). Configs on those files (r15-q8-*, r20-q8-*, r21-q8ref, r21-*fp4local*) no
+  longer start; the yardstick needs the Q8_0 again for a new reference. Keep bringup/out/r15q8 (r15q4 links to it).
+- **10-17 14:05-16:0x, the user's three usability fixes (NOTES 14:0x-14:5x; configs/usability/README.md "Strata on
+  demand"):** chat page tool rounds 20 (`web_search.max_rounds` is the key that counts; `mcp.max_rounds` 20 too) in
+  Cstar18t / Cstar18 / Cstar18-single. Jan assistant **"Deep think"** (xhigh, same sampling; default assistant stays
+  medium). Launchers jan-strata / opencode-strata / codex-strata / dsh-strata call `bin/strata-ensure.sh`: start C\*18t
+  on demand (own systemd scope, phase_end.sh "ondemand" keep), wait <= 3 min, refuse with a notification while a test
+  holds a lock. **Measurement scripts hold `tmp/gpu-test.lock`** (with_server.sh takes it shared; new measurement
+  scripts that start servers some other way must take it too) and set STRATA_NO_AUTOSTART=1 for client runs.
+  systemd user service `strata-idle-stop.service` stops 8080 after `minutes` (configs/usability/strata-idle-stop.conf,
+  45; 0 = off) - it will also stop a server you started by hand for a test unless a lock is held. Cold start icon ->
+  first answer 18.6 s. Jan checked live 19:19 (Jan assistant -> medium, Deep think -> xhigh, None -> no level =
+  medium); Jan's picker keeps the last-used assistant for new chats. Request monitor off again (19:21).
+- **10-17 evening, deep research round (~/ai/deep-research, its NOTES.md / README.md "Research from Jan"):** Jan queues
+  LDR deep research through an MCP server; `deep-research-runner.service` runs the jobs; strata-proxy (8090) holds
+  research calls while a test holds tmp/gpu-test.lock or tmp/suite/heavy.lock (test scripts then run
+  `bringup/lib/research_wait.sh`; with_server.sh does), at night, when paused, or for 5 min after another client used
+  Strata. **The runner may restart 8080** (same config) to empty Strata's chat cache when MemAvailable < 21 GB.
+  Port 8090 = also turnlog.py's recorder port here: don't run client_check while LDR's proxy runs.
+  **Deep research round status (10-17 23:00):** phases 1-2 done (smoke test, Jan MCP + runner + gate, live-tested);
+  phase 3 test set frozen (results/bench2/, FROZEN.txt); `deep-research-bench.service` runs the screen set from 09:00
+  (baseline, then deep; daytime only; pauses for a Strata release > v0.1.45). Next for me: thinking-level replays,
+  failure sorting, open-ended grading against results/bench2/my-research/, the checkpoint report - then wait for the go.
+  **10-18 08:00:** the user allowed Jan jobs at any hour (research.conf night_pause = off; the measurement queue stays
+  daytime-only). The user's 210-min Jan job from 02:18 was cut by the PC going off and continued as a seeded run at
+  07:49; the bench queue waits for it. Holdout own research (o04-o06) is written and hashed in deep-research's NOTES.
+  After a reboot, restart `bringup/lib/kwatch.sh` (see its header) and the tag check `work/r21/tagwatch.sh`.
+- **Gotchas added:** harness reruns need `tmp/usability/venv-rt` (install.sh's step; rebuilt 10-16 22:19). Never put
+  the launcher's server pattern ("/strata --serve") in a command line that runs while switch-model.sh checks for
+  other servers (10-16 21:51: refused start, 8080 down 2 min). Locally "high" effort = xhigh (Strata's EFFORT map).
+
+### 0.2.0 port round: concurrency screen (the user, 10-18) - **SKIPPED (the user, 10-19)**: v0.2.0-beta changed
+nothing for batching with a helper card (batch-mtp auto is for one 24 GB+ card). Port timing (10-19): after the phase 3
+checkpoint, or at 0.2.0 final if that is sooner and the research queue is between runs; the queue does not pause for
+pre-releases. The section below is kept for reference.
+Once the first 0.2.0 build runs with the user's settings (lossless switches, helper card), ~40 min max:
+- Arms:
+  - served one at a time;
+  - 0.2.0's recommended multi-request mode, incl. MTP with parallel requests if it exists;
+  - `--batch 2` with a small resident KV window per slot, 8K and 16K.
+- N = 1/2/4 with test D's agent (27.7K prompt + tool call) and decode (4,096-token answer) sets: work/r20/conc.py,
+  conc_prompts.py, d_conc.sh.
+- Report: total and per-request tok/s, set wall, worst TTFT, expert-cache slots.
+- Full test only if 2 or 4 at once beat one at a time by >=20% (total tok/s or wall) and 1 alone loses <=5%.
+- If the notes show nothing new for batching with a helper card, skip the 0.2.0-mode arm and say so.
+- The memory floor applies (16 GiB since 10-19).
+
+### 0.2.0 port round: Strata's own tuner once (the user, 10-19; after the port builds)
+- `strata tune auto <copy of our config>.json --mode thorough --use coding --no-save --gpu-lock tmp/gpu-test.lock`
+  ("answers may change very slightly" = `--allow-small-differences`, left OFF; `--no-save` so no preset can be applied at
+  a later start; our config is never the target). Our model and the helper card as in C*18t: the tuner has no helper-card
+  knob and keeps `--expert-cache-device1 3300` from the config (checked in v0.2.0-beta's strata_control/tune_knobs.py).
+- With the option off it does NOT try pcie-frac, the adapt settings (every/swaps/decay), --spec or --expert-cache (all its
+  "placement" class); it does try spec-min-p (0.7 / 0.5) and one fewer pool worker (thorough only), aux CPUs,
+  kv-resident, prefill chunk, host core, kv-grow (exact class). Report that to the user with the results.
+- Report each setting it picks next to ours (pcie-frac 0, spec-min-p 0.5, pool workers 15 + host, adapt: engine
+  defaults + STRATA_ADAPT_LAG=2 / STRATA_DISJOINT_ADAPT=1) and the speed it measured.
+- Every disagreement: our usual A B B A on the ported build; keep it only if faster within our gates (exact7 /
+  identity, the 12 GiB floor). Research queue paused / done first (research_wait.sh under the test lock).
+
+### 0.2.0 port: code work done 10-19 (results/r22/port-020-beta.md)
+Branch r22-port020 (worktree strata-r22port) on v0.2.0-beta: 25 of our 32 commits carried (17 clean, 8 resolved), 7
+dropped (upstream has #1888 split attention, #567 tokenising x4, #1889 side mixer x2), + 64ce1d05 chat-cache owner tag
+/ chat_drop. Not built yet. Builds and tests only in queue gaps: work/r22/port_gap.sh begin "WHAT" ... end (end puts
+C*18t back on 8080, checks its SHA-256 e428a826c5fb, forces the parking policy off, logs the switch-back in
+deep-research NOTES.md, releases the queue). Never promote 0.2.0 to 8080 before the phase 3 checkpoint + the user's OK.
+Gap 1: build, unit tests, quality vs C*18t, A B B A, work/r22/chatcache_checks.py. Gap 2: tuner, GR_FORK and
+QSA_SPLIT_ATTN on/off A B B A (they bypass the new sm_120 GR_UP75 / GR_DOWN_TG / ATTN_DAILY), pictures step.
+
+### 0.2.0 port round: chat-cache owner tag + drop (the user's OK of memory proposal A, 10-19)
+On the ported build, before phase 4: engine GEN keys owner=<tag> (kept on the live conversation and its parked copy)
+and chat_drop=<tag> (drop parked conversations with that tag, don't park a live one with it); server strata_owner /
+strata_chat_drop -> those keys. Then roundtrip.py (resumed = fresh: NLL + state hashes), ckpt=0 vs normal, and the
+drop test; only then deep-research's run/chat-cache-policy.json "enabled": true. Details: deep-research
+results/bench2/PLAN.md "Switch point". If resumed != fresh: stop and tell the user (replays).
+
+### 0.2.0 port round: pictures in Jan (the user, 10-19; after the port builds)
+STATUS 10-19 22:45 (gap 2; results/r22/port-020-beta.md): reader built, mmproj pinned + SHA-checked in
+models/vision-r22/; configs r22port-vision.json / r22portRT-vision.json. Identity 8/11 (--vision costs the expert
+cache 2 slots - confirm with the cache pinned to one size, next gap); no speed cost; ~1 GB RAM; screenshot 4.5 s to the
+first answer token, a few misread digits at 300 image tokens. RAM too tight with the reader always on until proposal A:
+test "elastic": true (start with the first picture, stop after 120 s idle). Jan side waits for promotion (8080 = C*18t).
+0. Get the reader: the encoder `mmproj-Qwen3.8-Flash-Next-BF16.gguf` (0.9 GB, ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF,
+   pinned revision + SHA-256, not on this PC yet) and the `strata-vision` helper (setup builds it from llama.cpp's mtmd
+   beside the engine). Our config is hand-kept: add the "vision" section + `--vision cpu` to a COPY of the ported config.
+1. With `--vision cpu` loaded (the CPU reader runs as its own process, nothing on the GPUs):
+   - text bitwise identical: our identity gate (10 prompts + 4K/20K prompt dumps / exact7) reader on vs off;
+   - decode speed A B B A, reader on vs off;
+   - RAM: the reader process's RSS, and MemAvailable through a long research-style report (the report stage is where
+     it dips to ~20-21 GB today), on vs off.
+2. Jan: Settings > Model Providers > the Strata provider > edit the model > Capabilities: Vision on (Jan 0.8.6's
+   EditModel dialog has vision/tools/audio/video toggles; without it Jan hides Add Images). Paste a screenshot: time
+   from paste to answer, and whether the description is right (judge against what the screenshot shows).
+3. If RAM gets too tight for research runs (MemAvailable near the 12 GB floor / more relief restarts at 20), say so with
+   numbers and suggest options - never a lower floor:
+   - load the reader only when a picture arrives (0.2.0's vision "elastic": true starts it with the first picture and
+     stops it after elastic_idle_s; check it works for the CPU reader, it is documented with vram_elastic);
+   - keep the reader off while a research job runs (the runner could stop/start it);
+   - a smaller chat cache (--chat-cache-mib, 12 GiB now) to make room.
+
+### Gyro-L test (the user, 10-19; when Strata supports it, after the current research queue)
+Trigger: a Strata tag (final or pre-release) with Gyro-L support - agentionai's Qwen3.8-Flash-Next-Gyro-L, trellis types
+147-149; v0.2.0-beta's docs/GYRO.md says it is not supported. Watch: work/r21/gyrol_watch.sh (hourly, all tags;
+logs/r21/gyrol_watch.log), started 10-19 09:53 as a session task (restart it after a reboot).
+1. Download the Gyro-L GGUF (~108 GB incl. the n-gram table; ~404 GB free on 10-19): pinned revision, SHA-256 and size checked.
+2. Quant yardstick (tools/quant_quality.py) against the saved Q8_0 reference results/r21/yq/q8ref.tsv (5 x 999
+   positions; the Q8_0 itself was deleted 10-17). IQ3_S's mark: top-1 87.43 %, KL 0.1441 (results/r21/yq/compare2.md).
+3. Decode and 32K-prompt speed, A B B A, Gyro-L against C*18t IQ3_S (the served config). If Gyro-L needs a newer engine
+   than C*18t's, add an IQ3_S arm on that engine too, so the quant and the engine are told apart.
+4. Suite quick at medium (compare with c18t-quick-medium, 95.5).
+Keep it only if it is clearly closer to the original than IQ3_S (yardstick KL and top-1 clearly better than 0.1441 /
+87.43 %) without a big speed loss; report the numbers and let the user make the call before deleting or switching anything.
+Standing rules: 12 GiB floor, stressapptest before a run that locks > 60 GiB, kernel check after each run, test lock held.
+
+## Standing rules (also in Claude's memory, `~/.claude/projects/-home-USER-ai-speed-testing/memory/`)
+
+- Prompts the user pastes are their instructions. **Anything public (GitHub issue, PR, comment) needs the user's typed
+  OK per item**; the privacy rules and KarlGrier noreply identity are in memory `github-posting-rules.md`.
+- **12 GiB MemAvailable floor** (the user: 20 -> 16 on 2026-10-19, 16 -> 12 that evening, for all runs and daily use; the research
+  runner's Strata relief restart moved from 22 to 18 GB, then to 20 GB until phase 4 the same evening): never lower `GUARD_MEM_GIB` below 12 on our own. If a run
+  trips it, stop there and report the lowest value. NVFP4 runs keep their separate 6 GiB exception.
+- One-GPU configs: `STRATA_ROUTE_TAIL_SKIP=0`. Run stressapptest before locked runs above 60 GiB, and check the kernel
+  log after big runs (the RAM is now at 6000 MT/s; see memory `kernel-oops-pinned-memory.md`).
+- Install in user space only, no sudo. If something truly needs sudo, give the user the one command.
+- Usability apps talk only to 127.0.0.1. Don't touch Local Deep Research or its SearXNG (8889/8890). SearXNG on 8888
+  may be used.
+- The hard tier stays unbuilt until the user asks for it.
+- Gotchas:
+  - `pkill -f` / `pgrep -f` patterns match the calling shell, so kill by PID.
+  - Don't `cd` into `strata-cstar18` (the tool environment treats it as a worktree).
+  - Foreground `sleep` over a few seconds is blocked; use background until-loops.
+
+## Hardware change overnight (2026-10-15 → 16)
+
+The user is moving the desktop display back to the **iGPU**. Tomorrow neither NVIDIA card should drive a screen.
+- RTX 5080: UUID `GPU-UUID-RTX5080`.
+- RTX 4060 Ti: the helper card.
+- The iGPU's memory comes out of system RAM, so expect **lower MemAvailable** than before (91 GiB total RAM). Before
+  the change, C\*18 under load left about 24.5–27 GiB available.
+
+## State at shutdown
+
+- **Strata on 8080 was stopped cleanly tonight for the shutdown**, so nothing is serving. The served config is
+  **C\*18**: `configs/Cstar18.json` = Strata v0.1.44.1 + our 29-commit series (engine `engine-cstar18/strata`, sha
+  e428a826; server code `strata-cstar18/serve/`; series branch `r20-trial-v04441`, patches `patches/r20p29-v04441`).
+  - Model: IQ3_S, `models/ISTA-GSQ-RCO/IQ3_S/` (2 shards).
+  - Pack: `bringup/out/r20a/pack`.
+  - Key args: `--vram-reserve-mib 713`, `--expert-cache auto`, `--kv int8 --kv-resident 32768`,
+    `--max-context 131072`, `--spec 4 --spec-min-p 0.5`.
+- **Start it:**
+  - `./switch-model.sh strata` starts the default, configs/Cstar18.json.
+  - With a guard attached, the way each phase ends: `bringup/lib/phase_end.sh NAME keep`.
+  - Status: `./switch-model.sh status`.
+  - Stop: `STRATA_PORT=8080 ./run-strata.sh stop`.
+  - The server loads the engine lazily on its first request.
+- **Rollback:** `STRATA_CONFIG=configs/Cstar171.json ./switch-model.sh strata` (C\*17.1).
+- **The guard:** `bringup/lib/guard.py`.
+  - Floors: MemAvailable 16 GiB (`GUARD_MEM_GIB`; 20 until 2026-10-19) and 5080 free VRAM 300 MiB (`GUARD_VRAM_MIB`).
+  - Trigger: 3 samples × 0.2 s under a floor. In `--watch-pattern` mode it then sends SIGTERM to the watched engine.
+  - It writes a CSV per label to `bringup/out/logs/guard/` (buffered) and a line to `summary.txt` on a normal exit.
+  - `phase_end.sh ... keep` starts it detached.
+  - **On 10-15 at 20:47 it stopped the served engine:** 5080 free VRAM fell from 316 to 176 MiB, most likely the
+    desktop on the 5080. The server then stayed up with a defunct engine.
+
+### Usability round: finished 10-15 (REPORT.md "Usability round", results/usability-summary.md)
+
+- **Apps** (`configs/usability/`, see its README for how to start each):
+  - Installed in `~/.local/opt/`: Jan 0.8.6, OpenCode 2.0.30, DeepSeek Harness 0.2.0-rc.2 (+ Node 24.22.0), Codex
+    0.162.1.
+  - Launchers: `configs/usability/bin/{jan,opencode,dsh,codex}-strata`. Each points the proxy at 127.0.0.1:18999,
+    where nothing listens, so the connection is refused and nothing goes out.
+  - Jan settings are applied by `configs/usability/jan/jan_config.py` (Jan must be closed).
+  - Recommendation: **OpenCode**, or **DeepSeek Harness Minimal** for a web UI.
+- **Measurement tools** (`work/usability/`):
+  - `turnlog.py --listen 8090 --upstream 8080 --out logs/usability/turns` must be running for `harness_run.py` (label
+    in `logs/usability/turns/LABEL`).
+  - Optional `denyproxy.py --port 18999 --log logs/usability/denied.log` logs refused attempts.
+  - `harness_run.py ARM TASK --tag TAG` (ARM: opencode | codex | dsh-minimal | dsh-standard | dsh-ptc; TASK:
+    a1_inventory | a2_textstats | a3_cronlite | rt_effort). Results go to `tmp/usability/runs/<arm>-<task>-<tag>/`.
+    Grading for rt_effort takes about 4.5 min (full serve suite).
+  - `summarize.py TAGS…` makes the table; `turn_metrics.py DIR` gives per-turn numbers.
+  - Existing tags: r1, r2 (rt r2 done for all four; dsh-ptc r1). Use new tags (e.g. r3, r4) for the morning reruns.
+- **Think-tag finding** (all 9 rt_effort runs ended on it):
+  - The model quotes `"<think>\n\n</think>"` inside a code fence in its reasoning, and `OutputParser`
+    (`serve/frontend.py`, `_quoted_think_end`, #537 rule) ends the reasoning there.
+  - Offline replay: `.venv/bin/python work/usability/think_fence_replay.py strata-cstar18 C`.
+    - Rule C (fence only) gives 7 fixed and 495 unchanged of 503 turns.
+    - The 1 "changed" is Codex r2 #18: the model ended the turn itself, so it can't be recovered.
+    - Rule A (fence + inline code) misfires on dsh-ptc a3 #9.
+  - Rule C is the fix for morning item 4. The replay rebuilds each turn as reasoning + `</think>\n\n` + content +
+    calls in template form.
+- **Open draft (NOT posted):** `results/usability-strata-think-issue-draft.md`.
+- **Unfinished or caveats:**
+  - At 20:31 OpenCode hung at start (its internal server logged nothing); not reproduced since.
+  - rt_effort samples are small: 2 runs per harness, 1 for dsh-ptc.
+  - `tmp/usability/` (1.6 GB) still exists (morning item 6 deletes it).
+  - `~/.dsh` does not exist yet; dsh's first start copies the patch.
+
+### Facts for the FP4-Local trial (morning item 7), checked 10-15 23:30
+
+- **Disk:** `/` has **142 GB free** of 1.8 TB. Keep at least 100 GB free.
+- **Deletable with the user's OK given 10-15** (an exception to the read-only rule, for these two only; first check
+  that no config uses them, e.g. `grep -l r15/ configs/*.json`):
+  - Q8_0 = `models/r15/Q8_0/` (6 shards, 176 GB).
+  - Q5 = `models/r15/UD-Q5_K_XL/` (97 GB).
+- **Not covered by that OK:** `models/r15/splice-q5/` (123 GB) is our own splice (Q5 experts + IQ3_S). Leave it unless
+  the user says so.
+- **Keep:**
+  - IQ3_S (`models/ISTA-GSQ-RCO/IQ3_S/`).
+  - UD-Q4_K_XL (location not confirmed tonight; find it with `grep -rn "UD-Q4_K_XL" configs/ NOTES.md | head`).
+  - The GPTQ NVFP4 pack: `models/Maximilian228--Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata/`, with `pack/`, the dense GGUF,
+    `ple-fp8.gguf` and `token-embd-bf16.gguf`.
+- **Converter:** `strata-cstar18/tools/nvfp4_convert.py` (plus `nvfp4_verify.py`, `nvfp4_verify_gguf.py`).
+- **The "quant yardstick":** the round 9+ measure of distance from the exact computation (see NOTES.md around the
+  "yardstick" entries, e.g. lines ~2419, ~2952, ~3339). Check whether it reads Q8_0 at run time before deleting Q8_0.
+- **Memory warning (memory `strata-v0144-nvfp4-pack.md`):** the GPTQ NVFP4 pack with every expert in RAM idled at
+  20.0 GiB free and fell to **19.7 GiB** on the first speed server (round 20 GUARD-STOP). With the iGPU now taking
+  system RAM, an NVFP4-class pack would likely have tripped the old 20 GiB floor again (16 since 10-19; NVFP4 runs may use 6).
+  - Measure free memory first.
+  - **Update 2026-10-16 (user): NVFP4 runs may go down to 6 GiB ("like the other testing") → `GUARD_MEM_GIB=6` for
+    the GPTQ pack and FP4-Local arms only.** Everything else keeps 20.
+
+---
+
+## MORNING QUEUE (verbatim from the user, 2026-10-15 23:25; start when they say "continue")
+
+HARDWARE CHANGE OVERNIGHT: I'm moving the desktop display back to the iGPU, so neither NVIDIA card should drive a screen tomorrow.
+
+MORNING QUEUE (when I say "continue"; read HANDOFF.md first):
+1. Health check: confirm the display runs on the iGPU and that no desktop process (Xorg/gnome-shell, browser, Jan) sits on either NVIDIA card (nvidia-smi). Note total RAM and MemAvailable (the iGPU's memory comes out of system RAM) and check the kernel log is clean. Start C*18 on 8080 if it isn't running.
+2. VRAM reserve: with the desktop off the 5080, measure how much VRAM came free and lower --vram-reserve-mib so the expert cache gets it, keeping a safe margin. Gates: A B B A decode and 32K prompt against current C*18, outputs bitwise identical, rollback config kept. Promote only if faster.
+3. 8080 guard: if nothing from the desktop uses the 5080 any more, switch the guard to log-only (never stops Strata). If something still does, have it warn first, stop Strata only after 60 s straight under the floor, and tell me what it was.
+4. Think-tag fix: add the one-rule fix ("a </think> inside a code fence is quoted") to our series as a new commit, with a safeguard: a code fence opened in reasoning and never closed must not swallow the real end of reasoning (e.g. at the end of the answer, fall back to treating the last </think> seen as the real one). Gates: the 503-turn replay (the 7 recoveries, no other turn changed), a test for the unclosed-fence case, and output tokens bitwise unchanged (only the reasoning/answer/tool-call split may differ). Then rerun the real bug-fix task with OpenCode and dsh Minimal, 2 runs each, and tell me if the harness recommendation still holds.
+5. Issue draft: add that this is the same class as #2026 (quoted </tool_call>, fixed in 0.1.43.1) and mention the unclosed-fence safeguard. Run the privacy check, show me the final text, and wait for my typed OK.
+6. Small items: turn off Jan's shell tool; delete tmp/usability/; if /usr/bin/rg exists (I may install ripgrep myself), point the OpenCode launcher at it instead of Codex's copy.
+7. FP4-Local trial: nvidia/Qwen3.8-Flash-Next-FP4-Local (QAD, ModelOpt 0.47.0). Its NVFP4 scale factors use a new compressed format no public engine reads yet.
+   - First find the decoder in the ModelOpt 0.47.0 source or the local-inference-lab vLLM fork's source. Read the code only; don't run their containers. If you can't find it, skip the rest of this item and tell me.
+   - If found: decode to standard ModelOpt NVFP4 and prove a round trip is exact. Convert only the routed experts with tools/nvfp4_convert.py, one shard at a time (download, extract, delete). Take dense weights and MTP from our existing sources.
+   - Disk: keep >=100 GB free. If you need the room, you have my OK to delete the Qwen3.8-Flash-Next Q5 and Q8_0 quant files (all their shards). This is an exception to the read-only rule for those two only. Keep IQ3_S, UD-Q4_K_XL and the GPTQ NVFP4 pack. Check no config uses them first.
+   - Before deleting the Q8_0, check whether the quant yardstick needs it at run time. If it does, save its reference data first if you can without mapping a file bigger than RAM; if not, delete anyway and compare against the GPTQ pack instead.
+   - Measure FP4-Local against the GPTQ pack: yardstick (if available), decode and 32K prompt speed, and a suite quick run. If its retrained n-gram table converts without loss, also measure with that table.
+8. Finish with one short report covering all of the above, and leave the best promoted C*18 config running on 8080.
+
+### Notes for the morning session
+
+- **Item 2:** today's reserve is `--vram-reserve-mib 713` in `configs/Cstar18.json`.
+  - Put the candidate in a new config (e.g. `configs/Cstar18r.json`) and keep `Cstar18.json` as the rollback.
+  - Reuse the round 20 gate and speed scripts in `work/r20/` and `bringup/lib/` (A B B A decode screens, 32K prompt,
+    exact7 bitwise).
+  - The switch-model.sh default changes only on promotion.
+- **Item 3:** the guard's VRAM floor logic is in `bringup/lib/guard.py` (main loop).
+  - Add the log-only or warn-then-60 s mode behind an option or env var, so measurement runs keep the strict guard.
+  - The memory floor is the same in every mode (16 GiB since 10-19).
+  - The guard watches one engine PID. The server restarts a stopped engine on the next request ("the engine had
+    stopped (exit code -15); starting it again"), and the guard exits with the old PID, so that restarted engine runs
+    unguarded. For a standing 8080 guard, watch the server and its child tree, or re-find the engine.
+  - `run-strata.sh stop` also stops the local SearXNG on 8888; `start` brings it back.
+- **Item 4:**
+  - Implement in the series branch (based on `r20-trial-v04441`).
+  - Build a new engine/serve tree for the server change.
+  - Re-run the replay against the patched `serve/`.
+  - Re-check the tool-call rules (#804/#1058) and #537 tests in `serve/test_*.py`.
+- **Item 5:** posting rules are in memory `github-posting-rules.md`. Show the final text and wait for the typed OK.

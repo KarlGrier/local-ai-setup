@@ -1,0 +1,201 @@
+[
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "ids": [
+   "s1"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7d",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7d"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "ids": [
+   "s1"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7dx",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7dx"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "ids": [
+   "s2"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7dx",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7dx"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "ids": [
+   "s2"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7d",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7d"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "ids": [
+   "s3"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7d",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7d"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "ids": [
+   "s3"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7dx",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7dx"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "ids": [
+   "s4"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7dx",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7dx"
+ },
+ {
+  "set": "shop-7e",
+  "profile": "deep",
+  "needs": "FROZEN-7e.txt",
+  "ids": [
+   "s4"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7d",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7d"
+ },
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o01",
+   "o02",
+   "o03"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p7d",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims"
+  ],
+  "open_min": 171,
+  "checkable_min": 47,
+  "paid_route": "7d"
+ }
+]

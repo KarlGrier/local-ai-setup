@@ -1,0 +1,636 @@
+#!/usr/bin/env python3
+# AMENDMENT 2026-11-07 (Karl) - it applies from now on, not to finished gates; recorded before the confirmation gap
+# (work/r23/gap-confirm0211.sh). Karl, 11-07, on results/r23/port-0211/HUNT-1107.md:
+#   "Measurement rule: yes, as a dated amendment applying from now on. Per-workload prompt numbers exclude the
+#   chat-cache save. Time the save as its own line in every screen, and judge it separately against its own noise,
+#   taking its two-speed pattern into account, so a real regression in saving still shows."
+#   "Prompt clock: engine clock for the per-workload prompt numbers, as you recommend. The overall screen rule stays on
+#   the client clock minus the save, at -1%. Add one INFO flag, not a fail: if a workload's outside-engine time is worse
+#   in all 3 passes by more than its own spread, flag it for review, so a server-side slowdown hitting one workload
+#   can't hide under the overall rule. Record the amendment as dated before the confirmation gap."
+#   "Port verdict: put the 'fail for serving' on hold. Run the 25-minute confirmation gap (B vs P, each also with the
+#   chat cache off) after Phase 5's queue. If it confirms the artifact, record the port's baseline check as passed
+#   under the amended rule. Passing doesn't mean switching: the before-switch requirements in the port plan still apply."
+# The rule as implemented (work/r22/g17_rules.py, section "11-07 park amendment"):
+#   - Per-workload prompt numbers exclude the chat-cache save and are taken on the engine clock: prompt tokens / (the
+#     engine's prompt ms - the `chat cache: parked ... in N ms` line logged just before that request). They feed Karl
+#     11-03's no-loss rule (wl_noloss) and g16's "no workload more than 3 % below".
+#   - The overall screen rule (g16's geometric mean, -1 %) stays on the client clock minus the save: prompt tokens /
+#     (TTFT - save).
+#   - The save is judged as its own "chat-cache save" line (save_rule), against its own noise and with its two levels
+#     taken into account. The level mix is INFO.
+#   - The outside-engine INFO flag (outside_flags). It is INFO and never changes a verdict.
+#     - A workload's outside-engine time per request = client TTFT - the engine's prompt ms. The save is inside the
+#       engine figure, so it cancels.
+#     - Its spread = the larger of the two arms' half-ranges over their passes.
+#     - Flag: every pass of the arm is above the base's mean by more than that spread -> "outside-engine time worse in
+#       every pass - for review (INFO)".
+# A gate that started before 2026-11-07 14:00 keeps the rules it ran under; so does screen data without engine logs.
+# Here:
+#   - speed() and decide() take g17's amended numbers. The INFO flag rides on the per-workload no-loss line.
+#   - decide() adds the "chat-cache save" line (g17.save_rule, P vs B): a FAIL fails the baseline, NOT DECIDED leaves it
+#     INCOMPLETE, NOT JUDGED is INFO.
+#   - This file's own gate (results/r23/port-0211/gap, 11-07 00:43) keeps the verdict it ran under: BASELINE FAIL on
+#     prompt speed, now ON HOLD.
+#   - The port is re-judged under the amendment by work/r23/confirm0211_rules.py after the confirmation gap, through
+#     speed(o, amended=True) and save(o, amended=True).
+"""port0211_rules.py - the v0.2.11 port's gate (work/r23/gap-port0211.sh; Karl 11-05: "Write the verification gates as a
+gap driver, reviewed but NOT added to the series"; results/r23/port-0211/PORT.md). The decision rules, written down BEFORE
+any run (11-05), in g17_rules.py's form; its generic pieces are imported from work/r22/g17_rules.py unchanged. NOTHING
+SWITCHES: P028x stays served; the gate says whether the pinned-off v0.2.11 port is P028x, so the next port (when upstream
+adds Qwen4) starts from a checked v0.2.11 base.
+
+THE BUILD UNDER TEST: engine-r23p0211 (built 11-05 by work/r23/build-port0211.sh engine from branch r23-port0211, worktree
+strata-r23p0211 = v0.2.11 c3b3f5035 + our 28); its SOURCE names the head, the gap checks the worktree is still there.
+
+ARMS (configs/, made by work/r23/scratch-port0211/make_configs0211.py; P0210x-h and x28h / s028-h existed):
+  B   = x28h            P028x's test form (engine-r22p028x, f4c4f654fb24, the served engine)
+  P   = P0211x-h        the port: the 18 pins, "drafting": "mtp", user_args --kv-resident 32768, our switches on
+  P10 = P0210x-h        the v0.2.10 port (engine-r22p0210): INFO only, Basalt's decode fixtures (gap 17's Basalt FAIL)
+  release: P0211x-h-off (our six switches off, no --chat-cache) vs s0211-h (stock v0.2.11 engine-v0211stock, the same
+           args and env); s028-h (stock v0.2.8, gap 16's twin engine-r22s028t) only when P is not exact7-identical to B
+  served form: P0211x-RTpin-vision (pictures, chat cache, STATE_HASH)
+
+THE 18 PINS (PINS below): port-0210-review.md section 0's 14 + port-0211-review.md section 0's 4: STRATA_PCIE_SHARE_MAX=0.60,
+STRATA_PCIE_K_RULE=0 (engine), STRATA_STREAM_WRITE_TIMEOUT_S=0, STRATA_BLOCKING_CONSOLE=1 (SERVER process: OPEN - Karl may
+accept them as serve fixes instead; then they leave the configs and SERVER_PINS). Keys: "drafting": "mtp" (it also blocks
+v0.2.11's no-drafter retry) and user_args == ["--kv-resident", "32768"].
+
+THE VERDICT - the baseline "pinned-off v0.2.11 port = P028x" (every item required; INFO only where it says so):
+  builds    build_x (engine-r23p0211's SHA256 file matches, SOURCE names the worktree's head and "v0.2.11 + 28"),
+            build_tests (strata-r23p0211/build-tests has every test binary), build_stock (engine-v0211stock: SHA256 file,
+            SOURCE = v0.2.11's commit), build8 (all three configure logs: "windows hold up to 8 rows")
+  pins      pins / pins_h: the 18 pins with exact values and both keys, in P0211x.json and P0211x-h.json
+  tests     before the gap (CPU only, nice 19, CUDA_VISIBLE_DEVICES empty): tests = ours (patch_guard_test GGUF MTP,
+            cost_gate_test, draft_cum_test) rc 0; sampler_cpu = upstream's spec_prob_test, gated_proposal_test rc 0;
+            servetests (strata-r23p0211/serve, unittest discover; upstream's three #3961 tests, its #4221 test, the
+            PICTURE_FORMATS tests and ours among them): failures only in KNOWN_SERVE_FAILS; fence4 (gap 17's: a
+            four-backtick fence holding a three-backtick example and a </think> stays reasoning until it closes).
+            In the gap (GPU): sampler_gpu = spec_verify_parity, spec_proposal_parity rc 0; v2_unit =
+            prefill_fused_iq_test --v2 --no-timing rc 0
+  guards    "strata patch guards: 7 checked, 0 off" in the port's exact7 run
+  exact7    at pin 2500, slots MATCHED: e7_release (P0211x-h-off = s0211-h, 7/7, FIRST); e7_vs_p028x (P = B, 7/7). Not
+            7/7: e7_upstream (stock 0.2.8 = stock 0.2.11, both pinned) decides as in gap 17 - upstream moved too (not
+            7/7) -> INFO, the KL rules decide; upstream did not move (7/7) -> FAIL. e7_repeat (P twice, 7/7); e7_v2 (v2
+            on = off, 7/7). INFO: e7_vs_p0210 (P against gap 17's stored g17-p210a run, the v0.2.10 port)
+  KL        kl2_p211 + kl3_p211: kernel_rule2.py AND kernel_rule3.py on pf_yardstick long40 against gap 8's references (ref;
+            rounding references unfused, cpushare) - as gap 17. INFO: logits_vs_p028x (P's 40 first-token logit files
+            against gap 16's x28h), logits_vs_p0210 (against gap 17's p210). Karl 11-05: "KL rules kernel_rule2/3 for
+            anything rounding-level; the many-positions NLL only as information - the bound was revoked 11-05": nll_info
+            (score.py run on P, --set long11 --rows all:8, then compare with the NLL gap's x28h arm as the reference and
+            its x28h-unfused / x28h-cpushare as the rounding references, + byte identity with x28h) is INFO, never judged
+  start     startlines_P: present BASE_PRESENT (gap 17's 5); absent BASE_ABSENT (gap 17's 6 + v0.2.11's "starting again
+            without a drafter" retry + #3961's "a request ended without an answer"). Every arm's env check passed (env_*
+            gates: the engine found by /proc/PID/exe has the config's env exactly, none of the 18 pins set behind a
+            config that lacks it, STRATA_ROUTE_TAIL_SKIP=0, 2 GPUs, --kv-resident 32768 last; AND its parent is the
+            config's server.py with SERVER_PINS as the config sets them); no fatal_* gate; no foreign_* gate (another GPU
+            user before or during an arm: that arm is void)
+  lost      lost_answers: #3961's error line ("a request ended without an answer and without a finish reason") in no
+            server log of the port's arms - every admitted run ended in exactly one done (Service.run with the
+            continuation fix, run_with_mcp); a hit is a FAIL
+  cont_P    the answer_room continuations in P's screen requests: >= 1, all resumed (read <= 64 tokens)
+  served    chatcache (ALL PASS) and vision (2 answers, through v0.2.11's PICTURE_FORMATS on Pillow 13.0.0) on
+            P0211x-RTpin-vision
+  toolcalls the live tool-call test, P vs B: P's responses with a spurious call <= B's, with a lost call <= B's, no errors
+  lossless  bringup/patchtest.sh lossless on P0211x-h with P's engine log
+  speed     the 9-workload screen, 3 passes in turned order (B P / P B / B P), client clock. g16's rule as gap 17: per
+            pass the geometric mean over the 9 of decode and of prompt tok/s, an arm = the geometric mean of its passes,
+            noise = the larger arm's pass spread; P >= B - 1.0 % on decode and on prompt and no workload's prompt (mean
+            of its passes) more than 3 % below B's -> PASS; between -1.0 % and -noise -> BORDERLINE; below -noise -> FAIL.
+            PLUS Karl 11-05's "with the no-loss rule" = Karl 11-03's per-workload no-loss, here P against B: per workload,
+            decode and prompt each, P's pass mean >= B's pass mean x (1 - the larger of the two arms' pass-to-pass
+            spreads there); one workload slower beyond its noise -> FAIL
+  bp90      Basalt's community-1 fixtures, cold, 3 passes in turned order, H (= P) vs M (= B), g16's rule as gap 17:
+            each decode fixture (conv, struct, prose) >= M - that fixture's spread (the larger build's); the
+            token-weighted blend >= M - 1.0 %; 16K and 64K prompt >= M - 1.0 %. INFO: P10 (the v0.2.10 port) on the
+            decode fixtures beside H - gap 17's baseline failed on struct (-2.4 %) and the blend (-2.5 %)
+  INFO      q5_0_parity (v0.2.11's own native_expert_parity --synthetic on the Q5_0-down pairs: the aa678f10d dot; our
+            IQ3_S file has no Q5_0 tensor), pcie_share (the settled PcieAuto share per screen arm-pass, B vs P: the
+            PCIe pins keep the 0.60 / 1.85 rule)
+  BASELINE = PASS when all of it holds; BORDERLINE when only g16's speed rule is borderline; INCOMPLETE when a part was
+  not run; FAIL otherwise.
+  NOT IN THIS GATE (Karl's 11-05 list): check (2) in 1-token windows and checks (1) + (2) on the speculative path - they
+  need MEASUREMENT twins of this port (not made); required before any switch (Karl's 10-30 switch conditions).
+
+Subcommands (the gap script calls them; decide writes OUTDIR/decision.txt):
+  envcheck EXE CONFIG [--ngpu 2] [--pins] [--gate NAME --gates FILE]   (inside with_server.sh)
+  pins CONFIG [--gate --gates]          the 18 pins and the two keys
+  startlines STARTLOG [SERVERLOG...] [--gate --gates]
+  lost SERVERLOG... [--gate --gates]    #3961's error line
+  e7cmp LABEL REF [--gate --gates] [--info]   two exact7 runs' stored outputs (bringup/out/logs/prof) compared
+  e7gate SUMMARY LABEL / servetests FILE / fence4 TREE / toolcalls B.jsonl P.jsonl   [--gate --gates]   (g17_rules.py's)
+  pcie ENGLOG...                        the settled PcieAuto share lines (INFO)
+  decide OUTDIR                         the verdict; exit 0 = PASS
+  selftest SCRATCH                      the rules on gap 17's real screen / Basalt data + synthetic gates
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import statistics as st
+import sys
+from pathlib import Path
+
+sys.path.insert(0, "/home/USER/ai-speed-testing/strata-compare/work/r22")
+sys.path.insert(0, "/home/USER/ai-speed-testing/strata-compare/bringup/lib")
+import g17_rules as g17  # noqa: E402
+
+WS = Path("/home/USER/ai-speed-testing/strata-compare")
+PROF = WS / "bringup/out/logs/prof"
+PINS = dict(g17.PINS)
+PINS.update({"STRATA_PCIE_SHARE_MAX": "0.60", "STRATA_PCIE_K_RULE": "0",
+             "STRATA_STREAM_WRITE_TIMEOUT_S": "0", "STRATA_BLOCKING_CONSOLE": "1"})
+SERVER_PINS = ("STRATA_STREAM_WRITE_TIMEOUT_S", "STRATA_BLOCKING_CONSOLE")
+KEYS = {"drafting": "mtp", "user_args": ["--kv-resident", "32768"]}
+KNOWN_SERVE_FAILS = set(g17.KNOWN_SERVE_FAILS)
+LOST_LINE = "a request ended without an answer and without a finish reason"
+BASE_PRESENT = list(g17.BASE_PRESENT)
+# 11-05 (review REVIEW-1105.md 4.6): v0.2.11's two NV defaults print these only when the 026 master switch is lost
+# (nv_chunk_ceiling / nv_kq_default_env return early under 026) - their absence checks the pin at the start
+BASE_ABSENT = list(g17.BASE_ABSENT) + ["starting again without a drafter", LOST_LINE,
+                                       "NVIDIA: --prefill auto may take chunks up to",
+                                       "reads its prompt on llama.cpp's MMQ kernels"]
+g17.KNOWN_SERVE_FAILS = KNOWN_SERVE_FAILS
+gate = g17.gate
+
+
+# ------------------------------------------------------------------------------------------------ env, pins, lines
+def _proc(pid):
+    d = Path("/proc") / str(pid)
+    env = dict(x.split("=", 1) for x in (d / "environ").read_bytes().decode("utf-8", "replace").split("\0") if "=" in x)
+    argv = (d / "cmdline").read_bytes().decode("utf-8", "replace").split("\0")
+    stat = (d / "stat").read_text()
+    ppid = int(stat.rsplit(")", 1)[1].split()[1])
+    return env, argv, ppid
+
+
+def envcheck(a):
+    cfg = json.loads(Path(a.config).read_text())
+    want = cfg.get("env", {})
+    exe = os.path.realpath(a.exe)
+    procs = []
+    for d in Path("/proc").iterdir():
+        if not d.name.isdigit():
+            continue
+        try:
+            if os.readlink(d / "exe") != exe:
+                continue
+            env, argv, ppid = _proc(d.name)
+        except (OSError, ValueError, IndexError):
+            continue
+        procs.append((d.name, env, argv, ppid))
+    if not procs:
+        print(f"ENV CHECK FAILED: no running engine {exe}")
+        gate(a, "FAIL", f"no running engine {exe}")
+        return 1
+    bad_all = []
+    for pid, env, argv, ppid in procs:
+        bad = [f"{k}={env.get(k, 'unset')} (want {v})" for k, v in want.items() if env.get(k) != v]
+        if a.pins:
+            bad += [f"{k}={env[k]} set behind the config" for k in PINS if k not in want and k in env]
+        if env.get("STRATA_ROUTE_TAIL_SKIP") != "0":
+            bad.append(f"STRATA_ROUTE_TAIL_SKIP={env.get('STRATA_ROUTE_TAIL_SKIP', 'unset')}")
+        n = len([x for x in env.get("CUDA_VISIBLE_DEVICES", "").split(",") if x])
+        if n != a.ngpu:
+            bad.append(f"{n} GPU(s) in CUDA_VISIBLE_DEVICES (want {a.ngpu})")
+        kv = [argv[i + 1] for i, x in enumerate(argv[:-1]) if x == "--kv-resident"]
+        if "--kv-resident" in cfg.get("user_args", []) and (not kv or kv[-1] != "32768"):
+            bad.append(f"--kv-resident {kv[-1] if kv else 'missing'} (want 32768, user_args)")
+        # the server process (the engine's parent): the config's server.py, with the server pins the config sets
+        srv = "-"
+        try:
+            senv, sargv, _ = _proc(ppid)
+            if cfg.get("server") and cfg["server"] not in sargv:
+                bad.append(f"the engine's parent {ppid} is not {cfg['server']}")
+            sp = [k for k in SERVER_PINS if k in want]
+            bad += [f"server {k}={senv.get(k, 'unset')} (want {want[k]})" for k in sp if senv.get(k) != want[k]]
+            if a.pins:
+                bad += [f"server {k}={senv[k]} set behind the config" for k in SERVER_PINS if k not in want and k in senv]
+            srv = f"server pid {ppid}, {len(sp)} server pin(s)"
+        except (OSError, ValueError, IndexError):
+            bad.append(f"the engine's parent {ppid} cannot be read")
+        print(f"engine pid {pid}: {len(want)} config env keys checked, STRATA_ROUTE_TAIL_SKIP="
+              f"{env.get('STRATA_ROUTE_TAIL_SKIP', 'unset')}, {n} GPU(s), --kv-resident {kv[-1] if kv else '-'}; {srv}"
+              + (f"; MISMATCH {', '.join(bad)}" if bad else ""))
+        bad_all += bad
+    if bad_all:
+        print("ENV CHECK FAILED - this arm is not measured")
+        gate(a, "FAIL", "; ".join(bad_all)[:300])
+        return 1
+    print("ENV CHECK OK")
+    gate(a, "PASS", f"{len(procs)} engine process(es), {len(want)} env keys as configured, server pins checked")
+    return 0
+
+
+def pins(a):
+    c = json.loads(Path(a.config).read_text())
+    e = c.get("env", {})
+    bad = [f"{k}={e.get(k, 'unset')} (want {v})" for k, v in PINS.items() if e.get(k) != v]
+    bad += [f"{k}={c.get(k)!r} (want {v!r})" for k, v in KEYS.items() if c.get(k) != v]
+    line = f"{Path(a.config).name}: " + (f"all {len(PINS)} pins and both keys" if not bad else "; ".join(bad))
+    print(line + (" -> PASS" if not bad else " -> FAIL"))
+    gate(a, "FAIL" if bad else "PASS", line)
+    return 0
+
+
+def startlines(a):
+    txt = ""
+    for f in [a.startlog] + list(a.serverlog or []):
+        try:
+            txt += Path(f).read_text(errors="replace")
+        except OSError:
+            pass
+    miss = [x for x in BASE_PRESENT if x not in txt]
+    found = [x for x in BASE_ABSENT if x in txt]
+    line = (f"{len(BASE_PRESENT) - len(miss)}/{len(BASE_PRESENT)} wanted lines" + (f" (missing: {'; '.join(miss)})" if miss else "")
+            + (f"; UNWANTED: {'; '.join(found)}" if found else "; none of the unwanted lines"))
+    ok = bool(txt) and not miss and not found
+    print(line + (" -> PASS" if ok else " -> FAIL"))
+    gate(a, "PASS" if ok else "FAIL", line if txt else "no start log")
+    return 0
+
+
+def lost(a):
+    hits, files = 0, 0
+    for f in a.logs:
+        try:
+            t = Path(f).read_text(errors="replace")
+        except OSError:
+            continue
+        files += 1
+        hits += t.count(LOST_LINE)
+    ok = files > 0 and hits == 0
+    line = f"#3961's error line in {hits} place(s) over {files} server log(s) of the port's arms"
+    print(line + (" -> PASS" if ok else " -> FAIL"))
+    gate(a, "PASS" if ok else "FAIL", line if files else "no server log")
+    return 0
+
+
+def pcie(a):
+    out = []
+    for f in a.logs:
+        try:
+            t = Path(f).read_text(errors="replace")
+        except OSError:
+            continue
+        m = re.findall(r"PCIe share: the CPU pool takes [^\n]*?-> (?:pcie_frac )?([\d.]+)", t)
+        out.append(f"{Path(f).name}: {m[-1] if m else 'no refinement line'}")
+    print("; ".join(out) if out else "no logs")
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ exact7
+def e7cmp(a):
+    from p0_table import parse
+    ok, lines, sl = 0, [], set()
+    for it in g17.ITEMS:
+        try:
+            x, r = parse(f"{a.label}-{it}"), parse(f"{a.ref}-{it}")
+        except OSError:
+            lines.append(f"  {it}: missing")
+            continue
+        same = x["out"] == r["out"] and x["out"] != "-"
+        ok += same
+        _, _, s1 = g17.prof(f"{a.label}-{it}")
+        _, _, s0 = g17.prof(f"{a.ref}-{it}")
+        sl |= {s1, s0}
+        lines.append(f"  {it}: {x['out']} vs {r['out']} {'=' if same else 'DIFFERENT'}; slots {s1} / {s0}")
+    slots = "MATCHED" if len(sl) == 1 else "DIFFER"
+    print("\n".join(lines))
+    print(f"exact7 {a.label}: {ok}/7 identical to {a.ref}")
+    print(f"exact7-slots {a.label}: {sorted(sl)} -> {slots}")
+    status = "INFO" if a.info else ("PASS" if ok == 7 and slots == "MATCHED" else "FAIL")
+    gate(a, status, f"exact7 {a.label} vs {a.ref}: {ok}/7, slots {slots}")
+    return 0
+
+
+def toolcalls(a):
+    nm, sm, lm, em = g17.tool_counts(a.m)
+    nx, sx, lx, ex = g17.tool_counts(a.x)
+    ok = nm == nx and nm > 0 and sx <= sm and lx <= lm and ex == 0 and em == 0
+    line = (f"P028x (x28h) {nm} responses: {sm} with a spurious call, {lm} with a lost call, {em} errors; the v0.2.11 port "
+            f"{nx}: {sx} spurious, {lx} lost, {ex} errors (rule: port spurious <= P028x's and port lost <= P028x's)")
+    print(f"{line} -> {'PASS' if ok else 'FAIL'}")
+    gate(a, "PASS" if ok else "FAIL", line)
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ speed
+def speed(o, amended=None):
+    """g16's rule (g17.baseline_speed, P vs B) AND the per-workload no-loss rule (g17.wl_noloss with B as the base).
+    11-07 amendment (g17.park_amended; `amended` forces it): the prompt numbers exclude the chat-cache save."""
+    v, lines = g17.baseline_speed(o, amended=amended)
+    if v == "NOT DECIDED":
+        return v, lines
+    nl, nl_line = g17.wl_noloss(o, "P", ref="B", amended=amended)
+    lines.append(nl_line.replace("per-workload no-loss", "per-workload no-loss (P vs B)"))
+    if nl is None:
+        return "NOT DECIDED", lines
+    if not nl:
+        v = "FAIL"
+    return v, lines
+
+
+def save(o, amended=None):
+    """11-07 amendment: the chat-cache save line, P vs B (g17.save_rule); (None, []) for a gate before the amendment."""
+    return g17.save_rule(o, "P", "B", amended=amended)
+
+
+def bp90_p10(d):
+    """INFO: the v0.2.10 port (P10) beside the v0.2.11 port (H) and P028x (M) on the decode fixtures."""
+    H, A, M = g17.bp90_load(d, "H"), g17.bp90_load(d, "P10"), g17.bp90_load(d, "M")
+    if not A:
+        return ["(info) Basalt P10 (the v0.2.10 port): not run"]
+    out = []
+    for t in ("conv", "struct", "prose"):
+        h, p, m = (g17.bp90_vals(x, t, "decode_tps") for x in (H, A, M))
+        if p and h and m:
+            out.append(f"(info) Basalt {t} decode: v0.2.10 port {st.mean(p):.1f}, v0.2.11 port {st.mean(h):.1f}, P028x "
+                       f"{st.mean(m):.1f} (v0.2.11 vs v0.2.10 {100 * (st.mean(h) / st.mean(p) - 1):+.1f} %, v0.2.10 vs P028x "
+                       f"{100 * (st.mean(p) / st.mean(m) - 1):+.1f} %)")
+    return out
+
+
+# ------------------------------------------------------------------------------------------------ the decision
+REQUIRED = ["build_x", "build_tests", "build_stock", "build8", "pins", "pins_h", "tests", "sampler_cpu", "servetests",
+            "fence4", "sampler_gpu", "v2_unit", "guards", "e7_release", "e7_repeat", "e7_v2", "kl2_p211", "kl3_p211",
+            "startlines_P", "lost_answers", "cont_P", "chatcache", "vision", "toolcalls", "lossless"]
+INFO_KEYS = ["e7_vs_p0210", "e7_upstream", "logits_vs_p028x", "logits_vs_p0210", "q5_0_parity", "nll_info", "nll_ident",
+             "pcie_share"]
+
+
+def decide(a):
+    o = Path(a.outdir)
+    g = g17.read_gates(o)
+    s = lambda k: g.get(k, ("MISSING", ""))[0]
+    out, reasons, missing = [], [], []
+    for k in REQUIRED + [k for k in g if k.startswith("env_")]:
+        if s(k) == "MISSING":
+            missing.append(k)
+        elif s(k) != "PASS":
+            reasons.append(f"{k}: {s(k)} {g[k][1]}".strip()[:300])
+    for k in [k for k in g if k.startswith("fatal_") or k.startswith("foreign_")]:
+        reasons.append(f"{k}: {g[k][0]} {g[k][1]}"[:300])
+    v = s("e7_vs_p028x")
+    if v == "MISSING":
+        missing.append("e7_vs_p028x")
+    elif v != "PASS":
+        u = s("e7_upstream")
+        if u == "MISSING":
+            missing.append("e7_upstream (needed: the port is not bit-identical to P028x)")
+        elif u == "PASS":
+            reasons.append("e7_vs_p028x: the port differs from P028x while stock 0.2.8 = stock 0.2.11 (e7_upstream 7/7): "
+                           "our port changed bits")
+        else:
+            out.append("exact7 vs P028x: not identical, and upstream itself moved from 0.2.8 to 0.2.11 (e7_upstream) - "
+                       "a cross-version difference; the KL rules and the checks decide")
+    else:
+        out.append("exact7 vs P028x: 7/7 identical (the v0.2.11 port with the pins is P028x bit for bit on exact7)")
+    sp_v, sp_l = speed(o)
+    sv_v, sv_l = save(o)   # 11-07 amendment: (None, []) before it
+    bp_v, bp_l = g17.bp90_baseline(o / "bp90")
+    out += sp_l + sv_l + bp_l + bp90_p10(o / "bp90")
+    for name, vv in (("speed screen", sp_v), ("chat-cache save", sv_v), ("Basalt fixtures", bp_v)):
+        if vv is None or vv == "NOT JUDGED":
+            continue
+        if vv == "NOT DECIDED":
+            missing.append(name)
+        elif vv == "FAIL":
+            reasons.append(f"{name}: FAIL")
+    if reasons:
+        base = "FAIL"
+    elif missing:
+        base = "INCOMPLETE"
+    elif sp_v == "BORDERLINE":
+        base = "BORDERLINE"
+    else:
+        base = "PASS"
+    out.append(f"BASELINE (the pinned-off v0.2.11 port = P028x): {base}")
+    out += [f"  - {r}" for r in reasons] + [f"  - not run / missing: {m}" for m in missing]
+    for k in INFO_KEYS:
+        if k in g:
+            out.append(f"  (info) {k}: {g[k][0]} {g[k][1]}"[:300])
+    out.append("Not in this gate (Karl's 11-05 list): check (2) in 1-token windows and checks (1) + (2) on the speculative "
+               "path (they need MEASUREMENT twins of this port) - required before any switch.")
+    out.append("OPEN: the server pins STRATA_STREAM_WRITE_TIMEOUT_S=0 / STRATA_BLOCKING_CONSOLE=1 stay unless Karl accepts "
+               "v0.2.11's defaults as serve fixes.")
+    out.append("Nothing switches (P028x stays served); a PASS makes r23-port0211 the checked base for the next port.")
+    if sv_v is not None:
+        out.insert(0, g17.AMENDMENT_1107)
+    txt = "\n".join(out) + "\n"
+    (o / "decision.txt").write_text(txt)
+    print(txt, end="")
+    return 0 if base == "PASS" else 1
+
+
+# ------------------------------------------------------------------------------------------------ selftest
+def selftest(a):
+    """The rules on gap 17's real screen and Basalt data (B and P relabelled: gap 17's P is the v0.2.10 port) plus
+    synthetic gates; scratch outdirs under SCRATCH. No GPU, no engine."""
+    src = WS / "results/r22/gap17"
+    root = Path(a.scratch) / "selftest"
+    shutil.rmtree(root, ignore_errors=True)
+    fails = []
+
+    def mk(name, gates, speed_from=src, bp=("M", "H"), bp_extra=None):
+        d = root / name
+        (d / "speed").mkdir(parents=True)
+        (d / "bp90").mkdir()
+        for f in (speed_from / "speed").glob("[BP][123][nar].jsonl"):
+            shutil.copy(f, d / "speed" / f.name)
+        for x in bp:
+            shutil.copy(src / "bp90" / f"cold-{x}.jsonl", d / "bp90" / f"cold-{x}.jsonl")
+        for x, y in (bp_extra or {}).items():
+            shutil.copy(src / "bp90" / f"cold-{y}.jsonl", d / "bp90" / f"cold-{x}.jsonl")
+        (d / "gates.txt").write_text("".join(f"{k} {v} synthetic\n" for k, v in gates.items()))
+        return d
+
+    def run(d):
+        ns = argparse.Namespace(outdir=str(d))
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = decide(ns)
+        return rc, (d / "decision.txt").read_text()
+
+    def check(name, cond, txt):
+        print(f"{'ok  ' if cond else 'FAIL'} {name}")
+        if not cond:
+            fails.append(name)
+            print("     " + txt.replace("\n", "\n     ")[:1500])
+
+    allpass = {k: "PASS" for k in REQUIRED + ["e7_vs_p028x", "env_B1", "env_P1"]}
+    # 1. gap 17's real data: its speed passed g16's rule; its Basalt failed (struct, blend) -> FAIL on Basalt only
+    rc, t = run(mk("g17real", allpass))
+    check("gap 17 data: Basalt FAIL -> baseline FAIL", rc == 1 and "BASELINE (the pinned-off v0.2.11 port = P028x): FAIL" in t
+          and "Basalt fixtures: FAIL" in t and "speed screen: FAIL" not in t, t)
+    check("gap 17 data: g16 speed lines present", "speed screen decode: P -0.87 %" in t, t)
+    check("gap 17 data: per-workload no-loss line present", "per-workload no-loss (P vs B)" in t, t)
+    # 2. Basalt H = M (both M's file): PASS
+    rc, t = run(mk("allpass", allpass, bp=("M",), bp_extra={"H": "M"}))
+    check("Basalt H = M, speed gap 17's: PASS", rc == 0 and ": PASS" in t.split("BASELINE")[1].split("\n")[0], t)
+    # 3. a missing required gate -> INCOMPLETE
+    g = dict(allpass)
+    g.pop("v2_unit")
+    rc, t = run(mk("missing", g, bp=("M",), bp_extra={"H": "M"}))
+    check("missing v2_unit -> INCOMPLETE", "): INCOMPLETE" in t and "not run / missing: v2_unit" in t, t)
+    # 4. a failed env gate, a fatal and a foreign gate -> FAIL with each named
+    g = dict(allpass, env_P2="FAIL", fatal_P3="FAIL", foreign_bpH2="FAIL")
+    rc, t = run(mk("envfail", g, bp=("M",), bp_extra={"H": "M"}))
+    check("env / fatal / foreign -> FAIL, each named", "): FAIL" in t and "env_P2" in t and "fatal_P3" in t
+          and "foreign_bpH2" in t, t)
+    # 5. e7_vs_p028x FAIL: upstream moved (e7_upstream FAIL) -> INFO line, PASS; upstream did not (PASS) -> FAIL
+    g = dict(allpass, e7_vs_p028x="FAIL", e7_upstream="FAIL")
+    rc, t = run(mk("upmoved", g, bp=("M",), bp_extra={"H": "M"}))
+    check("e7 differs, upstream moved -> cross-version INFO, PASS", rc == 0 and "upstream itself moved" in t, t)
+    g = dict(allpass, e7_vs_p028x="FAIL", e7_upstream="PASS")
+    rc, t = run(mk("ourmove", g, bp=("M",), bp_extra={"H": "M"}))
+    check("e7 differs, upstream did not move -> FAIL", rc == 1 and "our port changed bits" in t, t)
+    g = dict(allpass, e7_vs_p028x="FAIL")
+    rc, t = run(mk("noup", g, bp=("M",), bp_extra={"H": "M"}))
+    check("e7 differs, no e7_upstream -> INCOMPLETE", "): INCOMPLETE" in t and "e7_upstream (needed" in t, t)
+    # 6. speed: P's screen files replaced by B's (equal arms) -> PASS; P made 10 % slower on one workload -> FAIL
+    d = mk("sameab", allpass, bp=("M",), bp_extra={"H": "M"})
+    for k in (1, 2, 3):
+        for x in "nar":
+            shutil.copy(d / "speed" / f"B{k}{x}.jsonl", d / "speed" / f"P{k}{x}.jsonl")
+    rc, t = run(d)
+    check("P = B on the screen -> PASS", rc == 0, t)
+    for k in (1, 2, 3):
+        p = d / "speed" / f"P{k}a.jsonl"
+        rows = [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+        for r in rows:
+            if r["id"] == "A-edit":
+                r["decode_tps"] *= 0.90
+        p.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    rc, t = run(d)
+    check("one workload 10 % slower on decode -> per-workload no-loss FAIL", rc == 1 and "A-edit decode" in t
+          and "speed screen: FAIL" in t, t)
+    # 7. P10 INFO lines with the v0.2.10 port's file (gap 17's H) beside an H = M copy
+    rc, t = run(mk("p10", allpass, bp=("M",), bp_extra={"H": "M", "P10": "H"}))
+    check("P10 INFO lines", "(info) Basalt struct decode: v0.2.10 port" in t, t)
+    # 8. the pins on the real configs; a wrong value and a missing key fail
+    for cfgn, want in (("P0211x.json", "PASS"), ("P0211x-h.json", "PASS"), ("P0210x-h.json", "FAIL")):
+        import contextlib
+        import io
+        gf = root / "pins-gates.txt"
+        with contextlib.redirect_stdout(io.StringIO()):
+            pins(argparse.Namespace(config=str(WS / "configs" / cfgn), gate="p", gates=str(gf)))
+        last = gf.read_text().splitlines()[-1].split()[1]
+        check(f"pins {cfgn} -> {want}", last == want, gf.read_text())
+    # 9. startlines: gap 17's P1 start log passes the wanted lines; an injected #3961 line / retry line fails
+    sl = src / "speed" / "P1.startlog"
+    for name, extra, want in (("clean", "", "PASS"), ("lost", f"[strata] {LOST_LINE}; it is answered as an error\n", "FAIL"),
+                              ("retry", "[strata] drafting off: starting again without a drafter (x)\n", "FAIL")):
+        f = root / f"sl-{name}.log"
+        f.write_text(sl.read_text(errors="replace") + extra)
+        gf = root / "sl-gates.txt"
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            startlines(argparse.Namespace(startlog=str(f), serverlog=[], gate="s", gates=str(gf)))
+        last = gf.read_text().splitlines()[-1].split()[1]
+        check(f"startlines {name} -> {want}", last == want, gf.read_text().splitlines()[-1])
+    # 10. lost: a clean log passes, a hit fails, no log fails
+    for name, body, want in (("clean", "ok\n", "PASS"), ("hit", f"[strata] {LOST_LINE}; x\n", "FAIL"), ("none", None, "FAIL")):
+        f = root / f"lost-{name}.log"
+        if body is not None:
+            f.write_text(body)
+        gf = root / "lost-gates.txt"
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            lost(argparse.Namespace(logs=[str(f)], gate="l", gates=str(gf)))
+        last = gf.read_text().splitlines()[-1].split()[1]
+        check(f"lost {name} -> {want}", last == want, gf.read_text().splitlines()[-1])
+    # 11. e7cmp on gap 17's stored runs: g17-p210a vs g17-x28h was 7/7 MATCHED; g17-hcr vs g17-p210a 3/7
+    for lab, ref, want in (("g17-p210a", "g17-x28h", "PASS"), ("g17-hcr", "g17-p210a", "FAIL")):
+        gf = root / "e7-gates.txt"
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            e7cmp(argparse.Namespace(label=lab, ref=ref, info=False, gate="e", gates=str(gf)))
+        last = gf.read_text().splitlines()[-1]
+        check(f"e7cmp {lab} vs {ref} -> {want}", last.split()[1] == want, last)
+    # 12. the 11-07 amendment: port-0211's own stored screen (B fast, P slow on the 1238 MiB save; equal prefill), copied
+    # with its engine logs into new dirs (amended), plain and edited by g17.park_edit
+    gsrc = WS / "results/r23/port-0211/gap"
+
+    def mk_am(name):
+        d = mk(name, allpass, bp=("M",), bp_extra={"H": "M"})
+        for f in (d / "speed").glob("*"):
+            f.unlink()
+        for f in (gsrc / "speed").glob("[BP][123][nar].*"):
+            if f.suffix in (".jsonl", ".englog"):
+                shutil.copy(f, d / "speed" / f.name)
+        return d
+    rc, t = run(mk_am("am-real"))
+    check("11-07: port-0211's screen, B-fast vs P-slow saves, equal prefill -> PASS with the save line",
+          rc == 0 and "AMENDMENT 2026-11-07" in t and "chat-cache save [11-07 amendment]" in t
+          and "per-workload no-loss (P vs B) [11-07 amendment" in t and "= P028x): PASS" in t, t)
+    d = mk_am("am-prefill15")
+    g17.park_edit(d, "P", prefill=lambda ms: ms * 1.15)
+    rc, t = run(d)
+    check("11-07: a real +15 % prefill slowdown on P -> FAIL (per-workload, R3 named)", rc == 1
+          and "R3-extract5k prompt" in t and "speed screen: FAIL" in t, t)
+    d = mk_am("am-save15")
+    g17.park_edit(d, "P", save=lambda ms, mib, k: ms * 1.15)
+    rc, t = run(d)
+    check("11-07: a real +15 % save slowdown on P (both levels) -> the save line FAILs the baseline", rc == 1
+          and "chat-cache save: FAIL" in t and "speed screen: FAIL" not in t, t)
+    # 13. the finished gate itself keeps its rule (read-only): auto = the old lines; forced = the amended verdict
+    v, ls = speed(gsrc)
+    check("11-07: results/r23/port-0211/gap auto keeps the old verdict (R3 / R4 FAIL, no save line)", v == "FAIL"
+          and "R3-extract5k prompt -1.4 %" in "\n".join(ls) and save(gsrc) == (None, []), ls)
+    v, ls = speed(gsrc, amended=True)
+    sv, sl = save(gsrc, amended=True)
+    check("11-07: the same screen forced under the amendment: speed PASS, save PASS", v == "PASS" and sv == "PASS",
+          ls + sl)
+    # 14. the outside-engine INFO flag (Karl 11-07) on port-0211's own screen: R4 flagged, the verdict still PASS
+    rc, t = run(mk_am("am-flag"))
+    check("11-07: the outside-engine INFO flag names R4 and the baseline stays PASS", rc == 0
+          and "R4-agent33k P +" in t.split("for review (INFO): ")[-1] and "= P028x): PASS" in t, t)
+    print(f"selftest: {len(fails)} failure(s)")
+    return 1 if fails else 0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    sp = ap.add_subparsers(dest="cmd", required=True)
+
+    def sub(name, *pos, info=False):
+        p = sp.add_parser(name)
+        for x in pos:
+            p.add_argument(x)
+        p.add_argument("--gate")
+        p.add_argument("--gates")
+        if info:
+            p.add_argument("--info", action="store_true")
+        return p
+    p = sub("envcheck", "exe", "config")
+    p.add_argument("--ngpu", type=int, default=2)
+    p.add_argument("--pins", action="store_true")
+    sub("pins", "config")
+    p = sub("startlines", "startlog")
+    p.add_argument("serverlog", nargs="*")
+    p = sub("lost")
+    p.add_argument("logs", nargs="+")
+    sub("e7cmp", "label", "ref", info=True)
+    sub("e7gate", "summary", "label", info=True)
+    sub("servetests", "file")
+    sub("fence4", "tree")
+    sub("toolcalls", "m", "x")
+    p = sp.add_parser("pcie")
+    p.add_argument("logs", nargs="+")
+    sp.add_parser("decide").add_argument("outdir")
+    sp.add_parser("selftest").add_argument("scratch")
+    a = ap.parse_args()
+    return {"envcheck": envcheck, "pins": pins, "startlines": startlines, "lost": lost, "e7cmp": e7cmp,
+            "e7gate": g17.e7gate, "servetests": g17.servetests, "fence4": g17.fence4, "toolcalls": toolcalls,
+            "pcie": pcie, "decide": decide, "selftest": selftest}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

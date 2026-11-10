@@ -1,0 +1,58 @@
+VERSION CHECK FIX 1110b: MODEL CONFIG KEYS ARE NOT SETTINGS (2026-11-10)
+=======================================================================
+Karl 11-10: "Version check: turn it off again in Jan's deep jobs now. The extra fix (skip model-config keys) is fine as
+low-priority desk work. Re-enable it only after LIVE checks pass with no false marks on all three (o01, o04, o05), not
+just the replay."
+
+STATE
+- The version check is OFF in Jan's deep jobs since 11-10 11:57 (tools/research-runner.py, backup
+  research-runner.py.before-versionoff1110; staging/post7d/tests/test_runner_daily.py ALL OK; runner restarted).
+- This fix is installed in the LDR package for the live check only. With "version" off in JOB_DEEP_FIX no Jan job runs
+  the check, so the install is inert for Jan's jobs. Installed: .venv/.../local_deep_research/deep/checks.py sha
+  1b31d1420a80 (= staged/checks.py); the 1110 version (32a5d54be43e) is checks.py.before-versionfix1110b.
+- trees/ (the first fix's replay inputs) was already deleted on 11-10 after the first live check, as Karl said then.
+
+WHY
+The first live check of fix 1110 (live-check.txt in ../version-fix-1110) gave o05 10 false marks: "model_type" x8 and
+"architectures" x2. o05's report quotes the checkpoint's own config.json in a code span:
+  `"model_type": "qwen4_exp"` and `"architectures": ["Qwen4ExpForConditionalGeneration"]`
+setting_names() takes a quoted key from a code span as a config key; the live model answer called both
+"other-project, described", so both were marked. The stored (replayed) answers had called them "attributed", which is
+why the replay showed 0 marks and the live check did not.
+
+THE FIX (staged/checks.py; version-fix-1110b.patch against the 1110 version, checks.py only, +35 lines)
+- MODEL_CONFIG_KEYS: the Hugging Face model-config fields (model_type, architectures, torch_dtype, hidden_size,
+  num_hidden_layers, num_attention_heads, rope_theta, num_experts, num_experts_per_tok, quantization_config, ...).
+- non_settings(): a QUOTED config key (the '"key"' form setting_names gives keys from code spans) whose name is in that
+  list is not sent to the model and never marked; it is listed as not-a-setting with the reason "a key of a model
+  checkpoint's config.json (the model file's metadata), not a setting of the program". Flags, environment variables
+  and -D options are never filtered by this list (--model-type, MODEL_TYPE are still sent).
+- The model prompts, calls and every other rule are unchanged.
+
+DESK CHECKS (scratch/scan_b.py; no model, no network)
+- Selftest ALL OK (7): o05's sentence -> both keys skipped; the installed 1110 check skips neither; a program's own
+  config keys ("fallback", "model_not_running") and a flag spelled like a model key are still sent; an environment
+  variable is not filtered; the quantization rule unchanged.
+- Every stored test-run check (70 checks, 2,037 names, 48 of them quoted config keys; the owner's own jan1024 replays
+  left out): the new rule skips 9 names, all HF model-config keys by the model's own notes ("Kimi K3 HF config key",
+  "Qwen checkpoint config.json key"): "hidden_act" in h05 of p4s7 / p4s8 / p7a / p7c, "model_type" in h05 p7a and o05,
+  "architectures" in o05, and the two live o05 ones. Two of them had been marked (p4s7 h05 "hidden_act", whose own
+  note says it is not a Strata setting; and live o05). The other 39 quoted config keys are still sent.
+  Details: replay/scan-b.json.
+
+LIVE CHECK (Karl's condition): live-check.sh, results in live-check.txt and ../replays/live-version-1110b-<q>/.
+See the result below (added when it ends).
+
+LIVE CHECK RESULT (11-10 12:05-12:16; through 8090/8080, run/bench.lock held; the code tool's clone opened and deleted
+by fix-replay.py)
+- o01: 10 marks on 4 names, the same set as the 1110 replay, all judged true on 11-09:
+  STRATA_ADAPT_HELPER x5, STRATA_COST_GATE x1, STRATA_WARM x1 (own-build: "not in the code at your version; only your
+  own files name it"), STRATA_DISJOINT_ADAPT x3 (a setting of the other engine of the same project; the 11-09 missed
+  mark, checked in the code). The llama.cpp flags the report attributes to llama.cpp stay unmarked.
+- o04: 0 marks (3 calls). o05: 0 marks (0 calls: IQ3_S, "model_type" and "architectures" are not sent).
+Karl's condition is met: no false marks on o01, o04 and o05, live.
+-> The version check is ON again in Jan's deep jobs since 11-10 12:17 (research-runner.py back to the ON form plus a
+   dated comment, backup research-runner.py.before-versionon1110b; test_runner_daily.py ALL OK; runner restarted, pid
+   737035). Off again: copy research-runner.py.before-versionon1110b (and test_runner_daily.py.before-versionon1110b)
+   back and restart deep-research-runner.
+Still not covered (unchanged): o01's two description misses (STRATA_ROUTE_TAIL_SKIP, STRATA_ADAPT_OVERLAP).

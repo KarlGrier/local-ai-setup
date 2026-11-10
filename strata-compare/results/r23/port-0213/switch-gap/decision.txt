@@ -1,0 +1,37 @@
+v0.2.13 PORT SWITCH CHECKS (work/r23/switch-gap/gap-switch0213.sh; rules switch_rules.py, frozen 4076ed3abcad): B = the daily as served for tests (engine-r23afetch 153ce47d3ef0, x28h + U + STRATA_ADAPT_FETCH=2) against P = the port (engine-r23p0213 639dfb1b7042, P0213x + STRATA_ADAPT_FETCH=2); measurements only
+rules forms (frozen): CITE_FORM tool-url, C2_NOREF_FORM differs
+VERDICT: SWITCH CHECKS PASS
+C1 parity / unit tests + the read-back: PASS
+  cpu: PASS - cpu: 8 pass / 0 skip / 0 fail of 8
+  servetests: PASS - 1524 tests, 1 failed or erred (known: test_hip_ordinal); 16 skipped
+  node: PASS - node --check app.js rc 0; 57 web / node test(s) ok, 0 skipped for 'node is not installed'
+  gpu: PASS - gpu: 90 pass / 1 skip / 0 fail of 91
+  readback: PASS - PASS: 91375 admitted slots read back, 0 differ, no mismatch line (read back 91375, differ 0, mismatch lines 0)
+C2 served outputs against the daily: EXACT - EXACT: 8 of 8 requests B-reproducible, 0 of them differ on P; B not reproducible on 0; the think continuation seen B1 / B2 / P 2 / 2 / 2 of 2
+  think-s1: EXACT
+  think-s2: EXACT
+  code-s1: EXACT
+  code-s2: EXACT
+  conv-s1: EXACT
+  conv-s2: EXACT
+  prose-s1: EXACT
+  prose-s2: EXACT
+C3 the sampled test (X = P vs R1 = B, noise twin R2 = B): PASS - D2(X, R1) 1.328 <= the noise bound 11.345 (band >= it whatever R2 gives)
+  (info) D2(X, R1) 1.3278, band 11.3449; sq.py overall X (with the read-back) PASS; sq.py verdict ALL PASS
+C4 web search end to end: PASS - PASS: 3 of 3 requests completed on B and judged on P, 3 pass (CITE_FORM tool-url); ran B 3 / P 3; paid searches during C4: 0 (B 0, P 0; the stop at 10); the counters moved exa +0, tavily +0 (Jan chat's own calls in that time included)
+  python: PASS
+  btree: PASS
+  searxng: PASS
+C5 (information): the lost-answer guard fired 0 time(s) over 64 client requests (70 server runs) in 6 P server log(s); on our workload (the screen + the fixtures) 0 in 13 requests
+  sqVF: 0 firing(s), 8 runs, 8 requests (server_r23sw11101048-sqVF_20261110T110907.log)
+  c2P: 0 firing(s), 8 runs, 8 requests (server_r23sw11101048-c2P_20261110T111344.log)
+  sqX: 0 firing(s), 32 runs, 32 requests (server_r23sw11101048-sqX_20261110T111750.log)
+  webP: 0 firing(s), 9 runs, 3 requests (server_r23sw11101048-webP_20261110T113418.log)
+  scrP1: 0 firing(s), 10 runs, 10 requests (server_r23sw11101048-scrP1_20261110T113535.log)
+  bpP: 0 firing(s), 3 runs, 3 requests (server_r23sw11101048-bpP_20261110T113858.log)
+  recommendation: no firing on our workload - no switch patch needed now (the guard stays as upstream ships it)
+INFO screen speed (one pass each, no noise estimate): decode geomean P 166.1 vs B 170.4 tok/s (-2.5 %), prompt geomean P 2,203.1 vs B 2,205.1 tok/s (-0.1 %; the 11-07 amendment's client clock minus the save)
+INFO fixtures on P (standard sampling): conv 1062 tokens (stop) 153.4 tok/s, struct 7230 tokens (stop) 219.9 tok/s, prose 1200 tokens (length) 138.6 tok/s
+INFO exact7 P (test form, pin 2500) vs the stored x28h-e7a: PASS exact7 r23sw11101048-P: 7/7, slots MATCHED (env PASS; bit-identity is not expected with STRATA_ADAPT_FETCH=2)
+NOT COVERED (the plan): the port's baseline gate (exactness on the CLI path, long40, the 3-pass screen, Basalt's speed rule) and REVIEW 4.7 (the single-card fallback, still Cstar18-single).
+NOTHING SWITCHES: 8080 stays the daily. Karl decides.

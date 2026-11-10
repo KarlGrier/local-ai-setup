@@ -1,0 +1,93 @@
+basalt_speed_rules.py - r23 (written 2026-11-08, NOT RUN): the rules of THE SPEED GAP for the Basalt prompt-path parts
+(work/r23/gap-basalt-speed.sh; results/BACKLOG-1027.md section H; Karl 11-07: "yes, after Phase 5's queue, P028x as the
+reference"). Written before any run; the driver freezes this text into the gap's rules.txt, and `decide` flags a change.
+NOTHING SWITCHES: P028x stays served. A CANDIDATE is listed for backlog H; adopting it is Karl's call at the next config
+change (after item 7 and Phase 5, under his 5 switch conditions).
+
+THE ARMS (configs written by `arms` at run time into results/r23/basalt-prompt/gap-speed/configs/, checked by `cfgcheck`;
+each arm has its own engine log logs/engine-r23sp-NAME.log):
+  On engine-r23basalt-fix (branch r23-basalt-prompt b8128327d, the build gap fix gated; base configs/P0210x-h.json with
+  exe -> engine-r23basalt-fix/strata, server -> strata-r23basalt/serve/server.py):
+    B    nothing                  the same-build base (= P0210x-h bit for bit: gap fix's BASELINE)
+    A    STRATA_PF_AHEAD=1        class from gap fix (EXACT)
+    T    STRATA_PF_TAIL_SPLIT=1   class from gap fix (ROUNDING-LEVEL)
+    U    STRATA_HC_UPMIX=1        class from gap a (EXACT; the three fix commits touch only A / T / C)
+    C    the C-stack as gap fix decided it: C_PARTS (A,T,U,K,KP) + STRATA_PF_FIRST_CHUNK=1 at --prefill auto:32768. That
+         is the serve-mode form whose scan gave the gated chunk C_CHUNK (22528, a 512-slot ring) in gap fix's Cscan start.
+         auto:22528 would be auto:16384 (generate.cpp rounds auto:N's ceiling to 8192 / 16384 / 32768); an explicit
+         --prefill 22528 is the operator's number, lent without the auto cap: another layout than the one gated
+    Bc / Tc / Cc = B / T / C + STRATA_TRACE=1, for B4 only
+  On engine-r22p028x (P028x, f4c4f654fb24, the served build; base configs/x28h.json = P028x as served without vision):
+    P    nothing                  the serving reference
+    PU   STRATA_HC_UPMIX=1        upstream's opt-in switch (cffe31d43), already in P028x's engine
+  A fix-build part is priced only when its class is EXACT or ROUNDING-LEVEL; C only when gap fix says ROUNDING-LEVEL
+  with C_PARTS and a C_CHUNK above 16384 (`pre`, which also needs gap fix's BUILD PASS and BASELINE PASS).
+
+PU's EXACTNESS ON P028x (run first; it gates PU's speed arms; gap a's form for U):
+  e7_P          exact7 P at pin 2500 against P028x's stored exact7 x28h-e7a (10-30; g17-x28h 11-03 and g23p-x28h 11-07
+                gave the same 7 hashes and slots): 7/7 MATCHED. INFO for PU (a FAIL is a FLAG: P028x moved since).
+  e7_PU         exact7 PU against THIS gap's P: 7/7, slots MATCHED.
+  logits_PU40   pf_yardstick long40 PU40 against P028x's stored long40 (results/r22/gap16/pfy/x28h): 0 of 40 differ.
+  If e7_P or logits_PU40 is not PASS, P40 (this gap's own P long40) runs when it fits: logits_P40 = P40 vs the stored one
+  (INFO, a FAIL is a FLAG), and logits_PU40_P40 = PU40 vs P40 then decides the long40 half.
+  PU EXACT = e7_PU PASS and the deciding long40 gate PASS; FAIL = either FAILs; VOID = an env gate of PU's runs failed;
+  NOT DECIDED = something missing, or P's own exact7 / P40 engine did not check out. Only EXACT lets PU's speed arms run.
+  A not-exact PU is not priced (it would need the KL rule, which this gap does not run).
+
+THE MEASUREMENTS (Basalt gap b's B1 / B2 / B3, plus its B4 as information; every start a fresh test server through
+with_server.sh, its engine's environment checked by basalt_rules.py envcheck before it measures):
+  B1  Basalt's cold pp16k / pp64k (bp90_client.py), a fresh engine per measurement, 3 passes in turned order (the arms,
+      reversed, the arms) over B A T U C P PU. One file per start: bp90/ARM-SET-PASS.jsonl.
+  B2  Basalt's decode fixtures (conv, struct, prose), 1 pass, on B C P PU: bp90/ARM-decode-1.jsonl.
+  B3  the 9-workload screen (work/r22/abarm.sh: W1-W3, agent x2, research4 x4; T 1.0 / 0.95 / 20 / min-p 0.05, effort
+      medium; a warm-up first), 3 passes in turned order (B C P PU / PU P C B / P B PU C) on B C P PU: speed/ARMkS.*.
+  B4  the chat-cache trade of T and C (round-11 #693; basalt_rules.py chat3 / chatrep) on Bc Tc Cc: REPORTED only.
+
+WHICH STARTS COUNT:
+  - An arm is VOID when one of its B1 / B2 / B3 starts failed its env gate (env_ARM_STEP) or showed a fatal line
+    (fatal_ARM_STEP: a fatal GPU error, a stall, an engine restart, a non-finite value): gap b's rule. A void base (B, or
+    P for the P028x comparisons) makes every verdict against it VOID.
+  - A start is left out (the arm stays judged on the others) when a foreign GPU user was seen before or during it
+    (foreign_ARM_STEP FAIL: an engine process by exact name, or an NVIDIA compute process of 512 MiB or more, whose binary
+    is not in engine-r23basalt-fix/ or engine-r22p028x/), or, for C, when its engine's "prompt chunk auto: N tokens" line
+    does not say C_CHUNK (chunk_C_STEP FAIL: not the gated layout; a FLAG names how often). The driver moves such a
+    start's files to void/; a FAIL gate whose files are still in place is left out too (B1 / B2) or makes the screen NOT
+    DECIDED (B3).
+  - The other arms' chunk lines are INFO.
+
+THE RULES (gap b's thresholds, unchanged):
+  B1 gain of X against a reference R (R = B for A T U C; R = P for PU; and R = P for every fix-build arm as "vs P028x"):
+     change = mean_X / mean_R - 1 per fixture; noise = the larger of the two arms' pass spreads (max / min - 1).
+     Targets (basalt_rules.TARGETS): A, T -> pp16k; C -> pp64k; U, PU -> either. GAIN = a target fixture above
+     +max(noise, 1.0 %) and no fixture below -noise. Each fixture needs 2 or more counted passes of both arms, else NOT
+     DECIDED.
+  B2 decode (gap b's): each fixture's decode of X >= R's x (1 - noise), noise = gap 17's 3-pass spread of that fixture on
+     R's build (results/r22/gap17/bp90/cold-H = P0210x-h for B, cold-M = P028x for P; 3 % when missing).
+  B3 screen (gap b's B3 under the 11-07 measurement amendment, work/r22/g17_rules.py "11-07 park amendment", applied
+     here explicitly - this gap starts after 2026-11-07 14:00):
+     - per-workload no-loss (Karl 11-03; g17 wl_noloss): per workload, decode and prompt tok/s each, X's pass mean >= R's
+       x (1 - the larger of the two arms' spreads there); the per-workload prompt is the engine clock minus the
+       chat-cache save (prompt tokens / (engine prompt ms - the `chat cache: parked` ms before that request));
+     - the screen's prompt geomean over the passes not below R's (gap b's strict form), on the client clock minus the save;
+     - the chat-cache save as its own line (g17 save_rule: its own noise, its two levels taken into account): FAIL is a
+       loss, NOT DECIDED leaves B3 undecided, NOT JUDGED (no save) is INFO;
+     - the outside-engine flag (INFO, on the no-loss line): a workload whose client TTFT - engine prompt ms is above R's
+       mean by more than the spread in every pass of X. It never changes a verdict;
+     - 3 complete passes of both arms, every record paired with its engine-log line, else NOT DECIDED.
+  VRAM (C): vram_C = every C start's guard line: 5080 free >= 300 MiB and MemAvailable >= 12 GiB throughout.
+
+VERDICTS (decide writes OUTDIR/decision.txt and decision.json):
+  A, T, U (fix build, vs B)  CANDIDATE = class EXACT / ROUNDING-LEVEL + B1 GAIN; NO GAIN = without the gain; VOID; NOT
+                             DECIDED; NOT PRICED (class).
+  C (fix build, vs B)        gap b's stack rule: CANDIDATE = B1 GAIN + B2 PASS + B3 PASS + vram_C PASS; NO GAIN = B2, B3,
+                             VRAM pass without the gain; FAIL (screen / decode / VRAM); VOID; NOT DECIDED; NOT PRICED.
+  PU (P028x, vs P)           NOT PRICED unless EXACT; then as U: CANDIDATE = B1 GAIN (gap b's single-part rule). Its B2 and
+                             B3 against P are REPORTED beside it (Karl's switch conditions need the screen at the switch).
+  vs P028x, every fix-build arm (A T U C, and B as INFO): B1 against P with the same threshold -> GAIN OVER P028x /
+                             NOT ABOVE P028x / BELOW P028x (a fixture below -noise) / NOT DECIDED / VOID; C also B3 vs P
+                             (reported) and B2 vs P (INFO).
+  SPEED CANDIDATES FOR BACKLOG H = the arms whose verdict is CANDIDATE, each with its vs-P028x line. A fix-build part's
+  CANDIDATE is its own effect on its build; backlog H also needs a priced gain over P028x before adoption (the vs-P028x
+  line) and the port-base conditions there.
+
+Subcommands: pre, arms, cfgcheck, chunk, puexact, rules, decide, selftest. Python: .venv/bin/python -I -B.

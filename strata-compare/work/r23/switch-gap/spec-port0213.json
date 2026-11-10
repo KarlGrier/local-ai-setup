@@ -1,0 +1,165 @@
+{
+ "name": "port0213-switch-1110",
+ "fixed": "2026-11-10",
+ "use": "the v0.2.13 port's switch checks, C3 (results/r23/port-0213/SWITCH-CHECKS-PLAN-1110.md; the sampled test of results/r23/SAMPLED-QWEN-DESIGN-1109.md, unchanged math): B = the daily as served for tests (configs/P028x.json without the picture reader = x28h + STRATA_HC_UPMIX=1 + STRATA_ADAPT_FETCH=2 on the fetch build engine-r23afetch) against P = the port (configs/P0213x-af2.json without the picture reader, engine-r23p0213), the helper GPU on and adaptation on, as served",
+ "plan": {
+  "workloads": "/home/USER/ai-speed-testing/basalt-ab/scripts/workloads.json",
+  "prompts": [
+   {
+    "name": "math",
+    "source": "workloads",
+    "set": "normal",
+    "id": "W1-think"
+   },
+   {
+    "name": "code",
+    "source": "workloads",
+    "set": "normal",
+    "id": "W2-code"
+   },
+   {
+    "name": "conv",
+    "source": "workloads",
+    "set": "calib",
+    "id": "C-conv"
+   },
+   {
+    "name": "prose",
+    "source": "workloads",
+    "set": "calib",
+    "id": "C-prose"
+   }
+  ],
+  "max_tokens": 512,
+  "thinking": false,
+  "k": 8,
+  "budget_s": 600
+ },
+ "arms": {
+  "R1": {
+   "role": "reference",
+   "desc": "B: the daily as served for tests (configs/P028x.json without the picture reader = x28h + STRATA_HC_UPMIX=1 + STRATA_ADAPT_FETCH=2 on the fetch build)",
+   "base": "/home/USER/ai-speed-testing/strata-compare/configs/P028x.json",
+   "strip": true,
+   "check_equal": {
+    "config": "/home/USER/ai-speed-testing/strata-compare/configs/x28h.json",
+    "top": {
+     "exe": "/home/USER/ai-speed-testing/strata-compare/engine-r23afetch/strata"
+    },
+    "env": {
+     "STRATA_HC_UPMIX": "1",
+     "STRATA_ADAPT_FETCH": "2"
+    }
+   },
+   "exe_sha12": "153ce47d3ef0",
+   "binary_has": [
+    "STRATA_ADAPT_FETCH",
+    "STRATA_ADAPT_FETCH_VERIFY"
+   ],
+   "seed_base": 1000000,
+   "exercise": [
+    "common",
+    "fetch2"
+   ]
+  },
+  "R2": {
+   "role": "noise",
+   "desc": "R1's config again, a fresh start with its own seeds (B against itself for the noise bound)",
+   "same_as": "R1",
+   "k": 4,
+   "seed_base": 2000000,
+   "exercise": [
+    "common",
+    "fetch2"
+   ]
+  },
+  "X": {
+   "role": "candidate",
+   "desc": "P: the v0.2.13 port (configs/P0213x-af2.json = P0213x.json + STRATA_ADAPT_FETCH=2, without the picture reader) on engine-r23p0213",
+   "base": "/home/USER/ai-speed-testing/strata-compare/configs/P0213x-af2.json",
+   "strip": true,
+   "exe_sha12": "639dfb1b7042",
+   "binary_has": [
+    "STRATA_ADAPT_FETCH",
+    "STRATA_ADAPT_FETCH_VERIFY",
+    "STRATA_ADAPT_CHECKRES"
+   ],
+   "seed_base": 3000000,
+   "exercise": [
+    "common",
+    "fetch2"
+   ]
+  },
+  "VF": {
+   "role": "verify",
+   "desc": "X with the serve read-back check (STRATA_ADAPT_FETCH_VERIFY=1 with STRATA_ADAPT_CHECKRES=1, as on 11-09; slow, a check run only): the fetch patch's own files (expert_source.cpp, generate.cpp) have no parity program",
+   "same_as": "X",
+   "env": {
+    "STRATA_ADAPT_FETCH_VERIFY": "1",
+    "STRATA_ADAPT_CHECKRES": "1"
+   },
+   "k": 2,
+   "seed_base": 5000000,
+   "verify": "fetchverify",
+   "covers": [
+    "X"
+   ]
+  }
+ },
+ "exercise": {
+  "common": {
+   "require": [
+    "^strata mtp: EXACT speculative sampling on \\(STRATA_SPEC_EXACT\\)"
+   ]
+  },
+  "fetch2": {
+   "require": [
+    "^strata serve: STRATA_ADAPT_FETCH=2: the PCIe share takes each layer's most-routed misses"
+   ],
+   "forbid": [
+    "STRATA_ADAPT_FETCH is off",
+    "STRATA_ADAPT_FETCH=1: the PCIe share takes"
+   ],
+   "counter": {
+    "re": "^strata serve: fetch: (\\d+) admissions in \\d+ windows",
+    "group": 1,
+    "min_total": 100
+   }
+  }
+ },
+ "verify": {
+  "fetchverify": {
+   "mismatch_re": "^strata serve: FETCH VERIFY ",
+   "summary_re": "^strata serve: fetch verify: (\\d+) admitted slots read back, (\\d+) differ",
+   "min_read_back": 200,
+   "min_requests": 4,
+   "require": [
+    "^strata serve: STRATA_ADAPT_FETCH=2: the PCIe share takes"
+   ],
+   "forbid": [
+    "STRATA_ADAPT_FETCH is off"
+   ],
+   "_note": "the serve read-back's lines, the same in engine-r23afetch (153ce47d3ef0) and engine-r23p0213 (639dfb1b7042; checked 11-10 with strings): any 'FETCH VERIFY' line (a differing slot, an admitted expert also on a helper, a slot held by more than one entry, a pending tier copy's target) is a mismatch; the summary line's first two groups are read back / differ"
+  }
+ },
+ "scorer": {
+  "desc": "decpath_rules.py's decode-path reference (gap-decpath 11-05, results/r23/decpath/gap/dec): x28h under quant_quality.py's fixed yardstick settings, 2-row verify windows (the 11-09 sampled test's scorer, unchanged)",
+  "base": "/home/USER/ai-speed-testing/strata-compare/configs/x28h.json",
+  "strip": true,
+  "spec": 2,
+  "topk": 64,
+  "quant_quality": "/home/USER/ai-speed-testing/strata-compare/strata-r22p022n/tools/quant_quality.py"
+ },
+ "taint": [
+  "became non-finite",
+  "repeated reasoning detected",
+  "closing the thinking once",
+  "thinking budget reached",
+  "thinking limited to",
+  "the engine had stopped",
+  "the engine stopped while",
+  "loading the model again",
+  "the engine is running again",
+  "starts the engine again"
+ ]
+}

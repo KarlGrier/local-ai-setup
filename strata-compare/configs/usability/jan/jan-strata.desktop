@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Jan (Strata)
+Comment=Jan desktop chat on the local Strata model (127.0.0.1:8080), offline otherwise
+Exec=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/jan-strata %U
+Icon=jan-strata
+StartupWMClass=Jan-Desktop
+Categories=Utility;Network;Chat;
+Terminal=false

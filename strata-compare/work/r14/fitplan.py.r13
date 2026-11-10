@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""fitplan.py MODEL-00001-of-0000N.gguf [options] — what fits on this PC, from the GGUF's HEADERS only (gguf_head.py).
+
+    --ctx 131072 --kv-resident 32768 --reserve-mib 713 --helper-gib 8 --profile expert-profile.bin
+    --ram-gib 91 --floor-gib 20 --other-gib 6 --chat-cache-gib 12 --json OUT  |  --calibrate
+
+Bytes per part: routed experts (per layer: one expert's gate + up + down, 256-aligned = its cache slot), the dense
+tensors the GPU holds (in the pack's form: the BF16-only roles at 2 bytes a value), the token embedding (mapped host
+memory), the n-gram table (read from the file, page cache), the K/V (QSA layers x cells; int8 = 2 x 256 values + a
+fp16 scale per 64 values per KV head) and the drafter.
+Slots: the 5080's free VRAM before the cache = its total - a fixed overhead (CUDA context, scratch, the drafter, the
+GDN state; fitted on the three files measured here: --calibrate) - the dense tensors - the resident K/V; minus
+--vram-reserve-mib and the draft head; then filled like the engine fills sized slots: experts in the profile's rank
+order (or, without a profile, in order of a layer-interleaved walk - the mean size), each its own 256-aligned size.
+The helper (4060 Ti): its free VRAM before the arena (fitted) minus the engine's 512 MiB, filled by the ranks after the
+5080's. RAM: the expert arena (the engine keeps every routed expert in RAM, page-locked, when it fits; else
+--resident-budget), the pinned K/V beyond the resident window, the chat cache's budget, the process's own share;
+against MemTotal - the floor - what the desktop uses.
+Prints the prediction and a conservative starting config (bringup/RUNBOOK.md step 2)."""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import struct
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gguf_head import read_model  # noqa: E402
+
+GIB, MIB = 2**30, 2**20
+BF16_ROLES = ("hc_attn_", "hc_ffn_", "output_hc_", "ffn_gate_inp", "indexer.", "ssm_alpha", "ssm_beta", "ple_key", "ple_value")
+# --calibrate fits these on the logged runs below (C*13 IQ3_S, Round 10 Q4, Round 11 Signal); the defaults are the fit
+VRAM_5080_MIB, VRAM_HELPER_MIB = 16303, 8188
+OVERHEAD_5080_GIB = 1.99      # fitted (--calibrate; per file 2.16 / 1.79 / 2.01): context + scratch + drafter + GDN/conv state + KV metadata
+HELPER_FREE_GIB = 7.25        # the engine's own line on the 4060 Ti ("CUDA1 context ready, 7.25 GiB free"), desktop on it
+HELPER_KEEP_MIB = 512         # remote_experts: the helper keeps >= 512 MiB free (3,600 slots refused in Round 11)
+
+
+def blob_bytes(m, layer: int) -> int:
+    b = 0
+    for part in ("gate", "up", "down"):
+        t = m.tensors.get(f"blk.{layer}.ffn_{part}_exps.weight")
+        if t is None:
+            return 0
+        b += t.nbytes // t.shape[-1]          # one expert of this layer
+    return (b + 255) // 256 * 256
+
+
+def dense_gpu_bytes(m) -> int:
+    tot = 0
+    for t in m.tensors.values():
+        n = t.name
+        if n.endswith("_exps.weight") or n in ("token_embd.weight", "per_layer_token_embd.weight"):
+            continue
+        if any(r in n for r in BF16_ROLES) and len(t.shape) >= 2:
+            tot += t.n_values * 2
+        else:
+            tot += max(t.nbytes, 0)
+    return tot
+
+
+def read_profile(path):
+    raw = Path(path).read_bytes()
+    if raw[:4] != b"STRP":
+        raise ValueError("not a STRP profile")
+    ver, nl, ne, want, n = struct.unpack("<5I", raw[4:24])
+    pairs = struct.unpack(f"<{2 * n}H", raw[24:24 + 4 * n])
+    return nl, ne, [(pairs[2 * i], pairs[2 * i + 1]) for i in range(n)]
+
+
+def kv_bytes_per_cell(m) -> float:
+    a = m.a
+    n_qsa = (a("block_count", 48) - a("nextn_predict_layers", 0)) // max(1, a("full_attention_interval", 4))
+    kvh, hd = a("attention.head_count_kv", 2), a("attention.key_length", 256)
+    per_head = 2 * hd + 2 * 2 * (hd // 64)        # int8 K + V, a fp16 scale per 64 values each
+    return n_qsa * kvh * per_head
+
+
+def plan(gguf, ctx=131072, kv_resident=32768, reserve_mib=713, draft_head_mib=87, profile=None, helper=True,
+         ram_gib=None, floor_gib=20.0, other_gib=10.0, chat_cache_gib=12.0, overhead_gib=OVERHEAD_5080_GIB,
+         helper_free_gib=HELPER_FREE_GIB, resident_budget_gib=None):
+    m = read_model(gguf)
+    a = m.a
+    n_layers = a("block_count", 48) - a("nextn_predict_layers", 0)
+    n_exp = a("expert_count", 512)
+    blobs = [blob_bytes(m, l) for l in range(n_layers)]
+    experts = sum(blobs) * n_exp
+    dense = dense_gpu_bytes(m)
+    te = m.tensors.get("token_embd.weight")
+    ple = m.tensors.get("per_layer_token_embd.weight")
+    cell = kv_bytes_per_cell(m)
+    kv_vram = min(ctx, kv_resident or ctx) * cell
+    kv_host = max(0, ctx - (kv_resident or ctx)) * cell
+    free_before = VRAM_5080_MIB * MIB - overhead_gib * GIB - dense - kv_vram
+    budget = free_before - (reserve_mib + draft_head_mib) * MIB
+    if profile and Path(profile).exists():
+        nl, ne, ranked = read_profile(profile)
+        order = [(l, e) for l, e in ranked if l < n_layers and e < n_exp]
+        how = f"profile {Path(profile).name} ({len(order)} ranked pairs)"
+    else:
+        order = [(l, e) for e in range(n_exp) for l in range(n_layers)]     # layer-interleaved: the mean size
+        how = "no profile: layer-interleaved order (mean expert size)"
+    used, slots = 0, 0
+    for l, e in order:
+        if used + blobs[l] > budget:
+            break
+        used += blobs[l]
+        slots += 1
+    uniform = int(budget // max(blobs)) if blobs else 0
+    h_slots, h_used = 0, 0
+    if helper:
+        hb = helper_free_gib * GIB - HELPER_KEEP_MIB * MIB
+        for l, e in order[slots:]:
+            if h_used + blobs[l] > hb:
+                break
+            h_used += blobs[l]
+            h_slots += 1
+    # RAM: the arena holds every routed expert (page-locked) unless a resident budget is given
+    # (C*13: no budget -> every routed expert, 46.8 GiB; with --resident-budget-gib: the experts the GPU caches do not hold,
+    # up to the budget - Signal 54.97 GiB = 63.28 - its 8.31 GiB cache)
+    arena = experts if resident_budget_gib is None else min(experts - used - h_used, resident_budget_gib * GIB)
+    ram_need = arena + kv_host + chat_cache_gib * GIB + 0.5 * GIB          # + 0.5 GiB: C*13 soak peak RSS 60.2 GiB = 46.84 + 1.16 + 12 + ~0.2
+    rep = {"file": Path(gguf).name, "layers": n_layers, "experts_per_layer": n_exp,
+           "expert_blob_mib": [round(min(blobs) / MIB, 2), round(sum(blobs) / len(blobs) / MIB, 2), round(max(blobs) / MIB, 2)],
+           "experts_gib": round(experts / GIB, 2), "dense_gpu_gib": round(dense / GIB, 2),
+           "token_embd_gib": round(te.nbytes / GIB, 2) if te else 0, "ngram_table_gib": round(ple.nbytes / GIB, 2) if ple else 0,
+           "kv_vram_gib": round(kv_vram / GIB, 2), "kv_host_gib": round(kv_host / GIB, 2),
+           "free_before_cache_gib": round(free_before / GIB, 2), "cache_budget_gib": round(budget / GIB, 2),
+           "slots_5080": slots, "slots_5080_gib": round(used / GIB, 2), "uniform_slots": uniform, "order": how,
+           "helper_slots_max": h_slots, "helper_gib": round(h_used / GIB, 2),
+           "ram_arena_gib": round(arena / GIB, 2), "ram_need_gib": round(ram_need / GIB, 2)}
+    if ram_gib:
+        room = ram_gib - floor_gib - other_gib
+        rep["ram_room_gib"] = round(room, 1)
+        rep["ram_ok"] = ram_need / GIB <= room
+        if not rep["ram_ok"]:
+            fit = max(0.0, room - kv_host / GIB - chat_cache_gib - 0.5)
+            rep["resident_budget_suggest_gib"] = round(fit, 0)
+            # v0.1.39 refuses a resident RAM mode (--resident-budget-gib / --resident-experts) next to a helper-GPU
+            # cache: "--resident-cpu-experts does not support layer splits or remote expert caches" (generate.cpp).
+            # Both GPUs -> the experts are read through the OS file cache (--mmap-experts: reclaimable, MemAvailable
+            # keeps counting it); one GPU -> the budget.  (Rehearsal B: the planner wrote both and the engine refused.)
+            # Rehearsal B measured both on the Q4 file: one GPU + the budget 31-33 tok/s, both GPUs + --mmap-experts
+            # 13.6-15.4 (greedy, 1,024 tokens) -> the budget first; the page-locked, mapped RAM copy costs the 5080
+            # ~100 MiB more (376 vs 276 MiB free at 713) -> reserve + 100.
+            rep["ram_mode"] = "resident budget, one GPU"
+            rep["ram_mode_alternative"] = "both GPUs: --mmap-experts (2.1x slower on the Q4 file)" if helper and h_slots else "-"
+    # conservative starting config
+    budget_mode = rep.get("ram_ok") is False
+    cfg = ["--expert-cache auto", f"--vram-reserve-mib {max(713, reserve_mib) + (100 if budget_mode else 0)}", f"--max-context {ctx}",
+           "--kv int8", f"--kv-resident {kv_resident}", "--prefill auto:16384", "--pcie-frac 0", "--spec 4",
+           "--spec-min-p 0.5"]
+    if helper and h_slots and not budget_mode:
+        cfg.append(f"--expert-cache-device1 {int(h_slots * 0.9) // 100 * 100}")
+    if budget_mode:
+        cfg.append(f"--resident-budget-gib {int(rep['resident_budget_suggest_gib'])}")
+        cfg.append("--chat-cache 4 --chat-cache-mib 4096")
+    else:
+        cfg.append(f"--chat-cache 16 --chat-cache-mib {int(chat_cache_gib * 1024)}")
+    rep["start_config"] = " ".join(cfg)
+    return rep
+
+
+# the three files measured on this PC (engine log lines), for --calibrate
+MEASURED = [
+    {"name": "IQ3_S (C*13)", "gguf": "models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+     "ctx": 131072, "kv_resident": 32768, "reserve_mib": 713, "draft_head_mib": 87, "profile": "strata-v0115/data/expert-profile.bin",
+     "free_before": 9.48, "slots": 4559, "slots_gib": 8.69, "helper": 3300, "helper_note": "3300 configured; 3500 ran, 3600 refused (R11 C.1)",
+     "rss_gib": "50.5-64.6 GB RSS (soak), MemAvailable min 21.4 GB with a 12 GiB chat cache"},
+    {"name": "UD-Q4_K_XL (R10, 5080 only)", "gguf": "/home/USER/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/38bb39ee97821de2c9009abb7e93950eec396e66/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+     "ctx": 32768, "kv_resident": 32768, "reserve_mib": 1000, "draft_head_mib": 111, "profile": "strata-v0131/data/expert-profile.bin",
+     "free_before": 8.80, "slots": 2646, "slots_gib": 7.71, "helper": None, "resident_budget": 56,
+     "rss_gib": "56 GiB resident budget: MemAvailable min 28.6 GiB; the next step would cross ~20"},
+    {"name": "Signal AP-Q4_K_XL (R11, 5080 only)", "gguf": "/home/USER/.cache/huggingface/hub/models--agentionai--Signal-3.8-Flash-Next-GGUF/snapshots/eba565bea194b899480ebd8a8ab63d537917004b/AP-Q4_K_XL/Signal-3.8-Flash-Next-AP-Q4_K_XL.gguf",
+     "ctx": 32768, "kv_resident": 32768, "reserve_mib": 1000, "draft_head_mib": 87, "profile": "strata-v0131/data/expert-profile.bin",
+     "free_before": 9.37, "slots": 3226, "slots_gib": 8.31, "helper": None, "resident_budget": 56,
+     "rss_gib": "54.97 GiB of experts resident (all), 56 GiB budget"},
+]
+
+
+def calibrate():
+    ws = Path("/home/USER/ai-speed-testing/strata-compare")
+    rows, overheads = [], []
+    for r in MEASURED:
+        g = r["gguf"] if r["gguf"].startswith("/") else str(ws / r["gguf"])
+        p0 = plan(g, ctx=r["ctx"], kv_resident=r["kv_resident"], reserve_mib=r["reserve_mib"], draft_head_mib=r["draft_head_mib"],
+                  profile=str(ws / r["profile"]), helper=r["helper"] is not None, overhead_gib=0.0)
+        # the overhead that would make free_before exact for this file
+        oh = p0["free_before_cache_gib"] - r["free_before"]
+        overheads.append(oh)
+        rows.append((r, p0, oh))
+    fit = sum(overheads) / len(overheads)
+    print(f"overhead per file (GiB): {', '.join(f'{o:.2f}' for o in overheads)} -> fitted {fit:.2f} (spread {max(overheads) - min(overheads):.2f})")
+    print("| file | free before cache: predicted / real | 5080 slots: predicted / real | GiB: predicted / real | helper slots: predicted max / real | RAM |")
+    print("|---|---|---|---|---|---|")
+    for r, _, _ in rows:
+        g = r["gguf"] if r["gguf"].startswith("/") else str(ws / r["gguf"])
+        p = plan(g, ctx=r["ctx"], kv_resident=r["kv_resident"], reserve_mib=r["reserve_mib"], draft_head_mib=r["draft_head_mib"],
+                 profile=str(ws / r["profile"]), helper=r["helper"] is not None, overhead_gib=fit,
+                 resident_budget_gib=r.get("resident_budget"))
+        print(f"| {r['name']} | {p['free_before_cache_gib']} / {r['free_before']} | {p['slots_5080']} / {r['slots']} "
+              f"({100 * (p['slots_5080'] - r['slots']) / r['slots']:+.1f} %) | {p['slots_5080_gib']} / {r['slots_gib']} | "
+              f"{p['helper_slots_max'] if r['helper'] else '-'} / {r.get('helper_note') or '-'} | arena {p['ram_arena_gib']} GiB, "
+              f"need {p['ram_need_gib']} GiB; real: {r['rss_gib']} |")
+    return fit
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("gguf", nargs="?")
+    ap.add_argument("--ctx", type=int, default=131072)
+    ap.add_argument("--kv-resident", type=int, default=32768)
+    ap.add_argument("--reserve-mib", type=int, default=713)
+    ap.add_argument("--draft-head-mib", type=int, default=87)
+    ap.add_argument("--profile")
+    ap.add_argument("--no-helper", action="store_true")
+    ap.add_argument("--ram-gib", type=float, default=None)
+    ap.add_argument("--floor-gib", type=float, default=20.0)
+    ap.add_argument("--other-gib", type=float, default=10.0)   # desktop + services: C*13 soak 97.7 - 64.6 - 21.4 GB
+    ap.add_argument("--chat-cache-gib", type=float, default=12.0)
+    ap.add_argument("--resident-budget-gib", type=float, default=None)
+    ap.add_argument("--json")
+    ap.add_argument("--calibrate", action="store_true")
+    a = ap.parse_args()
+    if a.calibrate:
+        calibrate()
+        return 0
+    from inspect_model import inspect as inspect_header
+    verdict = inspect_header(a.gguf, None, None)["verdict"]
+    if not verdict.startswith("RUNS"):
+        print(f"fitplan: not planned - the inspector says {verdict}")     # fail early, with the inspector's reason
+        return 3
+    if a.ram_gib is None:
+        a.ram_gib = int(open("/proc/meminfo").read().split("MemTotal:")[1].split()[0]) / 2**20
+    p = plan(a.gguf, a.ctx, a.kv_resident, a.reserve_mib, a.draft_head_mib, a.profile, not a.no_helper, a.ram_gib,
+             a.floor_gib, a.other_gib, a.chat_cache_gib, resident_budget_gib=a.resident_budget_gib)
+    for k, v in p.items():
+        print(f"{k:28s} {v}")
+    if a.json:
+        Path(a.json).write_text(json.dumps(p, indent=1))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

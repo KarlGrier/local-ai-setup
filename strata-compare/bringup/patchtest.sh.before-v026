@@ -1,0 +1,157 @@
+#!/bin/bash
+# bringup/patchtest.sh NAME [NAME...] | --list — the one-command exactness test of one ledger row (patches/LEDGER.md).
+#
+# Environment:
+#   CFG=configs/X.json   the build under test (its exe, args, env) — default configs/Cstar13.json
+#   TREE=strata-r13      its source tree (kernel parity tools are built from it; serve tests run in it)
+#   TFEXE=engine-r13m/strata  a --teacher-force twin of the same build (rows of class (b))
+#   BASE_TREE=strata-cstar13  a checkout WITHOUT the patch (rows whose test compares two server checkouts)
+# GPU tests need the GPUs free (no model server): run through the queue. Every test prints one PASS / FAIL line.
+#
+# Kinds of test:
+#   pair   exact rows with a switch: greedy math 1024 + sampled math 1024 + the 2,000-token prompt with the switch on and
+#          off (exact7's pins) -> identical output hashes
+#   tf     rounding-level rows: teacher-forced NLL on math + corpus (1,536 tokens each) on and off through the twin ->
+#          |mean difference| <= 0.005 nats per text (Round 11's short-text spread: +-0.0025)
+#   chi2   distribution-preserving rows: the exact-sampling chi-square harness (real kernels, negative control)
+#   tool   kernel rows: their parity executable (built with tests on from $TREE)
+#   unit   server rows: their unit tests / id checks (no GPU)
+#   serve  server rows that need a live engine: a guarded test server from $CFG on 127.0.0.1:8081, then the probe
+#   build  rows with no switch and no own test: exact7 of the whole build against C*13's hashes
+set -u
+WS=/home/USER/ai-speed-testing/strata-compare; cd $WS
+L=bringup/lib; source $L/env.sh
+CFG=${CFG:-configs/Cstar13.json} TREE=${TREE:-strata-r13} TFEXE=${TFEXE:-engine-r13m/strata} BASE_TREE=${BASE_TREE:-strata-cstar13}
+OUT=bringup/out/patchtest; mkdir -p $OUT
+X="--adapt-swaps 0 --suffix-draft 0 --expert-cache ${PIN_CACHE:-3500}"
+S='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20'
+P=.venv/bin/python
+G5080=GPU-UUID-RTX5080
+
+say() { echo "patchtest $1: $2"; echo "$(date -Is) $1: $2" >> $OUT/summary.txt; }
+
+pair() {   # pair NAME OFF_ENV [ON_ENV]
+  local n=$1 off=$2 on=${3:-}
+  # bring-up: a placement whose stock run does not repeat itself (runbook state/nonrepeat) -> teacher-forced NLL instead
+  [ "${PT_TF_ONLY:-0}" = 1 ] && [ -z "$on" ] && { tfpair $n $off; return; }
+  for arm in on off; do
+    local e; [ $arm = on ] && e="$on" || e="$off"
+    ENVX="$e" $L/run.sh pt-$n-$arm-x $CFG math 1024 $X > /dev/null
+    ENVX="$e" PROF_SAMPLING="$S" $L/run.sh pt-$n-$arm-s $CFG math 1024 $X > /dev/null
+    ENVX="$e" $L/run.sh pt-$n-$arm-p $CFG p2000 64 $X > /dev/null
+  done
+  local r; r=$($P - $n <<'PY'
+import sys
+sys.path.insert(0, "/home/USER/ai-speed-testing/strata-compare/bringup/lib")
+from p0_table import parse
+n = sys.argv[1]
+h = {(a, k): parse(f"pt-{n}-{a}-{k}").get("out") for a in ("on", "off") for k in ("x", "s", "p")}
+same = all(h[("on", k)] == h[("off", k)] and h[("on", k)] not in (None, "-") for k in ("x", "s", "p"))
+print(("PASS" if same else "FAIL") + " on " + " ".join(h[("on", k)] for k in "xsp") + " / off " + " ".join(h[("off", k)] for k in "xsp"))
+PY
+)
+  say $n "pair (switch on vs $off): $r"
+}
+
+tfpair() {   # tfpair NAME OFF_ENV
+  local n=$1 off=$2
+  TF_ENV="" $L/tf.sh pt-$n-on $CFG $TFEXE math corpus > /dev/null 2>&1
+  TF_ENV="$off" $L/tf.sh pt-$n-off $CFG $TFEXE math corpus > /dev/null 2>&1
+  local r; r=$($P - $n <<'PY'
+import sys
+from pathlib import Path
+R = Path("/home/USER/ai-speed-testing/strata-compare/bringup/out/results")
+n, ok, parts = sys.argv[1], True, []
+for t in ("math", "corpus"):
+    a = [float(x) for x in (R / f"tf-pt-{n}-on-{t}.nll").read_text().split()] if (R / f"tf-pt-{n}-on-{t}.nll").exists() else []
+    b = [float(x) for x in (R / f"tf-pt-{n}-off-{t}.nll").read_text().split()] if (R / f"tf-pt-{n}-off-{t}.nll").exists() else []
+    if not a or len(a) != len(b):
+        ok = False; parts.append(f"{t}: missing"); continue
+    d = sum(a) / len(a) - sum(b) / len(b)
+    ok &= abs(d) <= 0.005
+    parts.append(f"{t} {d:+.4f}")
+print(("PASS" if ok else "FAIL") + " mean NLL on - off: " + ", ".join(parts) + " (bound 0.005 nats)")
+PY
+)
+  say $n "tf (switch on vs $off): $r"
+}
+
+tool() {   # tool NAME EXECUTABLE [args]
+  local n=$1 t=$2; shift 2
+  (cd $WS/$TREE && [ -d third_party/llama.cpp ] || cp -a $WS/strata-v0115/third_party/llama.cpp $WS/$TREE/third_party/)
+  (cd $WS/$TREE && cmake -G Ninja -S . -B build-tests -DCMAKE_BUILD_TYPE=Release -DSTRATA_ENABLE_CUDA=ON -DSTRATA_BUILD_TESTS=ON \
+     "-DCMAKE_CUDA_ARCHITECTURES=89;120" -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.3/bin/nvcc \
+     -DSTRATA_GGML_DIR="$WS/$TREE/third_party/llama.cpp" > build-tests-configure.log && cmake --build build-tests --target $t -j 16 > build-tests-$t.log 2>&1) \
+     || { say $n "tool $t: FAIL (did not build)"; return; }
+  CUDA_VISIBLE_DEVICES=$G5080 $P $L/guard.py pt-$n -- $WS/$TREE/build-tests/$t "$@" > $OUT/$n.out 2>&1
+  local rc=$?
+  say $n "tool $t: $([ $rc = 0 ] && echo PASS || echo FAIL) ($(grep -E 'failures|FAIL|PASS' $OUT/$n.out | tail -1 | cut -c1-120))"
+}
+
+unit() {   # unit NAME "python -m unittest ..." (run in $TREE)
+  local n=$1; shift
+  (cd $WS/$TREE && timeout 900 $WS/$P -m unittest "$@" > $WS/$OUT/$n.out 2>&1)
+  local rc=$?
+  say $n "unit $*: $([ $rc = 0 ] && echo PASS || echo FAIL) ($(tail -1 $OUT/$n.out))"
+}
+
+serve() {   # serve NAME "probe command using http://127.0.0.1:8081" (a guarded test server from $CFG)
+  local n=$1 cmd=$2
+  $L/with_server.sh pt-$n $CFG -- "$cmd" > $OUT/$n.out 2>&1
+  say $n "serve: $(grep -E 'ALL PASS|PASS|FAIL|pass|exact copies|followed' $OUT/$n.out | tail -3 | tr '\n' ' ' | cut -c1-200)"
+}
+
+build_exact7() {   # build_exact7 NAME
+  local n=$1
+  REF=c13 $L/exact7.sh pt-$n $CFG > $OUT/$n.out 2>&1
+  say $n "build (exact7 vs C*13): $(grep -E 'exact7' $OUT/$n.out | tail -1)"
+}
+
+GGUF=$WS/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf
+MTP=$WS/strata-v0115/mtp/rt
+
+run_one() {
+  case $1 in
+    chat_cache|chat_cache_root) serve $1 "$P $L/roundtrip.py all http://127.0.0.1:8081" ;;
+    web_search|web_search_date) WEB=1 serve $1 "$P $L/weblive.py --base http://127.0.0.1:8081 --label pt-$1" ;;
+    stop_prompt_read)    serve $1 "$P $L/stoptest.py http://127.0.0.1:8081 pt-$1" ;;
+    tf_noise)            tfpair $1 STRATA_TF_NOISE_ARM=1 ;;   # two identical arms: the TF noise of this placement
+    ple_prefetch)        pair $1 STRATA_PLE_PREFETCH=0 ;;
+    pr245)               pair $1 STRATA_EXPERTS_OLD=1; tool $1-parity iq_multi_parity ;;
+    spec_exact)          TREE=$TREE bash $L/ess_test.sh > $OUT/$1.out 2>&1; say $1 "chi2: $(grep -E 'ALL PASS|FAIL' $OUT/$1.out | tail -1)" ;;
+    cost_gate)           # round 14: the chi-square harness with the cost gate's cases (work/r13/ess_test.cu) on $TREE's kernels,
+                         # the gate's table from the config (STRATA_COST_GATE)
+                         ESS_SRC=$WS/work/r13/ess_test.cu STRATA_COST_GATE=$($P -c "import json; print(json.load(open('$CFG'))['env'].get('STRATA_COST_GATE', ''))") \
+                           TREE=$TREE bash $L/ess_test.sh > $OUT/$1.out 2>&1
+                         say $1 "chi2 (with the gate's cases): $(grep -E 'ALL PASS|FAIL' $OUT/$1.out | tail -1)" ;;
+    adapt_land)          pair $1 STRATA_ADAPT_LAND=0 ;;
+    adapt_helper)        pair $1 STRATA_ADAPT_HELPER=0 ;;
+    side_mixer_1|side_mixer_2|side_mixer) pair $1 STRATA_SIDE_MIXER=0 ;;
+    res_put)             pair $1 STRATA_RES_PUT_OLD=1 ;;
+    tooltag)             unit $1 serve.test_server; serve $1-live "$P $L/tooltag_test.py http://127.0.0.1:8081 pt-tooltag 3" ;;
+    stops)               serve $1 "$P $L/stoptest.py http://127.0.0.1:8081 pt-stops" ;;
+    commit_652)          serve $1 "$P $L/followup652.py http://127.0.0.1:8081 pt-652" ;;
+    router_q8k|router_q8k_round|router_q8k_bsums|router_q8k_nan) pair $1 STRATA_ROUTER_Q8K=0 ;;
+    qsa_split_attn)      tfpair $1 STRATA_QSA_SPLIT_ATTN=0 ;;
+    mmvq_il|mmvq_il_rows|mmvq_il_table|mmvq_il_finite) pair $1 STRATA_MMVQ_IL=0 ;;
+    gr_fork|gr_fork_scratch) tfpair $1 STRATA_GR_FORK=0 ;;
+    prompt_encoder|prompt_encoder_ab|prompt_encoder_tests|prompt_encoder_931_tests)
+                         $P $L/t567_ids.py $TREE 2000 > $OUT/$1.out 2>&1; say $1 "unit t567_ids: $(tail -n 3 $OUT/$1.out | grep 't567 ids' | cut -c1-140)" ;;
+    q8_1_finite_838|q8_1_finite_gus|mmvq_il_bench) tool $1 iq_multi_parity ;;
+    pr245_stride)        tool $1 native_grouped_parity ;;
+    control_literals|control_literals_2|control_literals_3|control_literals_ab)
+                         $P $L/t931_ids.py $BASE_TREE $OUT/ids-base.jsonl > /dev/null 2>&1; $P $L/t931_ids.py $TREE $OUT/ids-tree.jsonl > /dev/null 2>&1
+                         say $1 "unit t931 ids: $($P $L/t931_cmp.py $OUT/ids-base.jsonl $OUT/ids-tree.jsonl | tail -1)" ;;
+    patch_guards)        tool $1 patch_guard_test $GGUF $MTP; bash $L/p23neg.sh pt-neg $CFG > $OUT/$1-neg.out 2>&1; say $1 "negative: $(tail -1 $OUT/$1-neg.out)" ;;
+    ple_q5_1_q8_0_896|ple_q5_1_q8_0_tests) tool $1 dequant_q5_1_test ;;
+    fused_layout_958|nextn_619|shard_guard_648|stop_defaults|ab_switches) build_exact7 $1 ;;
+    side_stash|dump_routing_kept) say $1 "inactive in this config (flag not passed): nothing to test" ;;
+    webapp_chats|webapp_tabs) say $1 "UI: the browser test (manual, on a config copy)" ;;
+    *) echo "unknown row: $1 (bringup/patchtest.sh --list)"; return 1 ;;
+  esac
+}
+
+if [ "${1:-}" = --list ] || [ $# -eq 0 ]; then
+  grep -oE '^    [a-z0-9_|]+\)' $0 | tr -d ' )' | tr '|' '\n'; exit 0
+fi
+for n in "$@"; do run_one $n; done

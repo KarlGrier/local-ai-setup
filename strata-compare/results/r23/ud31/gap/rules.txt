@@ -1,0 +1,216 @@
+ud31_rules.py - r23, Karl's Unsloth Dynamic v3.1 test (approved 11-04: "P, U, S, R; text NLL and KL against R; speed
+with the no-loss rule; exactness. Put it after the DeepSeek C gap, once tonight's NLL gap has validated the scorer.").
+The rules of work/r23/gap-ud31.sh, WRITTEN 11-04 BEFORE THE GAP RAN, plus the helpers the driver calls. NOTHING SWITCHES:
+P028x stays served whatever this says; every verdict below is a measurement for Karl.
+
+REVISED 11-05 (Karl: STRATA_HC_Q8=1 on U, and R; the frozen pack-rounding rule; the decode-path follow-up), STILL BEFORE
+ANY RUN of the gap. REVISED AGAIN 11-05 09:xx: the many-positions NLL bound is REVOKED as a gate
+(results/r23/nll-many/gap/ADOPTED-BOUND.REVOKED.json; why: results/r23/nll-many/recompute/REPORT.md - 8 distinct texts,
+whole-text SE 0.051-0.065 vs its 0.01 cap). Karl: "Basalt a/b, the v3.1 gap and later gates go back to the KL rules.
+Report many-positions NLL as information only: whole-text uncertainty, with the 2,048-block figure beside it,
+labelled. ... v3.1: carry my frozen rule over to whatever replaces the bound." The quality verdict below is the KL
+rules against R at the text level; text NLL is INFO.
+
+ARMS (results/qwen4-kit/unsloth-v31/REPORT.md sections 3, 5, 7; configs written by `configs` from configs/x28h.json)
+  P  P028x as served without vision: configs/x28h.json itself (engine-r22p028x); STRATA_HC_Q8 unset = off on CUDA
+  U  UD-IQ3_XXS v3.1 as shipped (models/unsloth-v31/UD-IQ3_XXS, 4 shards): pack bringup/out/ud31/pack-u (iq_pack
+     --compat-bf16: the Q8_0 hyper-connections and PLE value rounded to BF16), x28h with only --pack, --native (shard 1/4)
+     and --ple-gguf (shard 4/4) changed + env STRATA_HC_Q8=1 (Karl 11-05; upstream's run config for every UD-* file on
+     CUDA, v0.2.11 setup.py unsloth_default_env :4312-4334); same drafter, switches, --expert-cache-device1 3300, chat cache
+  S  the splice: v3.1's 144 routed-expert tensors + our 1,079 other shard-1 tensors (dense, head, embedding) in our ISTA
+     shard 1 (work/r15/splice_shard1.py), our shard 2 (the n-gram table) hard-linked; pack bringup/out/ud31/pack-s (no
+     --compat-bf16: its dense path is P028x's bit for bit, checked: pack_S_dense); x28h with the three paths changed;
+     no switch (its hyper-connections are ours, BF16)
+  R  UD-Q4_K_XL from the HF cache: the higher-precision reference of the KL (quality arms only). Pack
+     bringup/out/ud31/pack-r (--compat-bf16), x28h's switches and drafter with R's paths in configs/r21-yq-udq4.json's
+     memory form (its 71.7 GiB of experts do not fit the RAM): the 5080 alone, --resident-budget-gib 52, chat cache
+     2 GiB, STRATA_UNBUFFERED_LOAD=1, no --expert-cache-device1; + env STRATA_HC_Q8=1 (below)
+
+THE HYPER-CONNECTION SWITCH STRATA_HC_Q8=1 (Karl 11-05; read in the served tree strata-r22p028x, 8f7a48aab)
+  what it does: native_dense.cpp:46-84 hc_q8_env() (1 = on; unset = off on CUDA). NativeDense::load walks every shard of
+     --native (gguf_split_paths, + the PLE shard; generate.cpp:3805, :3841): each Q8_0 tensor named
+     blk.N.hc_{attn,ffn}_{down,up,inject}.weight or output_hc_{down,up}.weight gets ITS GGUF BYTES as the Q8_0 copy
+     (:404-430). Only a layer down / up row still without one (a BF16 file or pack) is quantized from the pack's BF16 at
+     load (:431-466) - the lossy kind. With one dense GPU (no layer split; --expert-cache-device1's helper is none,
+     generate.cpp:3592) the layers' BF16 down / up rows are not loaded at all (generate.cpp:4427, add_hc_skip).
+  U: its 194 Q8_0 projections (48 layers x down / up x attn / ffn + output_hc_down / up, 675,430,400 B in shard 2; the
+     injects F32, the norms F32) are the file's own bytes. The engine says "STRATA_HC_Q8=1: 0.63 GiB of Q8_0
+     hyper-connection projections for the verify read"; 0.62 would mean the 192 layer rows quantized from BF16 (the
+     final mixer is taken only from a GGUF). Checked per arm from the engine's own log (hcq8_nll_X, hcq8_scr_X1,
+     hcq8_dec_U): U and R = the sum of their GGUF's Q8_0 hc bytes (headers) with every layer row Q8_0 in the file;
+     P and S = no such line.
+  read by the verify / decode read only: verify.cpp:1480 (the layers), :2416 (the final mixer), fused_gr.cu:2625
+     launch_q8 - upstream's Q8_0 read, taken before our STRATA_GR_FORK / GR_V3 read (another summation order). So:
+     exact7, the screen, score.py's validate window rows (first.<i>) and the decode-path follow-up.
+  NOT by the prompt path: prefill.cpp:3747 "this path's GEMMs read bf16, so the matrices are dequantized per half"
+     (gr_dequant_q8_0_kernel: bf16_from_f32(fp16 d x int8 q), nearest-even). These are the same BF16 values as the
+     pack's --compat-bf16 rounding (gguf-py Q8_0 dequantize = d x q in float32, then ggml's nearest-even BF16), so U's
+     and R's prompt rows read their files' Q8_0 hc rounded to BF16 with or without the switch. The offline head reads
+     output_hc_* as BF16 from the pack, which is what the prompt path reads. The injects (F32 in U and R) are the pack's
+     BF16 on every path: exact when iq_pack found BF16 values (conversions.json; hcforms_X INFO).
+  validate_U / validate_R therefore compare the window rows (the file's Q8_0 hc, upstream's read kernel) with the
+     offline head on the prompt row (BF16 hc). The switch's own difference (upstream on gfx12: KL 0.0003-0.0010 over the
+     noise floor) adds to the batched-vs-window rounding (~0.01-0.02). The thresholds (mean 0.05, each 0.5) are unchanged.
+  P and S: off. P stays exactly as served. S's hyper-connections are our ISTA BF16; on a BF16 pack the switch would
+     make a Q8_0 copy at load, which is the lossy kind.
+  R: on. Karl: "Any reference or exactness rows used for U must be made with the same switch", and R is U's KL
+     reference. R's file stores its hyper-connections as U's does (UD-Q4_K_XL headers, read 11-05: 192 layer down / up
+     Q8_0 in shards 2-4 + output_hc_down / up Q8_0 in shard 2; injects and norms F32), so the switch reads R's own
+     bytes, not the lossy copy. One R serves P, S and U: KL(R || X) uses R's prompt rows, which read the same BF16
+     values either way, so P's and S's KL do not depend on this choice.
+  exactness rows used for U: e7_U1 and e7_U2, both with U's config (the switch). e7_U1's INFO line against P028x's
+     x28h-e7a compares with rows made without it (P as served): INFO only, no verdict rests on it.
+  speed: U's screen runs with the switch, as upstream runs UD-* files. P's and S's run without it.
+  ASYMMETRY (GGUF tensor types: results/qwen4-kit/unsloth-v31/day1-check/files/*.tensors.tsv; R's headers): our ISTA
+     file stores hc_{attn,ffn}_{down,up,inject} and output_hc_{down,up} as BF16 (norms F32). So P / S read their HC
+     projections unrounded; U's are rounded at pack time (Q8_0 -> BF16, --compat-bf16; R's too). On the prompt path U
+     and R carry a rounding that P and S do not. In KL(R || X), R's side carries it for every X, and for U both sides do.
+
+THE PACK-ROUNDING RULE (Karl 11-05, FROZEN before the gap starts; the driver copies this text to gap/rules.txt at the
+start and `decide` flags any later change)
+  Why: the prompt path still reads the HC projections as BF16 with STRATA_HC_Q8=1 (above), so U's prompt-path scores
+  include the pack's BF16 rounding of the file's Q8_0 HC projections. Upstream measured that rounding as a real cost:
+  docs/QUANTS.md "The hyper-connections on NVIDIA": A4000 UD-Q4_K_XL yardstick KL 0.0562 -> 0.0526, p99 0.925 -> 0.716
+  with HC_Q8=1; docs/UNSLOTH_Q4.md: perplexity 6-9 % above llama.cpp on Strix Halo, attributed to it.
+  - every quality verdict and NLL INFO line of U carries the tag "includes pack rounding (the prompt path reads U's
+    Q8_0 HC projections as BF16 from the pack)".
+  - CARRIED OVER (11-05) onto the text-level KL verdict that replaces the revoked bound (QUALITY below): if U comes out
+    WORSE THAN P, or INSIDE THE MARGIN on either side (ABOVE P or AT OR BELOW P; Karl 11-05: "If U comes out worse than
+    P, or inside the margin on the KL rules, record 'includes pack rounding' and set the follow-up flag the same way"),
+    the verdict is RECORDED AS "INCLUDES PACK ROUNDING", not as a verdict on the file (decision.json quality.kl_U; the
+    class stays in quality.kl_U_class). The decision then says "=> U DECODE-PATH FOLLOW-UP: WANTED"
+    (quality.pack_rounding.dec_followup), and work/r23/gap-ud31-dec.sh decides (below). Only BETTER THAN P escapes it:
+    the class stands, with the tag, and there is no follow-up ("NOT NEEDED").
+  - R's KL rows carry the rounding too (its prompt path reads R's Q8_0 hc as BF16), for every arm. S and P carry none.
+
+THE DECODE-PATH FOLLOW-UP (work/r23/gap-ud31-dec.sh; its rules, written 11-05 before any run)
+  runs only when the v3.1 decision says WANTED (decision.json and decision.txt agree) and the decode-path gap's dec arm
+  exists (results/r23/decpath/gap/dec: index.json + score.tsv; that gap's run_dec and env_dec PASS; >= 5 texts; x28h,
+  logpos, no --env). Else it refuses (exit 1: the series skips it, 8080 untouched).
+  U's arm: decpath_rules.py's runner and env check, unchanged (run / envwatch --kind logpos: STRATA_LOGPOS top 64 through
+     2-row verify windows, score.py run's yardstick settings). They are called through `dec-run` / `dec-envwatch`, which
+     give them dec's own reads: the same texts in the same order, the same cuts, and the same --max-context /
+     --short-read (dec's L = its --short-read - 64). The config is U's (STRATA_HC_Q8=1: the verify read takes the
+     file's own Q8_0 hc, the final mixer included). A text may be cut further to fit the budget, but not below
+     decpath's min cut; positions are compared where both have them. P = dec's rows (x28h as served), NOT rerun.
+  checks: env_decU (decpath's env check on U's config, so STRATA_HC_Q8=1 is required); run_decU (rc 0, or rc 2 with the
+     finished texts kept); dec_args (U's engine args = dec's except the values of --pack / --native / --ple-gguf, which
+     must be U's); hcq8_dec_U (the switch's line, as above).
+  positions: every 8th from 1,024 (dec's compare positions), up to cut - 2; both lines' target = the text's next token.
+     dec reads the 8 distinct texts (pp4k, rep9k, ldrsyn20k, 32k, tf-long64k, tf-long28k, tf-long112k, tf-long40k).
+  THE RULE (Karl 11-05, verbatim: "Use your recommended rule: U vs P on decode-path text NLL, by consistency across the
+     8 texts. U lower in at least 6 and higher in at most 1: better. The mirror image: worse. Anything else:
+     inconclusive. Whole-text interval beside it, with the 2,048-block figure labelled 'not used for the verdict'. Judge
+     only texts that both U and P have. If fewer than 8 finish, use the same scaled fallback as the decode-path check
+     (under 5 texts: not judged). Don't add R to the follow-up. If it comes back inconclusive and the file choice
+     actually hinges on it, tell me, and we'll decide on a separate R decode-path gap then."):
+     per text t that both U and P have: d_t = mean(NLL_U - NLL_P) over its positions on the decode path; t is "lower"
+     if d_t < 0, "higher" if d_t > 0; a tie (|d_t| < 1e-6, e.g. identical rows) counts as neither side.
+     N = 8: BETTER THAN P if lower in >= 6 and higher in <= 1; WORSE THAN P if higher in >= 6 and lower in <= 1; else
+     INCONCLUSIVE. Fewer texts (N < 8), scaled as the decode-path check scales its own (decpath_rules.py: the same
+     proportions, each rounded the demanding way): at least ceil(6N/8) one way, at most floor(N/8) the other ->
+     N 7: >= 6 and <= 0; N 6: >= 5 and <= 0; N 5: >= 4 and <= 0; FLAGGED "Karl's rule is written for 8 texts".
+     N < 5: NOT JUDGED. INCONCLUSIVE prints "if the file choice hinges on it, Karl decides on a separate R decode-path
+     gap". No R is added to the follow-up.
+  uncertainty (beside the verdict, never used for it): the pooled d (position-weighted, as score.py) with its WHOLE-TEXT
+     bootstrap se / 95 % CI (the texts resampled; 8 texts, crude) and, beside it, the 2,048-token-block figure
+     labelled "not used for the verdict" (it also understates ~2.2x, recompute section 2); per length range (1-4K /
+     4-16K / 16-32K) the means with the 2,048-block figure only (labelled the same way).
+  INFO: top-1 agreement U vs P and KL(P || U) over P's top 64 (quant_quality compare's floor rule, decpath
+     kl_top_floor) per text.
+  INFO ONLY (no extra engine time) - THE ROUNDING COST per text: rc_t = mean over the positions that all four terms have
+     of (U decode - U prompt) - (P decode - P prompt) text NLL, where U decode = this follow-up's U rows; U prompt = the
+     v3.1 gap's U many-positions rows (results/r23/ud31/gap/rows.tsv nll_U, U's own offline head); P decode = the
+     decode-path gap's dec rows (results/r23/decpath/gap/dec); P prompt = the NLL gap's ref rows (= x28h, byte-identical;
+     results/r23/nll-many/gap/rows.tsv nll_ref). P's HC weights are native BF16 on both paths, so rc isolates what the
+     BF16 rounding costs U, plus path noise; negative = U's prompt path is worse, relative to its decode path, than P's.
+     Reported: per-text values and signs, the pooled value with its whole-text interval and the 2,048-block figure
+     (labelled); a cross-check of the v3.1 gap's own P rows against the NLL gap's ref rows (0 expected).
+  NO pack-rounding caveat on this verdict: on the decode path U reads its file's Q8_0 hc (the switch) and P its file's
+     BF16. Two things remain. The injects are the pack's BF16 (exact, or flagged from pack-u/conversions.json). The hc
+     read kernel differs (upstream's Q8_0 read vs our fork's), which is a summation order.
+  NOT JUDGED: U's arm not clean (run_decU / env_decU / dec_args / hcq8_dec_U not PASS), no compare result, fewer than
+     5 texts that both U and P have, a target mismatch, or no v3.1 KL verdict.
+
+PRECONDITIONS (the driver refuses before the gap opens, exit 1, 8080 untouched, unless all hold)
+  predl   all 4 UD-IQ3_XXS shards in models/unsloth-v31/UD-IQ3_XXS/, each size = work/qwen4-kit/unsloth-v31/dl/tree.json's
+          and its sha256 = the pinned LFS oid there: the downloader (gentle_dl.py) hashes the stream and writes a
+          SHA256SUMS line only after a match - every line must be there, no .part / .bad file. Inside the gap, before
+          anything reads them, `rehash` hashes the 4 files again (dl_sha; a mismatch ends the gap at once, nothing runs)
+  prenll  the NLL gap validated the scorer: its gates' validate_ref PASS (results/r23/nll-many/gap/gates.txt) - that is
+          all (11-05: the bound is revoked and NLL is INFO; ADOPTED-BOUND.json is neither required nor read)
+  cfgcheck  U, S, R's configs = configs/x28h.json with only the differences named above (+ "log", "_comment");
+          STRATA_ROUTE_TAIL_SKIP=0 in every one; STRATA_HC_Q8=1 in U and R, absent in S and in x28h (P); the engine
+          is engine-r22p028x
+  the driver's own: no gpu-test.lock / other gap / model server other than the 8080 queue's P028x / 8081 listener; the
+  kernel watcher; the lossless config check (patchtest.sh lossless) on U and S; >= 100 GB free after the splice
+
+EXACTNESS (U and S; new weights cannot be bit-identical to P028x, so the test is repeatability)
+  e7_X1   exact7 at pin 2500 (bringup/lib/exact7.sh: 7 items, --adapt-swaps 0 --suffix-draft 0) against P028x's x28h-e7a:
+          INFO (N/7 identical expected low; its slots reported)
+  e7_X2   exact7 again, against X1: 7/7 identical + slots MATCHED + 7/7 item outputs -> PASS, else FAIL
+  env_e7X1, env_e7X2   each exact7 engine's environment = the config's exactly (decode_rules.py envcli, mode e7)
+  lossless_X_cfg (pre-gap) + lossless_X_log (with the arm's first screen engine log): bringup/patchtest.sh lossless PASS
+  start_X  g17_rules.py startlines base on the arm's first screen start log (the doorbell Q8_K, exact sampling,
+          cumulative draft, cost gate, v2 prompt kernels lines present; none of the unwanted lines) PASS
+  hcq8_scr_X  the switch's line in the arm's first screen engine log (U: on, S: off; above) PASS
+  S only:  splice_verify (the written shard 1: 1,223 tensors in our order, ours except the 144 experts = v3.1's types,
+          our split.* keys, sizes, byte spot checks) PASS; pack_S_dense (pack-s dense.bin and index rows = P028x's
+          bringup/out/r20a/pack byte for byte) PASS
+  -> REPEATABLE = all PASS; NOT REPEATABLE = e7_X2 FAIL; CHECK FAILED (names) = e7_X2 PASS but another check FAIL;
+     VOID = an env gate FAIL; NOT RUN = no e7_X2
+  INFO: tok_X (the pack's tokenizer = r20a's; the configs keep r20a's tokenizer path, as P028x)
+
+QUALITY - a QUANT COMPARISON, NOT A LOSSLESS GATE: the KL RULES AGAINST R, AT THE TEXT LEVEL (11-05). LOWER KL against
+R is better (closer to the higher-precision quant). Text NLL is INFO only.
+  data    score.py run CONFIG nll/ARM --set long11 --rows all:8 for P, U, S, R (one cold read of the 11 long texts,
+          every 8th batched prompt row; run_X + env_X gates as the NLL gap's; hcq8_nll_X: the switch's line in the
+          arm's engine stderr, U and R on, P and S off)
+  heads   each arm's own head applied offline: output_hc_{norm,down,up} from ITS pack's dense.bin (what its prompt
+          path reads: U's / R's are the --compat-bf16 BF16 roundings of their Q8_0 tensors) and output.weight from ITS
+          GGUF (Q6_K for P / S / U, Q8_0 for R). score.py's own Head reads only our ISTA GGUF, so it is right only for
+          P and S
+  validate_X  score.py's validate step per arm with the arm's own head (the engine's window rows at the 5 check prompts
+          vs the offline head on the full read's row): mean KL <= 0.05, each <= 0.5 -> PASS (an arm's numbers count only
+          with run_X, env_X, validate_X and hcq8_nll_X PASS). head_P: score.py validate itself (its own head) on P
+          gives the same 5 KL values as the per-arm head on P (to 1e-9) -> PASS; without head_P PASS + validate_P PASS:
+          QUALITY NOT JUDGED
+  texts   the compare's rows.tsv (every 8th row from 1,024 of the 11 long texts; `compare` writes it), DEDUPLICATED as
+          the recompute did (Karl's rule): keep 32k and tf-long64k; drop pp32k (= 32k), tf-long96k (= tf-long64k over
+          the scored 32,768 tokens) and pp8k (= 32k's first 8,011 tokens) -> the 8 distinct texts 32k, tf-long28k,
+          tf-long40k, tf-long64k, tf-long112k, pp4k, ldrsyn20k, rep9k (~22,600 positions). The text is the unit.
+  metrics the KL rules' four (kernel_rule2/3), per text t and arm X in P, U, S: mean KL(R || X), p90 KL(R || X), rows
+          with KL(R || X) > 1, changed top-1 against R's top-1 (full vocabulary, each arm's own head)
+  per text, X vs P (written 11-05 before any run): worse if X_t > 1.10 x P_t (+ 1 for the two counts), better if
+          P_t > 1.10 x X_t (+ 1 for the counts), else inside; a text where both arms are below the floor (mean / p90
+          0.01 nats, counts 5) is inside (uninformative: rep9k's KL is ~1e-4 in every arm, so its ratios are noise).
+          Why 1.10: it is the KL rules' own tolerance (candidate <= 1.10 x the reference). Why the + 1: per-text counts
+          are small (pp4k: 384 positions); the pooled rule's "+ 1" alone would turn every count change into a side.
+  per metric over the 8 texts: WORSE if worse on >= 6 and better on <= 1; BETTER if better on >= 6 and worse on <= 1;
+          else INSIDE THE MARGIN. Why 6 of 8 (calibrated 11-05 on the recompute's rows of these 8 texts, all against
+          ref; re-checked in the selftest): the NLL gap's two rounding references (cpushare vs unfused, either way) are
+          beyond the 1.10 margin on at most 3 texts on one side per metric (mean 2, p90 2, KL > 1 rows 1, top-1 3), and
+          v2 (another prompt kernel the KL rules pass) vs either on at most 5 (p90) - so 6 is not reached by rounding
+          or a passing kernel change; 7 of 8 would let one short or near-zero text (pp4k, rep9k) veto a clear result.
+  X vs P (the verdict): WORSE THAN P if any of the four metrics is WORSE (the KL rules fail on any check); BETTER THAN
+          P if the mean is BETTER and no metric WORSE; else INSIDE THE MARGIN - ABOVE P if X's pooled mean KL (over the
+          8 texts' positions) exceeds P's, else AT OR BELOW P. For U the pack-rounding rule acts on this verdict (above).
+  uncertainty (INFO, labelled): the pooled ratio mean KL(R || X) / mean KL(R || P) and the pooled difference with the
+          WHOLE-TEXT bootstrap 95 % CI (texts resampled with replacement, 10,000 replicates, seed 20261104; 8 texts,
+          crude) and, beside it, the 2,048-TOKEN-BLOCK bootstrap figure (labelled: it understates ~2.2x).
+  text NLL  INFO only: per arm and text the mean NLL of the text's own next token; per X in U, S, R: d_X = pooled
+          mean(NLL_X - NLL_P) with its WHOLE-TEXT se / CI and the 2,048-block se / CI beside it (labelled), the per-text
+          d and how many texts are lower / higher. No verdict.
+  No R (run / env / validate / hcq8 not PASS) or no rows.tsv -> QUALITY NOT JUDGED.
+  INFO    U against S (the mean metric's per-text counts, the pooled ratio): Unsloth's whole file vs its experts at
+          equal bytes in our file
+
+SPEED (Karl's no-loss rule; U and S against P on the same build)
+  the 9-workload screen (work/r22/abarm.sh: W1-W3, agent x2, research4 x4; a warm-up first), 3 passes in turned order
+  (P U S, S U P, U S P), a fresh test server each (with_server.sh; env checked: g17_rules.py envcheck --ngpu 2)
+  NO LOSS = g17_rules.py wl_noloss (Karl 11-03): for every workload, decode AND prompt tok/s each, the arm's pass mean
+          >= P's pass mean x (1 - the larger of the two arms' pass-to-pass spreads there); one workload slower beyond
+          its noise -> LOSS (listed); fewer than 2 passes of a workload -> NOT DECIDED. VOID = an env_scr / fatal_scr /
+          hcq8_scr gate of the arm or of P FAIL. INFO: the screen geomeans (decode, prompt) vs P, the 5080 slots.
+
+Every line ends "NOTHING SWITCHES": P028x stays served; any use of v3.1 is Karl's call.

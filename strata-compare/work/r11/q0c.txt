@@ -1,0 +1,9 @@
+work/r11/tagcheck.sh "P0.4 #567"
+.venv/bin/python work/r11/t567_ids.py strata-r11t 2000 2>&1 | tail -12
+work/r11/servertests.sh strata-r11t; cd strata-r11t && ../.venv/bin/python -m unittest tools.test_strata_tokenizer 2>&1 | tail -3
+work/r11/with_server.sh T567-a configs/R11T.json -- ".venv/bin/python work/r11/ttft567.py http://127.0.0.1:8081 T567new-a"
+work/r11/with_server.sh T567o-a configs/R11T-old.json -- ".venv/bin/python work/r11/ttft567.py http://127.0.0.1:8081 T567old-a"
+work/r11/with_server.sh T567o-b configs/R11T-old.json -- ".venv/bin/python work/r11/ttft567.py http://127.0.0.1:8081 T567old-b"
+work/r11/with_server.sh T567-b configs/R11T.json -- ".venv/bin/python work/r11/ttft567.py http://127.0.0.1:8081 T567new-b"
+.venv/bin/python work/r11/ttft567_table.py new=T567new-a,T567new-b old=T567old-a,T567old-b | tee results/r11/ttft567.md
+echo "=== $(date -Is) MARK q0c"

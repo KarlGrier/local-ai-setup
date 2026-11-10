@@ -1,0 +1,6 @@
+[90001] Title: llama.cpp MoE offload
+URL: https://example.org/llama-cpp-moe-offload
+
+"llama.cpp runs Qwen3.8-Flash-Next and Qwen3.6 with --n-cpu-moe; the Qwen models use MTP drafts. Strata is mentioned once."
+"llama.cpp runs Qwen3.8-Flash-Next and Qwen3.6 with --n-cpu-moe; the Qwen models use MTP drafts. Strata is mentioned once."
+"llama.cpp runs Qwen3.8-Flash-Next and Qwen3.6 with --n-cpu-moe; the Qwen models use MTP drafts. Strata is mentioned once."

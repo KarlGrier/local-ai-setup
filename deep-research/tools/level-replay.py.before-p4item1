@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""level-replay.py - phase 3 thinking-level tests by replay (2026-10-17): the same inputs, only the reasoning effort
+changes. Daytime runs (09:00-22:30), through strata-proxy (8090: the gate, the call log), holding run/bench.lock.
+
+  extract RUNS_GLOB [--n 30] [--levels low,medium,xhigh] [--seed 1]
+        sample N page-extraction calls captured in measurement runs (results/bench2/runs/*/<id>/capture/calls.jsonl,
+        class "extract") and send each again at every level -> results/bench2/replays/extract/outputs.jsonl, plus
+        blinded judging packets (A/B/C in random order; the key in a separate file)
+  report RUN_DIR [--levels medium,xhigh]
+        rebuild the evidence store of a finished deep run (RUN_DIR/deep/evidence.jsonl) and write the report (outline,
+        sections, opening; no citation check) at each level -> results/bench2/replays/report/<run>/report-<level>.md
+  verify RUN_DIR [--levels medium,xhigh] [--max-claims 40]
+        run the citation check on the run's own unverified report at each level ->
+        results/bench2/replays/verify/<run>/verify-<level>.json (verdict per claim, same claims for every level)
+"""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import glob
+import json
+import os
+import random
+import re
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+WS = Path("/home/USER/ai/deep-research")
+OUT = WS / "results" / "bench2" / "replays"
+PROXY = "http://127.0.0.1:8090"
+
+
+def daytime_or_exit() -> None:
+    if (WS / "run" / "night-ok").exists():   # 2026-10-20: the user allows long runs at night for good (bench2.py's rule)
+        return
+    now = datetime.now()
+    if not (9 <= now.hour and (now.hour, now.minute) < (22, 30)):
+        raise SystemExit("level-replay: daytime only (09:00-22:30)")
+
+
+def bench_lock():
+    f = open(WS / "run" / "bench.lock", "w")
+    fcntl.flock(f, fcntl.LOCK_EX)
+    return f
+
+
+# -- extraction ----------------------------------------------------------------------------------------------------------
+def stream_call(messages: list, effort: str, max_tokens: int = 30000) -> dict:
+    import requests
+
+    body = {"model": "strata", "messages": messages, "stream": True, "temperature": 1.0, "max_tokens": max_tokens,
+            "reasoning_effort": effort, "stream_options": {"include_usage": True}}
+    t0 = time.time()
+    text, usage, finish = [], None, None
+    with requests.post(PROXY + "/v1/chat/completions", json=body, stream=True, timeout=3600,
+                       proxies={"http": None, "https": None}) as r:
+        r.raise_for_status()
+        for line in r.iter_lines():
+            if not line or not line.startswith(b"data: ") or line == b"data: [DONE]":
+                continue
+            d = json.loads(line[6:])
+            if d.get("error"):
+                raise RuntimeError(str(d["error"])[:300])
+            usage = d.get("usage") or usage
+            for ch in d.get("choices") or []:
+                text.append((ch.get("delta") or {}).get("content") or "")
+                finish = ch.get("finish_reason") or finish
+    return {"text": "".join(text).strip(), "usage": usage, "finish": finish, "seconds": round(time.time() - t0, 1)}
+
+
+def cmd_extract(a) -> None:
+    daytime_or_exit()
+    pool = []
+    for f in sorted(glob.glob(a.runs_glob)):
+        for line in open(f, encoding="utf-8"):
+            try:
+                c = json.loads(line)
+            except ValueError:
+                continue
+            if c.get("cls") == "extract" and c.get("status") == 200 and c.get("messages"):
+                pool.append({"src": f, "id": c["id"], "messages": c["messages"], "orig_effort": c.get("reasoning_effort")})
+    rng = random.Random(a.seed)
+    rng.shuffle(pool)
+    tasks = pool[:a.n]
+    out = OUT / "extract"
+    out.mkdir(parents=True, exist_ok=True)
+    levels = a.levels.split(",")
+    done = {(r["task"], r["effort"]) for r in map(json.loads, open(out / "outputs.jsonl"))} if (out / "outputs.jsonl").exists() else set()
+    lock = bench_lock()
+    with open(out / "tasks.jsonl", "w") as tf:
+        for i, t in enumerate(tasks):
+            tf.write(json.dumps({"task": i, **t}, ensure_ascii=False) + "\n")
+    for i, t in enumerate(tasks):
+        order = levels[:]
+        rng.shuffle(order)
+        for eff in order:
+            if (i, eff) in done:
+                continue
+            daytime_or_exit()
+            r = stream_call(t["messages"], eff)
+            with open(out / "outputs.jsonl", "a") as f:
+                f.write(json.dumps({"task": i, "effort": eff, **r}, ensure_ascii=False) + "\n")
+            print(f"task {i} {eff}: {r['seconds']} s, {len(r['text'])} chars, finish {r['finish']}", flush=True)
+    lock.close()
+    make_packets(out, levels, rng)
+
+
+def make_packets(out: Path, levels: list[str], rng) -> None:
+    tasks = {t["task"]: t for t in map(json.loads, open(out / "tasks.jsonl"))}
+    outs: dict = {}
+    for r in map(json.loads, open(out / "outputs.jsonl")):
+        outs.setdefault(r["task"], {})[r["effort"]] = r
+    key, packets = {}, []
+    labels = "ABC"[:len(levels)]
+    for i, t in tasks.items():
+        if set(outs.get(i, {})) != set(levels):
+            continue
+        order = levels[:]
+        rng.shuffle(order)
+        key[str(i)] = dict(zip(labels, order))
+        user = next((m.get("content") for m in t["messages"] if m.get("role") == "user"), "")
+        user = user if isinstance(user, str) else json.dumps(user)
+        focus = re.search(r"(?s)FOCUS[^:]*:\s*(.{0,400})", user)
+        packets.append({"id": str(i), "focus": focus.group(1) if focus else user[:400], "prompt_chars": len(user),
+                        "page": user, "outputs": {lab: {"text": outs[i][eff]["text"]} for lab, eff in zip(labels, order)}})
+    json.dump(key, open(out / "KEY-do-not-open-before-ranking.json", "w"))
+    with open(out / "packets.jsonl", "w") as f:
+        for p in packets:
+            f.write(json.dumps(p, ensure_ascii=False) + "\n")
+    print(f"{len(packets)} blinded packets in {out / 'packets.jsonl'}")
+
+
+# -- report / verify -----------------------------------------------------------------------------------------------------
+def deep_modules(effort_env: dict):
+    os.environ.update({"LDR_DEEP": "1", "LDR_DEEP_TOKENIZER_DIR": str(WS / "deep" / "tokenizer"), **effort_env})
+    from local_deep_research.deep import report, seed
+    from local_deep_research.deep.evidence import EvidenceStore
+    return report, seed, EvidenceStore
+
+
+def model():
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI(model="strata", base_url=PROXY + "/v1", api_key="none", temperature=1.0, max_tokens=30000,
+                      streaming=True, timeout=1800, max_retries=1)
+
+
+def load_run(run_dir: Path, seed_mod, store_cls):
+    ev = run_dir / "deep"
+    query = json.loads((run_dir / "marks.json").read_text()).get("question", "") if (run_dir / "marks.json").exists() else ""
+    sd = seed_mod.load([str(ev)])
+    store = store_cls(query, None)
+    seed_mod.fill_store(sd, store)
+    lead = (ev / "lead_answer.md").read_text() if (ev / "lead_answer.md").exists() else ""
+    return query, store, lead
+
+
+def cmd_report(a) -> None:
+    daytime_or_exit()
+    run = Path(a.run_dir)
+    lock = bench_lock()
+    for eff in a.levels.split(","):
+        # one process per level: the deep config is read from the environment at import
+        if os.fork() == 0:
+            report, seed_mod, store_cls = deep_modules({"LDR_DEEP_REPORT_EFFORT": eff, "LDR_DEEP_VERIFY": "0"})
+            query, store, lead = load_run(run, seed_mod, store_cls)
+            w = report.ReportWriter(query, store, model(), lead)
+            res = w.run()
+            out = OUT / "report" / run.name
+            out.mkdir(parents=True, exist_ok=True)
+            (out / f"report-{eff}.md").write_text(res["markdown"])
+            (out / f"calls-{eff}.json").write_text(json.dumps({"calls": res["calls"], "stats": res["stats"]}, indent=1))
+            print(f"report {eff}: {res['stats'].get('report_seconds')} s, {len(res['markdown'])} chars", flush=True)
+            os._exit(0)
+        os.wait()
+    lock.close()
+
+
+def cmd_verify(a) -> None:
+    daytime_or_exit()
+    run = Path(a.run_dir)
+    body = (run / "deep" / "report-unverified.md").read_text()
+    lock = bench_lock()
+    for eff in a.levels.split(","):
+        if os.fork() == 0:
+            report, seed_mod, store_cls = deep_modules({"LDR_DEEP_VERIFY_EFFORT": eff,
+                                                        "LDR_DEEP_VERIFY_MAX_CLAIMS": str(a.max_claims)})
+            query, store, lead = load_run(run, seed_mod, store_cls)
+            w = report.ReportWriter(query, store, model(), lead)
+            claims = w.select_key_claims(w.split_claims(body), a.max_claims)
+            t0 = time.time()
+            checked = w.verify(body, claims=claims)
+            out = OUT / "verify" / run.name
+            out.mkdir(parents=True, exist_ok=True)
+            (out / f"verify-{eff}.json").write_text(json.dumps({"seconds": round(time.time() - t0, 1),
+                                                               "calls": w.calls, "claims": checked}, indent=1,
+                                                              ensure_ascii=False))
+            print(f"verify {eff}: {len(checked)} claims, {time.time() - t0:.0f} s", flush=True)
+            os._exit(0)
+        os.wait()
+    lock.close()
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+    q = sp.add_parser("extract")
+    q.add_argument("runs_glob", help='e.g. "results/bench2/runs/screen-*/*/capture/calls.jsonl"')
+    q.add_argument("--n", type=int, default=30)
+    q.add_argument("--levels", default="low,medium,xhigh")
+    q.add_argument("--seed", type=int, default=1)
+    for name in ("report", "verify"):
+        q = sp.add_parser(name)
+        q.add_argument("run_dir")
+        q.add_argument("--levels", default="medium,xhigh")
+        if name == "verify":
+            q.add_argument("--max-claims", type=int, default=40)
+    a = ap.parse_args()
+    {"extract": cmd_extract, "report": cmd_report, "verify": cmd_verify}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    main()

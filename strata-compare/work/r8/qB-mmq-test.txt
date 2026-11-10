@@ -1,0 +1,18 @@
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-on-p2000 configs/R8s-helper.json p2000 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-off-p2000 configs/R8s-old.json p2000 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-on-32k configs/R8s-helper.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-off-32k configs/R8s-old.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-on-rep4k configs/R8s-helper.json rep4k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-off-rep4k configs/R8s-old.json rep4k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-on-rep9k configs/R8s-helper.json rep9k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-off-rep9k configs/R8s-old.json rep9k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-on-tf-long112k configs/R8s-helper.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX=STRATA_PREFILL_TIMING=1 work/r8/run.sh pBm-x-off-tf-long112k configs/R8s-old.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm-ta-on-32k configs/R8s-helper.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm-ta-off-32k configs/R8s-old.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm-ta-on-tf-long112k configs/R8s-helper.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm-ta-off-tf-long112k configs/R8s-old.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm-tb-on-32k configs/R8s-helper.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm-tb-off-32k configs/R8s-old.json 32k 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm-tb-on-tf-long112k configs/R8s-helper.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pBm-tb-off-tf-long112k configs/R8s-old.json tf-long112k.prompt 16 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500

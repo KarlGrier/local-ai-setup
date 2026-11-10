@@ -1,0 +1,14 @@
+work/r7/tagcheck.sh "C*7 checks start"
+work/r7/build-cstar7.sh
+work/r7/tf.sh R7tf-single configs/R7m-single.json /home/USER/ai-speed-testing/strata-compare/engine-r7m/strata math corpus long16k long24k long28k long40k long64k
+work/r7/tf.sh R7tf-helper configs/R7m-helper.json /home/USER/ai-speed-testing/strata-compare/engine-r7m/strata math corpus long16k long24k long28k long40k long64k
+.venv/bin/python work/r7/tf_compare7.py > results/r7/tf-compare.txt; cat results/r7/tf-compare.txt
+work/r7/with_server.sh N7 configs/Cstar7.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label S7 --temperature 1.0"
+work/r7/with_server.sh RT7-direct configs/R7-meas-rt.json -- ".venv/bin/python work/r7/roundtrip.py direct small r7-direct1"
+work/r7/with_server.sh RT7-direct2 configs/R7-meas-rt.json -- ".venv/bin/python work/r7/roundtrip.py direct small r7-direct2"
+work/r7/with_server.sh RT7-park configs/R7-meas-rt.json -- ".venv/bin/python work/r7/roundtrip.py park small r7-park"
+work/r7/with_server.sh RT7-editref configs/R7-meas-rt.json -- ".venv/bin/python work/r7/roundtrip.py editref small r7-editref"
+.venv/bin/python work/r7/rt_compare.py > results/r7/roundtrip-table.md; cat results/r7/roundtrip-table.md
+WEB=1 work/r7/with_server.sh BR7 configs/BR7.json -- ".venv/bin/python work/r5/browser_test.py --engine-log \$ELOG --tag b7 --web"
+work/r7/fallback_test.sh
+work/r7/tagcheck.sh "C*7 checks done"

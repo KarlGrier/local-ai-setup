@@ -1,0 +1,15 @@
+[strata] requests naming deepseek-v4.1-flash get a clear error (model_not_running in the config)
+ready: http://127.0.0.1:18199/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, context 32768 tokens)
+       open http://127.0.0.1:18199/ in a browser to chat; close this window to stop the model
+[strata] refused a request for deepseek-v4.1-flash: this server runs strata-qwen3.8-flash-next-iq3s
+[strata] done: 4 tokens in 0 s (no speed) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+[strata] done: 4 tokens in 0 s (no speed) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+[strata] done: 4 tokens in 0 s (no speed) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+[strata] refused a request for deepseek-v4.1-flash: this server runs strata-qwen3.8-flash-next-iq3s
+[strata] done: 56 tokens in 0 s (no speed) (stop, cancel=False)
+
+[strata] stopping (Ctrl+C again to end the engine at once) ...
+[strata] stopped

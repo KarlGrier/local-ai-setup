@@ -1,0 +1,955 @@
+#!/usr/bin/env python3
+"""after.py - 10-26: the user's follow-ups to the DS4.1 round, run "after the head-to-head, when there's room" in one gap.
+User unit ds41-after; resumes from results/ds41/after/state.json. AFTER_DRY=1: print the plan only (own state / log).
+  0. wait until the Maya head-to-head has finished cleanly (ds41-h2h inactive 3 checks in a row, its state has gap_closed
+     and no "stopped"); a stopped or unclean h2h: one alert, keep waiting (nothing starts)
+  1. install what was staged for after it (the user, item 4, and the daily launcher): tunearm.sh.v3 / maya-tunearm.sh.v3
+     (the swap rule, refined), run-strata.sh.next / switch-model.sh.next (DeepSeek daily config support) - by rename,
+     the old files kept as *.before-after
+  2. gap: port_gap4.sh begin in its own scope (queue held, test lock, 8080 stopped), LDR + SearXNG 8889/8890 stopped,
+     drive-temperature log on
+  3. builds (no measurement runs meanwhile): build-variant.sh fix, build-variant.sh test (apply_variant.py)
+  4. item 6, the one-line fix: ckpt_client.py on the ship config with engine v026fix, slot keep off (the same 12
+     follow-ups, 6 after a two-pass answer, as ckpt-v026-keep0)
+  5. item 2, repeat pairs: cont_client.py exact (each case twice, seed 4242, placement frozen) - stock v0.2.6 with
+     STRATA_DS4_REUSE=0 (as the user asked); v026test with DS4_TEST_SEED_RESET=1 and REUSE=0; v026test with the reset and
+     reuse on (separates the sampler's running counter from the reuse path)
+  6. item 3, resumed vs fresh (report only): teacher-forced on v026test, the ship config: fresh (must equal the round's
+     eng-cand byte for byte), the 12,000-token prefix in 4 pieces, the 4 pieces set aside and taken back (slot_save /
+     reset / slot_load), one piece set aside and taken back; references R1 chunk 4096, R2 reserve 2600 on the same build
+  7. (item 5, thinking length, replaced 10-26 by the graded set - step 10)
+  8. item 1, the daily config: --ssd-cache 68 (the round's everything-up size), slot keep on, cap 16, the folder cap 2 GB,
+     growth floor 14 GiB, auto-pin on; everything up (SearXNG 8889/8890 started, LDR's RAM held by ballast.py as in the
+     round); slotfill.py (17 chats of ~31K tokens -> 16 in RAM, then the speed requests on top); soft stop 14. Pass =
+     lowest MemAvailable >= 14 GB and no stop; else the daily-size rule steps the store down 2 GB (to 62 at most) and runs
+     again. The passing config is written to configs/DS41-daily.json (+ its shared settings: effort medium, T 1.0 / 0.95 /
+     20, as P021m's); then a launcher smoke test on port 8086 (run-strata.sh start, one completion, stop)
+  10. the graded set (thinking budget 8,192 + max_tokens 16,384: suite_cmd) (the user, 10-26: "run our quick graded set on both models so Karl can decide whether DeepSeek
+     becomes the main chat model ... One model server at a time"): suite/run.sh --mode quick, budget 8,192 / max_tokens 16,384, the
+     scored categories (coding, agentic, math, instruct, tools, honesty, research; longctx on Qwen only - its ~95K-token
+     documents do not fit DeepSeek's 32K context), answers only (--no-grade). Qwen: P021m as the daily launcher starts it
+     (run-strata.sh, configs/P021m.json, port 8085), effort medium (its daily default). DeepSeek: the daily config of
+     step 8 (= the ship config + the user's daily slot / store choices; the ship config itself if step 8 found no size)
+     on v0.2.6 - or on the head-to-head's Maya arm if it won by the measurable part of the decision rule (KL pass, decode
+     ahead beyond noise against both neighbouring Strata runs, prompts not behind beyond noise) - at effort 50, then 75
+  11. after the gap: suite regrade of each label (the suite's script checkers: they see only the answer, never the model
+     or the thinking); report.py -> results/ds41/after/graded/REPORT.md + blind research packets (names and thinking
+     stripped) for the Phase 4 grader (one fresh grader per question, labels shuffled, key opened after)
+  12. context cost (report only): the daily config at --max-context 32K / 64K / 128K, full protocol - ctx_cost()
+  9. port_gap4 end (P021m back on 8080); services back; summary results/ds41/after/summary.md; alert
+Kernel rule: as the head-to-head - any kernel event or failed kernel check stops here with 8080 left stopped and an alert.
+"""
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+SC = "/home/USER/ai-speed-testing/strata-compare"
+T = f"{SC}/work/ds41/tune"
+A = f"{SC}/work/ds41/after"
+MY = f"{SC}/work/ds41/maya"
+R = f"{SC}/results/ds41/after"
+PY = f"{SC}/.venv/bin/python"
+H2H_STATE = f"{SC}/results/ds41/h2h/state.json"
+SHIPPED_SHA = "8db93e483b34b15dbf63a0826601f1db2107a8cfea73774e7d21d8559e0a9568"   # (tune.SHIPPED as committed; its .sha256)
+DRY = os.environ.get("AFTER_DRY") == "1"
+STATE = f"{R}/state-dry.json" if DRY else f"{R}/state.json"
+LOG = f"{R}/after-dry.log" if DRY else f"{R}/after.log"
+ELOG = f"{SC}/logs/ds41/engine-DS41-v024.log"   # (the base config's "log": every arm's engine writes here)
+
+sys.path.insert(0, T)
+import tune  # noqa: E402  (mkcfg, ENGINES, SHIPPED, PROF; never tune.run/save: they write the round's state)
+import skipcheck  # noqa: E402
+
+for _v in ("fix", "test"):   # the local test variants: in this process only (mkcfg writes exe into each config)
+    tune.ENGINES[f"v026{_v}"] = dict(tune.ENGINES["v026"], exe=f"{SC}/engine-v026{_v}-ds41/strata-dsv41")
+STAGED = [(f"{T}/tunearm.sh.v3", f"{T}/tunearm.sh"), (f"{MY}/maya-tunearm.sh.v3", f"{MY}/maya-tunearm.sh"),
+          (f"{SC}/run-strata.sh.next", f"{SC}/run-strata.sh"), (f"{SC}/switch-model.sh.next", f"{SC}/switch-model.sh")]
+
+
+def say(msg):
+    line = f"=== {time.strftime('%F %T')} {msg}"
+    print(line, flush=True)
+    with open(LOG, "a") as f:
+        f.write(line + "\n")
+
+
+def notify(title, body, crit=False):
+    if DRY:
+        print(f"  DRY notify: {title}: {body[:200]}")
+        return
+    subprocess.run(["notify-send", "-a", "DeepSeek-V4.1"] + (["-u", "critical"] if crit else []) + [title, body[:400]],
+                   stderr=subprocess.DEVNULL)
+
+
+def load():
+    try:
+        return json.load(open(STATE))
+    except (OSError, ValueError):
+        return {"steps": {}}
+
+
+def save(st):
+    if DRY:
+        return
+    json.dump(st, open(STATE + ".tmp", "w"), indent=1)
+    os.replace(STATE + ".tmp", STATE)
+
+
+def sh(cmd, log=None, **kw):
+    if DRY:
+        print("  DRY:", " ".join(cmd)[:400])
+        return 0
+    with open(log or LOG, "a") as lf:
+        return subprocess.run(cmd, stdout=lf, stderr=lf, **kw).returncode
+
+
+def stop(st, why):
+    st["stopped"] = why
+    save(st)
+    say(f"STOPPED: {why} - 8080 left stopped, the gap held; nothing else runs")
+    notify("DeepSeek follow-ups stopped", f"{why}. 8080 is NOT restarted.", True)
+    sys.exit(1)
+
+
+def clean_env(**extra):
+    e = {k: v for k, v in os.environ.items() if not k.startswith(("STRATA_", "MAYA_", "DS4_"))}
+    e.update({k: str(v) for k, v in extra.items()})
+    return e
+
+
+# ---------- 0-2 ----------------------------------------------------------------------------------------------------------
+def wait_h2h(st):
+    if st.get("h2h_done"):
+        return
+    say("waiting for the Maya head-to-head to finish (its gap closed, 8080 back on P021m)")
+    inactive, alerted = 0, False
+    while True:
+        act = subprocess.run(["systemctl", "--user", "is-active", "--quiet", "ds41-h2h.service"]).returncode == 0
+        inactive = 0 if act else inactive + 1
+        if inactive >= 3:
+            try:
+                h = json.load(open(H2H_STATE))
+            except (OSError, ValueError):
+                h = {}
+            if h.get("gap_closed") and not h.get("stopped"):
+                st["h2h_done"] = time.strftime("%F %T")
+                save(st)
+                say(f"the head-to-head has finished (gap closed {h['gap_closed']})")
+                return
+            if not alerted:
+                notify("DeepSeek follow-ups waiting", "the head-to-head is not running but did not finish cleanly - nothing starts")
+                say(f"the head-to-head is not running but did not finish cleanly ({h.get('stopped') or 'no gap_closed'}) - waiting")
+                alerted = True
+        time.sleep(60)
+
+
+def install(st):
+    if st.get("installed"):
+        return
+    for new, cur in STAGED:
+        if DRY:
+            print(f"  DRY: install {new} -> {cur}")
+            continue
+        if os.path.exists(new):
+            shutil.copy2(cur, cur + ".before-after")
+            os.replace(new, cur)   # (by rename: a script that is running keeps the old file)
+    st["installed"] = time.strftime("%F %T")
+    save(st)
+    say("installed: the swap rule (tunearm.sh, maya-tunearm.sh), run-strata.sh / switch-model.sh (DeepSeek daily config)")
+
+
+def open_gap(st):
+    if st.get("gap_open"):
+        return
+    if sh(["bash", f"{SC}/bringup/lib/kcheck.sh", "after-before"]) != 0:
+        stop(st, "kernel check failed before the follow-ups")
+    rc = sh(["systemd-run", "--user", "--scope", "--unit", "ds41-after-gaplock", "--collect", "bash",
+             f"{SC}/work/r22/port_gap4.sh", "begin", "DeepSeek follow-ups (the user, 10-26; lock in its own scope)"])
+    if rc != 0:
+        stop(st, f"port_gap4 begin failed (rc {rc})")
+    sh(["/home/USER/ai/deep-research/run-ldr.sh", "stop"])
+    sh(["systemctl", "--user", "stop", "searxng-watch.service", "searxng-ldr.service", "searxng-ldr-baseline.service"])
+    if os.path.exists(f"{SC}/tmp/ds41-nvmetemp.stop") and not DRY:
+        os.remove(f"{SC}/tmp/ds41-nvmetemp.stop")
+    if subprocess.run(["systemctl", "--user", "is-active", "--quiet", "ds41-nvmetemp.service"]).returncode:
+        sh(["systemd-run", "--user", "--unit", "ds41-nvmetemp", "--collect", "bash", f"{SC}/work/ds41/nvmetemp.sh", "12"])
+    st["gap_open"] = time.strftime("%F %T")
+    save(st)
+    say("gap open: queue held, test lock, 8080 stopped, LDR + SearXNG 8889/8890 stopped, drive log on")
+
+
+def close_gap(st):
+    rc = sh(["bash", f"{SC}/work/r22/port_gap4.sh", "end"])
+    sh(["systemctl", "--user", "start", "searxng-ldr.service", "searxng-ldr-baseline.service", "searxng-watch.service"])
+    if not DRY:
+        open(f"{SC}/tmp/ds41-nvmetemp.stop", "w").close()
+    k = sh(["bash", f"{SC}/bringup/lib/kcheck.sh", "after-after"])
+    st["gap_closed"] = time.strftime("%F %T")
+    save(st)
+    say(("8080 back on P021m" if rc == 0 else "port_gap4 end FAILED - check 8080") + ("; kcheck clean" if k == 0 else "; KCHECK FAILED"))
+    return rc
+
+
+def builds(st):
+    for v in ("fix", "test"):
+        k = f"build_{v}"
+        if st.get(k):
+            continue
+        rc = sh(["bash", f"{A}/build-variant.sh", v], f"{R}/build-{v}.log")
+        exe = tune.ENGINES[f"v026{v}"]["exe"]
+        if rc != 0 or (not DRY and not os.path.exists(exe)):
+            st[k] = f"FAILED (rc {rc}, {R}/build-{v}.log)"
+            say(f"build {v}: {st[k]}")
+        else:
+            st[k] = open(f"{SC}/engine-v026{v}-ds41/SHA256").read().split()[0][:12] if not DRY else "dry"
+            say(f"build {v}: ok, sha256 {st[k]}")
+        save(st)
+
+
+# ---------- arms -----------------------------------------------------------------------------------------------------------
+def arm(st, key, mods, note, client, passes=1, soft=None, server_env=None, cool=0, client_timeout=None, nprompt=1):
+    if key in st["steps"]:
+        return st["steps"][key]
+    eng = mods.get("engine", "v026")
+    if eng in ("v026fix", "v026test"):
+        b = str(st.get(f"build_{eng[4:]}", ""))
+        if not b or b.startswith("FAILED"):
+            st["steps"][key] = {"skipped": f"the {eng} build failed or is missing"}
+            save(st)
+            say(f"{key}: skipped - the {eng} build failed")
+            return st["steps"][key]
+    cfg = tune.mkcfg(f"after-{key}", dict(mods, engine=eng))
+    if not DRY:   # (each arm starts from its own copy of the pinned measurement profile - checked first, 10-26 14:30)
+        if hashlib.sha256(open(tune.SHIPPED, "rb").read()).hexdigest() != SHIPPED_SHA:
+            stop(st, f"{key}: {tune.SHIPPED} is not the pinned measurement profile ({SHIPPED_SHA[:12]}) - restore it from git")
+        shutil.copy(tune.SHIPPED, tune.PROF)
+    env = clean_env(ARM_NOTE=note, PROFILE=tune.PROF, COOL_MIN=cool, PASSES=passes, NPROMPT=nprompt,
+                    DS_SERVER=tune.ENGINES[eng]["server"], CLIENT=client)
+    se = server_env if server_env is not None else tune.ENGINES[eng]["server_env"]
+    if se:
+        env["SERVER_ENV"] = se
+    if soft:
+        env["SOFT_GB"] = str(soft)
+    if client_timeout:
+        env["CLIENT_TIMEOUT"] = str(client_timeout)
+    say(f"{key}: {note}")
+    t0 = time.time()
+    if DRY:
+        sh(["bash", f"{T}/tunearm.sh", key, cfg])
+        return {"dir": None}
+    with open(LOG, "a") as lf:
+        subprocess.run(["bash", f"{T}/tunearm.sh", key, cfg], env=env, stdout=lf, stderr=lf)
+    d = open(f"{SC}/tmp/ds41-arm-out").read().strip()
+    g = open(f"{d}/GUARD").read().strip() if os.path.exists(f"{d}/GUARD") else ""
+    s = open(f"{d}/summary.txt").read() if os.path.exists(f"{d}/summary.txt") else ""
+    if "kernel" in g.lower() or re.search(r"KCHECK FAILED|kernel check failed", s, re.I):
+        st["steps"][key] = {"dir": d, "guard": g or "kernel check failed"}
+        stop(st, f"{key}: kernel event ({g or 'kcheck failed'}) - {d}")
+    try:
+        a = json.load(open(f"{d}/arm.json"))
+    except (OSError, ValueError):
+        a = {}
+    res = {"dir": d, "cfg": cfg, "min": round((time.time() - t0) / 60, 1), "guard": g or None,
+           "softstop": os.path.exists(f"{d}/SOFTSTOP"), "lowest_mem": a.get("lowest_memavail_gb"),
+           "decode": (a.get("decode") or {}).get("mean"), "P4K": (a.get("P4K") or {}).get("mean"),
+           "P20K": (a.get("P20K") or {}).get("mean"), "vram_experts": [c.get("vram_experts") for c in a.get("cards", [])],
+           "nvme": next((l.strip() for l in s.splitlines() if l.startswith("nvme0")), None),
+           "swap": next((l.strip() for l in s.splitlines() if l.startswith("swap:")), None),
+           "client_tail": open(f"{d}/client.out").read()[-2500:] if os.path.exists(f"{d}/client.out") else ""}
+    st["steps"][key] = res
+    save(st)
+    say(f"{key}: {res['min']} min, lowest {res['lowest_mem']} GB" + (f"; {g}" if g else "") +
+        ("; SOFT STOP" if res["softstop"] else "") + "\n" + res["client_tail"][-1200:])
+    return res
+
+
+def final():
+    f = dict(json.load(open(tune.STATE)).get("final") or {})
+    f.pop("engine", None)
+    return f
+
+
+# 10-26 (Karl): the ports decide DeepSeek's final engine - results/ds41/ports/final.json {"engine": "v026p343", "mods":
+# {"STRATA_DS4_PROMPT_SKIP": "1"}, "kept": [...]} (written by hand once the ports and the combined A/B/A are decided);
+# the daily config, the graded set and the context cost run on it (the ship config + the kept ports), the other tests on
+# the builds they name
+FINAL_JSON = f"{SC}/results/ds41/ports/final.json"
+try:
+    _fj = json.load(open(FINAL_JSON))
+except (OSError, ValueError):
+    _fj = {"engine": "v026", "mods": {}}
+FINAL_ENG, FINAL_MODS = _fj.get("engine", "v026"), _fj.get("mods", {})
+if FINAL_ENG not in tune.ENGINES:
+    tune.ENGINES[FINAL_ENG] = dict(tune.ENGINES["v026"], exe=f"{SC}/engine-{FINAL_ENG}-ds41/strata-dsv41")
+
+
+def ds_mods(store_gb=None, slot_dir=None):
+    """the final DeepSeek config: the ship config + the kept ports on the final engine; with store_gb the daily settings
+    (the store, growth floor 14 GiB, slot keep on, cap 16, the folder cap 2 GB)"""
+    m = dict(final(), engine=FINAL_ENG, **FINAL_MODS)
+    if store_gb:
+        m.update({"--ssd-cache": store_gb, "DS4_STORE_FLOOR_GB": 14, "STRATA_DS4_SLOT_KEEP": "1", "STRATA_DS4_SLOT_CAP": "16",
+                  "STRATA_DS4_SLOT_GB": "2", "STRATA_DS4_SLOT_DIR": slot_dir or f"{R}/slots"})
+    return m
+
+
+def cmp(a, b):
+    return json.loads(subprocess.run(["python3", f"{T}/compare.py", a, b], capture_output=True, text=True).stdout or "{}")
+
+
+def split_step(st):
+    """10-26 (Karl: "after the IQ_Q8K work and before the graded set, add one single-pass screen with fewer layers on the
+    4060 Ti: 8/32 with the 4060 Ti first, or the closest split that fits VRAM, on the #343 config. Confirm it with a 3-pass
+    A/B/A only if 20K prompts gain beyond noise and decode loses no more than 1%. If it's kept, the graded set and the
+    daily launcher use it"). Screens (one pass, one P4K / P20K, W1-W3 once, cool-down 60 s) of the final config at its
+    split (10,30) and at 8,32 (9,31 if 8,32 does not start or fails a guard), back to back. Beyond noise = more than the
+    round's largest per-group P20K screen noise (0.9 %). The A/B/A (A = 10,30, B = the new split, A; a replacement A if
+    one fails a guard) keeps it when P20K gains beyond compare.py's noise and decode is no worse than -1 % against both."""
+    global FINAL_MODS
+    if st.get("split") or DRY:
+        if DRY:
+            print("  DRY: split screen 10,30 vs 8,32 (9,31) on the final config; A/B/A if P20K > +0.9 % and decode >= -1 %")
+        return
+    base = ds_mods()
+    cur = base.get("DS4_SPLIT", "10,30")
+    ok = lambda r: bool(r.get("dir")) and not r.get("guard") and not r.get("softstop") and r.get("decode") and r.get("P20K")
+    sa = arm(st, "split-screen-a", base, f"split screen: the final config at {cur}", "", cool=60)
+    out = {"from": cur, "screen_a": {k: sa.get(k) for k in ("decode", "P4K", "P20K", "vram_experts", "guard")}}
+    new, sb = None, {}
+    for sp in ("8,32", "9,31"):
+        sb = arm(st, f"split-screen-{sp.replace(',', '-')}", dict(base, DS4_SPLIT=sp), f"split screen: the final config at {sp}", "", cool=60)
+        out[f"screen_{sp}"] = {k: sb.get(k) for k in ("decode", "P4K", "P20K", "vram_experts", "guard")}
+        if ok(sb):
+            new = sp
+            break
+    verdict = "no split started cleanly"
+    if new and ok(sa):
+        dg, pg = 100 * (sb["decode"] / sa["decode"] - 1), 100 * (sb["P20K"] / sa["P20K"] - 1)
+        out["screen_gain"] = {"decode": round(dg, 2), "P20K": round(pg, 2), "P4K": round(100 * (sb["P4K"] / sa["P4K"] - 1), 2)}
+        verdict = f"screen {new}: P20K {pg:+.1f} %, decode {dg:+.1f} %"
+        if pg > 0.9 and dg >= -1.0:
+            runs = {"A1": arm(st, "split-A1", base, f"split A/B/A: A1 = {cur}", "", passes=3, nprompt=3, cool=60),
+                    "B": arm(st, "split-B", dict(base, DS4_SPLIT=new), f"split A/B/A: B = {new}", "", passes=3, nprompt=3, cool=60),
+                    "A2": arm(st, "split-A2", base, f"split A/B/A: A2 = {cur}", "", passes=3, nprompt=3, cool=60)}
+            clean = [k for k in ("A1", "A2") if ok(runs[k])]
+            if ok(runs["B"]) and len(clean) < 2:
+                runs["A3"] = arm(st, "split-A3", base, f"split A/B/A: A3 = {cur} (a replacement)", "", passes=3, nprompt=3, cool=60)
+                clean += ["A3"] if ok(runs["A3"]) else []
+            comps = {a: cmp(runs[a]["dir"], runs["B"]["dir"]) for a in clean[:2]} if ok(runs["B"]) else {}
+            keep = len(comps) == 2 and all(
+                (c.get("P20K") or {}).get("gain_pct", -99) > (c.get("P20K") or {}).get("noise_pct", 99) and
+                (c.get("decode") or {}).get("gain_pct", -99) >= -1.0 for c in comps.values())
+            out["aba"] = {a: {m: (c.get(m) or {}) for m in ("decode", "P4K", "P20K")} for a, c in comps.items()}
+            out["kept"] = keep
+            verdict += f"; A/B/A: " + "; ".join(f"vs {a} " + tune.gains(c) for a, c in comps.items()) + \
+                f" -> {'KEPT' if keep else 'not kept'}"
+            if keep:
+                FINAL_MODS = dict(FINAL_MODS, DS4_SPLIT=new)
+                fj = dict(_fj, mods=FINAL_MODS, split_note=f"10-26 split screen + A/B/A: {new} kept over {cur}")
+                json.dump(fj, open(FINAL_JSON, "w"), indent=1)
+        else:
+            verdict += " - no A/B/A (Karl's bar: P20K beyond 0.9 % and decode >= -1 %)"
+    out["verdict"] = verdict
+    st["split"] = out
+    save(st)
+    say(f"split: {verdict}")
+
+
+# ---------- 10-26 16:05 (Karl): the final config's rounding check and the daily end tests, before the daily config is used --
+DAILY_CFG = f"{SC}/configs/DS41-daily.json"
+
+
+def hold_daily(st, why):
+    """a failed check keeps the daily config on hold: renamed, so ./switch-model.sh deepseek cannot start it; Karl decides"""
+    if os.path.exists(DAILY_CFG):
+        os.replace(DAILY_CFG, DAILY_CFG + ".ON-HOLD")
+    st.setdefault("daily_hold", []).append(why)
+    save(st)
+    open(f"{R}/DAILY-ON-HOLD.txt", "a").write(f"{time.strftime('%F %T')} {why}\n")
+    say(f"DAILY CONFIG ON HOLD: {why} - configs/DS41-daily.json.ON-HOLD; Karl decides")
+    notify("DeepSeek daily config on hold", why, True)
+
+
+def daily_mods(st, slot_dir):
+    """the daily config's engine settings (the store the memory check chose, else 68) with the given slot folder"""
+    t = next((x for x in (st.get("daily") or {}).get("tries", []) if x.get("ok")), None)
+    return ds_mods(t["store_gb"] if t else 68, slot_dir)
+
+
+def final_gate(st):
+    """Karl (via the user, 16:05): "gate the split: run the rounding check on exactly the final config (v0.2.6 + #343 +
+    8/32) vs stock v0.2.6, against the same references and bounds (including the new p90 rule). If it fails, report it
+    before the daily config goes live; Karl decides." The round's final check (teacher-forced long8: a 12,000-token prefix
+    read as one prompt, 256 positions scored per segment) with its stored base (stock v0.2.6, the engine defaults) and
+    references (R1 chunk 4096, R2 reserve 2600 - teacher/final-*); the candidate = the daily config's engine settings
+    on the measurement profile (SHIPPED), as the ship config's candidate was"""
+    if st.get("final_gate") or DRY:
+        return
+    ids = skipcheck.ids_file()
+    m = dict(daily_mods(st, f"{R}/gate-slots"), **{"--expert-profile": tune.SHIPPED})
+    say(f"final config rounding check: {json.dumps({k: v for k, v in m.items() if not str(k).startswith('STRATA_DS4_SLOT')})}")
+    try:
+        cand = skipcheck.score("final-cand-p343-8-32", m, ids, {"DS4_SCORE_PREFIX": str(skipcheck.PREFIX)})
+    except SystemExit as x:
+        if str(x) == "3" or x.code == 3:
+            stop(st, "kernel error in the final config's rounding check")
+        st["final_gate"] = {"verdict": f"could not run ({x})"}
+        save(st)
+        hold_daily(st, f"the final config's rounding check could not run ({x})")
+        return
+    O = skipcheck.OUT
+    base, refs = f"{O}/final-base", {"R1-chunk4096": f"{O}/final-R1-chunk4096", "R2-cpu-share": f"{O}/final-R2-cpu-share"}
+    res = {k: skipcheck.compare(base, d) for k, d in refs.items()}
+    c = skipcheck.compare(base, cand)
+    r1, r2 = res["R1-chunk4096"], res["R2-cpu-share"]
+    ck, det = skipcheck.rounding_checks(c, r1, r2, cand, refs["R1-chunk4096"], refs["R2-cpu-share"], base)   # (10-26 16:40, Karl)
+    checks = {skipcheck.CHECK_LABELS[k]: v for k, v in ck.items()}
+    skip_lines = sum(1 for i in range(8) if os.path.exists(f"{cand}/s{i}/engine.out")
+                     for l in open(f"{cand}/s{i}/engine.out", errors="replace") if "prompt skip" in l)
+    f = lambda r: f"mean {r['kl_mean']:.5f}, p90 {r['kl_p90']:.5f}, KL>1 {r['kl_gt1']}, top-1 {r['top1_agree']} of {r['positions']}"
+    ok = all(checks.values())
+    out = {"cand": c, "refs": res, "checks": checks, "pass": ok, "skip_engine_lines": skip_lines,
+           "line": f"final config (v0.2.6 + #343 + 8/32) vs stock v0.2.6: {'PASS (rounding-level)' if ok else 'FAIL'} - "
+                   f"cand {f(c)}; R1 chunk 4096 {f(r1)}; R2 CPU share {f(r2)}; "
+                   + f"; changed top-1 picks {det['flips']} (bound {det['flips_bound']}); text NLL {det.get('nll')} (cand, R1, R2, base; "
+                   f"above the base {det.get('nll_excess')}, bound {det.get('nll_bound')}); "
+                   + "; ".join(f"{'ok' if v else 'FAIL'} {k}" for k, v in checks.items())
+                   + f"; prompt-skip engine lines {skip_lines} (8 segments)"}
+    st["final_gate"] = out
+    save(st)
+    say(out["line"])
+    if not ok:
+        hold_daily(st, "the final config failed the rounding check: " + ", ".join(k for k, v in checks.items() if not v))
+
+
+def daily_tests(st):
+    """Karl (via the user, 16:05): "Re-run the end tests that matter for daily use on the final config: the
+    conversation-cache test and the follow-up re-read test with slot keep on, cap 16. Skip the slot-keep-off and cap-4
+    variants; their decisions are made. If anything fails, report it and keep the daily config on hold." The round's
+    clients unchanged (conv.py phases 1-2: a ~20K chat, another chat, back to the first from the RAM slot, then after an
+    engine restart from the disk slot; ckpt_client.py: Jan's format, 2 chats x 5 follow-ups after both kinds of answer) on
+    the daily config (its store, slot keep 1, cap 16, folder 2 GB, AUTO_PIN 1). Phase 3 (slots off: a fresh-prefill
+    reference and C.10) is left out with the slot-keep-off variants; the round's verdict rule never used it."""
+    if st.get("daily_tests") or DRY:
+        return
+    out = {}
+    sdir = f"{R}/conv-slots"
+    if "conv-final-1" not in st["steps"]:
+        shutil.rmtree(sdir, ignore_errors=True)
+    sf = f"{R}/conv-A.json"
+    mods = daily_mods(st, sdir)
+    c1 = arm(st, "conv-final-1", mods, "daily end test: conversation cache, engine run 1 (A to ~20K, B, back to A), daily config",
+             f"{PY} {T}/conv.py 1 $URL $OUT {ELOG} {sdir} {sf}", server_env="STRATA_DS4_AUTO_PIN=1")
+    c2 = arm(st, "conv-final-2", mods, "daily end test: conversation cache, engine run 2 (after a restart: back to A from the disk slot)",
+             f"{PY} {T}/conv.py 2 $URL $OUT {ELOG} {sdir} {sf}", server_env="STRATA_DS4_AUTO_PIN=1")
+    rows = []
+    for r in (c1, c2):
+        if r.get("dir") and os.path.exists(f"{r['dir']}/conv.jsonl"):
+            rows += [json.loads(l) for l in open(f"{r['dir']}/conv.jsonl")]
+
+    def reuse_ok(label):
+        r = next((x for x in rows if x["turn"].startswith(label)), None)
+        return bool(r and r.get("reused") is not None and r.get("prompt_tokens") and r["reused"] >= 0.9 * r["prompt_tokens"])
+    inner_rows = [x for x in rows if x["turn"] in ("A2", "A3", "A4", "A5")]
+    # (the round's "read <= 50 % of the prompt" tripped on a turn whose new text is over half its prompt - the harness slip
+    # in the report; the exact rule as well: each inner turn reads only its new text, reused = the previous prompt - 1)
+    inner = bool(inner_rows) and all((x.get("read") or 0) <= 0.5 * (x.get("prompt_tokens") or 1) for x in inner_rows)
+    prev = {x["turn"]: x for x in rows}
+    exact_inner = bool(inner_rows) and all(
+        x.get("reused") is not None and prev.get(f"A{int(x['turn'][1]) - 1}") and
+        x["reused"] >= (prev[f"A{int(x['turn'][1]) - 1}"].get("prompt_tokens") or 0) - 1 for x in inner_rows)
+    ok6, ok7 = reuse_ok("A6"), reuse_ok("A7")
+    conv_ok = ok6 and ok7 and (inner or exact_inner) and not c1.get("guard") and not c2.get("guard")
+    out["conv"] = {"pass": conv_ok, "back_to_A_from_RAM": ok6, "back_to_A_from_disk_after_restart": ok7,
+                   "inner_read_le_half": inner, "inner_reused_previous_prompt": exact_inner,
+                   "guards": [c1.get("guard"), c2.get("guard")],
+                   "rows": [{k: x.get(k) for k in ("turn", "prompt_tokens", "reused", "read", "ttft_s", "engine_write_mb",
+                                                    "slot_dir_mb")} for x in rows]}
+    say(f"daily end test, conversation cache: {'PASS' if conv_ok else 'FAIL'} (back to A from RAM {ok6}, from disk after a "
+        f"restart {ok7}, inner turns read only the new text {inner or exact_inner})\n" +
+        "\n".join(f"  {x['turn']}: prompt {x.get('prompt_tokens')} = {x.get('reused')} reused + {x.get('read')} read, TTFT "
+                  f"{x.get('ttft_s')} s, engine wrote {x.get('engine_write_mb')} MB, slot folder {x.get('slot_dir_mb')} MB" for x in rows))
+    k = arm(st, "ckpt-final", daily_mods(st, f"{R}/ckpt-slots"), "daily end test: follow-up reads (Jan's format), daily config, slot keep on, cap 16",
+            f"{PY} {T}/ckpt_client.py $URL $OUT {ELOG} 1", server_env="STRATA_DS4_AUTO_PIN=1")
+    cj = json.load(open(f"{k['dir']}/ckpt.json")) if k.get("dir") and os.path.exists(f"{k['dir']}/ckpt.json") else {}
+    ck_ok = cj.get("verdict") == "PASS" and not k.get("guard")
+    out["ckpt"] = {"pass": ck_ok, "guard": k.get("guard"), **{x: cj.get(x) for x in ("followups", "ok", "re_read",
+                                                                                      "render_mismatch", "history_differs")}}
+    say(f"daily end test, follow-up reads: {'PASS' if ck_ok else 'FAIL'} ({cj.get('ok')} of {cj.get('followups')} read only "
+        f"the last answer + the new message; re-reads {cj.get('re_read')}; guard {k.get('guard')})")
+    out["pass"] = conv_ok and ck_ok
+    st["daily_tests"] = out
+    save(st)
+    if not conv_ok:
+        hold_daily(st, "the daily config failed the conversation-cache end test")
+    if not ck_ok:
+        hold_daily(st, "the daily config failed the follow-up re-read end test")
+
+
+# ---------- 6. resumed vs fresh -------------------------------------------------------------------------------------------
+def resume_kl(st):
+    if st.get("resume_kl") or DRY:
+        if DRY:
+            print("  DRY: resume KL (skipcheck.score in-process, engine v026test): fresh, pieces4, resume4, resume1, R1, R2")
+        return
+    if str(st.get("build_test", "")).startswith("FAILED"):
+        st["resume_kl"] = "skipped: the test build failed"
+        save(st)
+        return
+    say("resumed vs fresh (teacher-forced, v026test, ship config): 6 scoring runs")
+    ids = skipcheck.ids_file()
+    base = dict(final(), engine="v026test", **{"--expert-profile": tune.SHIPPED})
+    env0 = {"DS4_SCORE_PREFIX": str(skipcheck.PREFIX)}
+    runs = {"fresh": (base, env0), "R1-chunk4096": (dict(base, **{"--prefill-chunk": 4096}), env0),
+            "R2-cpu-share": (dict(base, **{"--reserve-mib": 2600}), env0),
+            "pieces4": (base, dict(env0, DS4_SCORE_PIECES="4")),
+            "resume4": (base, dict(env0, DS4_SCORE_PIECES="4", DS4_SCORE_RESUME="1")),
+            "resume1": (base, dict(env0, DS4_SCORE_RESUME="1"))}
+    dirs = {}
+    for k, (m, e) in runs.items():
+        try:
+            dirs[k] = skipcheck.score(f"after-{k}", m, ids, e)
+        except SystemExit as x:
+            if str(x) == "3" or x.code == 3:
+                stop(st, f"kernel error in the scoring run after-{k}")
+            say(f"resume KL: the scoring run after-{k} could not run ({x})")
+    if "fresh" not in dirs:
+        st["resume_kl"] = "could not run (no fresh run)"
+        save(st)
+        return
+    f0 = dirs["fresh"]
+    out = {"vs_fresh": {}, "pairs": {}}
+    for k in ("R1-chunk4096", "R2-cpu-share", "pieces4", "resume4", "resume1"):
+        if k in dirs:
+            out["vs_fresh"][k] = skipcheck.pct_row(f0, dirs[k])
+    if "pieces4" in dirs and "resume4" in dirs:
+        out["pairs"]["resume4 vs pieces4 (the set-aside / take-back alone)"] = skipcheck.pct_row(dirs["pieces4"], dirs["resume4"])
+    ec = f"{skipcheck.OUT}/eng-cand/score.tsv"
+    out["fresh_equals_round_eng_cand"] = os.path.exists(ec) and open(ec, "rb").read() == open(f"{f0}/score.tsv", "rb").read()
+    for k in ("resume4", "pieces4", "resume1"):
+        v = out["vs_fresh"]
+        if k in v and "R1-chunk4096" in v and "R2-cpu-share" in v:
+            c, r1, r2 = v[k], v["R1-chunk4096"], v["R2-cpu-share"]
+            ok = skipcheck.rounding_checks(c, r1, r2, dirs[k], dirs["R1-chunk4096"], dirs["R2-cpu-share"], f0)[0]   # (16:40)
+            out[f"{k}_judged"] = "within the rounding references" if all(ok.values()) else \
+                "outside the rounding references: " + ", ".join(x for x, y in ok.items() if not y)
+    st["resume_kl"] = out
+    save(st)
+    say("resumed vs fresh: " + json.dumps({k: v for k, v in out.items() if k.endswith("judged") or k.startswith("fresh_")}))
+
+
+# ---------- 8. the daily config --------------------------------------------------------------------------------------------
+def daily(st):
+    if st.get("daily") or DRY:
+        if DRY:
+            print("  DRY: daily config: SearXNG 8889/8890 up + ballast; slotfill at 68 (then 66, 64, 62 if it does not fit)")
+        return
+    sdir = f"{R}/daily-slots"
+    sh(["systemctl", "--user", "start", "searxng-ldr.service", "searxng-ldr-baseline.service"])
+    time.sleep(60)
+    mf = f"{R}/svcmem.jsonl"
+    sx = json.loads(subprocess.run([PY, f"{T}/svcmem.py", "SearXNG 8889/8890 started", mf], capture_output=True,
+                                   text=True).stdout or "{}").get("rss_gib", {}).get("SearXNG 8889 (LDR)", 0) or 0
+    hold = round(3.54 + max(0.0, 1.74 - sx), 2)
+    bal = subprocess.Popen([PY, f"{T}/ballast.py", str(hold)], stdout=subprocess.DEVNULL)
+    tries, ok_n = [], None
+    try:
+        time.sleep(30)
+        subprocess.run([PY, f"{T}/svcmem.py", f"everything up (held {hold} GiB: LDR 3.54 + SearXNG 8889 to 1.74)", mf])
+        for n in (68, 66, 64, 62):
+            shutil.rmtree(sdir, ignore_errors=True)
+            mods = ds_mods(n, sdir)
+            r = arm(st, f"daily-{n}", mods, f"daily config at --ssd-cache {n}: 16 slots filled (17 chats of ~31K tokens), "
+                    f"then the speed requests; everything up; soft stop 14 GB",
+                    f"{PY} {A}/slotfill.py $URL $OUT {ELOG} {sdir} 17", soft=14, server_env="STRATA_DS4_AUTO_PIN=1")
+            subprocess.run([PY, f"{T}/svcmem.py", f"daily-{n} after the run", mf])
+            fill = json.load(open(f"{r['dir']}/slotfill.json")) if r.get("dir") and os.path.exists(f"{r['dir']}/slotfill.json") else {}
+            ok = not r.get("guard") and not r.get("softstop") and (r.get("lowest_mem") or 0) >= 14.0 and bool(fill)
+            tries.append({"store_gb": n, "ok": ok, "lowest_mem": r.get("lowest_mem"), "guard": r.get("guard"),
+                          "softstop": r.get("softstop"), "fill": fill, "dir": r.get("dir"), "cfg": r.get("cfg")})
+            say(f"daily-{n}: {'fits' if ok else 'does not fit'} (lowest {r.get('lowest_mem')} GB; slots {fill.get('slot_gb_sum')} GB "
+                f"for {fill.get('in_ram_last')} in RAM; 16 x 32,768 tokens = {fill.get('at_32768_x16_gb')} GB)")
+            if ok:
+                ok_n = n
+                break
+    finally:
+        bal.kill()
+        bal.wait()
+        sh(["systemctl", "--user", "stop", "searxng-ldr.service", "searxng-ldr-baseline.service"])
+    st["daily"] = {"tries": tries, "store_gb": ok_n}
+    save(st)
+    if ok_n:
+        write_daily(st, next(t for t in tries if t["ok"]))
+
+
+def write_daily(st, t):
+    c = json.load(open(t["cfg"]))
+    c["env"].pop("STRATA_DS4_SLOT_DIR", None)   # (the server's default: ds4-slots next to the log)
+    c["env"].pop("DS4_FLOW_STATS", None)
+    c["env"]["STRATA_DS4_AUTO_PIN"] = "1"
+    a = c["args"]
+    prof = f"{SC}/logs/ds41/daily-profile.bin"
+    a[a.index("--expert-profile") + 1] = prof
+    # the start check: the memory this run used (MemAvailable before the engine started - its lowest) + the 12 GB floor
+    m0 = next((float(l.split()[1]) for l in list(open(f"{t['dir']}/monitor.tsv"))[1:2]), None)
+    need = int((m0 - t["lowest_mem"] + 12) * 1024) if m0 else 76000
+    # 10-26 14:25 (Karl): the daily profile is its own file and learns (the engine writes it after every request);
+    # run-strata.sh seeds it only when it is missing, from a pinned read-only copy of the profile the final config was
+    # measured with (the arms' copy of SHIPPED); the smoke test below runs on a throwaway profile, so first use starts
+    # from the seed
+    seed, sha = f"{SC}/configs/DS41-daily-profile.seed.bin", "8db93e483b34b15dbf63a0826601f1db2107a8cfea73774e7d21d8559e0a9568"
+    if not os.path.exists(seed):
+        if hashlib.sha256(open(tune.SHIPPED, "rb").read()).hexdigest() != sha:
+            raise RuntimeError(f"{tune.SHIPPED} is not the profile the final config was measured with")
+        shutil.copyfile(tune.SHIPPED, seed)
+        os.chmod(seed, 0o444)
+    c.update({"server": tune.ENGINES["v026"]["server"], "model_name": "deepseek-v4.1-flash",
+              "log": f"{SC}/logs/ds41/engine-daily.log", "warmup": False, "expert_profile_seed": seed,
+              "expert_profile_seed_sha256": sha,
+              "need_vram_mib": 7000, "need_ram_mib": need, "host": "127.0.0.1",
+              "_comment": f"10-26 DeepSeek-V4.1 daily (the user: slot keep on, cap 16, the store {t['store_gb']} GB, 6 experts, "
+                          f"engine {FINAL_ENG} (v0.2.6 + the kept ports {_fj.get('kept', [])}), the ship settings "
+                          f"{json.dumps(final())} + {json.dumps(FINAL_MODS)}); measured {t['dir']} (lowest {t['lowest_mem']} GB "
+                          f"with everything up, 16 slots full). Start: ./switch-model.sh deepseek."})
+    p = f"{SC}/configs/DS41-daily.json"
+    json.dump(c, open(p, "w"), indent=1)
+    json.dump({"reasoning_effort": "medium", "temperature": 1.0, "top_p": 0.95, "top_k": 20},
+              open(f"{SC}/configs/DS41-daily.shared-settings.json", "w"), indent=1)
+    st["daily_cfg"] = p
+    save(st)
+    say(f"daily config written: {p} (store {t['store_gb']} GB)")
+    # launcher smoke test on a spare port: start through run-strata.sh, one completion, stop - on a copy of the config
+    # whose profile is a throwaway file (the daily profile is left to its first real use)
+    sp = f"{R}/smoke-profile.bin"
+    if os.path.exists(sp):
+        os.remove(sp)
+    sc = dict(c, args=list(a))
+    sc["args"][sc["args"].index("--expert-profile") + 1] = sp
+    smoke_cfg = f"{R}/DS41-daily-smoke.json"
+    json.dump(sc, open(smoke_cfg, "w"), indent=1)
+    env = clean_env(STRATA_PORT="8086", STRATA_CONFIG=smoke_cfg)
+    with open(LOG, "a") as lf:
+        rc = subprocess.run(["bash", f"{SC}/run-strata.sh", "start"], env=env, stdout=lf, stderr=lf).returncode
+        out = subprocess.run(["curl", "-s", "-m", "300", "http://127.0.0.1:8086/v1/chat/completions", "-H",
+                              "Content-Type: application/json", "-d", json.dumps({"model": "x", "max_tokens": 1, "stream": False,
+                              "messages": [{"role": "user", "content": "Reply with OK."}]})], capture_output=True, text=True).stdout
+        models = subprocess.run(["curl", "-s", "-m", "10", "http://127.0.0.1:8086/v1/models"], capture_output=True, text=True).stdout
+        subprocess.run(["bash", f"{SC}/run-strata.sh", "stop"], env=env, stdout=lf, stderr=lf)
+    for _ in range(60):   # (run-strata.sh's stop does not wait for a strata-dsv41 engine: port_gap4 end needs the VRAM)
+        pids = subprocess.run(["pgrep", "-x", "strata-dsv41"], capture_output=True, text=True).stdout.split()
+        if not pids:
+            break
+        time.sleep(1)
+    for p in subprocess.run(["pgrep", "-x", "strata-dsv41"], capture_output=True, text=True).stdout.split():
+        subprocess.run(["kill", "-9", p])
+    good = rc == 0 and '"finish_reason"' in out and "deepseek" in models
+    st["smoke"] = f"{'ok' if good else 'FAILED'} (start rc {rc}; models {models[:120]}; reply {out[:160]})"
+    save(st)
+    say(f"launcher smoke test on 8086: {st['smoke']}")
+
+
+# ---------- 10. the graded set ---------------------------------------------------------------------------------------------
+SUITE = f"{SC}/suite/run.sh"
+CATS = "coding,agentic,math,instruct,tools,honesty,research"
+GL = {"qwen": "g1026-qwen-p021m-medium", 50: "g1026-ds-e50", 75: "g1026-ds-e75"}
+
+
+def _ids(cat):
+    d = f"{SC}/suite/results/c18t-quick-medium/answers/{cat}"
+    return sorted(f"{cat}/{x.split('.r')[0]}" for x in os.listdir(d)) if os.path.isdir(d) else []
+
+
+def _spread(xs, k):
+    """k of xs, evenly spaced (the first and the last kept: each category's range of difficulty stays covered)"""
+    if k >= len(xs):
+        return list(xs)
+    return [xs[round(i * (len(xs) - 1) / (k - 1))] for i in range(k)] if k > 1 else [xs[0]]
+
+
+# 10-26 (Karl): "DeepSeek at effort 50: the quick set minus the agentic repo fixes. Keep the tool-call prompts. DeepSeek at
+# effort 75: math and coding only. If the estimate is over ~4 h, sample fewer prompts per category rather than dropping
+# categories." Estimate at ~27 tok/s with the 8,192 thinking budget (DeepSeek thinks long: C.10's three prompts all
+# reached the old cap at effort 75): the full sets ~3.1 h (effort 50) + ~4.4 h (effort 75) + Qwen ~0.8 h = ~8.3 h, so
+# both DeepSeek runs are sampled, evenly spaced per category: effort 50 = coding 10/25, math 8/20, instruct 10/20, tools
+# 10/10, honesty 10/20 (both halves), research 3/7 (~1.7 h); effort 75 = coding 8 and math 6, taken from effort 50's
+# (~1.25 h). Qwen runs the full quick set (~0.8 h). Total ~3.75 h of GPU.
+_E50 = {"coding": 10, "math": 8, "instruct": 10, "tools": 10, "honesty": 10, "research": 3}
+_S50 = {c: _spread(_ids(c), n) for c, n in _E50.items()}
+DS_SETS = {50: (",".join(_E50), [i for c in _E50 for i in _S50[c]]),
+           75: ("math,coding", _spread(_S50["math"], 6) + _spread(_S50["coding"], 8))}
+MSRC = f"{SC}/ext/maya-v1.1.28-src"
+MPROF = f"{SC}/tmp/ds41-profile-maya.bin"
+
+
+def suite_cmd(label, url, effort, cats):
+    """10-26 (the user: "make sure the 8,192 cap doesn't cut off DeepSeek's answers when its thinking hits the limit. The
+    cap should behave like the daily setup (thinking budget, then room for the full answer), the same for both models"):
+    max_tokens 8,192 alone gave the thinking 6,144 and the answer 2,048 on both servers (answer_room / #984), and long
+    answers were cut. Now every request carries reasoning_budget_tokens 8,192 (#123, both servers) and max_tokens 16,384:
+    #984 keeps the budget (8,192 <= 16,384 - 4,096), so the answer has at least 8,192 tokens after the thinking. (Where
+    the context leaves less - DeepSeek's 32K with a long research prompt - the suite fits max_tokens and the server cuts
+    the budget to leave a quarter for the answer; a cut answer is reported as truncated.)"""
+    return (f"bash {SUITE} --label {label} --endpoint {url} --mode quick --only {cats} --max-tokens 16384 --no-grade "
+            f"--extra-body '{json.dumps({'reasoning_effort': effort, 'reasoning_budget_tokens': 8192})}'")
+
+
+def suite_done(label):
+    try:
+        return json.load(open(f"{SC}/suite/results/{label}/meta.json")).get("status") == "complete"
+    except (OSError, ValueError):
+        return False
+
+
+def memavail():
+    return int(next(l for l in open("/proc/meminfo") if l.startswith("MemAvailable")).split()[1]) / 1048576
+
+
+def graded_qwen(st):
+    """Qwen P021m exactly as the daily launcher starts it (run-strata.sh), on 8085; a small guard: MemAvailable under 12 GB
+    stops the server (the run is then 'failed: memory'), the kernel log checked every minute"""
+    k = "g_qwen"
+    if st.get(k) or DRY:
+        if DRY:
+            print("  DRY: Qwen P021m on 8085 (run-strata.sh), suite " + suite_cmd(GL["qwen"], "http://127.0.0.1:8085", "medium", CATS + ",longctx"))
+        return
+    env = clean_env(STRATA_PORT="8085", STRATA_CONFIG=f"{SC}/configs/P021m.json")
+    say("graded set: Qwen P021m (daily settings, effort medium) on 8085")
+    if sh(["bash", f"{SC}/run-strata.sh", "start"], env=env) != 0:
+        st[k] = {"error": "run-strata.sh start failed"}
+        save(st)
+        return
+    t0, low, why = time.time(), 999.0, None
+    lf = open(f"{R}/g-qwen-suite.log", "a")
+    p = subprocess.Popen(["bash", "-c", suite_cmd(GL["qwen"], "http://127.0.0.1:8085", "medium", CATS + ",longctx")],
+                         cwd=SC, stdout=lf, stderr=lf, env=clean_env())
+    n = 0
+    while p.poll() is None:
+        m = memavail()
+        low = min(low, m)
+        if m < 12:
+            why = f"failed: memory - MemAvailable {m:.1f} GB < 12"
+            break
+        n += 1
+        if n % 30 == 0 and subprocess.run(["bash", f"{SC}/bringup/lib/kcheck.sh", "after-qwen"],
+                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+            why = "kernel check failed"
+            break
+        time.sleep(2)
+    if p.poll() is None:
+        p.terminate()
+        p.wait()
+    sh(["bash", f"{SC}/run-strata.sh", "stop"], env=env)
+    for _ in range(60):
+        if not subprocess.run(["pgrep", "-x", "strata"], capture_output=True).stdout:
+            break
+        time.sleep(1)
+    st[k] = {"label": GL["qwen"], "min": round((time.time() - t0) / 60, 1), "lowest_mem": round(low, 1), "guard": why,
+             "complete": suite_done(GL["qwen"])}
+    save(st)
+    say(f"graded set Qwen: {st[k]}")
+    if why == "kernel check failed" or sh(["bash", f"{SC}/bringup/lib/kcheck.sh", "after-qwen-end"]) != 0:
+        stop(st, "kernel check failed in the Qwen graded set")
+
+
+def ds_engine():
+    """the head-to-head's winner by the measurable part of maya-catchup.md's rule, else v026"""
+    try:
+        h = json.load(open(H2H_STATE))
+    except (OSError, ValueError):
+        return "v026", "no head-to-head state"
+    S, kl, best, notes = h.get("steps", {}), h.get("kl") or {}, None, []
+    for m, nb in (("M1", ("S1", "S2")), ("M2", ("S2", "S3"))):
+        if not str(kl.get(m, "")).startswith("PASS"):
+            notes.append(f"{m}: KL {kl.get(m)}")
+            continue
+        ok, gains = True, []
+        for a in nb:
+            if not ((S.get(a) or {}).get("dir") and (S.get(m) or {}).get("dir")):
+                ok = False
+                break
+            c = json.loads(subprocess.run(["python3", f"{T}/compare.py", S[a]["dir"], S[m]["dir"]], capture_output=True,
+                                          text=True).stdout or "{}")
+            d, p4, p20 = c.get("decode") or {}, c.get("P4K") or {}, c.get("P20K") or {}
+            if not (d.get("gain_pct", -99) > d.get("noise_pct", 99) and p4.get("gain_pct", -99) >= -p4.get("noise_pct", 0)
+                    and p20.get("gain_pct", -99) >= -p20.get("noise_pct", 0)):
+                ok = False
+            gains.append(d.get("gain_pct", 0))
+        notes.append(f"{m}: {'ahead' if ok else 'not ahead'} (decode {gains})")
+        if ok and (best is None or min(gains) > best[1]):
+            best = (m, min(gains))
+    return (best[0] if best else "v026"), "; ".join(notes)
+
+
+def graded_ds(st, effort):
+    k = f"g_ds{effort}"
+    if st.get(k) or DRY:
+        if DRY:
+            print(f"  DRY: DeepSeek effort {effort}: suite " + suite_cmd(GL[effort], "$URL", effort, CATS))
+        return
+    eng = FINAL_ENG   # (10-26, Karl: Maya is a fallback only - the ported Strata)
+    d = st.get("daily") or {}
+    t = next((x for x in d.get("tries", []) if x.get("ok")), None)
+    cats, items = DS_SETS[effort]
+    for attempt in range(3):   # (the suite resumes: a run cut by the client time limit collects only what is missing)
+        key = f"g-ds{effort}" + (f"-r{attempt + 1}" if attempt else "")
+        cmd = suite_cmd(GL[effort], "$URL", effort, cats) + f" --items {','.join(items)}"
+        note = f"graded set, DeepSeek effort {effort} ({eng} + {FINAL_MODS}{', daily config ' + str(t['store_gb']) + ' GB' if t else ''}, {len(items)} prompts)"
+        mods = ds_mods(t["store_gb"], f"{R}/graded-slots") if t else ds_mods()
+        arm(st, key, mods, note, cmd, server_env="STRATA_DS4_AUTO_PIN=1" if t else None, client_timeout=36000)
+        if suite_done(GL[effort]):
+            break
+    st[k] = {"label": GL[effort], "engine": eng, "mods": FINAL_MODS, "items": len(items), "complete": suite_done(GL[effort]),
+             "runs": [x for x in st["steps"] if x.startswith(f"g-ds{effort}")]}
+    save(st)
+    say(f"graded set DeepSeek effort {effort}: {st[k]}")
+
+
+def arm_maya(st, key, m, note, client):
+    """a graded-set run on the head-to-head's Maya arm, inside maya-netns.sh as the head-to-head ran it"""
+    if key in st["steps"]:
+        return st["steps"][key]
+    cfg = f"{SC}/results/ds41/h2h/cfg-{m}/maya-{m}.json"
+    shutil.copy(tune.SHIPPED, MPROF)
+    env = clean_env(ARM_NOTE=note, PROFILE=MPROF, COOL_MIN=0, PASSES=1, NPROMPT=1, ENGINE_NAME="maya-ds4", MAYA_ROOT=MSRC,
+                    DS_SERVER=f"{MSRC}/serve/server.py", SERVER_ENV=f"STRATA_GLM_THINK_RESERVE=512 MAYA_UPDATE_CHECK=0 TMPDIR={SC}/results/ds41/h2h/tmp",
+                    CLIENT=client, CLIENT_TIMEOUT=36000)
+    say(f"{key}: {note}")
+    t0 = time.time()
+    with open(LOG, "a") as lf:
+        subprocess.run(["bash", f"{MY}/maya-netns.sh", "bash", f"{MY}/maya-tunearm.sh", key, cfg], env=env, stdout=lf, stderr=lf)
+    d = open(f"{SC}/tmp/ds41-arm-out").read().strip()
+    g = open(f"{d}/GUARD").read().strip() if os.path.exists(f"{d}/GUARD") else ""
+    s = open(f"{d}/summary.txt").read() if os.path.exists(f"{d}/summary.txt") else ""
+    if "kernel" in g.lower() or re.search(r"KCHECK FAILED|kernel check failed", s, re.I):
+        st["steps"][key] = {"dir": d, "guard": g or "kernel check failed"}
+        stop(st, f"{key}: kernel event ({g or 'kcheck failed'}) - {d}")
+    st["steps"][key] = {"dir": d, "min": round((time.time() - t0) / 60, 1), "guard": g or None,
+                        "softstop": os.path.exists(f"{d}/SOFTSTOP"),
+                        "nvme": next((l.strip() for l in s.splitlines() if l.startswith("nvme0")), None),
+                        "swap": next((l.strip() for l in s.splitlines() if l.startswith("swap:")), None)}
+    save(st)
+    say(f"{key}: {st['steps'][key]['min']} min" + (f"; {g}" if g else ""))
+    return st["steps"][key]
+
+
+def ctx_cost(st):
+    """12 (the user, 10-26, report only: "After the graded set ... measure DeepSeek's decode speed and VRAM expert count at a
+    max context of 32K, 64K and 128K on the daily config. That shows what raising its context would cost if it becomes the
+    main chat model"): the daily config of step 8 (the ship config if none) with --max-context 32768 / 65536 / 131072, the
+    full protocol (speed3.py: P4K x3, P20K x3, W1-W3 x3), soft stop 14 GB as the daily-size runs; one that does not start
+    or stops is recorded with the reason"""
+    if st.get("ctx_cost") or DRY:
+        if DRY:
+            print("  DRY: context cost: daily config at --max-context 32768 / 65536 / 131072, full protocol")
+        return
+    d = st.get("daily") or {}
+    t = next((x for x in d.get("tries", []) if x.get("ok")), None)
+    base = ds_mods(t["store_gb"], f"{R}/ctx-slots") if t else ds_mods()
+    out = {}
+    for n in (32768, 65536, 131072):
+        r = arm(st, f"ctx-{n // 1024}k", dict(base, **{"--max-context": n}),
+                f"context cost: the daily config at --max-context {n} (report only)", "", passes=3, nprompt=3, soft=14,
+                cool=60, server_env="STRATA_DS4_AUTO_PIN=1" if t else None)
+        start = ""
+        if r.get("dir") and os.path.exists(f"{r['dir']}/engine-start.log"):
+            start = " / ".join(l.strip()[:160] for l in open(f"{r['dir']}/engine-start.log", errors="replace")
+                               if re.search(r"context|KV|cache.*GB|layers \[|in VRAM|CPU lane", l))[:900]
+        out[n] = {k: r.get(k) for k in ("decode", "P4K", "P20K", "vram_experts", "lowest_mem", "guard", "softstop", "dir")}
+        out[n]["engine_lines"] = start
+        say(f"context {n}: decode {r.get('decode')}, P4K {r.get('P4K')}, P20K {r.get('P20K')}, VRAM experts {r.get('vram_experts')}, "
+            f"lowest {r.get('lowest_mem')} GB" + (f"; {r.get('guard')}" if r.get("guard") else "") + ("; SOFT STOP" if r.get("softstop") else ""))
+    st["ctx_cost"] = out
+    save(st)
+
+
+def graded_after(st):
+    """11: grade (the suite's checkers, CPU only - after the gap) and the report"""
+    if st.get("g_report") or DRY:
+        return
+    for lab in (GL["qwen"], GL[50], GL[75]):
+        if os.path.isdir(f"{SC}/suite/results/{lab}"):
+            sh(["bash", SUITE, "regrade", lab, "--no-render"], f"{R}/g-regrade.log")
+    rc = sh([PY, f"{A}/report.py", GL["qwen"], GL[50], GL[75], f"{R}/graded"], f"{R}/g-report.log")
+    st["g_report"] = f"rc {rc}: {R}/graded/REPORT.md"
+    save(st)
+    say(f"graded set report: {st['g_report']}")
+
+
+# ---------- 9. summary ---------------------------------------------------------------------------------------------------
+def summary(st):
+    S = st["steps"]
+    L = [f"# DeepSeek follow-ups ({time.strftime('%F')})", "",
+         f"Builds: fix {st.get('build_fix')}, test {st.get('build_test')}. Ship config: `{json.dumps(final())}`.", "",
+         "## Split screen (Karl: 8/32 with the 4060 Ti first, before the graded set)", "", "```",
+         json.dumps(st.get("split"), indent=1)[:3000], "```", ""]
+    for k, title in (("fix-ckpt", "Item 6 - the one-line fix, slot keep off (follow-up reads)"),
+                     ("rep-stock-reuse0", "Item 2 - repeat pairs, stock v0.2.6, STRATA_DS4_REUSE=0"),
+                     ("rep-test-reuse0", "Item 2 - repeat pairs, counter reset per seeded request, REUSE=0"),
+                     ("rep-test-reuse1", "Item 2 - repeat pairs, counter reset per seeded request, reuse on")):
+        x = S.get(k) or {}
+        L += [f"## {title}", "", "```", (x.get("client_tail") or x.get("skipped") or "not run").strip()[-2400:], "```", ""]
+    L += ["## Item 3 - resumed vs fresh (teacher-forced, report only)", "", "```", json.dumps(st.get("resume_kl"), indent=1)[:5000],
+          "```", "", "## Item 1 - the daily config", "", "```", json.dumps(st.get("daily"), indent=1)[:5000], "```",
+          f"Config: {st.get('daily_cfg')}; launcher smoke test: {st.get('smoke')}", "",
+          "## The graded set (answers; grades and the report come after the gap: graded/REPORT.md)", "",
+          f"- DeepSeek engine: {FINAL_ENG} + {json.dumps(FINAL_MODS)}", f"- Qwen: {st.get('g_qwen')}", f"- DeepSeek 50: {st.get('g_ds50')}",
+          f"- DeepSeek 75: {st.get('g_ds75')}", "", "## Context cost (report only)", "", "```",
+          json.dumps(st.get("ctx_cost"), indent=1)[:4000], "```", ""]
+    open(f"{R}/summary.md", "w").write("\n".join(L) + "\n")
+    say(f"summary: {R}/summary.md")
+
+
+def main():
+    os.makedirs(R, exist_ok=True)
+    st = load()
+    if st.get("stopped") and not DRY:
+        say(f"not resuming: stopped earlier ({st['stopped']}) - clear 'stopped' in state.json to go on")
+        return 1
+    if not DRY:
+        wait_h2h(st)
+    install(st)
+    open_gap(st)
+    builds(st)
+    f = final()
+    split_step(st)             # (10-26, Karl: the split screen after the IQ_Q8K work, before the graded set)
+    daily(st)                  # (10-26, Karl's order: the daily config's memory check, the graded set, then the rest)
+    graded_qwen(st)
+    final_gate(st)             # (10-26 16:05, Karl: the final config's rounding check, then the daily end tests - in this
+    daily_tests(st)            # gap, before DeepSeek's graded runs; a fail puts the daily config on hold)
+    graded_ds(st, 50)
+    graded_ds(st, 75)
+    arm(st, "fix-ckpt", dict(f, engine="v026fix", STRATA_DS4_SLOT_KEEP="0"),
+        "item 6: the one-line fix (v026fix), slot keep off - follow-up reads",
+        f"{PY} {T}/ckpt_client.py $URL $OUT {ELOG} 0")
+    ex = f"{PY} {T}/cont_client.py $URL $OUT {ELOG} exact"
+    arm(st, "rep-stock-reuse0", dict(f, engine="v026", STRATA_DS4_REUSE="0", **{"--no-expert-cache": None}),
+        "item 2: repeat pairs, stock v0.2.6, STRATA_DS4_REUSE=0, seed 4242, placement frozen", ex)
+    arm(st, "rep-test-reuse0", dict(f, engine="v026test", STRATA_DS4_REUSE="0", DS4_TEST_SEED_RESET="1", **{"--no-expert-cache": None}),
+        "item 2: repeat pairs, the sampler counter reset per seeded request (v026test), REUSE=0", ex)
+    arm(st, "rep-test-reuse1", dict(f, engine="v026test", DS4_TEST_SEED_RESET="1", **{"--no-expert-cache": None}),
+        "item 2: repeat pairs, the counter reset per seeded request (v026test), reuse on", ex)
+    resume_kl(st)
+    ctx_cost(st)
+    for fn in (summary,):
+        if DRY:
+            continue
+        try:
+            fn(st)
+        except Exception as e:   # noqa: BLE001  (a bug here must not keep 8080 down)
+            say(f"{fn.__name__} failed: {type(e).__name__}: {e}")
+    rc = close_gap(st) if not DRY else 0
+    try:
+        graded_after(st)   # (CPU only, after the gap: the suite's checkers and the report)
+    except Exception as e:   # noqa: BLE001
+        say(f"graded_after failed: {type(e).__name__}: {e}")
+    notify("DeepSeek follow-ups done", f"summary: {R}/summary.md; 8080 {'back on P021m' if rc == 0 else 'NOT restored'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,228 @@
+== b-f5c-full
+  [0] main                           right=b 
+       A: raising the RAM expert store from the 48 GB auto-cap to 70 GB (`--ssd-cache 70`).
+       B: The single biggest decode win remains increasing the RAM expert store from 70 GB toward 77 GB
+       why: The report elsewhere states the current working store is already 70 GB, and the setup says the current placement is 70 GB, so raising it from 48 to 70 cannot be counted as a fresh gain.
+  [1] main                           right=b 
+       A: `--experts 6` is mandatory because the auto default of 5 on ≤16 GiB-per-card rigs is a routing change (LOSSY) [151][456].
+       B: `experts` (−1 = auto rule: 5 at ≤16 GiB total VRAM, 6 otherwise)
+       why: The engine source quote says the auto rule is based on total VRAM ≤16 GiB, not per-card VRAM; this rig has 16+8=24 GiB total, so the auto default should choose 6, not 5.
+  [2] main                           right=b 
+       A: Each IQ2_XXS routed expert occupies ~18.8 MB (Strata's own figure: "routed experts (15,360 of 18.8 MB) = 288.8 GB")
+       B: The 138 GB backbone across 15,360 experts (40 layers × 384 experts) gives ≈9.4 MB per IQ2_XXS expert.
+       why: The actual IQ2_XXS backbone size is 138 GB, which implies ~9 MB per routed expert; 18.8 MB/288.8 GB is the unquantized/original footprint, not the IQ2_XXS file footprint.
+  [3] main                           right=b 
+       A: At IQ4_NL, a row is ~7 MB (256 columns × 768,022,850 / 40 layers / 2 bytes at 4-bit ≈ 7 MB); 48 rows × 7 MB ≈ 336 MB/token if all miss.
+       B: each row is 256 dimensions × 4 bits ≈ 128 B of payload; across 8 heads × 3 orders = 24 rows per module per token, each ~128 B → ~3 KB of table reads per token per module,
+       why: The 110.6 GB IQ4_NL table over ~768M rows implies rows are on the order of hundreds of bytes, and the measured 0.05–0.06 GB/token decode I/O is incompatible with 336 MB/token Engram reads.
+  [4] main                           right=b 
+       A: yielding an estimated combined **+20–35% decode** and **+30–50% prefill** improvement using flags only
+       B: Prefill: minor effect (prefill already reads all experts once per chunk regardless of store size; the store helps mainly on repeated or overlapping prompts).
+       why: The detailed per-flag analysis says `--dspark none` has negligible prefill effect and `--ssd-cache 70` is only +1–3% prefill, so those two flags alone cannot yield +30–50% prefill.
+  [5] main                           right=b K1
+       A: layer-major prefill (`DS4_LAYER_MAJOR=1`, measured 2.0× at 32K on a comparable 2-GPU split [309])
+       B: The `DS4_LAYER_MAJOR` env var gate is confirmed only at `ds4_model.cu:8084–8141` in the single-device path; its extension to a 2-GPU split is proposed (Tier C) but not im
+       why: The limitations/source section says `DS4_LAYER_MAJOR` is only implemented for the single-device path in stock v0.2.4, so it is not an available flag-only win for this two-GPU split.
+  [6] main                           right=b 
+       A: larger chunks change no arithmetic
+       B: FP non-associativity: grouping tokens into larger batches changes the order of floating-point accumulation in the GEMMs, so logits can differ at the last ULP between chun
+       why: The report itself repeatedly flags FP non-associativity and llama.cpp/vLLM cache/batch divergence, so changing prefill chunk size is not guaranteed arithmetic-neutral at T=1.0.
+  [7] main                           right=b 
+       A: This is achievable without any lossy approximation: layer-major reordering is bit-exact [309], bounded replay is "not exact" architecturally but DeepSeek confirms negligi
+       B: This is explicitly **not** bit-exact — it is an architectural approximation baked into the model's deployment strategy
+       why: The detailed CED section calls bounded replay explicitly not bit-exact and approximate, which violates the task's lossless-only constraint.
+  [8] main                           right=b 
+       A: With 16 GB and 8 GB, the auto split is roughly 2:1 (≈27 layers on the 5080, 13 on the 4060 Ti).
+       B: The DS4_SPLIT sweep should test allocations from roughly `DS4_SPLIT=22,18` (the current default) down to `DS4_SPLIT=32,8`
+       why: The setup and later report text state the current split is 22/18, not 27/13.
+  [9] main                           right=b 
+       A: Set `DS4_SPLIT=27,13` or `24,16` to shift more layers to the faster card, or set `STRATA_SPLIT_UNIFORM=1` for an even split and let the engine rebalance.
+       B: on a 2× RTX 3090 rig (also x16 + x4, the same link asymmetry), "K=31 with miss cost ×4.20 gave 114-119 tok/s decode against 130-136 at K=27 (balanced)" — i.e., giving too
+       why: The report's own x16+x4 Strata benchmark says fast-card-heavy splits can lose 12–16%, so recommending a shift toward 27/13 contradicts the cited evidence.
+  [10] main                           right=b 
+       A: A 4K-token chunk needs roughly 120–150 *distinct* experts per layer
+       B: A 512-token prompt activates 80.1–98.1% of layer-expert pairs, rising to 92.4–100% at 4K tokens [7199, EStream].
+       why: A 4K-token chunk with top-6 routing should touch a large majority of the 384 experts per layer; the cited EStream result supports ~92–100%, not 120–150.
+  [11] main                           right=b 
+       A: The split changes *which GPU* computes which layers, not the arithmetic. The pipeline hidden-state transfer is a pinned memory copy (exact byte copy).
+       B: a fixed seed produces repeatable random draws, but stochastic CPU and backend sampling can still select different tokens because floating-point operations can differ betw
+       why: The report itself notes FP operations can differ across CPU/GPU backends, so changing which GPU computes a layer can change logits even if the mathematical layer definition is unchanged.
+  [12] main                           right=b 
+       A: decode runs at 22.6 tok/s while a 4K-token prompt processes at only 180–210 tok/s — roughly 8–9× slower *per token*.
+       B: The user's measured baselines — 22.6 tok/s decode, 48 GB store → 19.3 tok/s, 60 GB store → 21.2 tok/s (+9.8%), 75–104 GB SSD reads per 4K prompt, 180–210 tok/s prefill at
+       why: The measured baseline shows 180–210 tok/s prefill is 8–9× faster in throughput than 22.6 tok/s decode; the anomaly is per-token expert I/O cost, not lower prefill tok/s.
+  [13] main                           right=b 
+       A: `--prefill-chunk 4096` (or `--set prefill-chunk=32768` per issue #4219 update [310])
+       B: The tradeoff is VRAM pressure: experts in VRAM dropped from 8,891 → 8,206 when chunk went 4096 → 32768 [310], but on our 16+8 GB rig the effect is more severe because the
+       why: The detailed analysis says 32768 came from a 96 GB VRAM-resident rig and is more dangerous on this 16+8 GB split, so the action plan's suggestion of 32768 as a tonight flag conflicts with its own hardware caveat.
+  [14] main                           right=b 
+       A: `DS4_SPLIT=a,b` sweep + `STRATA_SPLIT_UNIFORM=1` — find the optimal layer split for x16+x4 pair
+       B: The `DS4_SPLIT` env var is confirmed in the Xolotl fork [3714] but its presence in stock v0.2.4 is unverified from the public source snippets cited.
+       why: The report's own limitations section admits `DS4_SPLIT` may not exist in stock v0.2.4, so listing it as a flags-only tonight action is unsupported.
+  [15] main                           right=b 
+       A: the pipeline-parallel split means "a token crosses from one card to the next once per verify window, not twice per layer," so the x4 penalty is paid once per decode windo
+       B: The 4060 Ti at PCIe 4.0 ×4 (~7 GB/s usable) makes its assigned layers (22–39) disproportionately slow: one expert transfer = 9.4 MB / 7 GB/s = 1.34 ms
+       why: The x4 link penalty is not limited to the once-per-window hidden-state transfer; expert misses assigned to the 4060 Ti also cross the same slow x4 link.
+  [16] main                           right=b 
+       A: The Strata v0.2.6 release note "a faster DeepSeek on big-RAM PCs" [4] confirms upstream already relaxes the store cap, making the upgrade step zero.
+       B: The user specifies v0.2.4 unmodified; if their build differs (e.g., a private "Basalt" fork), the exact flag names, defaults, and code paths may not match.
+       why: The task/setup fixes the engine at stock v0.2.4, while the answer treats upgrading to v0.2.6 as effectively free/automatic.
+  [17] focused --dspark               right=a 
+       A: The single biggest lossless win available on this rig is freeing the 8 GB DSpark drafter from VRAM (`--dspark none`) and raising the RAM expert store from the 48 GB auto-
+       B: `--dspark none` — frees ~5.6 GB VRAM (≈592 expert slots at 9.4 MB/expert), directly recovers the measured 8–16% decode loss.
+       why: The drafter is explicitly called 8 GB in quote_a, but quote_b says the same action frees only ~5.6 GB; 592 expert slots at 9.4 MB is 5.6 GB, so quote_b conflates total VRAM freed with recoverable expert capacity.
+  [18] focused --ssd-cache            right=b 
+       A: The single biggest lossless win available on this rig is freeing the 8 GB DSpark drafter from VRAM (`--dspark none`) and raising the RAM expert store from the 48 GB auto-
+       B: RAM expert store = 70 GB.
+       why: On this setup the RAM expert store is already 70 GB, so the recommendation is not a 48 GB to 70 GB increase on the stated current state.
+  [19] focused --experts              right=b 
+       A: Correctness gates must not be skipped: `--experts 6` is mandatory because the auto default of 5 on ≤16 GiB-per-card rigs is a routing change (LOSSY) (151)(456).
+       B: `experts` (−1 = auto rule: 5 at ≤16 GiB total VRAM, 6 otherwise)
+       why: This rig has 16 GB + 8 GB = 24 GiB total VRAM, so the cited total-VRAM auto rule selects 6, not 5; the per-card trigger contradicts the stated rule.
+  [20] focused --prefill-chunk        right=b 
+       A: | 2 | Larger `--prefill-chunk` (8192–32768) | Amortizes per-layer expert loads over more tokens; 4K→20K ratio shows 8.5–11.8 MB/token vs 18–25 MB/token | 0% | 1.5–2.5× on
+       B: **FP non-associativity at T=1.0 is a real but unquantified determinism risk.** Multiple items (prefill-chunk sizing (163), batched GEMMs, speculative verify (6537)(6424))
+       why: Under the required T=1.0 deterministic setup, changing chunk size can change reduction order and shift logits, so the table's claim that the risk is None conflicts with the stated FP non-associativity risk.
+  [21] focused DS4_LAYER_MAJOR        right=b K1
+       A: Strata's issue #3976 demonstrates a layer-split layer-major path on RTX 3060 + RTX 5060 Ti achieving **1.6–2.3× faster TTFT** and **0.25–0.5× drive reads** (32K: 75→35 GB
+       B: The `DS4_LAYER_MAJOR` env var gate is confirmed only at `ds4_model.cu:8084–8141` in the single-device path (312); its extension to a 2-GPU split is proposed (Tier C) but 
+       why: This setup is a two-GPU split, but the cited code path is single-device only, so the claimed two-GPU layer-split speedup is not demonstrated or implemented as the report itself later states.
+  [22] focused IQ2_XXS                right=a 
+       A: The 138 GB backbone across 15,360 experts (40 layers × 384 experts) gives ≈9.4 MB per IQ2_XXS expert.
+       B: Each IQ2_XXS routed expert occupies ~18.8 MB (Strata's own figure: "routed experts (15,360 of 18.8 MB) = 288.8 GB") (494).
+       why: Applying the 138 GB / 15,360 expert size on this model gives ≈9.4 MB per IQ2_XXS expert, so an 18.8 MB IQ2_XXS size is wrong.
+  [23] focused IQ2_XXS                right=a 
+       A: A single 9.4 MB IQ2_XXS expert takes 1.34 ms to transfer to the 4060 Ti vs 0.12 ms to compute on CPU at 77 GB/s RAM bandwidth; break-even reuse is ~11 accesses per decode
+       B: Each IQ2_XXS expert blob is ~9.4 MB (18.8 MB at original precision ÷ 2 for IQ2_XXS compression); a miss costs ~0.12 ms on RAM + ~0.02 ms PCIe 5.0 copy to VRAM.
+       why: For a 9.4 MB expert, 1.34 ms over PCIe 4.0 ×4 (~7 GB/s) implies a PCIe 5.0 ×16 copy of roughly ~0.1–0.3 ms, not 0.02 ms.
+  [24] focused STRATA_SPLIT_UNIFORM   right=a 
+       A: The `STRATA_SPLIT_UNIFORM=1` flag (opt-in, "prices every link the same, as before 0.1.41") (3713) should be A/B tested against the default, because the default's "link-mi
+       B: The engine's layer-split search "prices a decode window" and can "give almost every layer to the card it rates faster," but it "can give almost every layer to the card it
+       why: Uniform pricing means the flag removes link-specific chipset-penalty accounting, while the default link-miss scaling is what may over- or under-penalize the 4060 Ti.
+  [25] focused IQ4_NL                 right=a 
+       A: The Engram lookup row size at IQ4_NL: each row is 256 dimensions × 4 bits ≈ 128 B of payload; across 8 heads × 3 orders = 24 rows per module per token, each ~128 B → ~3 K
+       B: At IQ4_NL, a row is ~7 MB (256 columns × 768,022,850 / 40 layers / 2 bytes at 4-bit ≈ 7 MB); 48 rows × 7 MB ≈ 336 MB/token if all miss.
+       why: IQ4_NL is 4-bit, so a 256-value row is ~128 B payload plus small overhead, and 336 MB/token contradicts the measured 0.05–0.06 GB/token decode SSD traffic.
+  rules evaluated: 0 (unknown: 0; arithmetic not recomputing: 0); focused replies unparsed: 0
+  time: 3 consist calls, 729 s (estimate 900 x ~0.83 = 747 s); out chars [12097, 4067, 3208]
+  SUMMARY b-f5c-full: pairs 26 {'main': 17, 'focused': 9}; K4 NOT caught []; K4-reversed false alarms []; K1 kept [5, 21]; new pairs to judge (no base given)
+== b-f5c-fixes
+  [0] main                           right=a 
+       A: the remaining headroom is narrow, but queue-depth amortisation from a larger chunk (the RTX 5090 D showed 4.2× at this setting) may add 40–60% to the 4K prompt and more t
+       B: Expected: +100–300% prefill at 4K–32K.
+       why: The report's measured 350 tok/s and ~11.5 s floor for the current 4K prompt leave only a few percent to a modest chunk gain, not 100–300%.
+  [1] main                           right=a 
+       A: This is a **routing bias**—it changes which expert the router selects when multiple experts are within the top-6 margin. This violates the lossless constraint and must be
+       B: Engine upgrade to 0.2.6/0.2.7 + explicit `--ssd-cache 76` + `--prefill-chunk 16384` + `DS4_AHEAD=0` + `--cpu-threads 16`: combined **+25–40% decode** (from fewer launches
+       why: The report itself identifies 0.2.7 router affinity as an unsolved routing change, while the action plan calls the 0.2.7 upgrade routing-free.
+  [2] main                           right=a 
+       A: The fix is `--ssd-cache 76` (override the auto-sizer) or `--max-context 65536` (halve the penalty).
+       B: The 65 536 cap halves the phantom penalty to 5.4 GB and still covers the user's longest measured 97K-token prompt
+       why: A 65,536 maximum context cannot cover a 97K-token prompt, so the latter claim is arithmetically impossible.
+  [3] main                           right=a 
+       A: ProMoE confirms that at low VRAM cache rates (the user's 8.8% residency), CPU offload beats PCIe streaming for decode [4629].
+       B: The prefill gains will be smaller on this rig because the user's VRAM expert coverage is only ~49% (1,357/15,360)
+       why: 1,357 of 15,360 experts is 8.8%, and the report's 11.4 MB/expert arithmetic gives about 15.5 GB of expert bytes on 24 GB, not 49%.
+  [4] main                           right=a 
+       A: On the user's 5080 (layers 0–21) + 4060 Ti (layers 22–39) split, `yoco_layer()` returns −1 (off).
+       B: The user's 5080-holds-layers-0–31 / 4060-Ti-holds-layers-32–39 split blocks it structurally.
+       why: The setup facts and detailed arithmetic use 0–21 / 22–39, while the Key-findings sentence changes the split to 0–31 / 32–39.
+  [5] main                           right=a 
+       A: Each card "holds a copy of the dense weights and its own prompt buffers" — for the 552B model that is ~5.9 GB dense per card, leaving only ~2.1 GB on the 4060 Ti for expe
+       B: The user runs 1,357 VRAM-resident experts across two cards (5080 at 16 GB with dense weights 5.9 GB leaves ~10.1 GB → ~886 experts; 4060 Ti at 8 GB → ~700 experts).
+       why: Applying the report's per-card dense-copy rule and 11.4 MB/expert size gives 2.1 GB / 11.4 MB ≈ 184 experts on the 8 GB card.
+  [6] main                           right=a 
+       A: 32 768 regresses on smaller cards (decode 16.73 vs 18.89 tok/s) [8464].
+       B: (or 32768 if VRAM allows)
+       why: The report measures a decode regression at 32768 on smaller cards, and the user's 16 GB 5080 is in that class.
+  [7] main                           right=a 
+       A: add 5.9 GB dense plus ~1–1.5 GB for CUDA runtime, KV scratch, and activation buffers, and 16 GB is fully committed with **zero room** for a pinned staging ring on the 508
+       B: The reserve prevents the larger chunk's staging buffers from pushing the 16 GB 5080 into a VRAM shortfall.
+       why: The detailed VRAM arithmetic says the 5080 has no room for a staging ring, so a 2048 MiB reserve cannot make 16K prefill safe on this card.
+  [8] main                           right=b 
+       A: Chunk size changes the GEMM tile dimensions but not the mathematical result (same accumulation order per expert within a chunk). The engine's prompt path is deterministic
+       B: Any batching change that alters the GEMM reduction order (different tile configs for different M) breaks bit-exactness.
+       why: Larger chunks change GEMM M/tile shape, which the report elsewhere says can change accumulation order and logits.
+  [9] main                           right=b 
+       A: YOCO is exact (the engine states the skip produces the same KV as the full pass: "up to the experts' summing order" [6549]). No output change.
+       B: "fp32 addition is non-associative — different accumulation orders produce results that can differ by 1 ULP... 1 element differs at Layer 0... by Layer 27, 14,100 elements
+       why: The quoted YOCO caveat "up to the experts' summing order" is exactly the kind of accumulation-order change the report elsewhere says can flip outputs.
+  [10] main                           right=b 
+       A: The user should enable this (it is "off by default") and set `--prompt-cache-every` to a value that captures the typical multi-turn divergence point.
+       B: It applies only to **single-GPU** serve with positive `--prompt-cache` and `--prompt-cache-every` [4014]. On the user's two-GPU split, it is inapplicable. **Do not enable
+       why: The user's configuration has two GPUs, and the cited documentation says the option is single-GPU only and numerically unvalidated.
+  [11] main                           right=b 
+       A: Slots restore the exact KV and expert-cache state; the engine's own test: "10/10 switched returns above 95% reuse, minimum approximately 99.985%, and 15/15 controlled ide
+       B: Prefix-cache hits vs cold prefill produce 1-ULP GEMM differences that amplify through 40 layers [8021][7974].
+       why: Slot/prefix reuse can change the GEMM M dimension and reduction order, which the report elsewhere treats as a bit-exactness hazard.
+  [12] main                           right=a 
+       A: during fresh-prompt decode, NVMe queue depth (`iostat` `aqu-sz`) is only **0.26–0.38**, while the drive sustains 4–6 GB/s at queue depth ~2 [8474].
+       B: Target: raise iostat `aqu-sz` from current ~3.8 to >4 [6089].
+       why: The user's measured queue depth is 0.26–0.38; ~3.8 is the 5090 port's in-flight request count, not this rig's aqu-sz.
+  [13] main                           right=a 
+       A: **Expected gain:** +0–5% decode (the user's 28.3 tok/s likely already runs near-bandwidth; 16 physical cores vs 32 SMT is marginal).
+       B: Expected: +5–15% decode (SMT contention on memory-bound AVX-512 IQ paths). Lossless: yes.
+       why: The detailed A8 analysis says the user is likely already near bandwidth, while the action list gives a more optimistic generic SMT gain.
+  [14] main                           right=b 
+       A: raising `DS4_ENGRAM_CACHE_MB=2048` and `DS4_ENGRAM_THREADS=16` helps prefill marginally
+       B: **Exact setting:** `DS4_ENGRAM_CACHE_MB=2048 DS4_ENGRAM_THREADS=32`.
+       why: The detailed Engram setting evaluates 32 threads and cites a 64-thread prefill measurement, whereas the Answer/Key-findings use 16 without support.
+  [15] main                           right=b 
+       A: at eg_hd=192 B the row is 198 B → ~10.9 million rows cached
+       B: eg_hd = 256 bytes, the arithmetic is: 2 layers × 48 cols × (256 + 8) bytes = 2 × 48 × 264 = 25,344 bytes per token position
+       why: The source-derived Engram arithmetic uses 256-byte entries plus scales (264 B/row), while the 198 B row figure is inconsistent.
+  [16] main                           right=a 
+       A: The quantized checkpoint stores 15,360 routed experts (40 layers × 384 experts/layer, 6 active per token) at 11.4 MB each
+       B: the 41st MoE layer's 15,744 experts × 11.4 MB = 179 GB far exceeds the 24 GB VRAM
+       why: The model has 40 MoE layers × 384 = 15,360 routed experts; 15,744 experts/179 GB contradicts the report's own model arithmetic.
+  [17] main                           right=b 
+       A: Against the user's current 28.3 tok/s short-prompt decode, these two flags together should recover the ~2–5 tok/s lost to the store squeeze and the speculative-read penal
+       B: (1) `--ssd-cache 76` + `DS4_AHEAD=0` for +18–26% decode
+       why: 18–26% of 28.3 tok/s is about 5.1–7.4 tok/s, so the 2–5 tok/s figure contradicts the report's own percentage.
+  [18] main                           right=b 
+       A: **Expected gain:** +8–12% decode (8 more hot experts × 11.4 MB ≈ 91 GB store vs 84 GB)
+       B: reducing the store from ~76 GB to the user's observed 68 GB
+       why: The reported store squeeze is 76→68 GB, i.e. about 8 GB/~700 slots, not 8 experts or 84→91 GB.
+  [19] focused IQ2_XXS                right=b 
+       A: The same auto rule fired (132.1 GB > 1.5 × 67 GB = 100.5 GB → disabled), but forcing `--dspark on` gave **+35% decode at 1K context, +44% at 4K, +52% at 8K** on IQ2_XXS.
+       B: Speculative decoding attempt: "DSpark" (Unsloth's draft model for DeepSeek) accepted 77% of drafts but consumed VRAM (VRAM-resident experts dropped 1,357 -> 765) and net 
+       why: On the stated setup, DSpark was measured as a net decode loss because it stole VRAM, so the claim that forcing `--dspark on` gives +35/+44/+52% contradicts the measured state unless a different VRAM-neutral state is expl
+  [20] focused IQ4_NL                 right=b 
+       A: The 110.6 GB Engram IQ4_NL table is read on demand (48 rows/token at 12.4 KiB each).
+       B: Per-token Engram reads are 12–25 KiB (2339)(6550), three orders of magnitude below the per-token expert traffic.
+       why: 48 rows/token × 12.4 KiB/row is about 595 KiB/token, not the 12–25 KiB/token claimed elsewhere in the same setting.
+  [21] focused IQ4_NL                 right=a 
+       A: This is 2-bit, below the IQ4_NL precision the user already has (4-bit).
+       B: The 203 GB figure refers to the native FP8 table; 51 GB at 2-bit is roughly 4× smaller than IQ4_NL's 110.6 GB.
+       why: A 2-bit representation is about half the size of a 4-bit IQ4_NL representation, so 51 GB versus 110.6 GB is about 2× smaller, not 4× smaller.
+  [22] focused --ssd-cache            right=b 
+       A: setting `--ssd-cache 76` to override Strata's phantom context-reserve bug (which silently shrank the RAM expert store from ~76 GB to the user's current 68 GB at 128K cont
+       B: RAM expert store = 70 GB.
+       why: The stated setup has a 70 GB RAM expert store, and a reduction from ~76 GB to 70 GB or 68 GB is not a ~12.6 GB capacity loss.
+  [23] focused --prefill-chunk        right=b 
+       A: No source explicitly quantifies this contention's effect on decode (the 4060 Ti holds only 8 layers' experts, limiting overlap, but at prefill chunk 16384 both the NVMe a
+       B: 5080 holds layers 0-21, 4060 Ti holds layers 22-39
+       why: On this setup the 4060 Ti holds layers 22-39, i.e. 18 layers, not only 8 layers.
+  [24] focused --prefill-chunk        right=b 
+       A: A third flag, `--prefill-chunk 16384 --reserve-mib 2048`, attacks the 4K/20K prompt path: the user reads 4K at 350 tok/s (11.7 s) against a ~11.5 s NVMe-bandwidth floor a
+       B: Prompt processing: ~180-210 tok/s at 4K context, ~330 tok/s at 20K context.
+       why: The setup's measured prompt-processing baseline is ~180-210 tok/s at 4K and ~330 tok/s at 20K, not 350 tok/s at 4K and 700 tok/s at 20K.
+  [25] focused DS4_AHEAD              right=b 
+       A: The user's setting `DS4_AHEAD=0` is proven −10% (Tier A), meaning single-layer lookahead is a net loss.
+       B: | DS4_AHEAD=1 (single-layer guess) | Yes | **−10 to −14%** (proven loser) | Yes (8474)(199) | None |
+       why: The measured −10 to −14% penalty belongs to `DS4_AHEAD=1`; `DS4_AHEAD=0` is the recommended setting that avoids the penalty, not itself a −10% setting.
+  [26] focused IQ2_XXS                right=unclear 
+       A: IQ2_XXS (2.00 bpw, 138 GB)
+       B: 4-shard IQ2_XXS files confirmed in tree (39.1 GB each) (103)
+       why: Four 39.1 GB shards total about 156.4 GB, which does not match a 138 GB IQ2_XXS checkpoint.
+  [27] focused --reserve-mib          right=a 
+       A: the user reads 4K at 350 tok/s (11.7 s) against a ~11.5 s NVMe-bandwidth floor at v0.2.6, so the remaining headroom is narrow
+       B: `--prefill-chunk 16384 --reserve-mib 2048` for +40–100% prompt reading at 4K–20K
+       why: Applying the stated ~11.5 s NVMe-bandwidth floor to the setup’s PCIe 4.0 x4 chipset/NVMe path leaves only about 2% headroom from 11.7 s, so the claimed 40–100% prompt gain contradicts that floor unless total SSD bytes re
+  [28] focused STRATA_ROUTE_TAIL_SKIP right=b 
+       A: The v0.2.6 default `STRATA_ROUTE_TAIL_SKIP=7` (skip rank-7+ experts) is ON by default and produces different answers
+       B: top-6 routing
+       why: On this DeepSeek-V4.1 model, top-6 routing means there are no rank-7+ routed experts to skip, so the quoted default cannot change answers or hide a 10–20% decode penalty as stated.
+  rules evaluated: 0 (unknown: 0; arithmetic not recomputing: 0); focused replies unparsed: 0
+  time: 3 consist calls, 747 s (estimate 900 x ~1.04 = 936 s); out chars [11949, 5285, 1558]
+  SUMMARY b-f5c-fixes: pairs 29 {'main': 19, 'focused': 10}; K4 n/a (no K4 claim in the report) []; K4-reversed false alarms []; K1 n/a (no layer-major in the report) []; new pairs to judge (no base given)

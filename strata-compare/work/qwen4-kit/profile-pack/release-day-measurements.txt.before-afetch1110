@@ -1,0 +1,12 @@
+# Release-day measurements that the profile pack built from inputs-flashnext.json only approximates (profile_pack.py 1 (2026-11-09))
+1. Decode speed at 16K context - no decode of >= 256 tokens after a ~16,384-token prompt in the inputs; the pack shows the nearest: R1-verify20k at 24,238, W3-research at 26,726
+2. Decode speed at 64K context - no decode of >= 256 tokens after a ~65,536-token prompt in the inputs; the pack shows the nearest: R2-report54k at 54,071
+3. MTP acceptance per draft position - no log has STRATA_SPEC_DEPTH=1 lines; only per-request totals exist
+4. The engine's own swap (VmSwap) per run - the monitors record system swap only; the owner's swap rule is about the engine's VmSwap
+5. Decode-timing split on the served form - the timing pass lacks STRATA_HC_UPMIX
+6. Short-prompt reading speed on fixed fixtures - today's short-prompt figures are screen workloads (1.4K-5K-token prompts with chat formatting and tool schemas, one request per pass); add pp1k / pp4k cold fixtures, 3 passes
+7. Decode fixtures with 3 passes - today's decode fixtures ran 1 pass per build (4-7 % noise between passes); run 3
+8. Prompt speed at 128K - nothing above a 66,617-token prompt on the served form; the exactness run's 112K prompt used a pinned smaller cache
+9. Expert placement on the new model - today's placement comes from ten days of served traffic; on day one only the screen and fixtures exist, so report the screen figure and say so
+10. Helper GPU memory over time - only the guard's minimum free (one value per run); the helper's own use is flat by design but not sampled
+11. Per-position MTP acceptance at the served sampling - take it on the screen at T 1.0 with thinking on, not on the decode fixtures (T 0.6 / 0.0)

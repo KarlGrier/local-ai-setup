@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Pause research
+Comment=Hold the research queue at its next clean boundary (nothing running is interrupted, no model switched), show the expected wait, confirm when held.
+Exec=/home/USER/ai-speed-testing/strata-compare/configs/usability/bin/research-pause.sh pause
+Icon=media-playback-pause
+Terminal=true
+Categories=Utility;

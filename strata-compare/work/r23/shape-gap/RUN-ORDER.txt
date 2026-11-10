@@ -1,0 +1,22 @@
+v0.2.13 SHAPE GAP - run order (written 11-09 by a helper; Claude runs these; nothing here has been run yet except dry runs / selftests / the mock)
+
+0. Install the proposed build script (adds `geo flash_next` and `geofile NAME HEADER`; everything else unchanged):
+     cp work/r23/build-port0213.sh work/r23/build-port0213.sh.before-shapegap
+     cp work/r23/shape-gap/build-port0213.sh.proposed work/r23/build-port0213.sh      (cp onto the file keeps its +x)
+1. Optional check:  bash work/r23/shape-gap/shape_prep.sh dry      (writes only work/r23/shape-gap/{q4geo-commands.txt,scratch/})
+2. Desk prep, CPU + disk only, ~45-50 min (4 builds of ~10 min at 2 jobs; synth + packs + hashes ~5 min):
+     mkdir -p /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap-prep
+     /home/USER/ai-speed-testing/strata-compare/work/r23/nogap-run.sh /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/shape-gap-prep/prep-run.log /bin/bash /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/shape_prep.sh all
+   (absolute paths: nogap-run.sh does not cd; its LOG folder must exist)
+   (as a transient user unit if wanted). Done = results/r23/port-0213/shape-gap-prep/prep.log ends "shape_prep.sh ...: OK" and
+   READY.json exists. Steps can be rerun alone (headers synth pack build guard lists record); each skips what is done.
+3. Before the gap:  bash work/r23/shape-gap/gap-shape0213.sh --dry-run      -> "DRY RUN done: 0 refusal(s)"
+4. The gap at the next clean boundary (not inside the post-Phase-5 chain; before ADAPT_FETCH's gap), e.g.
+     systemd-run --user --unit=shape-gap0213 /bin/bash /home/USER/ai-speed-testing/strata-compare/work/r23/shape-gap/gap-shape0213.sh
+   Exit 1 = busy (retry), 6 = hard refusal (alert), 0 = done. ~35-50 min with 8080 down; deadline SG_MAX_MIN=55 for the work.
+   Results: results/r23/port-0213/shape-gap/{decision.txt,result.txt,summary.txt,gates.txt,parity/,smoke/}.
+5. After:  bash work/r23/shape-gap/cleanup-shape0213.sh  (dry: sizes + what goes), then  ... --go
+   Deletes models/q4geo (files + packs) and every per-shape build dir; keeps engine copies < 1 GB, q4geo-commands.txt, geo/*.hpp.
+6. Then ADAPT_FETCH's gap (Karl 11-09).
+
+Test of the driver logic without anything real:  bash work/r23/shape-gap/gap-mock-test.sh   (stubs under scratch/mock)

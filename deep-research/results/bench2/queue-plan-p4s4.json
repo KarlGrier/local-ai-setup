@@ -1,0 +1,3 @@
+[
+ {"set": "screen", "profile": "deep", "ids": ["o01", "o03"], "effort": "medium", "verify_effort": "xhigh", "label": "p4s4", "items": ["setup", "critic", "tried", "notyet"]}
+]

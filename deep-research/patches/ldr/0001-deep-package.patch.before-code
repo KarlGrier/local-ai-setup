@@ -1,0 +1,2728 @@
+--- /dev/null
++++ b/local_deep_research/deep/advisory.py
+@@ -0,0 +1,166 @@
++"""Advisory checks after the report (phase 4 item 3, stage 2; the user, 2026-10-21).
++
++"Keep the critic as an advisory pass that adds a short 'check these' list to the report. Don't let the two-source
++verifier delete or rewrite claims, especially prices and specs on product questions (~50 % false alarms on o02). If it
++goes to stage 2, run it flag-only."
++  LDR_DEEP_CRITIC=1      a fresh-context critic reads the finished report (tools/level-replay.py critic's prompt)
++  LDR_DEEP_VERIFY2=flag  the two-source verifier (level-replay.py verify2's method): key claims against the passages of
++                         the sources they cite and of others the research read; disagreements are only listed
++Both only add the "Check these" list (at most CHECK_MAX lines, the most important first); the report text is never
++changed. Without the variables nothing here runs.
++"""
++from __future__ import annotations
++
++import json
++import os
++import re
++from urllib.parse import urlparse
++
++CHECK_MAX = 8
++VERIFY2_MAX_CLAIMS = 40
++VERIFY2_OTHERS = 4
++
++CRITIC_PROMPT = """You are the claim-verification step of a research system. Below are a research task and the final \
++report written for it. Review the report as a critical expert reading it for the first time, for the person who \
++asked. List the problems that matter:
++- "reasoning": a conclusion that does not follow, a wrong calculation or comparison, a figure applied to the wrong \
++item (another product's or model's specification), something technically impossible;
++- "unsupported": a key claim with no citation, cited to something that is not a source, or resting on a single source \
++where it matters;
++- "contradiction": two statements of the report that disagree, or sources it reports as disagreeing without settling it;
++- "stale": a status claim ("not yet", "pending", "expected", "the latest") that may have changed since its sources;
++- "gap": a part of the task the report does not answer.
++For each give the exact quote (for a gap: the part of the task), why it is a problem, and the action: "fix" with the \
++corrected text where the report's own content is enough, or "research" with one web search query that would settle it.
++At most 20, the most important first. Do not list matters of style.
++
++<task>
++{task}
++</task>
++
++<report>
++{report}
++</report>
++
++Reply with JSON only: {{"issues": [{{"type": "reasoning|unsupported|contradiction|stale|gap", "quote": "...", "why": \
++"...", "action": "fix|research", "fix": "<corrected text or empty>", "query": "<search query or empty>"}}]}}"""
++
++VERIFY2_PROMPT = """You are the claim-verification step of a research system. Below are sentences from a research \
++report, each followed by passages of several sources the research read: the ones the sentence cites and others that \
++may bear on it. For each claim, say which sources state it, which contradict it, and which say nothing about it. Judge \
++from the passages only, not from your own knowledge. A source supports a claim when it states the claim's facts \
++(paraphrase is fine; figures, dates and names must match); it contradicts it when it states different facts.
++
++{items}
++
++For each claim output one line of JSON (JSON Lines, nothing else):
++{{"claim": <number>, "supporting": [<source indices>], "contradicting": [<source indices>], "note": "<for a \
++contradiction: what differs, at most 25 words>"}}"""
++
++
++def critic_on() -> bool:
++    return os.environ.get("LDR_DEEP_CRITIC", "").strip().lower() in ("1", "true", "yes", "on")
++
++
++def verify2_on() -> bool:
++    return os.environ.get("LDR_DEEP_VERIFY2", "").strip().lower() == "flag"
++
++
++def _json(text: str, key: str):
++    m = re.search(r"(?s)\{.*\}", text or "")
++    try:
++        return json.loads(m.group(0))[key] if m else None
++    except (ValueError, KeyError, TypeError):
++        return None
++
++
++def domain(url: str) -> str:
++    d = urlparse(url or "").netloc.lower()
++    return d[4:] if d.startswith("www.") else d
++
++
++def critic(llm, task: str, body: str) -> dict:
++    text = llm(CRITIC_PROMPT.format(task=task, report=body))
++    issues = _json(text, "issues")
++    return {"issues": issues, "raw": None if issues is not None else (text or "")[:4000]}
++
++
++def verify2(writer, body: str, words, passages, count_text) -> list[dict]:
++    """Key claims against their cited sources' passages and up to VERIFY2_OTHERS others that share words with them."""
++    store = writer.store
++    claims = writer.select_key_claims(writer.split_claims(body), VERIFY2_MAX_CLAIMS)
++    stext = {s.idx: (s.page_text or "\n".join(s.snippets[:3] + [f.extraction for f in s.fetches if f.extraction]))
++             for s in store.all_sources()}
++    swords = {i: words(t[:200000]) for i, t in stext.items()}
++    items = []
++    for c in claims:
++        plain = re.sub(r"\s*\[\d+(?:\s*[,\u2013-]\s*\d+)*\]", "", c["text"])
++        cw = words(plain)
++        others = sorted((i for i in swords if i not in c["sources"]), key=lambda i: -len(swords[i] & cw))
++        others = [i for i in others[:VERIFY2_OTHERS] if len(swords[i] & cw) >= 3]
++        blocks = []
++        for i in list(c["sources"]) + others:
++            s = store.source(i)
++            if s is None or i not in stext:
++                continue
++            tag = "cited" if i in c["sources"] else "not cited"
++            blocks.append(f"Source [{i}] ({tag}) {s.title[:100]} - {domain(s.url)}:\n{passages(stext[i], cw, 900)}")
++        items.append({"claim": c, "plain": plain, "body": "\n\n".join(blocks)})
++    batches, cur, tok = [], [], 0
++    for it in items:
++        n = count_text(it["body"]) + 60
++        if cur and (len(cur) >= 6 or tok + n > 36000):
++            batches.append(cur)
++            cur, tok = [], 0
++        cur.append(it)
++        tok += n
++    if cur:
++        batches.append(cur)
++    for b in batches:
++        listing = "\n\n".join(f"### Claim {j + 1}\n{it['plain']}\nCited: {it['claim']['sources']}\n{it['body']}"
++                              for j, it in enumerate(b))
++        outp = writer._llm("verify", VERIFY2_PROMPT.format(items=listing))
++        got = {}
++        for line in outp.splitlines():
++            line = line.strip().strip(",")
++            if line.startswith("{"):
++                try:
++                    d = json.loads(line)
++                    got[int(d.get("claim"))] = d
++                except (ValueError, TypeError):
++                    continue
++        for j, it in enumerate(b):
++            d = got.get(j + 1) or {}
++            it["result"] = {"supporting": [x for x in (d.get("supporting") or []) if isinstance(x, int)],
++                            "contradicting": [x for x in (d.get("contradicting") or []) if isinstance(x, int)],
++                            "note": str(d.get("note", ""))[:300], "answered": bool(d)}
++    return [{"text": it["plain"], "cited": it["claim"]["sources"], **it.get("result", {})} for it in items]
++
++
++PRIORITY = {"reasoning": 0, "contradiction": 1, "disagree": 1, "stale": 2, "unsupported": 3, "gap": 4}
++
++
++def check_these(crit: dict | None, v2: list[dict] | None) -> str:
++    """The short advisory list: critic issues and the claims whose sources disagree, the most important first."""
++    rows = []
++    for i in (crit or {}).get("issues") or []:
++        q = (i.get("quote") or "").strip()
++        if not q:
++            continue
++        hint = (i.get("fix") or "").strip() if i.get("action") == "fix" else (
++            f"a search that would settle it: {i.get('query')}" if i.get("query") else "")
++        rows.append((PRIORITY.get(i.get("type"), 5), f"- **{i.get('type', 'check')}**: \"{q[:240]}\" - {(i.get('why') or '').strip()}"
++                     + (f" ({hint})" if hint else "")))
++    for c in v2 or []:
++        if c.get("contradicting"):
++            srcs = ", ".join(f"[{x}]" for x in c["contradicting"])
++            rows.append((PRIORITY["disagree"], f"- **sources disagree**: \"{c['text'][:240]}\" - {srcs} "
++                         f"{'say(s) otherwise: ' + c['note'] if c.get('note') else 'say(s) otherwise'}"))
++    if not rows:
++        return ""
++    rows.sort(key=lambda r: r[0])
++    shown = rows[:CHECK_MAX]
++    head = ["## Check these", "",
++            "An automatic second reading flagged these points. They are suggestions to check, not corrections: the "
++            "report above is unchanged" + (f" ({len(rows) - CHECK_MAX} more in advisory.json)." if len(rows) > CHECK_MAX else "."), ""]
++    return "\n".join(head + [r[1] for r in shown])
+--- /dev/null
++++ b/local_deep_research/deep/control.py
+@@ -0,0 +1,77 @@
++"""The research clock and per-job settings for deep runs started by the research runner (workspace patch, 2026-10-17).
++
++* Research clock: strata-proxy's gate holds model calls while a research is paused (by the user, the night pause, a
++  test holding the GPUs, or yielding to another Strata client) and records the total time it was closed in
++  ``LDR_DEEP_CLOCK_FILE`` (run/research-clock.json). ``clock()`` / ``mono()`` are time.time() / time.monotonic()
++  minus that pause total, so every deadline of a deep run (research budget, subagent shares, the subagent pool's
++  backstop) stops while the research is held.
++* Job settings: the runner writes ``LDR_DEEP_NEXT_FILE`` (run/next-research.json) just before it starts a research:
++  the research time for this job, the user's files, and the evidence folders of earlier runs to continue from.
++  ``take_job(query)`` consumes it when that research starts (matched by the question text).
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import threading
++import time
++from pathlib import Path
++
++from loguru import logger
++
++_WS = Path("/home/USER/ai/deep-research")
++CLOCK_FILE = Path(os.environ.get("LDR_DEEP_CLOCK_FILE") or _WS / "run" / "research-clock.json")
++NEXT_FILE = Path(os.environ.get("LDR_DEEP_NEXT_FILE") or _WS / "run" / "next-research.json")
++
++_cache = {"t": 0.0, "total": 0.0, "closed": False, "updated": 0.0}
++_lock = threading.Lock()
++
++
++def paused_total() -> float:
++    """Seconds the proxy gate has been closed (all-time total, extrapolated to now while it is closed)."""
++    now = time.time()
++    with _lock:
++        if now - _cache["t"] > 1.0:
++            try:
++                d = json.loads(CLOCK_FILE.read_text())
++                _cache.update(total=float(d.get("paused_total_s") or 0.0), closed=d.get("gate") == "closed",
++                              updated=float(d.get("updated") or now))
++            except (OSError, ValueError, TypeError):
++                pass
++            _cache["t"] = now
++        total = _cache["total"]
++        if _cache["closed"]:
++            # the file is rewritten every second while the proxy runs; a stale closed gate still counts as paused
++            total += max(0.0, now - _cache["updated"])
++        return total
++
++
++def clock() -> float:
++    """Wall-clock time minus pauses: use instead of time.time() for research deadlines."""
++    return time.time() - paused_total()
++
++
++def mono() -> float:
++    """time.monotonic() minus pauses: for monotonic deadlines (the subagent pool's backstop)."""
++    return time.monotonic() - paused_total()
++
++
++def take_job(query: str) -> dict | None:
++    """The runner's settings for this research (consumed), or None for a research started some other way."""
++    try:
++        d = json.loads(NEXT_FILE.read_text())
++    except (OSError, ValueError):
++        return None
++    if not isinstance(d, dict) or (d.get("question") or "").strip() != (query or "").strip():
++        return None
++    if time.time() - float(d.get("written") or 0) > 3600:
++        logger.warning("deep: ignoring a stale next-research.json")
++        return None
++    try:
++        NEXT_FILE.rename(NEXT_FILE.with_name(f"next-research.used-{int(time.time())}.json"))
++    except OSError:
++        pass
++    logger.info(f"deep: job {d.get('job_id')}: budget {d.get('budget_s')} s, {len(d.get('files') or [])} files, "
++                f"{len(d.get('seed_dirs') or [])} seed runs")
++    return d
+--- /dev/null
++++ b/local_deep_research/deep/evidence.py
+@@ -0,0 +1,211 @@
++"""Evidence store: everything the agents gathered in one research, kept for the report and the verification pass.
++
++Thread-safe (the lead, parallel subagents and LangGraph's parallel tool threads all write to it). Optionally
++mirrored to ``<out_dir>/<research>/evidence.jsonl`` as it grows, so a crash or cancel still leaves the evidence.
++Source indices are the strategy collector's citation indices (the [N] the agents cite and LDR's Sources list uses).
++"""
++
++from __future__ import annotations
++
++import json
++import re
++import threading
++import time
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any
++
++from loguru import logger
++
++from . import current_agent
++
++
++@dataclass
++class Fetch:
++    idx: int
++    url: str
++    title: str
++    focus: str
++    extraction: str
++    agent: str
++    t: float
++
++
++@dataclass
++class Source:
++    idx: int
++    url: str
++    title: str = ""
++    snippets: list[str] = field(default_factory=list)
++    page_text: str = ""          # the full fetched text (up to the fetch cap), if the page was read
++    fetches: list[Fetch] = field(default_factory=list)
++    queries: list[str] = field(default_factory=list)
++
++
++class EvidenceStore:
++    def __init__(self, query: str, out_dir: Path | None = None):
++        self.query = query
++        self.t0 = time.time()
++        self.lock = threading.RLock()
++        self.sources: dict[int, Source] = {}
++        self.url_to_idx: dict[str, int] = {}
++        self.searches: list[dict[str, Any]] = []
++        self.subagents: list[dict[str, Any]] = []
++        self.notes: list[dict[str, Any]] = []
++        self.page_cache: dict[str, dict[str, Any]] = {}     # url -> fetch result (to avoid re-downloading)
++        self.out_dir = out_dir
++        self._jsonl = None
++        if out_dir is not None:
++            out_dir.mkdir(parents=True, exist_ok=True)
++            self._jsonl = open(out_dir / "evidence.jsonl", "a", encoding="utf-8")
++            self._write({"type": "start", "query": query})
++
++    # -- persistence ------------------------------------------------------------------------------------------------
++    def _write(self, rec: dict[str, Any]) -> None:
++        if self._jsonl is None:
++            return
++        rec = {"t": round(time.time() - self.t0, 2), "agent": current_agent.get(), **rec}
++        try:
++            self._jsonl.write(json.dumps(rec, ensure_ascii=False) + "\n")
++            self._jsonl.flush()
++        except Exception:  # noqa: BLE001
++            logger.exception("deep: evidence write failed")
++
++    def close(self) -> None:
++        with self.lock:
++            if self._jsonl is not None:
++                self._jsonl.close()
++                self._jsonl = None
++
++    # -- recording ----------------------------------------------------------------------------------------------------
++    def _source(self, idx: int, url: str, title: str = "") -> Source:
++        s = self.sources.get(idx)
++        if s is None:
++            s = Source(idx=idx, url=url, title=title)
++            self.sources[idx] = s
++            self.url_to_idx.setdefault(url, idx)
++        elif title and not s.title:
++            s.title = title
++        return s
++
++    def add_search(self, query: str, indexed_results: list[dict[str, Any]], engine: str = "") -> None:
++        with self.lock:
++            rows = []
++            for r in indexed_results or []:
++                if not isinstance(r, dict):
++                    continue
++                try:
++                    idx = int(r.get("index"))
++                except (TypeError, ValueError):
++                    continue
++                url = r.get("link") or r.get("url") or ""
++                s = self._source(idx, url, r.get("title") or "")
++                snip = (r.get("snippet") or r.get("body") or "").strip()
++                if snip and snip not in s.snippets:
++                    s.snippets.append(snip)
++                if query not in s.queries:
++                    s.queries.append(query)
++                rows.append({"idx": idx, "url": url, "title": r.get("title") or "", "snippet": snip[:500]})
++            self.searches.append({"query": query, "agent": current_agent.get(), "n": len(rows),
++                                  "t": round(time.time() - self.t0, 1)})
++            self._write({"type": "search", "query": query, "engine": engine, "results": rows})
++
++    def add_fetch(self, idx: int | None, url: str, title: str, focus: str, page_text: str, extraction: str) -> None:
++        with self.lock:
++            if idx is None:
++                idx = self.url_to_idx.get(url)
++            rec = {"type": "fetch", "idx": idx, "url": url, "title": title, "focus": focus,
++                   "page_chars": len(page_text or ""), "extraction": extraction}
++            if idx is not None:
++                s = self._source(idx, url, title)
++                if page_text and len(page_text) > len(s.page_text):
++                    s.page_text = page_text
++                    rec["page_text"] = page_text
++                s.fetches.append(Fetch(idx, url, title, focus, extraction, current_agent.get(), time.time() - self.t0))
++            self._write(rec)
++
++    def cache_page(self, url: str, result: dict[str, Any]) -> None:
++        with self.lock:
++            if result.get("status") == "success" and (result.get("content") or "").strip():
++                self.page_cache[url] = result
++
++    def cached_page(self, url: str) -> dict[str, Any] | None:
++        with self.lock:
++            return self.page_cache.get(url)
++
++    def add_subagent(self, topic: str, text: str, status: str, seconds: float, calls: int) -> None:
++        with self.lock:
++            self.subagents.append({"topic": topic, "text": text, "status": status, "seconds": round(seconds, 1),
++                                   "calls": calls, "agent": current_agent.get()})
++            self._write({"type": "subagent", "topic": topic, "status": status, "seconds": round(seconds, 1),
++                         "calls": calls, "text": text})
++
++    def add_note(self, kind: str, **data: Any) -> None:
++        with self.lock:
++            self.notes.append({"kind": kind, **data})
++            self._write({"type": "note", "kind": kind, **data})
++
++    # -- views ------------------------------------------------------------------------------------------------------
++    def fetched_sources(self) -> list[Source]:
++        with self.lock:
++            return sorted((s for s in self.sources.values() if s.fetches), key=lambda s: s.idx)
++
++    def all_sources(self) -> list[Source]:
++        with self.lock:
++            return sorted(self.sources.values(), key=lambda s: s.idx)
++
++    def source(self, idx: int) -> Source | None:
++        with self.lock:
++            return self.sources.get(idx)
++
++    def source_list_text(self, max_items: int = 400) -> str:
++        """Deterministic list of every source seen: '[N] title — url (read)'."""
++        with self.lock:
++            lines = []
++            for s in sorted(self.sources.values(), key=lambda s: (not s.fetches, s.idx))[:max_items]:
++                mark = " (read)" if s.fetches else ""
++                lines.append(f"[{s.idx}] {s.title[:90]} — {s.url}{mark}")
++            more = len(self.sources) - len(lines)
++            if more > 0:
++                lines.append(f"... and {more} more search results not listed")
++            return "\n".join(lines)
++
++    def queries_text(self, max_items: int = 300) -> str:
++        with self.lock:
++            seen, out = set(), []
++            for s in self.searches:
++                q = s["query"]
++                if q not in seen:
++                    seen.add(q)
++                    out.append(q)
++            if len(out) > max_items:
++                out = out[:max_items] + [f"... and {len(out) - max_items} more"]
++            return "; ".join(out)
++
++    def stats(self) -> dict[str, Any]:
++        with self.lock:
++            return {"searches": len(self.searches), "sources_seen": len(self.sources),
++                    "pages_read": sum(1 for s in self.sources.values() if s.fetches),
++                    "fetches": sum(len(s.fetches) for s in self.sources.values()),
++                    "subagents": len(self.subagents), "elapsed_s": round(time.time() - self.t0, 1)}
++
++
++CITE_RE = re.compile(r"[\[【](\d+(?:\s*[,–-]\s*\d+)*)[\]】]")
++
++
++def cited_indices(text: str) -> list[int]:
++    """All [N] / [N, M] / [N-M] indices in text, in order of first appearance."""
++    out: list[int] = []
++    for m in CITE_RE.finditer(text or ""):
++        for part in re.split(r"\s*,\s*", m.group(1)):
++            if re.match(r"^\d+\s*[–-]\s*\d+$", part):
++                a, b = (int(x) for x in re.split(r"\s*[–-]\s*", part))
++                rng = range(a, b + 1) if 0 <= b - a <= 20 else [a, b]
++                for n in rng:
++                    if n not in out:
++                        out.append(n)
++            elif part.strip().isdigit():
++                n = int(part)
++                if n not in out:
++                    out.append(n)
++    return out
+--- /dev/null
++++ b/local_deep_research/deep/files.py
+@@ -0,0 +1,146 @@
++"""The user's own files as research sources (workspace patch, 2026-10-17).
++
++A job started from Jan can name files (or folders, expanded by the MCP server). The agents get one more tool,
++``read_file(file, focus, part)``: it reads one piece of a file (up to LDR_DEEP_FETCH_MAX_CHARS characters, the same
++cap as a web page), runs the same extraction step as fetch_content on it, registers the piece as a citable source
++(file://<path>#part=<n>) and stores its full text in the evidence store - so the report cites the user's files with
++[N] like web pages, and the citation check verifies those claims against the file's own text.
++
++Text extraction: PDFs with pypdf, HTML stripped to text, everything else read as UTF-8.
++"""
++
++from __future__ import annotations
++
++import html
++import re
++import threading
++from pathlib import Path
++from typing import Any
++
++from langchain_core.tools import tool
++from loguru import logger
++
++from . import config
++
++_texts: dict[str, str] = {}
++_lock = threading.Lock()
++
++
++def file_text(path: str) -> str:
++    with _lock:
++        if path in _texts:
++            return _texts[path]
++    p = Path(path)
++    try:
++        if p.suffix.lower() == ".pdf":
++            from pypdf import PdfReader
++
++            r = PdfReader(str(p))
++            text = "\n\n".join(f"[page {i + 1}]\n{(pg.extract_text() or '').strip()}" for i, pg in enumerate(r.pages))
++        else:
++            text = p.read_text(encoding="utf-8", errors="replace")
++            if p.suffix.lower() in (".html", ".htm"):
++                text = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", text)
++                text = html.unescape(re.sub(r"(?s)<[^>]+>", " ", text))
++                text = re.sub(r"[ \t]+", " ", text)
++                text = re.sub(r"\n\s*\n+", "\n\n", text)
++    except Exception as e:  # noqa: BLE001
++        text = f"(could not read {p.name}: {type(e).__name__}: {e})"
++    with _lock:
++        _texts[path] = text
++    return text
++
++
++def pieces(text: str, size: int) -> list[str]:
++    """Cut at paragraph boundaries where possible, never longer than size."""
++    out, i = [], 0
++    while i < len(text):
++        j = min(len(text), i + size)
++        if j < len(text):
++            k = text.rfind("\n\n", i + size // 2, j)
++            if k > i:
++                j = k
++        out.append(text[i:j])
++        i = j
++    return out or [""]
++
++
++def file_table(files: list[str]) -> list[dict[str, Any]]:
++    size = config().fetch_max_chars
++    rows = []
++    for n, f in enumerate(files, 1):
++        t = file_text(f)
++        rows.append({"n": n, "path": f, "name": Path(f).name, "chars": len(t), "parts": len(pieces(t, size))})
++    return rows
++
++
++def files_addendum(files: list[str]) -> str:
++    rows = file_table(files)
++    lines = [f"  {r['n']}. {r['name']} ({r['chars']:,} characters, {r['parts']} part{'s' if r['parts'] > 1 else ''})"
++             for r in rows]
++    return ("\n\nTHE USER'S FILES (part of this research; read them with read_file before searching the web for "
++            "what they already cover):\n" + "\n".join(lines) +
++            "\nread_file(file, focus, part) returns the passages of one part that matter for `focus`; `file` is the "
++            "number or the name above, parts start at 1. Cite what you take from a file by the [N] it returns, like a "
++            "web page. Subagents can read the files too.")
++
++
++def make_read_file_tool(files: list[str], collector: Any, model: Any, overall_query: str):
++    """The agents' read_file tool for this research's files."""
++    from ..advanced_search_system.tools.fetch import _register_in_collector
++    from ..advanced_search_system.tools.fetch.prompts import SUMMARY_FOCUS_QUERY_PROMPT
++    from .llm import invoke
++    from .prompts import EXTRACT_LIMIT_NEW, EXTRACT_LIMIT_OLD
++
++    cfg = config()
++    rows = file_table(files)
++
++    def resolve(ref: str) -> dict | None:
++        ref = str(ref).strip()
++        if ref.isdigit() and 1 <= int(ref) <= len(rows):
++            return rows[int(ref) - 1]
++        for r in rows:
++            if ref in (r["name"], r["path"]) or Path(ref).name == r["name"]:
++                return r
++        hits = [r for r in rows if ref.lower() in r["name"].lower()]
++        return hits[0] if len(hits) == 1 else None
++
++    listing = "; ".join(f"{x['n']}. {x['name']} ({x['parts']} part{'s' if x['parts'] > 1 else ''})" for x in rows)
++
++    @tool(description=(
++        "Read one part of one of the user's own files and return the passages relevant to `focus`, quoted (like "
++        "fetch_content for a web page; cite what you use by the [N] it returns). `file` is the file's number or "
++        f"name, `part` starts at 1. The user's files: {listing}"))
++    def read_file(file: str, focus: str, part: int = 1) -> str:
++        """Description passed via ``@tool(description=...)`` above."""
++        r = resolve(file)
++        if r is None:
++            return "Unknown file. The files are: " + "; ".join(f"{x['n']}. {x['name']}" for x in rows)
++        text = file_text(r["path"])
++        ps = pieces(text, cfg.fetch_max_chars)
++        try:
++            k = int(part or 1)
++        except (TypeError, ValueError):
++            k = 1
++        if not 1 <= k <= len(ps):
++            return f"{r['name']} has {len(ps)} part(s); ask for part 1 to {len(ps)}."
++        piece = ps[k - 1]
++        title = f"{r['name']} (your file, part {k} of {len(ps)})"
++        url = f"file://{r['path']}#part={k}"
++        prompt = SUMMARY_FOCUS_QUERY_PROMPT.format(focus=focus, title=title, url=url, content=piece,
++                                                   overall_query=overall_query)
++        prompt = prompt.replace(EXTRACT_LIMIT_OLD, EXTRACT_LIMIT_NEW.format(max_chars=cfg.extract_max_chars))
++        summary, _info = invoke(model, prompt, cfg.extract_effort, what=f"file extraction {r['name']}#{k}")
++        store = getattr(collector, "deep_store", None)
++        more = f"\n\n({r['name']} has {len(ps)} parts; this was part {k}.)" if len(ps) > 1 else ""
++        if not summary or summary.strip().upper().startswith("NOT RELEVANT"):
++            if store is not None:
++                store.add_fetch(None, url, title, focus, piece, "NOT RELEVANT")
++            return f"NOT RELEVANT (nothing in {title} matched the focus){more}"
++        idx = _register_in_collector(collector, url, title, summary)
++        if store is not None:
++            store.add_fetch(idx, url, title, focus, piece, summary)
++        logger.info(f"deep: read_file {r['name']} part {k}/{len(ps)} -> [{idx}] ({len(summary)} chars)")
++        return f"[{idx}] Title: {title}\nURL: {url}\n\n{summary}{more}"
++
++    return read_file
+--- /dev/null
++++ b/local_deep_research/deep/__init__.py
+@@ -0,0 +1,139 @@
++"""Deep-research extensions for the langgraph-agent strategy (workspace patch, not part of upstream LDR).
++
++Everything here is switched on by ``LDR_DEEP=1`` in the environment of ``ldr-web`` and configured by ``LDR_DEEP_*``
++variables (set by run-ldr.sh). With ``LDR_DEEP`` unset the patched strategy behaves exactly as upstream 1.10.7.
++
++What it adds (see NOTES.md / README.md in the workspace for the measurements behind the defaults):
++  * raised depth caps: lead iterations, subagent iterations, subtopics per call, page size, extraction size
++  * a time budget for the research phase: when it runs out, agents are told to wrap up and lose their tools
++  * an evidence store: every search result, fetched page (full text) and extraction, every subagent report
++  * context management: the lead's (and each subagent's) history is compacted before it outgrows the model's
++    context, keeping every source index/URL and finding; every model call is checked against the context limit
++  * a report stage: outline -> sections written from the stored evidence with [N] citations -> answer summary
++  * a verification pass: each cited claim is checked against the cited page's stored text; unsupported claims are
++    flagged in the report and listed in a citation-check table
++"""
++
++from __future__ import annotations
++
++import contextvars
++import os
++from dataclasses import dataclass, field
++from pathlib import Path
++
++
++def _env_int(name: str, default: int) -> int:
++    try:
++        return int(os.environ.get(name, "").strip() or default)
++    except ValueError:
++        return default
++
++
++def _env_float(name: str, default: float) -> float:
++    try:
++        return float(os.environ.get(name, "").strip() or default)
++    except ValueError:
++        return default
++
++
++def _env_bool(name: str, default: bool) -> bool:
++    v = os.environ.get(name, "").strip().lower()
++    if not v:
++        return default
++    return v in ("1", "true", "yes", "on")
++
++
++@dataclass(frozen=True)
++class DeepConfig:
++    enabled: bool = False
++    # depth caps
++    max_iterations: int = 200            # lead agent model calls (upstream: 50, UI max 100)
++    max_sub_iterations: int = 30         # model calls per subagent (upstream: 8)
++    max_subtopics: int = 8               # preferred subtopics per research_subtopic call (upstream: 5)
++    max_subtopics_hard: int = 12         # rejected above this (upstream: 10)
++    subagent_budget_s: int = 3600        # a subagent is told to wrap up after this long (upstream: hard 1800 s kill)
++    subagent_hard_s: int = 7200          # upstream's abandon-the-thread backstop, raised
++    time_budget_s: int = 3 * 3600        # research phase (all agents); then wrap up and write the report
++    fetch_max_chars: int = 120_000       # page text given to the extraction step (upstream: 10,000)
++    extract_max_chars: int = 4000        # extraction output (upstream prompt: 1,500)
++    extract_effort: str = ""             # reasoning effort for page extraction ("" = the server's default)
++    compact_effort: str = "medium"       # history compaction (a summary; xhigh looped to max_tokens in a test)
++    report_effort: str = "xhigh"         # outline, sections, opening
++    verify_effort: str = "xhigh"         # citation check
++    sub_return_max_chars: int = 16_000   # how much of a subagent's report the lead sees (the store keeps all of it)
++    search_results: int = 50             # results per web_search (set through LDR's SearXNG max_results in run-ldr.sh)
++    snippet_chars: int = 300             # snippet length the agents see per result (the store keeps the full one)
++    # context management
++    context_tokens: int = 131_072        # the server's context (prompt + max_tokens must fit)
++    max_tokens: int = 30_000             # completion budget LDR asks for (llm.max_tokens)
++    compact_at: int = 56_000             # compact history when the prompt estimate exceeds this
++    keep_recent: int = 6                 # messages kept verbatim after a compaction
++    # report stage
++    report: bool = True
++    verify: bool = True
++    report_evidence_tokens: int = 48_000  # evidence per section-writing call
++    verify_page_tokens: int = 40_000      # page text per verification call (per-source design)
++    verify_claim_source_tokens: int = 2000  # passages per cited source per claim (joint design, the default)
++    verify_max_claims: int = 120          # key claims checked per report (0 = all; a full check of ~400 claims took ~1.5 h)
++    out_dir: str = ""                    # evidence + report files per research (empty = don't write files)
++    tokenizer_dir: str = ""              # vocab.json + merges.txt + tokenizer.json of the served model
++    extra: dict = field(default_factory=dict)
++
++
++def load_config() -> DeepConfig:
++    d = DeepConfig()
++    return DeepConfig(
++        enabled=_env_bool("LDR_DEEP", False),
++        max_iterations=_env_int("LDR_DEEP_MAX_ITERATIONS", d.max_iterations),
++        max_sub_iterations=_env_int("LDR_DEEP_MAX_SUB_ITERATIONS", d.max_sub_iterations),
++        max_subtopics=_env_int("LDR_DEEP_MAX_SUBTOPICS", d.max_subtopics),
++        max_subtopics_hard=_env_int("LDR_DEEP_MAX_SUBTOPICS_HARD", d.max_subtopics_hard),
++        subagent_budget_s=_env_int("LDR_DEEP_SUBAGENT_BUDGET_S", d.subagent_budget_s),
++        subagent_hard_s=_env_int("LDR_DEEP_SUBAGENT_HARD_S", d.subagent_hard_s),
++        time_budget_s=_env_int("LDR_DEEP_TIME_BUDGET_S", d.time_budget_s),
++        fetch_max_chars=_env_int("LDR_DEEP_FETCH_MAX_CHARS", d.fetch_max_chars),
++        extract_max_chars=_env_int("LDR_DEEP_EXTRACT_MAX_CHARS", d.extract_max_chars),
++        extract_effort=os.environ.get("LDR_DEEP_EXTRACT_EFFORT", "").strip(),
++        compact_effort=os.environ.get("LDR_DEEP_COMPACT_EFFORT", d.compact_effort).strip(),
++        report_effort=os.environ.get("LDR_DEEP_REPORT_EFFORT", d.report_effort).strip(),
++        verify_effort=os.environ.get("LDR_DEEP_VERIFY_EFFORT", d.verify_effort).strip(),
++        sub_return_max_chars=_env_int("LDR_DEEP_SUB_RETURN_MAX_CHARS", d.sub_return_max_chars),
++        search_results=_env_int("LDR_DEEP_SEARCH_RESULTS", d.search_results),
++        snippet_chars=_env_int("LDR_DEEP_SNIPPET_CHARS", d.snippet_chars),
++        context_tokens=_env_int("LDR_DEEP_CONTEXT_TOKENS", d.context_tokens),
++        max_tokens=_env_int("LDR_LLM_MAX_TOKENS", d.max_tokens),
++        compact_at=_env_int("LDR_DEEP_COMPACT_AT", d.compact_at),
++        keep_recent=_env_int("LDR_DEEP_KEEP_RECENT", d.keep_recent),
++        report=_env_bool("LDR_DEEP_REPORT", d.report),
++        verify=_env_bool("LDR_DEEP_VERIFY", d.verify),
++        report_evidence_tokens=_env_int("LDR_DEEP_REPORT_EVIDENCE_TOKENS", d.report_evidence_tokens),
++        verify_page_tokens=_env_int("LDR_DEEP_VERIFY_PAGE_TOKENS", d.verify_page_tokens),
++        verify_claim_source_tokens=_env_int("LDR_DEEP_VERIFY_CLAIM_SOURCE_TOKENS", d.verify_claim_source_tokens),
++        verify_max_claims=_env_int("LDR_DEEP_VERIFY_MAX_CLAIMS", d.verify_max_claims),
++        out_dir=os.environ.get("LDR_DEEP_OUT_DIR", ""),
++        tokenizer_dir=os.environ.get("LDR_DEEP_TOKENIZER_DIR", ""),
++    )
++
++
++CONFIG = load_config()
++
++
++def config() -> DeepConfig:
++    return CONFIG
++
++
++def enabled() -> bool:
++    return CONFIG.enabled
++
++
++# Which agent is running in this thread/context: "lead" or "sub<N>:<topic>". Set by the strategy; copied into
++# LangGraph's tool threads (ContextThreadPoolExecutor copies contextvars) and set explicitly in subagent threads.
++current_agent: contextvars.ContextVar[str] = contextvars.ContextVar("ldr_deep_agent", default="lead")
++
++
++def out_path(*parts: str) -> Path | None:
++    if not CONFIG.out_dir:
++        return None
++    p = Path(CONFIG.out_dir, *parts)
++    p.parent.mkdir(parents=True, exist_ok=True)
++    return p
+--- /dev/null
++++ b/local_deep_research/deep/llm.py
+@@ -0,0 +1,52 @@
++"""One place for the deep module's own model calls (compaction, report, verification): an explicit reasoning effort
++per call type, and a fallback when a call spends its whole max_tokens thinking and returns no answer (seen at xhigh:
++a 4.5K-token compaction prompt thought for 30,000 tokens / 249 s and answered nothing)."""
++
++from __future__ import annotations
++
++from typing import Any
++
++from loguru import logger
++
++LOWER = {"xhigh": "medium", "high": "medium", "medium": "low", "low": None, "": "medium"}
++
++
++def _text(resp: Any) -> str:
++    c = getattr(resp, "content", resp)
++    if isinstance(c, list):
++        c = "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in c)
++    return str(c or "").strip()
++
++
++def invoke(model: Any, prompt: str, effort: str = "", what: str = "call", max_tokens: int | None = None
++           ) -> tuple[str, dict]:
++    """Call the model; returns (text, info). On an empty answer that hit the length limit, retry one effort lower.
++    max_tokens overrides LDR's llm.max_tokens for this call (the proxy still clamps it to the context)."""
++    info = {"efforts": [], "finish": None}
++    eff = effort
++    for _ in range(3):
++        kw = {"reasoning_effort": eff} if eff else {}
++        if max_tokens:
++            kw["max_tokens"] = max_tokens
++        info["efforts"].append(eff or "default")
++        try:
++            resp = model.invoke(prompt, **kw)
++        except Exception as exc:  # noqa: BLE001
++            logger.warning(f"deep: {what} failed at effort {eff or 'default'}: {exc}")
++            info["error"] = str(exc)[:300]
++            eff = LOWER.get(eff or "", None) if eff is not None else None
++            if eff is None:
++                break
++            continue
++        text = _text(resp)
++        finish = (getattr(resp, "response_metadata", None) or {}).get("finish_reason")
++        info["finish"] = finish
++        if text:
++            return text, info
++        nxt = LOWER.get(eff or "", None)
++        logger.warning(f"deep: {what} returned no answer at effort {eff or 'default'} (finish {finish}); "
++                       f"{'retrying at ' + nxt if nxt else 'giving up'}")
++        if not nxt:
++            break
++        eff = nxt
++    return "", info
+--- /dev/null
++++ b/local_deep_research/deep/middleware.py
+@@ -0,0 +1,232 @@
++"""Agent middleware for deep runs: history compaction, the time/step budget, and a per-call context check.
++
++One instance per agent (the lead, and each subagent). Hooks (LangChain 1.x AgentMiddleware):
++  before_model     wrap-up when the budget is used up (adds an instruction message); compaction when the history's
++                   token count passes ``compact_at``: older messages are replaced by running research notes written
++                   by the model plus a deterministic list of the sources and searches they involved, so no source
++                   index or URL is lost. The task message and the most recent steps are kept verbatim.
++  wrap_model_call  counts the call; after a wrap-up the model gets no tools (it must answer); last line of defence:
++                   if system + messages + tool schemas + max_tokens would still exceed the context, the largest tool
++                   results in this request (not in the stored history) are shortened until it fits.
++"""
++
++from __future__ import annotations
++
++import json
++import threading
++import time
++from typing import Any, Callable
++
++from langchain.agents.middleware.types import AgentMiddleware
++from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
++from langgraph.graph.message import REMOVE_ALL_MESSAGES
++from loguru import logger
++
++from . import config, current_agent
++from .control import clock
++from .evidence import EvidenceStore, cited_indices
++from .prompts import COMPACT_PROMPT, WRAP_UP_LEAD, WRAP_UP_SUB
++from .tokens import count_message, count_messages, count_text, count_tools, truncate_to_tokens
++
++NOTES_KEY = "deep_notes"
++WRAP_KEY = "deep_wrap_up"
++MARGIN = 512                      # tokens kept free below the context on every call
++
++
++def _text(content: Any) -> str:
++    if isinstance(content, str):
++        return content
++    if isinstance(content, list):
++        return "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in content)
++    return str(content or "")
++
++
++def _render(msg: Any) -> str:
++    if isinstance(msg, ToolMessage):
++        return f"<tool_result name=\"{getattr(msg, 'name', '') or ''}\">\n{_text(msg.content)}\n</tool_result>"
++    if isinstance(msg, AIMessage):
++        parts = []
++        if _text(msg.content).strip():
++            parts.append(_text(msg.content).strip())
++        for tc in msg.tool_calls or []:
++            parts.append(f"CALL {tc.get('name')}({json.dumps(tc.get('args'), ensure_ascii=False)})")
++        return "<agent>\n" + "\n".join(parts) + "\n</agent>"
++    return f"<{getattr(msg, 'type', 'message')}>\n{_text(getattr(msg, 'content', msg))}\n</{getattr(msg, 'type', 'message')}>"
++
++
++def _safe_cutoff(msgs: list, cutoff: int) -> int:
++    """Move the cutoff back so that no ToolMessage is separated from the AIMessage that called it."""
++    while 0 < cutoff < len(msgs) and isinstance(msgs[cutoff], ToolMessage):
++        cutoff -= 1
++    return cutoff
++
++
++class DeepAgentMiddleware(AgentMiddleware):
++    def __init__(self, *, role: str, label: str, model: Any, store: EvidenceStore | None, task: str,
++                 deadline: float, max_calls: int, terminate_check: Callable[[], None] | None = None,
++                 progress: Callable[[str], None] | None = None):
++        super().__init__()
++        self.cfg = config()
++        self.role, self.label, self.model, self.store, self.task = role, label, model, store, task
++        self.deadline, self.max_calls = deadline, max_calls
++        self.terminate_check, self.progress = terminate_check, progress
++        self.calls = 0
++        self.wrapped: str | None = None
++        self.fixed_tokens = 2000          # system prompt + tool schemas, measured on the first call
++        self.compactions = 0
++        self.after_last_compaction = 0     # prompt tokens right after the last compaction (thrash guard)
++        self.lock = threading.Lock()
++
++    @property
++    def name(self) -> str:  # one instance per agent; the name only has to be unique within one agent
++        return "DeepAgentMiddleware"
++
++    # -- budget ------------------------------------------------------------------------------------------------------
++    def _wrap_reason(self) -> str | None:
++        if clock() >= self.deadline:      # the research clock: stops while the proxy gate holds calls
++            return "time budget reached"
++        if self.calls >= self.max_calls - 1:
++            return f"step limit of {self.max_calls} reached"
++        return None
++
++    def before_model(self, state: dict[str, Any], runtime: Any) -> dict[str, Any] | None:
++        current_agent.set(self.label)
++        if self.terminate_check is not None:
++            self.terminate_check()                 # raises when the research was cancelled
++        msgs = list(state["messages"])
++        extra: list = []
++        if self.wrapped is None:
++            why = self._wrap_reason()
++            if why:
++                self.wrapped = why
++                text = (WRAP_UP_LEAD if self.role == "lead" else WRAP_UP_SUB).format(why=why)
++                extra.append(HumanMessage(content=text, additional_kwargs={WRAP_KEY: True}))
++                logger.info(f"deep[{self.label}]: wrap-up ({why}) after {self.calls} model calls")
++                if self.store:
++                    self.store.add_note("wrap_up", who=self.label, why=why, calls=self.calls)
++        total = self.fixed_tokens + count_messages(msgs) + sum(count_message(m) for m in extra)
++        hard = self.cfg.context_tokens - self.cfg.max_tokens - MARGIN
++        grown = total - self.after_last_compaction >= 0.2 * self.cfg.compact_at
++        if total > self.cfg.compact_at and len(msgs) > 3 and (grown or total > 0.9 * hard):
++            new = self._compact(msgs, total)
++            if new is not None:
++                return {"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *new, *extra]}
++        if extra:
++            return {"messages": extra}
++        return None
++
++    # -- compaction --------------------------------------------------------------------------------------------------
++    def _compact(self, msgs: list, total: int) -> list | None:
++        t0 = time.time()
++        head = msgs[0]
++        prev_notes, body = "", []
++        for m in msgs[1:]:
++            if isinstance(m, HumanMessage) and m.additional_kwargs.get(NOTES_KEY):
++                prev_notes = m.additional_kwargs.get("notes_text", _text(m.content))
++            else:
++                body.append(m)
++        # keep the most recent messages verbatim: at most keep_recent of them and at most 35 % of compact_at tokens
++        # (at least the last one), cut where no tool result is separated from its call
++        budget, kept_tokens, start = int(0.35 * self.cfg.compact_at), 0, len(body)
++        while start > 0 and len(body) - start < self.cfg.keep_recent:
++            n = count_message(body[start - 1])
++            if kept_tokens + n > budget and start < len(body):
++                break
++            kept_tokens += n
++            start -= 1
++        cutoff = _safe_cutoff(body, start)
++        old, keep = body[:cutoff], body[cutoff:]
++        if not old:
++            return None
++        if self.progress:
++            self.progress(f"Compacting {self.label} history ({total:,} tokens)")
++        # summarise in chunks that fit the context: notes = f(notes, chunk)
++        room = self.cfg.context_tokens - self.cfg.max_tokens - MARGIN - 3000 - count_text(self.task)
++        notes = prev_notes
++        chunk: list[str] = []
++        chunk_tokens = 0
++        rendered = [_render(m) for m in old]
++        cited_text = prev_notes
++        for r in rendered:
++            n = count_text(r)
++            budget = room - count_text(notes)
++            if n > budget:                   # a single huge message: shorten it for the summary
++                r = truncate_to_tokens(r, max(1000, budget // 2))
++                n = count_text(r)
++            if chunk and chunk_tokens + n > room - count_text(notes):
++                notes = self._summarise(notes, "\n\n".join(chunk))
++                chunk, chunk_tokens = [], 0
++            chunk.append(r)
++            chunk_tokens += n
++            cited_text += "\n" + r
++        if chunk:
++            notes = self._summarise(notes, "\n\n".join(chunk))
++        idx = set(cited_indices(cited_text)) | set(cited_indices(notes))
++        src_lines = []
++        if self.store is not None:
++            for i in sorted(idx):
++                s = self.store.source(i)
++                if s is not None:
++                    src_lines.append(f"[{i}] {s.title[:90]} — {s.url}{' (read)' if s.fetches else ''}")
++            mine = [s["query"] for s in self.store.searches if s.get("agent") == self.label]
++        else:
++            mine = []
++        content = ("[Research notes: your earlier steps were compacted to save context. Everything below was "
++                   "found by you; keep citing sources by the same [N].]\n\n" + notes)
++        if src_lines:
++            content += "\n\nSources referred to above (index, title, URL; '(read)' = page was read):\n" + "\n".join(src_lines)
++        if mine:
++            content += "\n\nSearches you already ran: " + "; ".join(dict.fromkeys(mine))
++        notes_msg = HumanMessage(content=content, additional_kwargs={NOTES_KEY: True, "notes_text": notes})
++        new = [head, notes_msg, *keep]
++        after = self.fixed_tokens + count_messages(new)
++        self.after_last_compaction = after
++        self.compactions += 1
++        logger.info(f"deep[{self.label}]: compacted {len(old)} messages, {total:,} -> {after:,} tokens "
++                    f"in {time.time() - t0:.0f} s (#{self.compactions})")
++        if self.store:
++            self.store.add_note("compaction", who=self.label, messages=len(old), tokens_before=total,
++                                tokens_after=after, seconds=round(time.time() - t0, 1), notes_tokens=count_text(notes),
++                                notes_text=notes)       # kept for a seeded continuation (deep/seed.py)
++        return new
++
++    def _summarise(self, notes: str, history: str) -> str:
++        from .llm import invoke
++
++        prompt = COMPACT_PROMPT.format(task=self.task, previous_notes=notes or "(none yet)", history=history)
++        text, info = invoke(self.model, prompt, self.cfg.compact_effort, what=f"compaction [{self.label}]")
++        if text:
++            return text
++        # never lose the history: fall back to keeping it verbatim-but-shortened
++        return (notes + "\n\n" if notes else "") + truncate_to_tokens(history, 12000)
++
++    # -- per call ------------------------------------------------------------------------------------------------------
++    def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
++        with self.lock:
++            self.calls += 1
++        sys_tokens = count_text(_text(request.system_message.content)) if request.system_message else 0
++        tools = [] if self.wrapped else request.tools
++        self.fixed_tokens = sys_tokens + count_tools(tools) + 50
++        if self.wrapped:
++            request = request.override(tools=[])
++        limit = self.cfg.context_tokens - self.cfg.max_tokens - MARGIN
++        msgs = list(request.messages)
++        total = self.fixed_tokens + count_messages(msgs)
++        if total > limit:
++            # shorten the largest tool results of this request until it fits (stored history is untouched)
++            order = sorted((i for i, m in enumerate(msgs) if isinstance(m, ToolMessage)),
++                           key=lambda i: -count_message(msgs[i]))
++            for i in order:
++                if total <= limit:
++                    break
++                m = msgs[i]
++                n = count_message(m)
++                target = max(500, n - (total - limit) - 200)
++                cut = truncate_to_tokens(_text(m.content), target) + "\n[... shortened to fit the context]"
++                msgs[i] = ToolMessage(content=cut, tool_call_id=m.tool_call_id, name=getattr(m, "name", None), id=m.id)
++                total = self.fixed_tokens + count_messages(msgs)
++            logger.warning(f"deep[{self.label}]: request shortened to {total:,} prompt tokens to fit the context")
++            if self.store:
++                self.store.add_note("context_guard", who=self.label, tokens=total)
++            request = request.override(messages=msgs)
++        return handler(request)
+--- /dev/null
++++ b/local_deep_research/deep/notyet.py
+@@ -0,0 +1,176 @@
++"""The "not yet" fresh check (phase 4 item 2; the user 2026-10-20, run inside deep research from 2026-10-23).
++
++"Status claims ("not yet published/released/available/supported") get a fresh, dated search for anything newer than
++the sources before they go in a report." With LDR_DEEP_NOTYET=1, after the citation and setup checks: one call finds
++every "has not happened yet" statement in the report; up to LDR_DEEP_NOTYET_MAX (15) are checked, status claims first
++(the report's own words say "not yet", "pending", "still open", "unreleased" or "not <...> yet"); each gets a new search
++on LDR's own SearXNG (127.0.0.1:8889) with the first pages read around its subject, and a judge call: outdated / still
++true / unclear, from those results only. Each outdated statement gets the dated update right after it, marked as the
++fresh check's, and a short "Fresh check" section lists every checked claim with the date of the check. Nothing is
++deleted or rewritten. When the searches mostly fail, the check stops and says so (no verdicts from the model alone).
++The prompts are tools/notyet-check.py's (stage 1), so its results carry over.
++"""
++from __future__ import annotations
++
++import json
++import os
++import re
++from datetime import date
++from typing import Callable
++
++import requests
++
++SEARX = os.environ.get("LDR_DEEP_NOTYET_SEARX", "http://127.0.0.1:8889")
++NOPROXY = {"http": None, "https": None}
++MARK = "You are the claim-verification step of a research system."   # strata-proxy's verify class (deep/prompts.py)
++
++FIND_PROMPT = MARK + """ Below is a research report written on {date}. List every statement in it that something \
++had NOT happened yet as of its sources: not yet published, released, adopted, cited, listed, available, supported, \
++merged, approved, decided or in force; pending or under review; expected, planned or announced for later; "no X exists \
++yet". Leave out final past events (something was withdrawn or rejected) and general forecasts with no specific event.
++For each one give the exact quote, the subject (what had not happened), the status the report claims, and one web \
++search query that would show whether it has happened since (name the subject precisely; no dates in the query).
++
++<report>
++{report}
++</report>
++
++Reply with JSON only: {{"claims": [{{"quote": "<copied exactly>", "subject": "...", "status": "...", "query": "..."}}]}}"""
++
++JUDGE_PROMPT = MARK + """ A research report written on {date} says: "{quote}"
++Subject: {subject}. Status the report claims: {status}. Today is {today}.
++Below are fresh web search results and page excerpts. Decide whether the claimed status still holds today:
++- "outdated": a source below shows that it has happened (since the report, or already before it). Say what happened \
++and on what date, and give that source's URL.
++- "still_true": the sources show it still has not happened; give the newest dated evidence.
++- "unclear": the results do not settle it.
++Use only the results below, and give dates only where a source states them.
++
++<results>
++{results}
++</results>
++
++Reply with JSON only: {{"verdict": "outdated|still_true|unclear", "update": "<one sentence, with the date>", \
++"event_date": "<YYYY-MM-DD or empty>", "source": "<url or empty>"}}"""
++
++STATUS_WORDS = re.compile(r"\bnot\s+yet\b|\bnot\s+(?:\w+\s+){1,2}yet\b|\bpending\b|\bstill\s+open\b|\bunreleased\b", re.I)
++
++
++def enabled() -> bool:
++    return os.environ.get("LDR_DEEP_NOTYET", "").strip().lower() in ("1", "true", "yes", "on")
++
++
++def max_claims() -> int:
++    try:
++        return max(1, int(os.environ.get("LDR_DEEP_NOTYET_MAX", "15")))
++    except ValueError:
++        return 15
++
++
++def json_of(text: str):
++    m = re.search(r"(?s)\{.*\}", text or "")
++    try:
++        return json.loads(m.group(0)) if m else None
++    except ValueError:
++        return None
++
++
++def words(s: str) -> list[str]:
++    return [w for w in re.findall(r"[A-Za-z0-9][A-Za-z0-9.\-/]+", s) if len(w) > 2]
++
++
++def page_excerpt(url: str, keys: list[str], max_chars: int = 3000) -> str:
++    import trafilatura
++
++    try:
++        r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"}, proxies=NOPROXY)
++        text = trafilatura.extract(r.text, include_comments=False) or ""
++    except Exception as e:  # noqa: BLE001
++        return f"(not read: {type(e).__name__})"
++    paras = [p for p in text.split("\n") if p.strip()]
++    hit = [p for p in paras if any(k.lower() in p.lower() for k in keys)] or paras[:5]
++    return "\n".join(hit)[:max_chars]
++
++
++def search(query: str, subject: str) -> str:
++    r = requests.get(SEARX + "/search", params={"q": query, "format": "json"}, timeout=30, proxies=NOPROXY)
++    res = (r.json().get("results") or [])[:8]
++    keys = words(subject)[:6]
++    out = []
++    for i, x in enumerate(res):
++        out.append(f"[{i + 1}] {x.get('title', '')}\n{x.get('url', '')}\ndate: {x.get('publishedDate') or 'not given'}\n"
++                   f"{(x.get('content') or '')[:400]}")
++        if i < 3:
++            out.append("page excerpt:\n" + page_excerpt(x.get("url", ""), keys))
++    return "\n\n".join(out) or "(no results)"
++
++
++def pick(claims: list, n: int) -> list:
++    first = [bool(STATUS_WORDS.search(c.get("quote") or "")) for c in claims]
++    order = sorted(range(len(claims)), key=lambda i: (not first[i], i))
++    return [{**claims[i], "found_index": i, "status_first": first[i]} for i in order[:n]]
++
++
++def check(llm: Callable[[str], str], body: str, search_fn: Callable[[str, str], str] = search,
++          today: str | None = None) -> dict:
++    """llm(prompt) -> text. The report body (before its sections) is checked as written today."""
++    today = today or date.today().isoformat()
++    f = llm(FIND_PROMPT.format(date=today, report=body))
++    claims = (json_of(f) or {}).get("claims")
++    if not isinstance(claims, list):
++        return {"error": "find: no JSON", "raw": (f or "")[:2000], "date": today}
++    checked, errs = [], []
++    tried = failed = 0
++    for c in pick([c for c in claims if isinstance(c, dict)], max_claims()):
++        try:
++            results = search_fn(c.get("query") or c.get("subject") or "", c.get("subject") or "")
++        except Exception as e:  # noqa: BLE001
++            results = f"(search failed: {type(e).__name__})"
++            errs.append(type(e).__name__)
++        tried += 1
++        if results.startswith("(search failed") or results == "(no results)":
++            failed += 1
++        if tried >= 3 and failed * 2 > tried:
++            return {"claims_found": len(claims), "checked": [], "search_failed": True, "date": today,
++                    "error": f"{failed} of {tried} web searches failed - stopped, no verdicts"}
++        j = llm(JUDGE_PROMPT.format(date=today, today=today, quote=c.get("quote", ""), subject=c.get("subject", ""),
++                                    status=c.get("status", ""), results=results))
++        checked.append({**c, "judge": json_of(j) or {"raw": (j or "")[:1500]}})
++    if tried and failed * 2 > tried:      # fewer than 3 claims, searches mostly failed: no verdicts either
++        return {"claims_found": len(claims), "checked": [], "search_failed": True, "date": today,
++                "error": f"{failed} of {tried} web searches failed - no verdicts"}
++    return {"claims_found": len(claims), "checked": checked, "found": claims, "date": today}
++
++
++def annotate(body: str, res: dict) -> tuple[str, str]:
++    """(body with each outdated statement followed by the dated update, the "Fresh check" section)."""
++    today = res.get("date") or date.today().isoformat()
++    if res.get("error"):
++        return body, (f"## Fresh check\n\nThe fresh check of \"not yet\" statements did not complete ({res['error']}); "
++                      "those statements were not re-checked.")
++    rows = res.get("checked") or []
++    if not rows:
++        return body, ""
++    lines = ["## Fresh check", "",
++             f"Statements that something had not happened yet, checked with a new search on {today} "
++             f"({len(rows)} of {res.get('claims_found', len(rows))} found):", ""]
++    for c in rows:
++        j = c.get("judge") or {}
++        v = j.get("verdict") or "unclear"
++        upd = (j.get("update") or "").strip()
++        src = (j.get("source") or "").strip()
++        q = (c.get("quote") or "").strip()
++        if v == "outdated" and q:
++            mark = f" **[Fresh check {today}: {upd or 'this has happened since'}{(' (' + src + ')') if src else ''}]**"
++            at = body.find(q)
++            if at >= 0:
++                m = re.compile(r"[.!?](?=\s|$)|\n").search(body, at + len(q))
++                end = m.start() if m else len(body)
++                while end > at + len(q) and body[end - 1] == "]" and "[" in body[at + len(q):end]:
++                    end = body.rfind("[", at + len(q), end)
++                    while end > at + len(q) and body[end - 1] == " ":
++                        end -= 1
++                body = body[:end] + mark + body[end:]
++        label = {"outdated": "OUTDATED", "still_true": "still true", "unclear": "unclear"}.get(v, v)
++        lines.append(f"- \"{q[:300]}\" -> {label}{(': ' + upd) if upd else ''}{(' (' + src + ')') if src else ''}")
++    return body, "\n".join(lines)
+--- /dev/null
++++ b/local_deep_research/deep/prompts.py
+@@ -0,0 +1,193 @@
++"""Prompts of the deep-research extensions. The first sentence of each is a marker that tools/strata-proxy.py uses to
++classify the call (compact / report / verify) in its log and for per-class reasoning effort; keep them in sync."""
++
++COMPACT_MARK = "You are the history-compaction step of a research agent."
++REPORT_MARK = "You are the report-writing step of a research system."
++VERIFY_MARK = "You are the claim-verification step of a research system."
++
++COMPACT_PROMPT = COMPACT_MARK + """
++
++The agent is researching this task:
++<task>
++{task}
++</task>
++
++Its conversation history is about to be replaced by your notes so that it can keep working without running out of
++context. Afterwards the agent sees only: the task, your notes, a list of the sources it has seen, and its most recent
++steps.
++
++<previous_notes>
++{previous_notes}
++</previous_notes>
++
++<history>
++{history}
++</history>
++
++Write updated research notes that merge the previous notes with everything new in the history. Rules:
++- Keep EVERY finding that bears on the task: facts, figures, dates, names and short verbatim quotes, each with the [N]
++  source index it came from, written exactly as [N]. Never drop an index or attach it to a different fact.
++- Keep contradictions between sources, and which source says what.
++- Record what was already tried (searches, pages read, subtopics delegated) and what each yielded, including dead
++  ends, so the agent does not repeat them.
++- Record the open questions and the next steps the agent had planned.
++- Add nothing that is not in the notes or the history, and do not answer the task yourself.
++- Be dense: bullet points grouped by sub-question, no filler.
++Output only the notes."""
++
++LEAD_ADDENDUM = """
++Depth requirements (this is a deep-research run; thoroughness matters far more than speed):
++- Before searching, break the task into its sub-questions. Research every one of them; do not stop at the first
++  plausible answer.
++- Use research_subtopic generously for independent sub-questions (up to {max_subtopics} per call; you may call it
++  again with new subtopics as the picture develops). Write each subtopic as a complete, self-contained question.
++- Read primary and authoritative sources with fetch_content, not just snippets. Confirm key facts in at least two
++  independent sources where possible, and look for contradicting evidence.
++- web_search reaches general web engines and academic sources (arXiv, Semantic Scholar, PubMed, Europe PMC,
++  Crossref, Google Scholar). Starting a query with !science limits it to the academic engines; !arxiv, !pubmed,
++  !gos (Google Scholar) and !se (Semantic Scholar) target one engine. Vary your phrasing, and try the terms a
++  source itself would use.
++- You have a budget of about {budget_min} minutes and {max_iterations} steps for research. You will be told when to
++  wrap up. A separate step writes the final report from everything you and your subagents gathered, so put your
++  effort into finding and checking evidence.
++- When you are done, give a complete answer with [N] citations for every fact."""
++
++SUBAGENT_PROMPT = """You are a focused research assistant working for a lead researcher. Today's date: {date}.
++Research the question you are given thoroughly:
++- Run several searches with different phrasings. web_search covers general web engines and academic sources; start a
++  query with !science to search only academic engines (!arxiv, !pubmed, !gos, !se target one engine).
++- Read the most relevant and authoritative pages with fetch_content, passing precisely what you need as focus.
++- Confirm key facts in at least two independent sources where possible; note disagreements between sources.
++When you have covered the question (or are told to wrap up), reply with your findings, not a short summary:
++- every relevant fact, with exact figures, dates and names, each followed by its [N] source index;
++- disagreements between sources and which source says what;
++- what you could not find or verify.
++Do NOT ask clarifying questions."""
++
++WRAP_UP_LEAD = ("TIME TO WRAP UP: the research budget is used up ({why}). Do not call any more tools. Write your "
++                "final answer now from what has been gathered, citing sources as [N].")
++WRAP_UP_SUB = ("TIME TO WRAP UP ({why}). Do not call any more tools. Reply now with your findings: every relevant "
++               "fact with its [N] source index, disagreements between sources, and what you could not find.")
++
++OUTLINE_PROMPT = REPORT_MARK + """ Research agents have finished investigating a task; plan the final report from
++their collected evidence.
++
++<task>
++{task}
++</task>
++
++The lead researcher's final answer (may be incomplete):
++<lead_answer>
++{lead_answer}
++</lead_answer>
++
++Findings reported by the subagents (each fact carries its [N] source index):
++<findings>
++{findings}
++</findings>
++
++Sources that were read (index, title, the start of what was extracted from them):
++<sources>
++{sources}
++</sources>
++
++Plan a thorough report that answers the task completely. Output only JSON of this form:
++{{"title": "...", "answer_format": "...", "sections": [{{"heading": "...", "purpose": "...", "sources": [1, 2]}}]}}
++Rules:
++- "answer_format": if the task prescribes a format for the answer (for example lines like "Exact Answer:" or
++  "Confidence:"), copy that requirement here verbatim; otherwise "".
++- 3 to 10 sections in a logical order. The first section addresses the core question directly; together the
++  sections cover every aspect of the task.
++- "sources" lists the indices whose evidence a section needs (a source may serve several sections). Assign every
++  read source that bears on the task to at least one section.
++- No sources/references section and no summary or conclusion section: both are added separately."""
++
++SECTION_PROMPT = REPORT_MARK + """ Write one section of the final report.
++
++<task>
++{task}
++</task>
++
++Report outline:
++{outline}
++
++Section to write now: "## {heading}" — {purpose}
++
++Evidence for this section: text extracted from the pages, [N] is the source index:
++<evidence>
++{evidence}
++</evidence>
++
++Findings of the research team (context; cite them only with the [N] indices they carry):
++<findings>
++{findings}
++</findings>
++
++Write the section in Markdown, starting with the line "## {heading}". Rules:
++- End every factual sentence with the citation(s) of the source(s) that state it, as [N] or [N][M]. Use only indices
++  that appear above, and only for facts that source states.
++- Be specific: exact figures, dates, names, and short verbatim quotes where they matter. Explain and compare; point
++  out disagreements between sources and their likely reasons.
++- State nothing that no source above supports. Where the evidence is thin or conflicting, say so.
++- Aim for depth (typically 300-900 words); use ### subsections or a table where they help.
++- No introduction or conclusion for the whole report, and no source list."""
++
++OPENING_PROMPT = REPORT_MARK + """ The sections of the final report are written (below). Write the opening of the
++report and its limitations section.
++
++<task>
++{task}
++</task>
++{format_note}
++<report_sections>
++{sections}
++</report_sections>
++
++Write in Markdown:
++1. The first line: "# {title}"
++2. "## Answer": the direct answer to the task in one to three paragraphs, with [N] citations exactly as used in the
++   sections. If the task prescribes an output format (for example "Exact Answer:" and "Confidence:" lines),
++   reproduce that format exactly at the end of this section.
++3. "## Key findings": 4 to 10 bullet points, each with its citations.
++Then a line containing only ===LIMITATIONS=== followed by "## Limitations and open questions": what the evidence could
++not establish, conflicts between sources, and how confident the conclusions are.
++Use only facts and citations that appear in the sections."""
++
++VERIFY_PROMPT = VERIFY_MARK + """ A research report cites the source below for the claims listed. Check each claim
++against the source text only, not against your own knowledge.
++
++Source [{idx}]: {title}
++URL: {url}
++{kind_note}
++<source_text>
++{text}
++</source_text>
++
++Claims that cite this source:
++{claims}
++
++For each claim output one line of JSON (JSON Lines, nothing else):
++{{"claim": <number>, "verdict": "supported" | "partial" | "unsupported", "quote": "<shortest verbatim passage of the source text that supports it, or empty>", "note": "<for partial/unsupported: what is missing or different, at most 25 words>"}}
++"supported": the source text states the claim (paraphrase is fine; figures, dates and names must match).
++"partial": part of the claim is stated, or it is stated with a difference in a detail.
++"unsupported": the source text does not state the claim, or contradicts it."""
++
++VERIFY_JOINT_PROMPT = VERIFY_MARK + """ Below are sentences from a research report, each followed by passages of the
++sources it cites, as the research stored them (text extracted from the page when it was read, or only its search-result
++snippet when it was not). Check each claim against its cited sources' text only, not against your own knowledge. A
++claim is supported when its cited sources, taken together, state it.
++
++{items}
++
++For each claim output one line of JSON (JSON Lines, nothing else):
++{{"claim": <number>, "verdict": "supported" | "partial" | "unsupported", "supporting": [<indices of the sources that support it>], "quote": "<the shortest verbatim passage that supports it, or empty>", "note": "<for partial/unsupported: what is missing or different, at most 25 words>"}}
++"supported": the cited sources state the claim (paraphrase is fine; figures, dates and names must match).
++"partial": part of the claim is stated, or it is stated with a difference in a detail.
++"unsupported": the cited sources do not state the claim, or contradict it.
++Judge the facts the claim asserts (events, figures, dates, names, causes). Framing and connective words ("therefore",
++"widely", "in one assessment", "much higher") and rewording do not make a claim partial; a missing or different fact
++does. Read each passage fully before deciding that something is absent."""
++
++EXTRACT_LIMIT_OLD = "- Maximum 1500 characters. Quality over quantity — fewer precise quotes beat many borderline ones."
++EXTRACT_LIMIT_NEW = ("- Maximum {max_chars} characters. Quality over quantity — fewer precise quotes beat many borderline "
++                     "ones, but keep every quote that bears on the focus or the overall question.")
+--- /dev/null
++++ b/local_deep_research/deep/report.py
+@@ -0,0 +1,669 @@
++"""Report stage of a deep run: a full report written from everything gathered, then a claim-verification pass.
++
++  1. outline   the task, the lead's answer, all subagent findings and a digest of every page read -> sections, each
++               with the source indices it needs
++  2. sections  one call per section, with that section's evidence (all extractions of its sources, plus the most
++               relevant passages of their stored page text) -> Markdown with [N] citations
++  3. opening   title, "Answer" (in the task's prescribed format, if any), "Key findings", "Limitations"
++  4. verify    every sentence that cites a source is checked against that source's stored page text (or its search
++               snippet when the page was never read); one call per source; unsupported/partial claims are flagged in
++               the text and listed in a "Citation check" section
++Each LLM call is budgeted to stay under the context limit (and the proxy clamps max_tokens as a backstop).
++"""
++
++from __future__ import annotations
++
++import json
++import re
++import time
++from pathlib import Path
++from typing import Any, Callable
++
++from loguru import logger
++
++from . import config, current_agent
++from .evidence import EvidenceStore, Source, cited_indices
++from .prompts import OPENING_PROMPT, OUTLINE_PROMPT, SECTION_PROMPT, VERIFY_JOINT_PROMPT, VERIFY_PROMPT
++from . import setup as setup_profile
++from . import advisory
++from . import notyet as fresh_check
++from . import tried as tried_list
++from .tokens import count_text, truncate_to_tokens
++
++WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9\-']+")
++STOP = set("""a an the and or of to in on for with by from at as is are was were be been being this that these those
++it its into than then which who whom whose what when where why how not no nor but if so such can could may might must
++shall should will would do does did done have has had having about above after again against all also any because
++before below between both each few more most other over same some through under until very via per there their they
++them our your you we he she his her""".split())
++
++
++def _text(resp: Any) -> str:
++    c = getattr(resp, "content", resp)
++    if isinstance(c, list):
++        c = "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in c)
++    return str(c or "").strip()
++
++
++def _words(s: str) -> set[str]:
++    return {w.lower() for w in WORD_RE.findall(s or "") if w.lower() not in STOP and len(w) > 2}
++
++
++def _paragraphs(text: str, target_chars: int = 900) -> list[str]:
++    """Split page text into passages of roughly target_chars (on blank lines, then lines)."""
++    parts = [p.strip() for p in re.split(r"\n\s*\n", text or "") if p.strip()]
++    out, buf = [], ""
++    for p in parts:
++        if len(p) > 2 * target_chars:
++            lines = p.split("\n")
++            for ln in lines:
++                if len(buf) + len(ln) > target_chars and buf:
++                    out.append(buf)
++                    buf = ""
++                buf += ("\n" if buf else "") + ln
++            continue
++        if len(buf) + len(p) > target_chars and buf:
++            out.append(buf)
++            buf = ""
++        buf += ("\n\n" if buf else "") + p
++    if buf:
++        out.append(buf)
++    return out
++
++
++def relevant_passages(text: str, query_words: set[str], max_tokens: int) -> str:
++    """The passages of text sharing the most words with query_words, in page order, within max_tokens."""
++    if not text or max_tokens <= 0:
++        return ""
++    if count_text(text) <= max_tokens:
++        return text
++    paras = _paragraphs(text)
++    scored = []
++    for i, p in enumerate(paras):
++        w = _words(p)
++        score = len(w & query_words) / (1 + 0.002 * len(p))
++        scored.append((score, i, p))
++    chosen, used = [], 0
++    for score, i, p in sorted(scored, key=lambda x: -x[0]):
++        n = count_text(p)
++        if used + n > max_tokens:
++            continue
++        chosen.append((i, p))
++        used += n
++        if used > max_tokens * 0.97:
++            break
++    chosen.sort()
++    out, last = [], -1
++    for i, p in chosen:
++        out.append(("[...]\n" if i != last + 1 else "") + p)
++        last = i
++    return "\n\n".join(out)
++
++
++def _extract_json(text: str) -> dict | None:
++    m = re.search(r"\{.*\}", text or "", re.S)
++    if not m:
++        return None
++    try:
++        return json.loads(m.group(0))
++    except ValueError:
++        # common repair: trailing commas
++        try:
++            return json.loads(re.sub(r",\s*([}\]])", r"\1", m.group(0)))
++        except ValueError:
++            return None
++
++
++class ReportWriter:
++    def __init__(self, query: str, store: EvidenceStore, model: Any, lead_answer: str,
++                 progress: Callable[[str, int], None] | None = None,
++                 terminate_check: Callable[[], None] | None = None):
++        self.cfg = config()
++        self.query, self.store, self.model, self.lead_answer = query, store, model, lead_answer or ""
++        self.progress = progress or (lambda msg, pct: None)
++        self.terminate_check = terminate_check or (lambda: None)
++        self.calls: list[dict[str, Any]] = []
++        self.qwords = _words(query)
++        # phase 4 item 1 (2026-10-21): with LDR_DEEP_SETUP_PROFILE the report prompts carry the user's setup facts
++        self.setup_path = setup_profile.profile_path()
++        sp = (lambda p: setup_profile.with_setup(p, self.setup_path)) if self.setup_path else (lambda p: p)
++        # phase 4 item 4 (2026-10-23): with LDR_DEEP_TRIED the "tried / ruled out" list from the user's files too
++        tb = getattr(store, "tried_block", "")
++        tp = (lambda p: tried_list.with_tried(p, tb)) if tb else (lambda p: p)
++        self.p_outline, self.p_section, self.p_opening = (tp(sp(OUTLINE_PROMPT)), tp(sp(SECTION_PROMPT)),
++                                                          tp(sp(OPENING_PROMPT)))
++
++    # -- LLM ----------------------------------------------------------------------------------------------------------
++    def _llm(self, kind: str, prompt: str) -> str:
++        self.terminate_check()
++        limit = self.cfg.context_tokens - 8192 - 1024       # keep at least 8K for the answer
++        n = count_text(prompt)
++        if n > limit:                                  # should not happen (budgets below); keep the call valid
++            logger.warning(f"deep report: {kind} prompt {n} tokens > {limit}; truncating")
++            prompt = truncate_to_tokens(prompt, limit)
++            n = limit
++        from .llm import invoke
++
++        t = time.time()
++        effort = self.cfg.verify_effort if kind in ("verify", "setupcheck", "critic") else self.cfg.report_effort
++        # report calls may think and write at length: up to 60K output tokens, within the context
++        mt = max(4096, min(60000, self.cfg.context_tokens - n - 1024))
++        try:
++            text, info = invoke(self.model, prompt, effort, what=f"report {kind}", max_tokens=mt)
++        except TypeError:          # an older deep.llm already loaded in a running process
++            text, info = invoke(self.model, prompt, effort, what=f"report {kind}")
++        self.calls.append({"kind": kind, "prompt_tokens": n, "seconds": round(time.time() - t, 1),
++                           "out_chars": len(text), "efforts": info.get("efforts"), "finish": info.get("finish")})
++        self.last_finish = info.get("finish")
++        return text
++
++    # -- material -----------------------------------------------------------------------------------------------------
++    def _findings(self, max_tokens: int) -> str:
++        subs = [s for s in self.store.subagents
++                if s.get("text") and not str(s.get("status", "")).startswith("not started")]
++        if not subs:
++            return "(no subagent findings)"
++        per = max(400, max_tokens // max(1, len(subs)))
++        parts = []
++        for s in subs:
++            parts.append(f"### Subtopic: {s['topic']}\n{truncate_to_tokens(s['text'], per)}")
++        out = "\n\n".join(parts)
++        return truncate_to_tokens(out, max_tokens)
++
++    def _relevant_sources(self) -> list[Source]:
++        """Sources worth reporting: every page read, plus snippet-only sources the agents cited."""
++        cited = set(cited_indices(self.lead_answer))
++        for s in self.store.subagents:
++            cited |= set(cited_indices(s.get("text", "")))
++        out = []
++        for s in self.store.all_sources():
++            if s.fetches and any(f.extraction and not f.extraction.startswith("NOT RELEVANT") for f in s.fetches):
++                out.append(s)
++            elif s.idx in cited:
++                out.append(s)
++        return out
++
++    @staticmethod
++    def _extractions(s: Source) -> str:
++        seen, parts = set(), []
++        for f in s.fetches:
++            e = (f.extraction or "").strip()
++            if not e or e.startswith("NOT RELEVANT") or e in seen:
++                continue
++            seen.add(e)
++            parts.append(e)
++        if not parts and s.snippets:
++            parts = [f"(search snippet only) {sn}" for sn in s.snippets[:2]]
++        return "\n".join(parts)
++
++    def _digest(self, sources: list[Source], max_tokens: int) -> str:
++        if not sources:
++            return "(none)"
++        per = max(60, max_tokens // len(sources))
++        lines = []
++        for s in sources:
++            body = re.sub(r"\s+", " ", self._extractions(s))
++            lines.append(f"[{s.idx}] {s.title[:100]} ({s.url})\n  {truncate_to_tokens(body, per)}")
++        return truncate_to_tokens("\n".join(lines), max_tokens)
++
++    # -- stages -------------------------------------------------------------------------------------------------------
++    def outline(self, sources: list[Source]) -> dict:
++        budget = self.cfg.context_tokens - self.cfg.max_tokens - 6000
++        lead = truncate_to_tokens(self.lead_answer, min(10000, budget // 6))
++        findings = self._findings(int(budget * 0.40))
++        digest = self._digest(sources, budget - count_text(lead) - count_text(findings) - count_text(self.query) - 2000)
++        prompt = self.p_outline.format(task=self.query, lead_answer=lead or "(none)", findings=findings, sources=digest)
++        for attempt in range(2):
++            data = _extract_json(self._llm("outline", prompt))
++            if data and isinstance(data.get("sections"), list) and data["sections"]:
++                return data
++            logger.warning(f"deep report: outline not parseable (attempt {attempt + 1})")
++        return {"title": self.query[:100], "answer_format": "",
++                "sections": [{"heading": "Findings", "purpose": "What the research found",
++                              "sources": [s.idx for s in sources]}]}
++
++    def section(self, sec: dict, outline_text: str, by_idx: dict[int, Source]) -> str:
++        heading = str(sec.get("heading") or "Findings").strip().lstrip("#").strip()
++        purpose = str(sec.get("purpose") or "")
++        want = []
++        for x in sec.get("sources") or []:
++            try:
++                want.append(int(x))
++            except (TypeError, ValueError):
++                continue
++        srcs = [by_idx[i] for i in dict.fromkeys(want) if i in by_idx]
++        findings = self._findings(12000)
++        budget = self.cfg.report_evidence_tokens
++        qw = self.qwords | _words(heading + " " + purpose)
++        # 1) every extraction of the section's sources; 2) relevant page passages with what is left
++        blocks, used = {}, 0
++        for s in srcs:
++            ex = self._extractions(s)
++            blk = f"[{s.idx}] {s.title} ({s.url})\n{ex}"
++            n = count_text(blk)
++            if used + n > budget * 0.6:
++                blk = truncate_to_tokens(blk, max(200, int(budget * 0.6) - used))
++                n = count_text(blk)
++            blocks[s.idx] = blk
++            used += n
++        read = [s for s in srcs if s.page_text]
++        if read and used < budget:
++            per = (budget - used) // len(read)
++            for s in read:
++                extra = relevant_passages(s.page_text, qw, per)
++                if extra:
++                    blocks[s.idx] += f"\n--- more of the page [{s.idx}] ---\n{extra}"
++        evidence = "\n\n".join(blocks[s.idx] for s in srcs) or "(no page evidence assigned; use the findings)"
++        prompt = self.p_section.format(task=self.query, outline=outline_text, heading=heading, purpose=purpose,
++                                       evidence=evidence, findings=findings)
++        text = self._llm("section", prompt)
++        if not text:
++            return f"## {heading}\n\n(This section could not be written.)"
++        if not text.lstrip().startswith("#"):
++            text = f"## {heading}\n\n{text}"
++        return text
++
++    def opening(self, title: str, answer_format: str, sections_md: str) -> tuple[str, str]:
++        fmt = f"\nRequired answer format (from the task): {answer_format}\n" if answer_format else ""
++        budget = self.cfg.context_tokens - self.cfg.max_tokens - 4000
++        body = truncate_to_tokens(sections_md, budget - count_text(self.query) - 1500)
++        text = self._llm("opening", self.p_opening.format(task=self.query, format_note=fmt, sections=body, title=title))
++        head, _, lim = text.partition("===LIMITATIONS===")
++        head = head.strip() or f"# {title}"
++        if not head.startswith("#"):
++            head = f"# {title}\n\n{head}"
++        return head, lim.strip()
++
++    # -- verification ---------------------------------------------------------------------------------------------------
++    @staticmethod
++    def split_claims(md: str) -> list[dict]:
++        """Sentences / table rows / bullets that carry [N] citations, with their line numbers."""
++        claims = []
++        in_code = False
++        section = ""
++        for ln, line in enumerate(md.split("\n")):
++            s = line.strip()
++            if s.startswith("```"):
++                in_code = not in_code
++            if s.startswith("## "):
++                section = s[3:].strip()
++            if in_code or not s or s.startswith("#") or re.match(r"^\|?\s*:?-{3,}", s):
++                continue
++            if s.startswith("|"):
++                if cited_indices(s):
++                    claims.append({"line": ln, "text": s, "sources": cited_indices(s), "section": section})
++                continue
++            # normalise "sentence. [3]" -> "sentence [3]." so the citation stays with its sentence
++            s2 = re.sub(r"([.!?])((?:\s*\[\d+(?:\s*[,–-]\s*\d+)*\])+)", r"\2\1", s)
++            for sent in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"“(\[*_])", s2):
++                idx = cited_indices(sent)
++                if idx and len(WORD_RE.findall(sent)) >= 4:
++                    claims.append({"line": ln, "text": sent.strip(), "sources": idx, "section": section})
++        return claims
++
++    @staticmethod
++    def select_key_claims(claims: list[dict], n: int) -> list[dict]:
++        """At most n claims: first the Answer and Key findings, then sentences with specific facts (figures, dates,
++        quoted text, several capitalised names), then the rest; document order within each group."""
++        if not n or len(claims) <= n:
++            return claims
++
++        def prio(c):
++            sec = (c.get("section") or "").lower()
++            if sec.startswith("answer") or sec.startswith("key finding"):
++                return 0
++            t = re.sub(r"\[\d+(?:\s*[,–-]\s*\d+)*\]", "", c["text"])
++            if re.search(r"\d", t) or re.search(r"[\"“”]", t) or len(re.findall(r"\b[A-Z][a-z]+", t)) >= 3:
++                return 1
++            return 2
++        order = sorted(range(len(claims)), key=lambda i: (prio(claims[i]), i))[:n]
++        return [claims[i] for i in sorted(order)]
++
++    def verify(self, md: str, claims: list[dict] | None = None) -> list[dict]:
++        """Check each cited claim against all the sources it cites, together: per claim, the most relevant passages
++        of each cited source's stored page text (or its snippets if the page was never read); claims batched ~8 per
++        call. (The first design checked one source at a time; a sentence citing two sources that each state half of
++        it then came out "partial" twice: 66 % of multi-source claims vs 17 % of single-source ones in smoke 2.)"""
++        if claims is None:
++            claims = self.split_claims(md)
++        else:
++            claims = [{k: c[k] for k in ("line", "text", "sources", "section") if k in c} for c in claims]
++        per_src = self.cfg.verify_claim_source_tokens
++        items = []
++        for ci, c in enumerate(claims):
++            plain = re.sub(r"\s*\[\d+(?:\s*[,–-]\s*\d+)*\]", "", c["text"])
++            c["plain"] = plain
++            words = _words(plain)
++            blocks, kinds = [], set()
++            for i in c["sources"]:
++                s = self.store.source(i)
++                if s is None:
++                    blocks.append(f"Source [{i}]: not in the research's evidence (unknown index)")
++                    kinds.add("none")
++                    continue
++                if s.page_text:
++                    txt, kind = relevant_passages(s.page_text, words, per_src), "page"
++                else:
++                    txt = "\n".join(s.snippets[:3] + [f.extraction for f in s.fetches if f.extraction])
++                    txt, kind = truncate_to_tokens(txt, per_src), "snippet"
++                kinds.add(kind)
++                label = "page text" if kind == "page" else "search snippet only (page never read)"
++                blocks.append(f"Source [{i}] {s.title[:100]} — {label}:\n{txt}")
++            c["checked_against"] = sorted(kinds)
++            items.append((ci, blocks))
++        # batches of up to 8 claims and ~36K tokens
++        batches, cur, cur_tok = [], [], 0
++        for ci, blocks in items:
++            body = "\n\n".join(blocks)
++            n = count_text(body) + count_text(claims[ci]["plain"]) + 30
++            if cur and (len(cur) >= 8 or cur_tok + n > 36000):
++                batches.append(cur)
++                cur, cur_tok = [], 0
++            cur.append((ci, body))
++            cur_tok += n
++        if cur:
++            batches.append(cur)
++        for b, batch in enumerate(batches):
++            self.progress(f"Checking citations: batch {b + 1} of {len(batches)} ({len(batch)} claims)",
++                          93 + int(6 * b / max(1, len(batches))))
++            listing = "\n\n".join(
++                f"### Claim {j + 1}\n{claims[ci]['plain']}\nCited: {', '.join(f'[{i}]' for i in claims[ci]['sources'])}\n{body}"
++                for j, (ci, body) in enumerate(batch))
++            out = self._llm("verify", VERIFY_JOINT_PROMPT.format(items=listing))
++            got = {}
++            for line in out.splitlines():
++                line = line.strip().strip(",")
++                if line.startswith("{"):
++                    try:
++                        d = json.loads(line)
++                        got[int(d.get("claim"))] = d
++                    except (ValueError, TypeError):
++                        continue
++            for j, (ci, _) in enumerate(batch):
++                d = got.get(j + 1)
++                c = claims[ci]
++                if d is None:
++                    c.update(verdict="no_answer", note="", quote="", supporting=[])
++                    continue
++                v = str(d.get("verdict", "")).lower()
++                c.update(verdict=v if v in ("supported", "partial", "unsupported") else "no_answer",
++                         note=str(d.get("note", ""))[:300], quote=str(d.get("quote", ""))[:400],
++                         supporting=[x for x in (d.get("supporting") or []) if isinstance(x, int)])
++        for c in claims:
++            c.pop("plain", None)
++            c["checks"] = {}
++        return claims
++
++    def verify_per_source(self, md: str, claims: list[dict] | None = None) -> list[dict]:
++        """The first design (one call per cited source, verdict per source, best one wins); kept for comparisons."""
++        if claims is None:
++            claims = self.split_claims(md)
++        else:
++            claims = [{k: c[k] for k in ("line", "text", "sources")} for c in claims]
++        by_src: dict[int, list[int]] = {}
++        for ci, c in enumerate(claims):
++            c["checks"] = {}
++            for i in c["sources"]:
++                by_src.setdefault(i, []).append(ci)
++        n_src = len(by_src)
++        for k, (idx, cis) in enumerate(sorted(by_src.items())):
++            self.progress(f"Checking citations: source {k + 1} of {n_src} ([{idx}], {len(cis)} claims)",
++                          93 + int(6 * k / max(1, n_src)))
++            s = self.store.source(idx)
++            if s is None:
++                for ci in cis:
++                    claims[ci]["checks"][idx] = {"verdict": "no_source", "note": "index not in the evidence store"}
++                continue
++            if s.page_text:
++                kind, kind_note = "page", "The text below was extracted from the page when the research read it."
++                words = set().union(*(_words(claims[ci]["text"]) for ci in cis))
++                text = relevant_passages(s.page_text, words, self.cfg.verify_page_tokens)
++            else:
++                kind = "snippet"
++                kind_note = ("The page was never read; only its search-result snippet(s) and any extraction are "
++                             "available below.")
++                text = "\n".join(s.snippets[:4] + [f.extraction for f in s.fetches if f.extraction])
++            if not text.strip():
++                for ci in cis:
++                    claims[ci]["checks"][idx] = {"verdict": "no_text", "kind": kind}
++                continue
++            for start in range(0, len(cis), 25):
++                part = cis[start:start + 25]
++                listing = "\n".join(f"{j + 1}. {re.sub(r'\s*\[\d+(?:\s*[,–-]\s*\d+)*\]', '', claims[ci]['text'])}"
++                                    for j, ci in enumerate(part))
++                out = self._llm("verify", VERIFY_PROMPT.format(idx=idx, title=s.title, url=s.url, kind_note=kind_note,
++                                                               text=text, claims=listing))
++                got = {}
++                for line in out.splitlines():
++                    line = line.strip().strip(",")
++                    if not line.startswith("{"):
++                        continue
++                    try:
++                        d = json.loads(line)
++                        got[int(d.get("claim"))] = d
++                    except (ValueError, TypeError):
++                        continue
++                for j, ci in enumerate(part):
++                    d = got.get(j + 1)
++                    if d is None:
++                        claims[ci]["checks"][idx] = {"verdict": "no_answer", "kind": kind}
++                    else:
++                        v = str(d.get("verdict", "")).lower()
++                        v = v if v in ("supported", "partial", "unsupported") else "no_answer"
++                        claims[ci]["checks"][idx] = {"verdict": v, "kind": kind, "quote": str(d.get("quote", ""))[:400],
++                                                     "note": str(d.get("note", ""))[:300]}
++        rank = {"supported": 3, "partial": 2, "unsupported": 1, "no_answer": 0, "no_text": 0, "no_source": 0}
++        for c in claims:
++            best = max(c["checks"].values(), key=lambda d: rank.get(d["verdict"], 0), default={"verdict": "no_answer"})
++            c["verdict"] = best["verdict"]
++            c["checked_against"] = sorted({d.get("kind", "?") for d in c["checks"].values()})
++        return claims
++
++    @staticmethod
++    def annotate(md: str, claims: list[dict]) -> str:
++        """Put a flag right after each unsupported / partly supported sentence (after its citation markers)."""
++        lines = md.split("\n")
++        flags = {"unsupported": " **[⚠ not supported by the cited source]**",
++                 "partial": " *[⚠ only partly supported by the cited source]*"}
++        cite = r"\[\d+(?:\s*[,–-]\s*\d+)*\]"
++        for c in claims:
++            mark = flags.get(c.get("verdict"))
++            if not mark:
++                continue
++            line = lines[c["line"]]
++            plain = re.sub(r"\s*" + cite, "", c["text"])
++            words = WORD_RE.findall(plain)
++            pos = -1
++            if words:
++                anchor = r"\W+".join(map(re.escape, words[-4:]))
++                for m in re.finditer(anchor, line):
++                    pos = m.end()
++            if pos < 0:
++                lines[c["line"]] = line + mark
++                continue
++            m2 = re.match(r"((?:\s*" + cite + r")*[.!?]?(?:\s*" + cite + r")*)", line[pos:])
++            end = pos + (len(m2.group(1)) if m2 else 0)
++            if line[end:].startswith(mark):
++                continue
++            lines[c["line"]] = line[:end] + mark + line[end:]
++        out = "\n".join(lines)
++        for mark in flags.values():                  # two claims ending at the same spot: one flag
++            out = re.sub("(" + re.escape(mark) + "){2,}", mark, out)
++        return out
++
++    @staticmethod
++    def check_section(claims: list[dict], total: int | None = None) -> str:
++        n = len(claims)
++        cnt = {}
++        for c in claims:
++            cnt[c["verdict"]] = cnt.get(c["verdict"], 0) + 1
++        sup, par, uns = cnt.get("supported", 0), cnt.get("partial", 0), cnt.get("unsupported", 0)
++        other = n - sup - par - uns
++        snippet_only = sum(1 for c in claims if c.get("checked_against") == ["snippet"])
++        out = ["## Citation check", "",
++               f"Cited sentences were checked against the text of the sources they cite, as the research stored "
++               f"it (the page text where the page was read, otherwise only its search snippet). "
++               + (f"The key {n} of the report's {total} cited sentences were checked (all of the Answer and Key "
++                  f"findings, then the sentences with figures, dates, quotations or names). " if total and total > n
++                  else "")
++               + f"{n} cited claims: "
++               f"**{sup} supported**, **{par} partly supported**, **{uns} not supported**"
++               + (f", {other} could not be checked" if other else "")
++               + (f"; {snippet_only} were checked against a search snippet only" if snippet_only else "") + "."]
++        flagged = [c for c in claims if c["verdict"] in ("unsupported", "partial")]
++        if flagged:
++            out += ["", "| claim | cites | verdict | what the source says / lacks |", "|---|---|---|---|"]
++            for c in flagged:
++                claim = re.sub(r"\s*\[\d+(?:\s*[,–-]\s*\d+)*\]", "", c["text"]).replace("|", "\\|")
++                notes = c.get("note") or "; ".join(f"[{i}] {d.get('note') or d.get('verdict')}"
++                                                   for i, d in c["checks"].items()
++                                                   if d.get("verdict") in ("unsupported", "partial"))
++                out.append(f"| {claim[:220]} | {', '.join(f'[{i}]' for i in c['sources'])} | {c['verdict']} | "
++                           f"{notes.replace('|', chr(92) + '|')[:300]} |")
++        return "\n".join(out)
++
++    # -- all ----------------------------------------------------------------------------------------------------------
++    def run(self) -> dict[str, Any]:
++        token = current_agent.set("report")
++        t0 = time.time()
++        try:
++            sources = self._relevant_sources()
++            by_idx = {s.idx: s for s in self.store.all_sources()}
++            self.progress(f"Planning the report from {len(sources)} sources", 88)
++            ol = self.outline(sources)
++            secs = ol.get("sections") or []
++            outline_text = "\n".join(f"- {s.get('heading')}: {s.get('purpose', '')}" for s in secs)
++            parts = []
++            for i, sec in enumerate(secs):
++                self.progress(f"Writing section {i + 1} of {len(secs)}: {sec.get('heading')}", 89 + int(3 * i / max(1, len(secs))))
++                parts.append(self.section(sec, outline_text, by_idx))
++            sections_md = "\n\n".join(parts)
++            title = str(ol.get("title") or self.query[:100]).strip()
++            self.progress("Writing the answer and key findings", 92)
++            head, limitations = self.opening(title, str(ol.get("answer_format") or ""), sections_md)
++            body = head + "\n\n" + sections_md + ("\n\n" + limitations if limitations else "")
++            # save the report before the citation check, so a stopped or failed check never loses it
++            if self.store.out_dir is not None:
++                try:
++                    (self.store.out_dir / "report-unverified.md").write_text(body + "\n", encoding="utf-8")
++                    (self.store.out_dir / "outline.json").write_text(json.dumps(ol, indent=1, ensure_ascii=False),
++                                                                    encoding="utf-8")
++                except OSError:
++                    logger.exception("deep report: could not write the unverified report")
++            claims: list[dict] = []
++            check_md = ""
++            all_claims = 0
++            if self.cfg.verify:
++                every = self.split_claims(body)
++                all_claims = len(every)
++                try:
++                    claims = self.verify(body, claims=self.select_key_claims(every, self.cfg.verify_max_claims))
++                    body = self.annotate(body, claims)
++                    check_md = self.check_section(claims, total=all_claims)
++                except Exception as exc:  # noqa: BLE001
++                    if "terminat" in type(exc).__name__.lower():
++                        raise
++                    logger.exception("deep report: citation check failed; keeping the report without it")
++                    check_md = "## Citation check\n\nThe citation check did not complete (see the log)."
++                    claims = []
++            # phase 4 item 1 (2026-10-21): the setup check, the safety net for the lead agent - each statement that
++            # contradicts the user's setup facts gets the fix right after it and a line in a short section
++            setup_md, setup_res = "", None
++            body_as_written = body                 # the advisory checks below read the report without the setup marks
++            if self.setup_path:
++                self.progress("Checking statements about your computer against your setup", 98)
++                try:
++                    setup_res = setup_profile.check(lambda pr: (self._llm("setupcheck", pr), self.last_finish),
++                                                    body, self.setup_path)
++                    body, setup_md = setup_profile.annotate(body, setup_res)
++                except Exception as exc:  # noqa: BLE001
++                    if "terminat" in type(exc).__name__.lower():
++                        raise
++                    logger.exception("deep report: setup check failed; keeping the report without it")
++                    setup_md = "## Setup check\n\nThe setup check did not complete (see the log)."
++                if self.store.out_dir is not None and setup_res is not None:
++                    try:
++                        (self.store.out_dir / "setupcheck.json").write_text(
++                            json.dumps(setup_res, indent=1, ensure_ascii=False), encoding="utf-8")
++                    except OSError:
++                        logger.exception("deep report: could not write setupcheck.json")
++            # phase 4 item 2 (2026-10-23, in item 4's runs): "not yet" statements get a fresh, dated search; each outdated
++            # one gets the update right after it and a line in a short "Fresh check" section (LDR_DEEP_NOTYET)
++            fresh_md, fresh_res = "", None
++            if fresh_check.enabled():
++                self.progress("Checking 'not yet' statements with a fresh search", 99)
++                try:
++                    fresh_res = fresh_check.check(lambda pr: self._llm("notyet", pr), body_as_written)
++                    body, fresh_md = fresh_check.annotate(body, fresh_res)
++                except Exception as exc:  # noqa: BLE001
++                    if "terminat" in type(exc).__name__.lower():
++                        raise
++                    logger.exception("deep report: fresh check failed; keeping the report without it")
++                    fresh_md = "## Fresh check\n\nThe fresh check of \"not yet\" statements did not complete (see the log)."
++                if self.store.out_dir is not None and fresh_res is not None:
++                    try:
++                        (self.store.out_dir / "notyet.json").write_text(
++                            json.dumps(fresh_res, indent=1, ensure_ascii=False), encoding="utf-8")
++                    except OSError:
++                        logger.exception("deep report: could not write notyet.json")
++            # phase 4 item 3 (2026-10-21): advisory only - the critic and / or the two-source verifier (flag-only) add
++            # a short "Check these" list; the report text is not changed
++            advise_md = ""
++            if advisory.critic_on() or advisory.verify2_on():
++                self.progress("A second reading for points to check", 99)
++                adv: dict[str, Any] = {}
++                try:
++                    if advisory.critic_on():
++                        adv["critic"] = advisory.critic(lambda pr: self._llm("critic", pr), self.query, body_as_written)
++                    if advisory.verify2_on():
++                        adv["verify2"] = advisory.verify2(self, body_as_written, _words, relevant_passages, count_text)
++                    advise_md = advisory.check_these(adv.get("critic"), adv.get("verify2"))
++                except Exception as exc:  # noqa: BLE001
++                    if "terminat" in type(exc).__name__.lower():
++                        raise
++                    logger.exception("deep report: the advisory checks failed; keeping the report without them")
++                if self.store.out_dir is not None and adv:
++                    try:
++                        (self.store.out_dir / "advisory.json").write_text(json.dumps(adv, indent=1, ensure_ascii=False),
++                                                                         encoding="utf-8")
++                    except OSError:
++                        logger.exception("deep report: could not write advisory.json")
++            report = (body + ("\n\n" + setup_md if setup_md else "") + ("\n\n" + fresh_md if fresh_md else "")
++                      + ("\n\n" + advise_md if advise_md else "")
++                      + ("\n\n" + check_md if check_md else ""))
++            cited = cited_indices(report)
++            stats = {
++                "report_seconds": round(time.time() - t0, 1), "report_calls": len(self.calls),
++                "sections": len(secs), "sources_cited": len(cited),
++                "sources_cited_read": sum(1 for i in cited if (self.store.source(i) and self.store.source(i).fetches)),
++                "claims": len(claims), "claims_total": all_claims,
++                "verdicts": {v: sum(1 for c in claims if c["verdict"] == v) for v in
++                             ("supported", "partial", "unsupported", "no_answer", "no_text", "no_source")},
++                **self.store.stats(),
++            }
++            return {"markdown": report, "outline": ol, "claims": claims, "stats": stats, "calls": self.calls,
++                    "cited": cited}
++        finally:
++            current_agent.reset(token)
++
++
++def write_files(out_dir: Path | None, result: dict[str, Any], store: EvidenceStore, lead_answer: str) -> None:
++    if out_dir is None:
++        return
++    out_dir.mkdir(parents=True, exist_ok=True)
++    src_lines = []
++    for i in result.get("cited", []):
++        s = store.source(i)
++        if s is not None:
++            src_lines.append(f"[{i}] {s.title} — {s.url}")
++    (out_dir / "report.md").write_text(result["markdown"] + "\n\n## Sources\n\n" + "\n\n".join(src_lines) + "\n",
++                                       encoding="utf-8")
++    (out_dir / "lead_answer.md").write_text(lead_answer or "", encoding="utf-8")
++    (out_dir / "outline.json").write_text(json.dumps(result.get("outline"), indent=1, ensure_ascii=False), encoding="utf-8")
++    (out_dir / "verification.json").write_text(json.dumps(result.get("claims"), indent=1, ensure_ascii=False),
++                                               encoding="utf-8")
++    (out_dir / "stats.json").write_text(json.dumps({**result.get("stats", {}), "calls": result.get("calls")},
++                                                   indent=1, ensure_ascii=False), encoding="utf-8")
++    subs = "\n\n---\n\n".join(f"## {s['topic']}\n({s['status']}, {s['seconds']} s, {s['calls']} model calls)\n\n{s['text']}"
++                              for s in store.subagents)
++    (out_dir / "subagents.md").write_text(subs, encoding="utf-8")
+--- /dev/null
++++ b/local_deep_research/deep/seed.py
+@@ -0,0 +1,167 @@
++"""Continue an interrupted research from what it saved (workspace patch, 2026-10-17).
++
++When the PC was off (or LDR restarted) during a job, the research runner starts a new research for the same question
++with the earlier runs' folders as seeds. Everything they stored in evidence.jsonl comes back:
++  * every source keeps its citation number [N] (the strategy's collector is seeded with them), with its snippets, the
++    full text of every page read and every extraction - so the report and the citation check can use them, and a
++    page is not downloaded again (the store's page cache);
++  * the subagents' reports, the agents' compaction notes and the lead's answer (if it got that far);
++  * the lead agent is told what was done and found, and continues with what is still open.
++"""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++from typing import Any
++
++from loguru import logger
++
++from .evidence import EvidenceStore, Fetch, Source
++
++SEED_TEXT_MAX = 60_000      # characters of earlier findings put in front of the lead (the store keeps everything)
++
++
++class Seed:
++    def __init__(self) -> None:
++        self.sources: dict[int, dict[str, Any]] = {}
++        self.subagents: list[dict[str, Any]] = []
++        self.notes: list[dict[str, Any]] = []      # compaction notes with text, lead answers
++        self.queries: list[str] = []
++        self.runs = 0
++
++    def src(self, idx: int, url: str, title: str = "") -> dict[str, Any]:
++        s = self.sources.setdefault(idx, {"idx": idx, "url": url, "title": title, "snippets": [], "page_text": "",
++                                          "fetches": []})
++        if title and not s["title"]:
++            s["title"] = title
++        return s
++
++
++def load(seed_dirs: list[str]) -> Seed | None:
++    seed = Seed()
++    for d in seed_dirs or []:
++        ev = Path(d) / "evidence.jsonl"
++        if not ev.exists():
++            continue
++        seed.runs += 1
++        with open(ev, encoding="utf-8") as f:
++            for line in f:
++                try:
++                    r = json.loads(line)
++                except ValueError:
++                    continue
++                t = r.get("type")
++                if t in ("search", "seed_search"):
++                    if r.get("query") and r["query"] not in seed.queries:
++                        seed.queries.append(r["query"])
++                    for row in r.get("results") or []:
++                        if row.get("idx") is None:
++                            continue
++                        s = seed.src(int(row["idx"]), row.get("url") or "", row.get("title") or "")
++                        if row.get("snippet") and row["snippet"] not in s["snippets"]:
++                            s["snippets"].append(row["snippet"])
++                elif t in ("fetch", "seed_fetch") and r.get("idx") is not None:
++                    s = seed.src(int(r["idx"]), r.get("url") or "", r.get("title") or "")
++                    if r.get("page_text") and len(r["page_text"]) > len(s["page_text"]):
++                        s["page_text"] = r["page_text"]
++                    if r.get("extraction") and r.get("extraction") != "NOT RELEVANT":
++                        s["fetches"].append({"focus": r.get("focus") or "", "extraction": r["extraction"],
++                                             "agent": r.get("agent") or "earlier run"})
++                elif t in ("subagent", "seed_subagent"):
++                    if r.get("text"):
++                        seed.subagents.append({"topic": r.get("topic") or "", "text": r["text"],
++                                               "status": r.get("status") or "", "seconds": r.get("seconds") or 0,
++                                               "calls": r.get("calls") or 0})
++                elif t == "note" and r.get("kind") in ("compaction", "lead_answer", "seed_notes") and \
++                        (r.get("notes_text") or r.get("text")):
++                    seed.notes.append({"kind": r["kind"], "who": r.get("who") or r.get("agent") or "",
++                                       "text": r.get("notes_text") or r.get("text")})
++    if not seed.sources and not seed.subagents:
++        return None
++    return seed
++
++
++def link_entries(seed: Seed) -> list[dict[str, Any]]:
++    """Entries for the strategy's all_links_of_system: the collector keeps their indices (its seeding path)."""
++    out = []
++    for idx in sorted(seed.sources):
++        s = seed.sources[idx]
++        snip = (s["snippets"][0] if s["snippets"] else (s["fetches"][0]["extraction"] if s["fetches"] else ""))[:500]
++        out.append({"index": str(idx), "link": s["url"], "url": s["url"], "title": s["title"] or s["url"],
++                    "snippet": snip})
++    return out
++
++
++def fill_store(seed: Seed, store: EvidenceStore) -> None:
++    """Put the earlier evidence into this run's store (and its evidence.jsonl, so this run's folder is complete)."""
++    with store.lock:
++        for idx in sorted(seed.sources):
++            s = seed.sources[idx]
++            src = store.sources.get(idx)
++            if src is None:
++                src = Source(idx=idx, url=s["url"], title=s["title"])
++                store.sources[idx] = src
++                store.url_to_idx.setdefault(s["url"], idx)
++            for sn in s["snippets"]:
++                if sn not in src.snippets:
++                    src.snippets.append(sn)
++            if s["page_text"]:
++                src.page_text = s["page_text"]
++                store.page_cache[s["url"]] = {"status": "success", "content": s["page_text"], "title": s["title"],
++                                              "url": s["url"]}
++            for fe in s["fetches"]:
++                src.fetches.append(Fetch(idx, s["url"], s["title"], fe["focus"], fe["extraction"], fe["agent"], 0.0))
++            if s["snippets"]:
++                store._write({"type": "seed_search", "query": "(earlier run)",
++                              "results": [{"idx": idx, "url": s["url"], "title": s["title"], "snippet": sn[:500]}
++                                          for sn in s["snippets"]]})
++            if s["page_text"] or s["fetches"]:
++                for k, fe in enumerate(s["fetches"] or [{"focus": "", "extraction": ""}]):
++                    rec = {"type": "seed_fetch", "idx": idx, "url": s["url"], "title": s["title"],
++                           "focus": fe["focus"], "extraction": fe["extraction"]}
++                    if k == 0 and s["page_text"]:
++                        rec["page_text"] = s["page_text"]
++                    store._write(rec)
++        for sa in seed.subagents:
++            store.subagents.append({**sa, "agent": "earlier run"})
++            store._write({"type": "seed_subagent", **sa})
++        for n in seed.notes:
++            store.notes.append({"kind": "seed_notes", "who": n["who"], "text": n["text"]})
++            store._write({"type": "note", "kind": "seed_notes", "who": n["who"], "text": n["text"]})
++        for q in seed.queries:
++            store.searches.append({"query": q, "agent": "earlier run", "n": 0, "t": 0.0})
++    logger.info(f"deep: seeded from {seed.runs} earlier run(s): {len(seed.sources)} sources "
++                f"({sum(1 for s in seed.sources.values() if s['page_text'])} read), {len(seed.subagents)} subagent reports, "
++                f"{len(seed.notes)} notes")
++
++
++def lead_addendum(seed: Seed) -> str:
++    """What the lead is told: what was done and found before the interruption."""
++    parts = ["\n\nCONTINUATION: this research was interrupted (the computer was off or the research service restarted) "
++             "and continues now. Everything found so far is kept, with the same source numbers [N]; pages already "
++             "read open instantly if you fetch them again. Do NOT redo the work below: continue with what is still "
++             "open, check what is uncertain, then answer. Earlier findings:"]
++    budget = SEED_TEXT_MAX
++    lead = [n for n in seed.notes if n["kind"] == "lead_answer"] or \
++           [n for n in seed.notes if n["kind"] in ("compaction", "seed_notes") and str(n["who"]).startswith("lead")]
++    for n in lead[-1:]:
++        t = n["text"][: budget // 3]
++        parts.append(f"\n[Your notes / answer from before the interruption]\n{t}")
++        budget -= len(t)
++    if seed.subagents:
++        per = max(1500, budget // max(1, len(seed.subagents)) - 200)
++        for sa in seed.subagents:
++            t = sa["text"][:per]
++            parts.append(f"\n[Subtopic researched: {sa['topic'][:200]}]\n{t}")
++            budget -= len(t)
++            if budget <= 0:
++                parts.append("\n[... more subtopic reports are in the evidence store and go into the report]")
++                break
++    read = [s for s in seed.sources.values() if s["page_text"] or s["fetches"]]
++    if read:
++        parts.append("\nSources already read: " + "; ".join(f"[{s['idx']}] {s['title'][:70]}" for s in
++                                                         sorted(read, key=lambda s: s["idx"])[:150]))
++    if seed.queries:
++        parts.append("\nSearches already run: " + "; ".join(seed.queries[:120]))
++    return "\n".join(parts)
+--- /dev/null
++++ b/local_deep_research/deep/setup.py
+@@ -0,0 +1,118 @@
++"""The user's setup profile and the setup check (phase 4 item 1, stage 2; the user, 2026-10-21).
++
++With LDR_DEEP_SETUP_PROFILE=<user-setup.md> the lead agent's system prompt and the report writer's outline, section and
++opening prompts carry the facts of the user's own computer (as stage 1's "with" replays did: tools/level-replay.py
++setup_block / add_setup_to_report_prompts), and after the citation check a setup check reads the report against those
++facts. It is the safety net for the lead agent, which still ignores the profile sometimes (o02 E1): each statement
++that contradicts the facts gets the fix right after it, marked as the setup check's, and a short "Setup check" section
++lists them. Nothing is deleted or rewritten. Without the variable nothing here runs.
++"""
++from __future__ import annotations
++
++import json
++import os
++import re
++from pathlib import Path
++
++SETUP_INTRO = ("The user's own computer and setup, as the user gave them (facts, not search results). Where the task "
++               "concerns the user's machine, judge what fits, runs or helps on it from these facts. Do not contradict "
++               "them, do not restate them differently, and do not assume another model or size of a component.")
++REPORT_NOTE = ("Statements about the user's own machine must agree with <user_setup>; where the evidence was gathered "
++               "for another machine (another card, slot or memory size), say so instead of carrying it over.")
++
++SETUPCHECK_PROMPT = """You are the claim-verification step of a research system. Below are the facts of the user's \
++own computer, as the user gave them, and a research report written for this user. Find every statement in the report \
++about the user's own machine or setup: its components and which model or size each is, memory sizes, slots and PCIe \
++links, bandwidths, and what fits, runs or helps on it (including limits and budgets the report derives from them). \
++Judge each one against the facts:
++- "contradicts": it conflicts with the facts, or with what follows directly from them (for example, a card in a slot \
++that runs at x4 gets x4 at most, whatever the card supports). Give the corrected statement.
++- "consistent": the facts support it.
++- "unsupported": the facts neither confirm nor contradict it. That is not an error.
++General statements about other machines are not about the user's setup; leave them out.{only}
++
++<user_setup>
++{setup}
++</user_setup>
++
++<report>
++{report}
++</report>
++
++Reply with JSON only: {{"claims": [{{"quote": "<the statement, copied exactly from the report>", "verdict": \
++"contradicts|consistent|unsupported", "why": "<one sentence>", "fix": "<the corrected statement, or empty>"}}]}}"""
++FLAGGED_ONLY = (" List ONLY the statements whose verdict is \"contradicts\" or \"unsupported\"; leave every consistent "
++                "one out, so the list stays short.")
++
++
++def profile_path() -> str | None:
++    p = os.environ.get("LDR_DEEP_SETUP_PROFILE", "").strip()
++    return p if p and Path(p).is_file() else None
++
++
++def setup_facts(path: str) -> str:
++    """The facts of user-setup.md: from its first bullet on (the header and intro are for people)."""
++    lines = Path(path).read_text(encoding="utf-8").splitlines()
++    return "\n".join(lines[next(i for i, ln in enumerate(lines) if ln.startswith("- ")):]).strip()
++
++
++def setup_block(path: str) -> str:
++    return "<user_setup>\n" + SETUP_INTRO + "\n" + setup_facts(path) + "\n</user_setup>"
++
++
++def with_setup(prompt: str, path: str) -> str:
++    """A report prompt (a str.format template) with the setup block and note right after </task>."""
++    block = setup_block(path).replace("{", "{{").replace("}", "}}")
++    assert "</task>" in prompt
++    return prompt.replace("</task>", "</task>\n\n" + block + "\n" + REPORT_NOTE, 1)
++
++
++def _claims(text: str) -> list | None:
++    m = re.search(r"(?s)\{.*\}", text or "")
++    try:
++        return json.loads(m.group(0))["claims"] if m else None
++    except (ValueError, KeyError, TypeError):
++        return None
++
++
++def check(llm, body: str, path: str) -> dict:
++    """llm(prompt) -> (text, finish). The full list first; on finish=length or no JSON the flagged-only list."""
++    facts = setup_facts(path)
++    text, finish = llm(SETUPCHECK_PROMPT.format(only="", setup=facts, report=body))
++    claims, mode = _claims(text), "full"
++    if finish == "length" or claims is None:
++        text, finish = llm(SETUPCHECK_PROMPT.format(only=FLAGGED_ONLY, setup=facts, report=body))
++        claims, mode = _claims(text), "flagged-only"
++    return {"mode": mode, "finish": finish, "claims": claims, "raw": None if claims is not None else (text or "")[:4000]}
++
++
++def annotate(body: str, result: dict) -> tuple[str, str]:
++    """(body with each contradicted statement followed by the fix, the "Setup check" section). Statements whose quote
++    is not found word for word are listed in the section only."""
++    bad = [c for c in (result.get("claims") or []) if c.get("verdict") == "contradicts" and (c.get("quote") or "").strip()]
++    if result.get("claims") is None:
++        return body, "## Setup check\n\nThe setup check did not complete; statements about your computer were not checked."
++    if not bad:
++        return body, ""
++    lines = ["## Setup check", "",
++             f"{len(bad)} statement{'s' if len(bad) != 1 else ''} about your computer disagree{'s' if len(bad) == 1 else ''} "
++             "with your setup profile (the fix is also shown right after each one above):", ""]
++    for c in bad:
++        q = c["quote"].strip()
++        fix = (c.get("fix") or c.get("why") or "").strip()
++        mark = f" **[Setup check: {fix}]**" if fix else " **[Setup check: this disagrees with your setup profile]**"
++        at = body.find(q)
++        if at >= 0:
++            # after the end of the sentence that holds the quote (a quote may stop mid-sentence), before its citations
++            m = re.compile(r"[.!?](?=\s|$)|\n").search(body, at + len(q))
++            end = m.start() if m else len(body)
++            while end > at + len(q) and body[end - 1] == "]" and "[" in body[at + len(q):end]:
++                end = body.rfind("[", at + len(q), end)
++                while end > at + len(q) and body[end - 1] == " ":
++                    end -= 1
++            body = body[:end] + mark + body[end:]
++            where = ""
++        else:
++            where = " (not found word for word in the report)"
++        lines.append(f"- \"{q[:300]}\"{where} -> {fix}")
++    return body, "\n".join(lines)
+--- /dev/null
++++ b/local_deep_research/deep/tokens.py
+@@ -0,0 +1,115 @@
++"""Token counting with the served model's own BPE vocabulary (exact for text; the chat template adds a few tokens
++per message, which MSG_OVERHEAD covers). Falls back to a conservative chars/3 estimate without the vocabulary."""
++
++from __future__ import annotations
++
++import json
++import threading
++from pathlib import Path
++from typing import Any, Iterable
++
++from loguru import logger
++
++from . import config
++
++MSG_OVERHEAD = 8          # <|im_start|>role\n ... <|im_end|>\n and tool-call wrapping, per message
++_tok = None
++_tok_lock = threading.Lock()
++_tok_failed = False
++
++
++def _load():
++    global _tok, _tok_failed
++    if _tok is not None or _tok_failed:
++        return _tok
++    with _tok_lock:
++        if _tok is not None or _tok_failed:
++            return _tok
++        d = config().tokenizer_dir
++        try:
++            if not d:
++                raise FileNotFoundError("LDR_DEEP_TOKENIZER_DIR not set")
++            from tokenizers import Regex, Tokenizer, decoders, models, pre_tokenizers
++
++            vocab = json.loads(Path(d, "vocab.json").read_text(encoding="utf-8"))
++            merges = []
++            with open(Path(d, "merges.txt"), encoding="utf-8") as f:
++                for line in f:
++                    line = line.rstrip("\n")
++                    if line and not line.startswith("#version"):
++                        a, _, b = line.partition(" ")
++                        merges.append((a, b))
++            pattern = json.loads(Path(d, "tokenizer.json").read_text(encoding="utf-8"))["pre_pattern"]
++            tok = Tokenizer(models.BPE(vocab=vocab, merges=merges))
++            tok.pre_tokenizer = pre_tokenizers.Sequence(
++                [pre_tokenizers.Split(Regex(pattern), behavior="isolated"),
++                 pre_tokenizers.ByteLevel(add_prefix_space=False, use_regex=False)])
++            tok.decoder = decoders.ByteLevel()
++            _tok = tok
++            logger.info(f"deep: token counter uses the model vocabulary in {d} ({len(vocab)} tokens)")
++        except Exception as exc:  # noqa: BLE001 — counting must never break research
++            _tok_failed = True
++            logger.warning(f"deep: exact token counter unavailable ({exc}); using chars/3")
++    return _tok
++
++
++def count_text(text: str) -> int:
++    if not text:
++        return 0
++    tok = _load()
++    if tok is None:
++        return len(text) // 3 + 1
++    return len(tok.encode(text, add_special_tokens=False).ids)
++
++
++def _content_text(content: Any) -> str:
++    if isinstance(content, str):
++        return content
++    if isinstance(content, list):
++        out = []
++        for p in content:
++            if isinstance(p, dict):
++                out.append(str(p.get("text", "")))
++            else:
++                out.append(str(p))
++        return "".join(out)
++    return str(content or "")
++
++
++def count_message(msg: Any) -> int:
++    n = MSG_OVERHEAD + count_text(_content_text(getattr(msg, "content", msg)))
++    for tc in getattr(msg, "tool_calls", None) or []:
++        n += count_text(json.dumps({"name": tc.get("name"), "arguments": tc.get("args")}, ensure_ascii=False)) + 6
++    return n
++
++
++def count_messages(msgs: Iterable[Any]) -> int:
++    return sum(count_message(m) for m in msgs)
++
++
++def count_tools(tools: Iterable[Any]) -> int:
++    n = 0
++    for t in tools or []:
++        try:
++            if isinstance(t, dict):
++                n += count_text(json.dumps(t, ensure_ascii=False))
++            else:
++                schema = getattr(t, "args_schema", None)
++                js = schema.model_json_schema() if hasattr(schema, "model_json_schema") else (getattr(t, "args", {}) or {})
++                n += count_text(f"{getattr(t, 'name', '')} {getattr(t, 'description', '')} {json.dumps(js)}") + 20
++        except Exception:  # noqa: BLE001
++            n += 400
++    return n + 150            # the template's tool-use instructions
++
++
++def truncate_to_tokens(text: str, max_tokens: int) -> str:
++    """Cut text to at most max_tokens (keeps the start)."""
++    if max_tokens <= 0:
++        return ""
++    if count_text(text) <= max_tokens:
++        return text
++    tok = _load()
++    if tok is None:
++        return text[: max_tokens * 3]
++    enc = tok.encode(text, add_special_tokens=False)
++    return tok.decode(enc.ids[:max_tokens])
+--- /dev/null
++++ b/local_deep_research/deep/tried.py
+@@ -0,0 +1,225 @@
++"""The "tried / ruled out" list from the user's own files (phase 4 item 4; the round brief, the user 2026-10-23).
++
++With LDR_DEEP_TRIED=1 and files on the job, a list of what the user's project has already tried, adopted, rejected or
++ruled out (and what it planned but did not try) is extracted from those files ONCE per file set - one call per part of
++the files, then one merge call - and cached by the files' contents (run/tried/<key>.json and .md, saved for the user
++to check; a copy goes into the research's folder as tried-list.md). The lead agent's system prompt and the report
++writer's outline, section and opening prompts then carry it, so known dead ends are not searched again and the report
++separates what is new from what was already tried. Without the variable, or without files, nothing here runs.
++
++tools/tried-list.py builds the list before a measured run (through strata-proxy), so its calls stay out of the run.
++"""
++from __future__ import annotations
++
++import hashlib
++import json
++import os
++import re
++import time
++from pathlib import Path
++from typing import Callable
++
++from loguru import logger
++
++CACHE = Path(os.environ.get("LDR_DEEP_TRIED_DIR") or "/home/USER/ai/deep-research/run/tried")
++PART_CHARS = 60_000            # ~22K tokens a part (dense notes): room to think and list within the 131K context
++MAP_MAX = 30                   # entries a part may list (10-23: uncapped, part 1 of o01's notes ran past 16K tokens)
++MERGE_CHARS = 100_000          # the most entry text one merge call reads (~25K tokens); more is merged in batches
++FINAL_MAX = 200                # entries the final merge keeps
++BLOCK_CHARS = 36_000           # the most the prompts carry (~9K tokens); the full list stays in the .md
++STATUS = ("tried_rejected", "ruled_out_without_trying", "tried_inconclusive", "adopted", "planned_not_tried")
++LABEL = {"adopted": "adopted (in use)", "tried_rejected": "tried, rejected", "tried_inconclusive": "tried, inconclusive",
++         "ruled_out_without_trying": "ruled out without trying", "planned_not_tried": "planned, not tried"}
++
++MARK = "You are the claim-verification step of a research system."   # strata-proxy's one-shot class (deep/prompts.py)
++
++MAP_PROMPT = MARK + """ Below is part {i} of {n} of the user's own project files ({names}). List every technique, \
++method, setting, tool, library, model or idea that this text shows the project has already tried, measured, adopted, \
++rejected or ruled out - and anything it lists as planned or proposed but not tried. One entry per idea (merge repeats \
++within this part; fold small settings of one idea into that idea's entry), at most {max} entries - the most important \
++first. Only what the text states; leave out general background, people and dates on their own. Keep it short.
++For each entry:
++- name: short and specific (at most 8 words), as a web search would name it (e.g. "speculative decoding with an MTP drafter")
++- status: adopted | tried_rejected | tried_inconclusive | ruled_out_without_trying | planned_not_tried
++- result: at most 25 words - the measured result or the reason, as the text gives it (numbers if it has them)
++- where: the section, round or date in the text
++
++<part>
++{text}
++</part>
++
++Reply with JSON only: {{"entries": [{{"name": "...", "status": "...", "result": "...", "where": "..."}}]}}"""
++
++MERGE_PROMPT = MARK + """ Below are entries extracted part by part from the user's own project files: what the \
++project has already tried, adopted, rejected or ruled out, and what it planned. Merge them into one list: one entry per \
++idea (entries that name the same idea become one; the later status wins - later rounds and dates over earlier ones - \
++and the most informative result is kept). Drop entries that are not a technique, method, setting, tool, library, model \
++or idea. At most {max} entries, the most important first. Keep names short (at most 8 words) and each result to at \
++most 25 words.
++
++<entries>
++{entries}
++</entries>
++
++Reply with JSON only: {{"entries": [{{"name": "...", "status": "...", "result": "...", "where": "..."}}]}}"""
++
++LEAD_INTRO = ("What the user's own files show their project has ALREADY done (extracted from those files; the user can "
++              "check this list). Plan with it: do not spend searches re-establishing what is listed here; look for "
++              "what is new relative to it - newer versions, implementations, results, or ideas not on the list. When a "
++              "finding matches an entry, say that the project already tried, adopted or ruled it out, and what, if "
++              "anything, is new about it.")
++REPORT_NOTE = ("Separate what is new from what <tried_list> shows the user's project has already tried, adopted or "
++               "ruled out: mark such items as already tried, with the project's own result, and lead with what is new.")
++
++
++def enabled() -> bool:
++    return os.environ.get("LDR_DEEP_TRIED", "").strip().lower() in ("1", "true", "yes", "on")
++
++
++def key(files: list[str]) -> str:
++    h = hashlib.sha256()
++    for f in sorted(files):
++        h.update(Path(f).name.encode() + b"\0" + hashlib.sha256(Path(f).read_bytes()).digest())
++    return h.hexdigest()[:16]
++
++
++def _entries(text: str) -> list[dict] | None:
++    m = re.search(r"(?s)\{.*\}", text or "")
++    if not m:
++        return None
++    for t in (m.group(0), re.sub(r",\s*([}\]])", r"\1", m.group(0))):
++        try:
++            e = json.loads(t).get("entries")
++            return [x for x in e if isinstance(x, dict) and (x.get("name") or "").strip()] if isinstance(e, list) else None
++        except (ValueError, AttributeError):
++            continue
++    return None
++
++
++def _norm(name: str) -> str:
++    return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
++
++
++def _dedupe(entries: list[dict]) -> list[dict]:
++    """The fallback merge: one entry per normalised name, the later one (files are read in order) winning."""
++    by: dict[str, dict] = {}
++    for e in entries:
++        by[_norm(e["name"])] = e
++    return list(by.values())
++
++
++def _lines(entries: list[dict]) -> list[str]:
++    return [json.dumps({k: e.get(k, "") for k in ("name", "status", "result", "where")}, ensure_ascii=False)
++            for e in entries]
++
++
++def _merge(llm, entries: list[dict], final_max: int) -> tuple[list[dict], str]:
++    """One merge call when the entries fit MERGE_CHARS, else batches merged first and those results merged again."""
++    lines = _lines(entries)
++    if sum(len(x) + 1 for x in lines) <= MERGE_CHARS:
++        out, finish = llm(MERGE_PROMPT.format(entries="\n".join(lines), max=final_max), 32768, "medium")
++        got = _entries(out)
++        if got is None or finish == "length":
++            return _dedupe(entries)[:final_max * 2], "dedupe (a merge call gave no complete list)"
++        return got, "merge"
++    batches, cur, n = [], [], 0
++    for e, x in zip(entries, lines):
++        if cur and n + len(x) > MERGE_CHARS:
++            batches.append(cur); cur, n = [], 0
++        cur.append(e); n += len(x) + 1
++    batches.append(cur)
++    merged, modes = [], []
++    for b in batches:
++        got, mode = _merge(llm, b, final_max)
++        merged += got; modes.append(mode)
++    if len(batches) == 1:          # one batch that still did not fit (very long lines): stop splitting
++        return _dedupe(merged)[:final_max * 2], "dedupe (entries too long to merge)"
++    final, mode = _merge(llm, _dedupe(merged), final_max)
++    return final, f"merge in {len(batches)} batches, then " + mode
++
++
++def build(llm: Callable[[str, int, str], tuple[str, str | None]], files: list[str]) -> dict:
++    """llm(prompt, max_tokens, effort) -> (text, finish). One low-effort call per part of the files (at most MAP_MAX
++    entries each), a dedupe by name, then medium-effort merge calls (batched above MERGE_CHARS)."""
++    from .files import file_text, pieces
++
++    t0 = time.time()
++    parts = [(Path(f).name, p) for f in files for p in pieces(file_text(f), PART_CHARS)]
++    names = ", ".join(Path(f).name for f in files)
++    raw: list[dict] = []
++    failed = 0
++    for i, (fname, text) in enumerate(parts, 1):
++        out, finish = llm(MAP_PROMPT.format(i=i, n=len(parts), names=names, text=text, max=MAP_MAX), 32768, "low")
++        got = _entries(out)
++        if got is None:
++            failed += 1
++            logger.warning(f"deep tried: part {i}/{len(parts)} ({fname}) gave no list (finish {finish})")
++            continue
++        raw += [{**e, "file": fname} for e in got]
++    merged, mode = None, "none"
++    if raw:
++        merged, mode = _merge(llm, _dedupe(raw), FINAL_MAX)
++    entries = [e for e in (merged or []) if e.get("status") in STATUS] + \
++              [{**e, "status": "tried_inconclusive"} for e in (merged or []) if e.get("status") not in STATUS]
++    return {"files": [str(f) for f in files], "parts": len(parts), "parts_failed": failed, "raw_entries": len(raw),
++            "mode": mode, "entries": entries, "seconds": round(time.time() - t0, 1),
++            "built": time.strftime("%Y-%m-%d %H:%M")}
++
++
++def markdown(res: dict) -> str:
++    lines = [f"# Tried / ruled out - from your files ({res['built']})", "",
++             "Extracted from: " + ", ".join(Path(f).name for f in res["files"]) +
++             f". {len(res['entries'])} entries from {res['parts']} parts. Check it: the research used this list to "
++             "separate new ideas from ones your project already tried.", ""]
++    for st in STATUS:
++        group = [e for e in res["entries"] if e.get("status") == st]
++        if group:
++            lines += [f"## {LABEL[st].capitalize()} ({len(group)})", ""]
++            lines += [f"- **{e['name'].strip()}** - {(e.get('result') or '').strip()}"
++                      + (f" ({e['where'].strip()})" if (e.get("where") or "").strip() else "") for e in group]
++            lines.append("")
++    return "\n".join(lines).rstrip() + "\n"
++
++
++def get(files: list[str], llm: Callable[[str, int, str], tuple[str, str | None]] | None) -> dict | None:
++    """The cached list for this file set, or a new one when llm is given (else None)."""
++    k = key(files)
++    p = CACHE / f"{k}.json"
++    if p.exists():
++        return json.loads(p.read_text(encoding="utf-8"))
++    if llm is None:
++        return None
++    res = build(llm, files)
++    if not res["entries"]:
++        logger.warning("deep tried: no entries extracted; nothing cached")
++        return res
++    CACHE.mkdir(parents=True, exist_ok=True)
++    p.write_text(json.dumps(res, indent=1, ensure_ascii=False), encoding="utf-8")
++    (CACHE / f"{k}.md").write_text(markdown(res), encoding="utf-8")
++    logger.info(f"deep tried: {len(res['entries'])} entries from {res['parts']} parts in {res['seconds']} s -> {p}")
++    return res
++
++
++def block(res: dict) -> str:
++    """<tried_list> for the prompts. Tried-and-rejected, ruled-out and inconclusive entries with their results (the
++    reasons matter); adopted and planned ones as compact name lists (that they exist matters). Results are shortened
++    until the whole block fits BLOCK_CHARS. (10-23: the first form cut at 24K in status order and dropped most adopted
++    and all planned entries of o01's list - the ones that say what is not new.)"""
++    names = {st: [e["name"].strip() for e in res["entries"] if e.get("status") == st] for st in STATUS}
++    lists = "".join(f"{LABEL[st].capitalize()}: " + "; ".join(names[st]) + "\n"
++                    for st in ("adopted", "planned_not_tried") if names[st])
++    for width in (160, 100, 60, 0):
++        rows = [f"- {e['name'].strip()} [{LABEL[st]}]" + (f": {(e.get('result') or '').strip()[:width]}" if width else "")
++                for st in ("tried_rejected", "ruled_out_without_trying", "tried_inconclusive")
++                for e in res["entries"] if e.get("status") == st]
++        text = "<tried_list>\n" + LEAD_INTRO + "\n" + "\n".join(rows) + "\n" + lists + "</tried_list>"
++        if len(text) <= BLOCK_CHARS:
++            return text
++    return text[:BLOCK_CHARS - 60] + "\n... (the rest in the user's tried-list file)\n</tried_list>"
++
++
++def with_tried(prompt: str, blk: str) -> str:
++    """A report prompt (a str.format template) with the list and note right after </task>."""
++    assert "</task>" in prompt
++    b = blk.replace("{", "{{").replace("}", "}}")
++    return prompt.replace("</task>", "</task>\n\n" + b + "\n" + REPORT_NOTE, 1)

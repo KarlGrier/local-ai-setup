@@ -1,0 +1,17 @@
+{
+  "note": "Dated Phase 5 results note, not a rule change (RULES-p5.md is unchanged). 2026-11-07, Karl: \"o04 and o06: count them as they are, flagged beside the grades like search trips: 'context overflow: cut-off answer' (o04) and 'context overflow: snippet fallback' (o06). Write it into the Phase 5 results as a dated note, not a rule change. Count overflows per arm in the Phase 5 summary.\" Each entry's kind was checked by hand from the run's capture and LDR log. Read by staging/phase5/overflow.py (p5.py REPORT.md and p5-results.json; relief_counts.py's flag column). A run that overflows and is not listed here is flagged 'context overflow (kind not yet checked)' until it is added.",
+  "flags": {
+    "holdout-baseline-p5/o04": {
+      "date": "2026-11-07",
+      "by": "Karl 11-07",
+      "flag": "context overflow: cut-off answer",
+      "detail": "The agent's final answer stopped at the 131072-token window (prompt 125,482 + 5,582 tokens, finish length, 11.2 KB, ends mid-sentence). The citation synthesis was refused 400 (315,329 tokens), and LDR logged 'Citation handler failed, using raw agent answer', so the graded text is the cut-off answer."
+    },
+    "holdout-baseline-p5/o06": {
+      "date": "2026-11-07",
+      "by": "Karl 11-07",
+      "flag": "context overflow: snippet fallback",
+      "detail": "The LangGraph agent's next turn was refused 400 (131,155 tokens), so its 20 turns of fetched pages never reached an answer. A fallback synthesized from about 5.5 KB of search snippets (prompt 1,573 tokens, 8.5 KB answer). The citation synthesis was then refused 400 (218,650 tokens): 'using raw agent answer' = the snippet-only text."
+    }
+  }
+}

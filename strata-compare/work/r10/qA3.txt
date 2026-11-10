@@ -1,0 +1,48 @@
+work/r10/tagcheck.sh "Phase A part 3"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v36a5 engine-v36a5
+.venv/bin/python work/r10/buildrec.py A5v36 configs/A5-d07.json "A.5 on v0.1.36 (v36-a5 = v36-a3 + #407 --adapt-decay / --adapt-tuned; conflict with #477's heat sum resolved: both kept, decay = o.adapt_decay)"
+work/r10/exact7.sh a5off36 configs/A5-off.json
+rm -f tmp/r10/prof-learned.bin
+work/r10/with_server.sh A4L configs/A4-learn.json -- "work/r10/a4learn.sh"
+grep -E 'expert profile (saved|was not)' logs/engine-A4-learn.log | tail -3; ls -la tmp/r10/prof-learned.bin
+mkdir -p work/r10/profiles && cp tmp/r10/prof-learned.bin tmp/r10/route/prof-AB.bin work/r10/profiles/ && chmod a-w work/r10/profiles/*.bin && sha256sum work/r10/profiles/*.bin strata-v0115/data/expert-profile.bin | tee work/r10/profiles/SHA256
+N0=$(grep -oP 'expert cache \K[0-9]+(?= slots)' logs/engine-A4-learn.log | tail -1); echo "n0 $N0"; .venv/bin/python work/r10/profile_compare.py shipped=strata-v0115/data/expert-profile.bin make_profile=work/r10/profiles/prof-AB.bin learned=work/r10/profiles/prof-learned.bin --n0=$N0 --n1=3300 | tee results/r10/a4-profiles.md
+N0=$(grep -oP 'expert cache \K[0-9]+(?= slots)' logs/engine-A4-learn.log | tail -1); for p in strata-v0115/data/expert-profile.bin work/r10/profiles/prof-AB.bin work/r10/profiles/prof-learned.bin; do nice -n 19 .venv/bin/python work/r10/replay10.py $p tmp/r10/route/R4t-A.r6 tmp/r10/route/R4t-B.r6 --n0 $N0 --helper-mode 1 | grep -v distinct; done | tee results/r10/a4-replay-learned.txt
+work/r10/ldrscreen.sh PS-a configs/A4-ship.json
+work/r10/ldrscreen.sh PM-a configs/A4-mp.json
+work/r10/ldrscreen.sh PL-a configs/A4-learned.json
+work/r10/ldrscreen.sh PL-b configs/A4-learned.json
+work/r10/ldrscreen.sh PM-b configs/A4-mp.json
+work/r10/ldrscreen.sh PS-b configs/A4-ship.json
+.venv/bin/python work/r10/ldr_table.py shipped=PS-a,PS-b make_profile=PM-a,PM-b learned=PL-a,PL-b | tee results/r10/ab-A4-ldr.md
+work/r10/decscreen.sh PSd-a configs/A4-ship.json
+work/r10/decscreen.sh PMd-a configs/A4-mp.json
+work/r10/decscreen.sh PLd-a configs/A4-learned.json
+work/r10/decscreen.sh PLd-b configs/A4-learned.json
+work/r10/decscreen.sh PMd-b configs/A4-mp.json
+work/r10/decscreen.sh PSd-b configs/A4-ship.json
+.venv/bin/python work/r10/ab_table.py shipped=PSd-a,PSd-b make_profile=PMd-a,PMd-b learned=PLd-a,PLd-b | tee results/r10/ab-A4-decode.md
+work/r10/tagcheck.sh "A.4 done"
+work/r10/basecheck.sh
+work/r10/startcheck.sh A5tuned configs/A5-tuned.json
+grep -- '--adapt-tuned' logs/engine-A5-tuned.log | tail -1
+work/r10/ldrscreen.sh D07-a configs/A5-d07.json
+work/r10/ldrscreen.sh D08-a configs/A5-d08.json
+work/r10/ldrscreen.sh D09-a configs/A5-d09.json
+work/r10/ldrscreen.sh D09-b configs/A5-d09.json
+work/r10/ldrscreen.sh D08-b configs/A5-d08.json
+work/r10/ldrscreen.sh D07-b configs/A5-d07.json
+.venv/bin/python work/r10/ldr_table.py decay0.7=D07-a,D07-b decay0.8=D08-a,D08-b decay0.9=D09-a,D09-b | tee results/r10/ab-A5-ldr.md
+work/r10/decscreen.sh D07d-a configs/A5-d07.json
+work/r10/decscreen.sh D08d-a configs/A5-d08.json
+work/r10/decscreen.sh D09d-a configs/A5-d09.json
+work/r10/decscreen.sh D09d-b configs/A5-d09.json
+work/r10/decscreen.sh D08d-b configs/A5-d08.json
+work/r10/decscreen.sh D07d-b configs/A5-d07.json
+.venv/bin/python work/r10/ab_table.py decay0.7=D07d-a,D07d-b decay0.8=D08d-a,D08d-b decay0.9=D09d-a,D09d-b | tee results/r10/ab-A5-decode.md
+work/r10/tagcheck.sh "Phase A part 3 done"
+work/r10/basecheck.sh
+work/r10/phase_end.sh pA3 keep
+work/r10/hold.sh phaseC

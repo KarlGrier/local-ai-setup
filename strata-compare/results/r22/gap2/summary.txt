@@ -1,0 +1,98 @@
+=== 2026-10-19 21:09:30 waiting for the gap to open (port_gap.sh begin, after h08)
+2026-10-19 21:06:57 port_gap: hold set; waiting for the running research run to finish
+run-strata: stopping pid 608171 (engine 608181)
+run-strata: stopped
+run-strata: SearXNG stopped
+2026-10-19 21:15:11 port_gap: gap open: test lock held (pid 664487), 8080 stopped
+=== 2026-10-19 21:15:15 1 pristine v0.2.0-beta ctest
+pristine ctest: 95% tests passed, 8 tests failed out of 147
+failed in both: 	118 - ggml_tq_overlay (Failed) 	138 - native_hadamard_test (Failed) 	139 - tq_cpu_parity (Failed) 	140 - tq_cpu_parity_avx2 (Failed) 	141 - expert_parity (Failed) 	142 - pool_test (Failed) 	145 - isa_guard_check (Failed) 	 81 - ple_parity (Failed) 
+only in the port: 
+only in pristine: 
+=== 2026-10-19 21:20:33 2 variants: decode screen A B B A
+arm p0-a done: 2026-10-19T21:22:50 srv-r22-g2-D-p0-a exit=0 136s min_MemAvailable=34.5GiB@100s min_5080_free=487MiB@68s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285Mi
+arm nf-a done: 2026-10-19T21:25:10 srv-r22-g2-D-nf-a exit=0 138s min_MemAvailable=34.5GiB@100s min_5080_free=485MiB@43s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285Mi
+arm nf-b done: 2026-10-19T21:27:31 srv-r22-g2-D-nf-b exit=0 138s min_MemAvailable=34.5GiB@102s min_5080_free=485MiB@44s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285Mi
+arm p0-b done: 2026-10-19T21:29:48 srv-r22-g2-D-p0-b exit=0 134s min_MemAvailable=34.5GiB@97s min_5080_free=487MiB@70s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285MiB
+arm p0-c done: 2026-10-19T21:32:06 srv-r22-g2-D-p0-c exit=0 135s min_MemAvailable=35.7GiB@98s min_5080_free=487MiB@71s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285MiB
+arm nq-a done: 2026-10-19T21:34:26 srv-r22-g2-D-nq-a exit=0 137s min_MemAvailable=35.7GiB@100s min_5080_free=487MiB@18s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285Mi
+arm nq-b done: 2026-10-19T21:36:44 srv-r22-g2-D-nq-b exit=0 136s min_MemAvailable=35.7GiB@98s min_5080_free=487MiB@73s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285MiB
+arm p0-d done: 2026-10-19T21:39:02 srv-r22-g2-D-p0-d exit=0 134s min_MemAvailable=35.7GiB@97s min_5080_free=487MiB@36s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285MiB
+results/r22/gap2/dec-nofork.md:
+| decode (tok/s) | 150.2 / 152.4 → **151.3** | 147.0 / 143.6 → **145.3** | -4.0 % |
+| ms per verify round | 20.00 / 19.48 → **19.74** | 20.26 / 20.04 → **20.15** | +2.1 % |
+| long reasoning math (tok/s) | 155.9 / 158.8 → **157.4** | 158.7 / 151.4 → **155.1** | -1.5 % |
+| long reasoning code (tok/s) | 151.5 / 157.3 → **154.4** | 152.2 / 143.0 → **147.6** | -4.4 % |
+| TTFT 32K (s) | 7.62 / 7.64 → **7.63** | 7.63 / 7.64 → **7.64** | +0.1 % |
+results/r22/gap2/dec-noqsa.md:
+| decode (tok/s) | 148.9 / 151.3 → **150.1** | 149.1 / 148.2 → **148.6** | -1.0 % |
+| ms per verify round | 19.44 / 19.74 → **19.59** | 19.57 / 19.08 → **19.32** | -1.4 % |
+| long reasoning math (tok/s) | 158.9 / 164.2 → **161.6** | 161.5 / 154.5 → **158.0** | -2.2 % |
+| long reasoning code (tok/s) | 152.4 / 154.7 → **153.5** | 151.8 / 148.2 → **150.0** | -2.3 % |
+| TTFT 32K (s) | 7.64 / 7.64 → **7.64** | 7.64 / 7.64 → **7.64** | +0.0 % |
+=== 2026-10-19 21:39:03 3 full screen A B B A (A = C*18t, B = port)
+arm c18t-a done: 2026-10-19T21:45:28 srv-r22-g2-F-c18t-a exit=0 383s min_MemAvailable=28.4GiB@349s min_5080_free=471MiB@34s max_tree_RSS=58.6GiB max_swap_used=0.01GiB min_4060Ti_free=1285
+arm r22p-a done: 2026-10-19T21:51:56 srv-r22-g2-F-r22p-a exit=0 386s min_MemAvailable=28.3GiB@354s min_5080_free=469MiB@282s max_tree_RSS=58.6GiB max_swap_used=0.01GiB min_4060Ti_free=128
+arm r22p-b done: 2026-10-19T21:58:23 srv-r22-g2-F-r22p-b exit=0 384s min_MemAvailable=28.3GiB@350s min_5080_free=469MiB@278s max_tree_RSS=58.7GiB max_swap_used=0.01GiB min_4060Ti_free=128
+arm c18t-b done: 2026-10-19T22:04:52 srv-r22-g2-F-c18t-b exit=0 386s min_MemAvailable=28.4GiB@346s min_5080_free=471MiB@43s max_tree_RSS=58.6GiB max_swap_used=0.01GiB min_4060Ti_free=1285
+| decode (tok/s) | 157.6 / 153.4 → **155.5** | 155.6 / 155.1 → **155.3** | -0.1 % |
+| ms per verify round | 17.93 / 18.28 → **18.11** | 19.35 / 19.30 → **19.32** | +6.7 % |
+| long reasoning math (tok/s) | 161.3 / 160.8 → **161.0** | 157.1 / 158.6 → **157.9** | -2.0 % |
+| long reasoning code (tok/s) | 162.8 / 150.9 → **156.9** | 162.1 / 157.4 → **159.7** | +1.8 % |
+| TTFT 32K (s) | 7.72 / 7.74 → **7.73** | 7.67 / 7.68 → **7.67** | -0.7 % |
+| TTFT 64K (s) | 15.39 / 15.41 → **15.40** | 15.28 / 15.29 → **15.28** | -0.7 % |
+| TTFT 120K (s) | 29.76 / 29.76 → **29.76** | 29.57 / 29.57 → **29.57** | -0.6 % |
+=== 2026-10-19 22:04:53 4 tuner (strata tune auto, thorough, coding, --no-save, no small differences)
+tuner rc 0 (floor watch rc 0: tuner: done, lowest MemAvailable 37090 MB)
+=== 2026-10-19 22:19:42 5 pictures
+--- 2026-10-19 22:19:42 pictures: 1 build the CPU picture reader
+4829c210f71d9e2ce2c74fce413784efa16b279434673e652389bdf333d4c9e9  engine-r22port/strata-vision
+--- 2026-10-19 22:19:53 pictures: 2 identity: text replies without and with the reader loaded (fixed-computation twin)
+server ready (guard pid 732096, server pid 732127) load_time_s 14.318449224 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_VI-off_20261019T221954.log
+11 replies -> results/r22/gap2/pictures/identity-off.json
+server ready (guard pid 733398, server pid 733418) load_time_s 15.350314736 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_VI-on_20261019T222111.log
+11 replies -> results/r22/gap2/pictures/identity-on.json
+SAME greedy-0   313 / 313 chars
+SAME greedy-1   701 / 701 chars
+SAME greedy-2   448 / 448 chars
+SAME greedy-3   63 / 63 chars
+DIFF greedy-4   1152 / 1158 chars
+SAME greedy-5   687 / 687 chars
+DIFF seeded-0   402 / 320 chars
+SAME seeded-1   640 / 640 chars
+DIFF seeded-4   1162 / 1157 chars
+SAME long-4k    403 / 403 chars
+SAME long-20k   337 / 337 chars
+identity: 8/11 replies identical with the picture reader loaded
+--- 2026-10-19 22:22:27 pictures: 3 screenshot as Jan sends it
+server ready (guard pid 734668, server pid 734688) load_time_s 14.326934426 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_VC_20261019T222228.log
+reader RSS before: [960] MiB
+{"n": 1, "first_answer_token_s": 4.5, "total_s": 7.8, "thinking_chars": 1183, "answer_chars": 1312, "usage": {"prompt_tokens": 322, "completion_tokens": 1055, "total_tokens": 1377, "prompt_tokens_details": {"cached_tokens": 0}}}
+{"n": 2, "first_answer_token_s": 1.2, "total_s": 3.6, "thinking_chars": 532, "answer_chars": 937, "usage": {"prompt_tokens": 322, "completion_tokens": 563, "total_tokens": 885, "prompt_tokens_details": {"cached_tokens": 317}}}
+reader RSS after: [1115] MiB
+# 2026-10-19T22:22:28-05:00 label=VC cfg=/home/USER/ai-speed-testing/strata-compare/configs/r22port-vision.json server=/home/USER/ai-speed-testing/strata-compare/strata-r22port/serve/server.py env=STR
+  "--vision"
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-r22port-vision.log",
+ "_comment": "round 22 pictures step: r22port.json (the daily settings) + the CPU picture reader as 0.2.0's setup writes it for --vision cpu (strata-vision built from tools/vision with STRATA_VISION_C
+ "vision": {
+  "exe": "/home/USER/ai-speed-testing/strata-compare/engine-r22port/strata-vision",
+  "mmproj": "/home/USER/ai-speed-testing/strata-compare/models/vision-r22/mmproj-Qwen3.8-Flash-Next-BF16.gguf",
+loading the vision encoder ...
+--- 2026-10-19 22:23:27 pictures: 4 decode A B B A, reader off vs on
+arm off-a: 2026-10-19T22:25:42 srv-r22-g2-V-off-a exit=0 134s min_MemAvailable=35.6GiB@102s min_5080_free=487MiB@56s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285MiB ok
+arm on-a: 2026-10-19T22:27:59 srv-r22-g2-V-on-a exit=0 134s min_MemAvailable=34.7GiB@102s min_5080_free=487MiB@36s max_tree_RSS=52.3GiB max_swap_used=0.01GiB min_4060Ti_free=1287MiB ok
+arm on-b: 2026-10-19T22:30:16 srv-r22-g2-V-on-b exit=0 134s min_MemAvailable=34.7GiB@97s min_5080_free=487MiB@37s max_tree_RSS=52.3GiB max_swap_used=0.01GiB min_4060Ti_free=1287MiB ok
+arm off-b: 2026-10-19T22:32:33 srv-r22-g2-V-off-b exit=0 134s min_MemAvailable=35.6GiB@103s min_5080_free=487MiB@70s max_tree_RSS=51.4GiB max_swap_used=0.01GiB min_4060Ti_free=1285MiB ok
+| decode (tok/s) | 154.7 / 154.9 → **154.8** | 153.9 / 148.5 → **151.2** | -2.3 % |
+| ms per verify round | 19.57 / 19.63 → **19.60** | 19.37 / 19.02 → **19.19** | -2.1 % |
+| long reasoning math (tok/s) | 154.4 / 155.5 → **154.9** | 162.2 / 161.7 → **161.9** | +4.5 % |
+| long reasoning code (tok/s) | 160.3 / 161.5 → **160.9** | 161.9 / 150.2 → **156.1** | -3.0 % |
+| TTFT 32K (s) | 7.64 / 7.64 → **7.64** | 7.65 / 7.65 → **7.65** | +0.1 % |
+--- 2026-10-19 22:32:35 pictures: 5 RAM: full screen, reader on, then off
+full screen reader on: 2026-10-19T22:39:02 srv-r22-g2-VF-on exit=0 386s min_MemAvailable=27.4GiB@345s min_5080_free=469MiB@279s max_tree_RSS=59.6GiB max_swap_used=0.01GiB min_4060Ti_free=1287MiB ok
+full screen reader off: 2026-10-19T22:45:30 srv-r22-g2-VF-off exit=0 385s min_MemAvailable=28.3GiB@345s min_5080_free=469MiB@279s max_tree_RSS=58.6GiB max_swap_used=0.01GiB min_4060Ti_free=1285MiB ok
+--- 2026-10-19 22:45:31 pictures: done
+=== 2026-10-19 22:45:31 gap 2 done - switching back
+strata: Loading the model for port gap end (usually under a minute).
+2026-10-19 22:45:46 port_gap: switched back to C*18t (e428a826c5fb), policy off, queue released
+=== 2026-10-19 22:45:46 end

@@ -1,0 +1,3 @@
+- 2026-09-30T15:17:47-05:00 stopped C*7 on 8080 for Phase 0 (STRATA_PORT=8080 ./run-strata.sh stop; idle since 14:53)
+- 2026-09-30T18:17:36-05:00 C*8 soak started on 8080 (the candidate serves 8080 during the soak)
+- 2026-09-30T20:22:15-05:00 Phase A: stopped C*8 on 8080 (promoted build); it returns at the end of Phase A or on 'pause'

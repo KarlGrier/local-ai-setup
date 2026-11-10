@@ -1,0 +1,8 @@
+[Unit]
+Description=Qwen4 day one: Hugging Face watch (Qwen, unsloth, ISTA-DASLab; read-only; Karl 11-06, extended 11-07 through 11-30)
+
+[Service]
+Type=oneshot
+Nice=19
+MemoryHigh=2G
+ExecStart=/home/USER/ai-speed-testing/strata-compare/.venv/bin/python -I -B /home/USER/ai-speed-testing/strata-compare/work/qwen4-kit/dayone.py watch --until 2026-11-30T23:59

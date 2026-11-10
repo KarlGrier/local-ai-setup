@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""blind-open.py - phase 3 blind grading of the open-ended questions (2026-10-18): the final reports of two or more
+setups for one question, relabelled A/B/(C) in a random order, with the setup cues taken out, so I can grade them
+against results/bench2/my-research/ before I know which is which.
+
+  blind-open.py ID RUNSDIR RUNSDIR [...]     e.g.  blind-open.py o01 screen-baseline screen-deep
+      -> results/bench2/blind/<ID>/A.md, B.md, ...; the key goes to results/bench2/blind/KEY-do-not-open-before-grading.json
+  blind-open.py --reveal ID                  print the key for ID (after the grades are written to blind/grades.jsonl)
+
+Taken out: the deep report's title line, "Key findings" label kept, "## Citation check" section, the inline citation-
+check marks (*[... supported ...]*), LDR's "## Research Metrics" section and "(source nr: N)" tags; "## Answer: X"
+becomes "## Answer" + X; source lists are rewritten to one format ("[n] title - URL") and cut to the cited entries. Not hideable: length and depth.
+"""
+import json
+import random
+import re
+import sys
+from pathlib import Path
+
+B = Path("/home/USER/ai/deep-research/results/bench2")
+OUT = B / "blind"
+KEY = OUT / "KEY-do-not-open-before-grading.json"
+
+
+def report_of(run: Path) -> str:
+    for p in (run / "deep" / "report.md", run / "report.md"):
+        if p.exists():
+            return p.read_text(encoding="utf-8", errors="replace")
+    raise SystemExit(f"no report in {run}")
+
+
+def drop_section(t: str, title: str) -> str:
+    return re.sub(rf"(?ms)^## {re.escape(title)}\s*\n.*?(?=^## |\Z)", "", t)
+
+
+def sources(t: str) -> str:
+    m = re.search(r"(?ms)^## Sources\s*\n(.*?)(?=^## |\Z)", t)
+    if not m:
+        return t
+    body, items = m.group(1), []
+    for n, title, url in re.findall(r"(?m)^\[(\d+)\]\s*(.*?)\s*(?:\(source nr: \d+\))?\s*\n\s*URL:\s*(\S+)", body):
+        items.append(f"[{n}] {title} - {url}")
+    if not items:                                    # another list format: keep "[n] ... URL" lines as they are
+        items = [re.sub(r"\s*\(source nr: \d+\)", "", l).strip().replace(" — http", " - http")
+                 for l in body.splitlines() if l.strip()]
+    return t[:m.start()] + "## Sources\n\n" + "\n".join(items) + "\n" + t[m.end():]
+
+
+def cited_sources_only(t: str) -> str:
+    """Keep only the source entries the text cites (LDR lists every source it saw - thousands - which gave the setup
+    away by itself; 2026-10-19)."""
+    m = re.search(r"(?ms)^## Sources\s*\n(.*?)(?=^## |\Z)", t)
+    if not m:
+        return t
+    body = t[:m.start()] + t[m.end():]
+    cited = {int(n) for n in re.findall(r"\[\[?(\d{1,4})\]", body)}
+    keep = [l for l in m.group(1).splitlines()
+            if l.strip() and (not re.match(r"\s*\[(\d+)\]", l) or int(re.match(r"\s*\[(\d+)\]", l).group(1)) in cited)]
+    return t[:m.start()] + "## Sources\n\n" + "\n".join(keep) + "\n" + t[m.end():]
+
+
+def clean(t: str) -> str:
+    t = re.sub(r"\A# [^\n]*\n+", "", t)                                  # deep's title line
+    t = re.sub(r"(?m)^## Answer:\s*(.+)$", r"## Answer\n\n\1", t)       # LDR's "## Answer: X"
+    for s in ("Citation check", "Research Metrics"):
+        t = drop_section(t, s)
+    t = re.sub(r"\s*\*\[[^\]]*?(supported|unverified|not checked|contradicted)[^\]]*\]\*", "", t)
+    t = sources(t)
+    t = cited_sources_only(t)
+    return re.sub(r"\n{3,}", "\n\n", t).strip() + "\n"
+
+
+def main() -> None:
+    a = sys.argv[1:]
+    keys = json.loads(KEY.read_text()) if KEY.exists() else {}
+    if a[:1] == ["--reveal"]:
+        grades = OUT / "grades.jsonl"
+        done = {json.loads(l)["id"] for l in grades.open()} if grades.exists() else set()
+        if a[1] not in done:
+            raise SystemExit(f"no grade for {a[1]} in {grades} yet - grade first")
+        print(json.dumps(keys[a[1]], indent=1))
+        return
+    qid, runs = a[0], a[1:]
+    order = runs[:]
+    random.SystemRandom().shuffle(order)
+    d = OUT / qid
+    d.mkdir(parents=True, exist_ok=True)
+    labels = "ABCD"[:len(order)]
+    for lab, r in zip(labels, order):
+        (d / f"{lab}.md").write_text(clean(report_of(B / "runs" / r / qid)))
+    keys[qid] = dict(zip(labels, order))
+    KEY.write_text(json.dumps(keys, indent=1))
+    print(f"{qid}: {', '.join(f'{lab}.md ({len((d / f"{lab}.md").read_text())} chars)' for lab in labels)} in {d}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,26 @@
+decode items, gap a - decision (2026-11-05 00:13:41; rules: work/r23/decode_rules.py, written before the gap)
+build: PASS - engine-r23decode 48337a6023d8 = v0.2.10 + 30 commits (branch r23-decode-exact c4c15d32c845a4e811f22b662ab63752140cad09), tree 6b3a1983f98715e0 [23a 11-04 23:06]
+tests: PASS - every step-2 test rc 0
+exact7 r23-B: PASS - exact7 r23-B: 7/7 vs g17-p210a, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); g17-p210a: 3238+3300), 7/7 item outputs
+exact7 r23-B2: PASS - exact7 r23-B2: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs
+exact7 r23-L: PASS - exact7 r23-L: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs
+exact7 r23-O: PASS - exact7 r23-O: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs
+exact7 r23-LO: PASS - exact7 r23-LO: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs
+exact7 r23-Bs: PASS - exact7 r23-Bs: 2/7 vs C*13, slots DIFFER (3238+0 slots (5080 + 4060 Ti); C*13: ?), 7/7 item outputs
+exact7 r23-Os: PASS - exact7 r23-Os: 7/7 vs r23-Bs, slots MATCHED (3238+0 slots (5080 + 4060 Ti); r23-Bs: 3238+0), 7/7 item outputs
+logits (pf_yardstick long40): PASS - pfy_B_LO PASS 0 of 40 first-token logit files differ (B vs LO) [23a 11-04 23:55]; pfy_B_p210 PASS 0 of 40 differ (B vs gap 17's P0210x-h) [23a 11-04 23:55]
+=> item L (STRATA_REMOTE_LATE_LAUNCH=1): EXACT PASS
+=> item O (STRATA_POOL_ONE_BATCH=1): EXACT PASS
+timing Bt (INFO): 12 requests, 4958 windows: 22.01 ms/window = GPU-reach 8.88 + host 10.05 (plan 0.64, CPU 9.31) + draft 2.30 + tail 0.75; T 4.44, 3.54 tok/w |   per layer: GPU-reach 185.0 us, CPU 194.0 us, plan 13.35 us; CPU experts 4.62, PCIe 2.19, VRAM hits 28.2 per layer-window
+timing LOt (INFO): 11 requests, 5833 windows: 22.15 ms/window = GPU-reach 8.96 + host 10.08 (plan 0.87, CPU 9.11) + draft 2.33 + tail 0.75; T 4.55, 3.59 tok/w |   per layer: GPU-reach 186.6 us, CPU 189.8 us, plan 18.11 us; CPU experts 5.07, PCIe 2.08, VRAM hits 28.7 per layer-window
+timing Bst (INFO): 11 requests, 4987 windows: 25.65 ms/window = GPU-reach 8.91 + host 13.65 (plan 0.09, CPU 13.51) + draft 2.31 + tail 0.75; T 4.43, 3.50 tok/w |   per layer: GPU-reach 185.7 us, CPU 281.5 us, plan 1.83 us; CPU experts 7.80, PCIe 3.51, VRAM hits 30.0 per layer-window
+timing Ost (INFO): 11 requests, 5660 windows: 25.61 ms/window = GPU-reach 9.06 + host 13.46 (plan 0.09, CPU 13.33) + draft 2.30 + tail 0.76; T 4.45, 3.51 tok/w |   per layer: GPU-reach 188.7 us, CPU 277.6 us, plan 1.82 us; CPU experts 7.83, PCIe 3.52, VRAM hits 30.1 per layer-window
+env_t-Bt (INFO): PASS 1 engine process(es), 42 env keys as configured
+lines_t-Bt (INFO): PASS start lines (want none): late absent, one absent
+env_t-LOt (INFO): PASS 1 engine process(es), 44 env keys as configured
+lines_t-LOt (INFO): PASS start lines (want late,one): late present, one present
+env_t-Bst (INFO): PASS 1 engine process(es), 42 env keys as configured
+lines_t-Bst (INFO): PASS start lines (want none): late absent, one absent
+env_t-Ost (INFO): PASS 1 engine process(es), 43 env keys as configured
+lines_t-Ost (INFO): PASS start lines (want one): late absent, one present
+t2pass (INFO): INFO t2/report-T2dv.txt: 11 requests, 5208 windows: 23.17 ms/window = GPU-reach 9.60 + host 10.41 (plan 0.64, CPU 9.67) + draft 2.35 + tail 0.77; T 4.55, 3.64 tok/w 

@@ -1,0 +1,21 @@
+# boot-check.service - staged 11-05 22:4x (staging/post7d/BOOT-RESUME.md, Karl's decisions 1 + 2); NOT installed. Install:
+#   cp -p ~/ai/deep-research/staging/post7d/boot-check.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable boot-check.service      (enable only - it acts at boot)
+# At boot, BEFORE the research queue (deep-research-bench) can start a question: sets tmp/bench2.hold first (fail closed),
+# then strata-compare's kernel check, the previous boot's kernel log and its clean shutdown. Pass: the hold as it was
+# before the boot. Fail (or a crash / the timeout): the queue stays held until Karl's check and
+#   bash ~/ai/deep-research/staging/post7d/boot-resume.sh resume
+[Unit]
+Description=Boot check (staging/post7d/boot-resume.sh boot-check): kernel check + the previous boot's clean shutdown before the research queue starts; holds the queue on a failure
+After=kwatch.service
+Before=deep-research-bench.service boot-resume.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash /home/USER/ai/deep-research/staging/post7d/boot-resume.sh boot-check
+WorkingDirectory=/home/USER/ai/deep-research
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,306 @@
+=== 2026-11-03 05:03:10 BASALT FOLLOW-UP GAP (gap3.sh; FOLLOWUP-PLAN.md)
+2026-11-03 05:03:10 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 2959918 (engine 2959940)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-03 05:03:44 port_gap4: gap open: test lock held (pid 3023267), 8080 stopped
+=== 2026-11-03 05:03:44 1 the exact-head build (/home/USER/ai-speed-testing/basalt-020/src-exacthead)
+Preparing worktree (detached HEAD f0bb833c)
+HEAD is now at f0bb833c docs: the 0.2.0 changelog lists the conversation minimum and the Q2_0 load fix
+=== 2026-11-03 05:07:18 exact-head build OK (7 changed files)
+=== 2026-11-03 05:07:21 2 watcher pid 3031409 (05:07:20 82.4 15918 0 0 0 0 0 0 0 0)
+=== 2026-11-03 05:07:21 step: stock build, BASALT_EXACT_HEAD=unset: manual fstock 1
+man-fstock-1-dec rc 0
+man-fstock-1-p16 rc 0
+man-fstock-1-p64 rc 0
+=== 2026-11-03 05:09:01 step: patched build, BASALT_EXACT_HEAD=1: manual fexact 1
+man-fexact-1-dec rc 0
+man-fexact-1-p16 rc 0
+man-fexact-1-p64 rc 0
+  fexact-1: basalt exact-head: BASALT_EXACT_HEAD=1: every verify window records the exact output head (all rows exact); the MTP draft head is unchanged
+  fexact-1: basalt serve: exact-head: 1917 verify windows ran the head: 0 two-stage, 1917 exact (BASALT_EXACT_HEAD =1)
+  fexact-1: basalt exact-head: BASALT_EXACT_HEAD=1: every verify window records the exact output head (all rows exact); the MTP draft head is unchanged
+  fexact-1: basalt serve: exact-head: 15 verify windows ran the head: 0 two-stage, 15 exact (BASALT_EXACT_HEAD =1)
+  fexact-1: basalt exact-head: BASALT_EXACT_HEAD=1: every verify window records the exact output head (all rows exact); the MTP draft head is unchanged
+  fexact-1: basalt serve: exact-head: 1 verify windows ran the head: 0 two-stage, 1 exact (BASALT_EXACT_HEAD =1)
+=== 2026-11-03 05:10:42 step: patched build, BASALT_EXACT_HEAD=1: manual fexact 2
+man-fexact-2-dec rc 0
+man-fexact-2-p16 rc 0
+man-fexact-2-p64 rc 0
+  fexact-2: basalt exact-head: BASALT_EXACT_HEAD=1: every verify window records the exact output head (all rows exact); the MTP draft head is unchanged
+  fexact-2: basalt serve: exact-head: 1908 verify windows ran the head: 0 two-stage, 1908 exact (BASALT_EXACT_HEAD =1)
+  fexact-2: basalt exact-head: BASALT_EXACT_HEAD=1: every verify window records the exact output head (all rows exact); the MTP draft head is unchanged
+  fexact-2: basalt serve: exact-head: 16 verify windows ran the head: 0 two-stage, 16 exact (BASALT_EXACT_HEAD =1)
+  fexact-2: basalt exact-head: BASALT_EXACT_HEAD=1: every verify window records the exact output head (all rows exact); the MTP draft head is unchanged
+  fexact-2: basalt serve: exact-head: 1 verify windows ran the head: 0 two-stage, 1 exact (BASALT_EXACT_HEAD =1)
+=== 2026-11-03 05:12:23 step: stock build, BASALT_EXACT_HEAD=unset: manual fstock 2
+man-fstock-2-dec rc 0
+man-fstock-2-p16 rc 0
+man-fstock-2-p64 rc 0
+=== 2026-11-03 05:14:04 step: stock build, BASALT_EXACT_HEAD=unset: manual fstock 3
+man-fstock-3-dec rc 0
+man-fstock-3-p16 rc 0
+man-fstock-3-p64 rc 0
+=== 2026-11-03 05:15:45 step: patched build, BASALT_EXACT_HEAD=1: manual fexact 3
+man-fexact-3-dec rc 0
+man-fexact-3-p16 rc 0
+man-fexact-3-p64 rc 0
+  fexact-3: basalt exact-head: BASALT_EXACT_HEAD=1: every verify window records the exact output head (all rows exact); the MTP draft head is unchanged
+  fexact-3: basalt serve: exact-head: 1935 verify windows ran the head: 0 two-stage, 1935 exact (BASALT_EXACT_HEAD =1)
+  fexact-3: basalt exact-head: BASALT_EXACT_HEAD=1: every verify window records the exact output head (all rows exact); the MTP draft head is unchanged
+  fexact-3: basalt serve: exact-head: 14 verify windows ran the head: 0 two-stage, 14 exact (BASALT_EXACT_HEAD =1)
+  fexact-3: basalt exact-head: BASALT_EXACT_HEAD=1: every verify window records the exact output head (all rows exact); the MTP draft head is unchanged
+  fexact-3: basalt serve: exact-head: 1 verify windows ran the head: 0 two-stage, 1 exact (BASALT_EXACT_HEAD =1)
+=== 2026-11-03 05:17:26 step: patched build, BASALT_EXACT_HEAD=unset: manual fpatchoff 1
+man-fpatchoff-1-dec rc 0
+man-fpatchoff-1-p16 rc 0
+man-fpatchoff-1-p64 rc 0
+=== 2026-11-03 05:19:07 step: stock build, BASALT_EXACT_HEAD=unset: serve fstock 3
+{"server": {"model": "/home/USER/ai-speed-testing/basalt-020/models/Qwen3.8-FN-GSQ-RCO-IQ3_S.basalt", "host": "127.0.0.1", "port": 8095, "vision": "off"},
+ "engine": {"max-context": 131072, "kv": "int8", "conversation-cache-mib": 0}}
+--- 05:19:19 basalt serve fstock: model name Qwen3.8-Flash-Next GSQ-RCO IQ3_S
+--- 05:19:19 basalt serve fstock ready after 12 s
+0, 15324 MiB, 16303 MiB
+1, 15 MiB, 8188 MiB
+fstock1n W1-think r0: prompt 111 ttft 0.254 s, 3072 tokens, 176.51 tok/s, length
+fstock1n W2-code r0: prompt 124 ttft 0.293 s, 3072 tokens, 168.54 tok/s, length
+fstock1n W3-research r0: prompt 26730 ttft 5.049 s, 2048 tokens, 173.54 tok/s, length
+fstock1a A-edit r0: prompt 2674 ttft 1.025 s, 419 tokens, 153.77 tok/s, tool_calls
+fstock1a B-write r0: prompt 1369 ttft 0.743 s, 1162 tokens, 180.19 tok/s, tool_calls
+fstock1r R1-verify20k r0: prompt 24238 ttft 4.596 s, 3641 tokens, 158.65 tok/s, stop
+fstock1r R2-report54k r0: prompt 54071 ttft 9.982 s, 3606 tokens, 150.03 tok/s, stop
+fstock1r R3-extract5k r0: prompt 5012 ttft 1.387 s, 1013 tokens, 187.44 tok/s, stop
+fstock1r R4-agent33k r0: prompt 33417 ttft 6.255 s, 303 tokens, 137.19 tok/s, tool_calls
+fstock2n W1-think r0: prompt 110 ttft 0.262 s, 3072 tokens, 198.12 tok/s, length
+fstock2n W2-code r0: prompt 125 ttft 0.269 s, 3072 tokens, 159.0 tok/s, length
+fstock2n W3-research r0: prompt 26726 ttft 4.878 s, 2048 tokens, 169.94 tok/s, length
+fstock2a A-edit r0: prompt 2677 ttft 1.005 s, 1535 tokens, 152.18 tok/s, tool_calls
+fstock2a B-write r0: prompt 1370 ttft 0.732 s, 1186 tokens, 188.99 tok/s, tool_calls
+fstock2r R1-verify20k r0: prompt 24241 ttft 4.454 s, 3819 tokens, 149.86 tok/s, stop
+fstock2r R2-report54k r0: prompt 54070 ttft 9.898 s, 3921 tokens, 146.27 tok/s, stop
+fstock2r R3-extract5k r0: prompt 5010 ttft 1.343 s, 1162 tokens, 184.26 tok/s, stop
+fstock2r R4-agent33k r0: prompt 33416 ttft 6.148 s, 307 tokens, 121.12 tok/s, tool_calls
+fstock3n W1-think r0: prompt 111 ttft 0.263 s, 2354 tokens, 172.87 tok/s, stop
+fstock3n W2-code r0: prompt 123 ttft 0.273 s, 3072 tokens, 167.89 tok/s, length
+fstock3n W3-research r0: prompt 26729 ttft 4.878 s, 2048 tokens, 168.53 tok/s, length
+fstock3a A-edit r0: prompt 2678 ttft 1.0 s, 1521 tokens, 148.71 tok/s, tool_calls
+fstock3a B-write r0: prompt 1372 ttft 0.739 s, 1758 tokens, 167.23 tok/s, tool_calls
+fstock3r R1-verify20k r0: prompt 24239 ttft 4.459 s, 3643 tokens, 153.09 tok/s, stop
+fstock3r R2-report54k r0: prompt 54072 ttft 9.907 s, 2293 tokens, 144.98 tok/s, stop
+fstock3r R3-extract5k r0: prompt 5012 ttft 1.345 s, 872 tokens, 179.27 tok/s, stop
+fstock3r R4-agent33k r0: prompt 33416 ttft 6.165 s, 219 tokens, 130.57 tok/s, tool_calls
+--- 05:26:42 basalt serve fstock stopped
+=== 2026-11-03 05:26:42 step: patched build, BASALT_EXACT_HEAD=1: serve fexact 3
+{"server": {"model": "/home/USER/ai-speed-testing/basalt-020/models/Qwen3.8-FN-GSQ-RCO-IQ3_S.basalt", "host": "127.0.0.1", "port": 8095, "vision": "off"},
+ "engine": {"max-context": 131072, "kv": "int8", "conversation-cache-mib": 0}}
+--- 05:26:55 basalt serve fexact: model name Qwen3.8-Flash-Next GSQ-RCO IQ3_S
+--- 05:26:55 basalt serve fexact ready after 13 s
+0, 15324 MiB, 16303 MiB
+1, 15 MiB, 8188 MiB
+fexact1n W1-think r0: prompt 109 ttft 0.254 s, 2358 tokens, 164.96 tok/s, stop
+fexact1n W2-code r0: prompt 126 ttft 0.283 s, 3072 tokens, 161.39 tok/s, length
+fexact1n W3-research r0: prompt 26727 ttft 5.045 s, 2048 tokens, 158.29 tok/s, length
+fexact1a A-edit r0: prompt 2676 ttft 1.017 s, 205 tokens, 141.39 tok/s, tool_calls
+fexact1a B-write r0: prompt 1371 ttft 0.721 s, 2221 tokens, 158.55 tok/s, tool_calls
+fexact1r R1-verify20k r0: prompt 24239 ttft 4.597 s, 3783 tokens, 149.47 tok/s, stop
+fexact1r R2-report54k r0: prompt 54070 ttft 9.998 s, 2353 tokens, 142.65 tok/s, stop
+fexact1r R3-extract5k r0: prompt 5008 ttft 1.38 s, 1244 tokens, 173.32 tok/s, stop
+fexact1r R4-agent33k r0: prompt 33415 ttft 6.257 s, 265 tokens, 122.99 tok/s, tool_calls
+fexact2n W1-think r0: prompt 110 ttft 0.264 s, 3072 tokens, 176.48 tok/s, length
+fexact2n W2-code r0: prompt 124 ttft 0.287 s, 3072 tokens, 165.42 tok/s, length
+fexact2n W3-research r0: prompt 26730 ttft 4.883 s, 2048 tokens, 159.53 tok/s, length
+fexact2a A-edit r0: prompt 2679 ttft 1.0 s, 283 tokens, 155.67 tok/s, tool_calls
+fexact2a B-write r0: prompt 1370 ttft 0.714 s, 1403 tokens, 187.47 tok/s, tool_calls
+fexact2r R1-verify20k r0: prompt 24240 ttft 4.445 s, 3655 tokens, 152.98 tok/s, stop
+fexact2r R2-report54k r0: prompt 54070 ttft 9.899 s, 2890 tokens, 138.74 tok/s, stop
+fexact2r R3-extract5k r0: prompt 5012 ttft 1.342 s, 919 tokens, 172.35 tok/s, stop
+fexact2r R4-agent33k r0: prompt 33417 ttft 6.15 s, 343 tokens, 130.38 tok/s, tool_calls
+fexact3n W1-think r0: prompt 110 ttft 0.267 s, 3072 tokens, 175.48 tok/s, length
+fexact3n W2-code r0: prompt 126 ttft 0.28 s, 3072 tokens, 163.45 tok/s, length
+fexact3n W3-research r0: prompt 26730 ttft 4.874 s, 2048 tokens, 171.23 tok/s, length
+fexact3a A-edit r0: prompt 2678 ttft 0.999 s, 334 tokens, 138.13 tok/s, tool_calls
+fexact3a B-write r0: prompt 1371 ttft 0.73 s, 1571 tokens, 171.21 tok/s, tool_calls
+fexact3r R1-verify20k r0: prompt 24239 ttft 4.459 s, 3824 tokens, 145.42 tok/s, stop
+fexact3r R2-report54k r0: prompt 54072 ttft 9.908 s, 3277 tokens, 148.94 tok/s, stop
+fexact3r R3-extract5k r0: prompt 5013 ttft 1.35 s, 1098 tokens, 182.45 tok/s, stop
+fexact3r R4-agent33k r0: prompt 33416 ttft 6.161 s, 388 tokens, 144.42 tok/s, tool_calls
+--- 05:34:11 basalt serve fexact stopped
+| run | passes | conv | struct | prose | blend | 16K prompt | 64K prompt |
+|---|---|---|---|---|---|---|---|
+| defaults | 3 | 158.0 (156.0-161.0, 3.2 %) | 246.3 (245.0-247.0, 0.8 %) | 160.0 (154.0-164.0, 6.5 %) | 217.2 (216.0-217.8, 0.8 %) | 5,063.5 (4,486.3-5,361.5, 19.5 %) | 5,439.7 (5,438.2-5,442.2, 0.1 %) |
+| fexact | 3 | 155.9 (151.3-159.9, 5.6 %) | 248.2 (244.4-250.8, 2.6 %) | 154.6 (153.0-155.9, 1.9 %) | 217.5 (215.5-219.3, 1.8 %) | 5,358.8 (5,355.0-5,361.5, 0.1 %) | 5,440.6 (5,439.9-5,441.1, 0.0 %) |
+| fpatchoff | 1 | 161.4 | 247.4 | 157.5 | 218.2 | 5,364.5 | 5,440.1 |
+| fstock | 3 | 156.6 (154.5-158.6, 2.7 %) | 249.0 (245.1-252.1, 2.9 %) | 156.3 (152.7-159.8, 4.7 %) | 219.1 (215.7-222.0, 2.9 %) | 5,361.3 (5,357.9-5,363.3, 0.1 %) | 5,442.6 (5,439.3-5,445.9, 0.1 %) |
+| kvfp16 | 1 | 159.2 | 239.8 | 153.0 | 212.4 | - | - |
+| pf32k | 1 | - | - | - | - | 5,362.2 | 5,454.4 |
+| pf8k | 1 | - | - | - | - | 4,025.1 | 4,869.5 |
+| probe | 3 | 153.8 (151.9-156.8, 3.3 %) | 247.3 (244.6-249.3, 2.0 %) | 159.4 (158.0-160.7, 1.7 %) | 218.1 (215.3-221.6, 2.9 %) | 5,355.6 (5,343.8-5,362.6, 0.4 %) | 5,441.5 (5,440.2-5,442.6, 0.0 %) |
+| sh40 | 1 | - | - | - | - | 5,359.6 | 5,437.6 |
+| sh80 | 1 | - | - | - | - | 5,365.9 | 5,444.0 |
+| spec10 | 1 | 154.7 | 255.4 | 161.7 | 222.7 | - | - |
+| spec6 | 1 | 161.1 | 242.8 | 156.3 | 217.0 | - | - |
+| spec7 | 1 | 162.2 | 253.9 | 160.0 | 222.8 | - | - |
+=== 2026-11-03 05:34:11 3 P028x: x28h (4060 Ti on) vs x28h-solo (the 5080 alone), 3 passes in turned order
+=== 2026-11-03 05:34:11 screen ON pass 1 (x28h.json)
+server ready (guard pid 3108390, server pid 3108412) load_time_s 14.332041166 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-ON1_20261103T053412.log
+engine pid 3108418: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+ON1n W1-think r0: prompt 111 ttft 0.309 s, 3072 tokens, 161.72 tok/s, length
+ON1n W2-code r0: prompt 124 ttft 0.311 s, 3072 tokens, 153.78 tok/s, length
+ON1n W3-research r0: prompt 26728 ttft 6.036 s, 2048 tokens, 162.82 tok/s, length
+ON1a A-edit r0: prompt 2677 ttft 1.012 s, 387 tokens, 119.88 tok/s, tool_calls
+ON1a B-write r0: prompt 1371 ttft 0.837 s, 1009 tokens, 190.17 tok/s, tool_calls
+ON1r R1-verify20k r0: prompt 24241 ttft 5.532 s, 3681 tokens, 153.94 tok/s, stop
+ON1r R2-report54k r0: prompt 54072 ttft 12.015 s, 4096 tokens, 151.25 tok/s, length
+ON1r R3-extract5k r0: prompt 5013 ttft 1.445 s, 1238 tokens, 186.17 tok/s, stop
+ON1r R4-agent33k r0: prompt 33417 ttft 7.837 s, 429 tokens, 126.21 tok/s, tool_calls
+=== 2026-11-03 05:37:49 screen SOLO pass 1 (x28h-solo.json)
+server ready (guard pid 3111767, server pid 3111782) load_time_s 13.317111617 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-SOLO1_20261103T053750.log
+engine pid 3111787: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+SOLO1n W1-think r0: prompt 111 ttft 0.298 s, 3072 tokens, 154.06 tok/s, length
+SOLO1n W2-code r0: prompt 125 ttft 0.322 s, 3072 tokens, 153.6 tok/s, length
+SOLO1n W3-research r0: prompt 26730 ttft 6.04 s, 2048 tokens, 145.91 tok/s, length
+SOLO1a A-edit r0: prompt 2678 ttft 1.021 s, 329 tokens, 105.39 tok/s, tool_calls
+SOLO1a B-write r0: prompt 1372 ttft 0.856 s, 1437 tokens, 152.83 tok/s, tool_calls
+SOLO1r R1-verify20k r0: prompt 24241 ttft 5.53 s, 3821 tokens, 137.04 tok/s, stop
+SOLO1r R2-report54k r0: prompt 54071 ttft 12.019 s, 2885 tokens, 129.08 tok/s, stop
+SOLO1r R3-extract5k r0: prompt 5012 ttft 1.454 s, 1270 tokens, 149.94 tok/s, stop
+SOLO1r R4-agent33k r0: prompt 33415 ttft 7.837 s, 327 tokens, 109.1 tok/s, tool_calls
+=== 2026-11-03 05:41:34 screen SOLO pass 2 (x28h-solo.json)
+server ready (guard pid 3115095, server pid 3115111) load_time_s 13.321028662 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-SOLO2_20261103T054135.log
+engine pid 3115116: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+SOLO2n W1-think r0: prompt 112 ttft 0.297 s, 3072 tokens, 159.85 tok/s, length
+SOLO2n W2-code r0: prompt 126 ttft 0.326 s, 3072 tokens, 128.16 tok/s, length
+SOLO2n W3-research r0: prompt 26727 ttft 6.035 s, 2048 tokens, 141.72 tok/s, length
+SOLO2a A-edit r0: prompt 2678 ttft 1.026 s, 334 tokens, 104.6 tok/s, tool_calls
+SOLO2a B-write r0: prompt 1371 ttft 0.858 s, 1885 tokens, 142.19 tok/s, tool_calls
+SOLO2r R1-verify20k r0: prompt 24239 ttft 5.525 s, 3545 tokens, 133.97 tok/s, stop
+SOLO2r R2-report54k r0: prompt 54071 ttft 12.017 s, 2456 tokens, 127.42 tok/s, stop
+SOLO2r R3-extract5k r0: prompt 5010 ttft 1.428 s, 1091 tokens, 148.5 tok/s, stop
+SOLO2r R4-agent33k r0: prompt 33417 ttft 7.836 s, 323 tokens, 120.88 tok/s, tool_calls
+=== 2026-11-03 05:45:20 screen ON pass 2 (x28h.json)
+server ready (guard pid 3118443, server pid 3118458) load_time_s 14.329026253 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-ON2_20261103T054521.log
+engine pid 3118463: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+ON2n W1-think r0: prompt 110 ttft 0.299 s, 3072 tokens, 186.74 tok/s, length
+ON2n W2-code r0: prompt 125 ttft 0.315 s, 3072 tokens, 156.92 tok/s, length
+ON2n W3-research r0: prompt 26728 ttft 6.029 s, 2048 tokens, 157.29 tok/s, length
+ON2a A-edit r0: prompt 2678 ttft 1.018 s, 203 tokens, 130.52 tok/s, tool_calls
+ON2a B-write r0: prompt 1370 ttft 0.856 s, 4096 tokens, 150.36 tok/s, length
+ON2r R1-verify20k r0: prompt 24241 ttft 5.525 s, 3642 tokens, 155.26 tok/s, stop
+ON2r R2-report54k r0: prompt 54070 ttft 12.012 s, 2820 tokens, 153.06 tok/s, stop
+ON2r R3-extract5k r0: prompt 5011 ttft 1.447 s, 1189 tokens, 182.37 tok/s, stop
+ON2r R4-agent33k r0: prompt 33415 ttft 7.823 s, 275 tokens, 128.51 tok/s, tool_calls
+=== 2026-11-03 05:49:05 screen ON pass 3 (x28h.json)
+server ready (guard pid 3121984, server pid 3121999) load_time_s 14.330601984 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-ON3_20261103T054907.log
+engine pid 3122004: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+ON3n W1-think r0: prompt 111 ttft 0.292 s, 3072 tokens, 172.83 tok/s, length
+ON3n W2-code r0: prompt 125 ttft 0.322 s, 3072 tokens, 153.24 tok/s, length
+ON3n W3-research r0: prompt 26730 ttft 6.033 s, 2048 tokens, 167.83 tok/s, length
+ON3a A-edit r0: prompt 2678 ttft 1.016 s, 168 tokens, 130.29 tok/s, tool_calls
+ON3a B-write r0: prompt 1371 ttft 0.855 s, 2681 tokens, 154.88 tok/s, tool_calls
+ON3r R1-verify20k r0: prompt 24240 ttft 5.523 s, 3664 tokens, 153.1 tok/s, stop
+ON3r R2-report54k r0: prompt 54071 ttft 12.013 s, 3235 tokens, 159.57 tok/s, stop
+ON3r R3-extract5k r0: prompt 5010 ttft 1.444 s, 1251 tokens, 178.55 tok/s, stop
+ON3r R4-agent33k r0: prompt 33415 ttft 7.836 s, 386 tokens, 134.41 tok/s, tool_calls
+=== 2026-11-03 05:52:45 screen SOLO pass 3 (x28h-solo.json)
+server ready (guard pid 3125453, server pid 3125468) load_time_s 13.315333842 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-SOLO3_20261103T055246.log
+engine pid 3125473: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+SOLO3n W1-think r0: prompt 112 ttft 0.299 s, 3072 tokens, 163.58 tok/s, length
+SOLO3n W2-code r0: prompt 125 ttft 0.324 s, 3072 tokens, 139.76 tok/s, length
+SOLO3n W3-research r0: prompt 26725 ttft 6.044 s, 2048 tokens, 136.39 tok/s, length
+SOLO3a A-edit r0: prompt 2679 ttft 1.027 s, 397 tokens, 114.55 tok/s, tool_calls
+SOLO3a B-write r0: prompt 1371 ttft 0.843 s, 2504 tokens, 136.3 tok/s, tool_calls
+SOLO3r R1-verify20k r0: prompt 24241 ttft 5.528 s, 3800 tokens, 135.93 tok/s, stop
+SOLO3r R2-report54k r0: prompt 54071 ttft 12.019 s, 3252 tokens, 128.25 tok/s, stop
+SOLO3r R3-extract5k r0: prompt 5012 ttft 1.448 s, 1276 tokens, 150.57 tok/s, stop
+SOLO3r R4-agent33k r0: prompt 33416 ttft 7.841 s, 301 tokens, 109.72 tok/s, tool_calls
+server ready (guard pid 3128895, server pid 3128910) load_time_s 14.330286705 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-ON-decode-1_20261103T055645.log
+engine pid 3128915: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+cold-ON-decode-1 pass 1 conv: 971 tokens (stop), 148.0 tok/s decode
+cold-ON-decode-1 pass 1 struct: 7230 tokens (stop), 231.5 tok/s decode
+cold-ON-decode-1 pass 1 prose: 1200 tokens (length), 134.2 tok/s decode
+server ready (guard pid 3130874, server pid 3130889) load_time_s 14.337595737 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-ON-pp16k-1_20261103T055822.log
+engine pid 3130894: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+cold-ON-pp16k-1 pass 1 pp16k: 16676 tokens, 3809.2 tok/s engine
+server ready (guard pid 3132290, server pid 3132305) load_time_s 14.331669127 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-ON-pp64k-1_20261103T055916.log
+engine pid 3132310: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+cold-ON-pp64k-1 pass 1 pp64k: 66617 tokens, 4368.4 tok/s engine
+server ready (guard pid 3133721, server pid 3133736) load_time_s 13.310014109 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-SOLO-decode-1_20261103T060020.log
+engine pid 3133741: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+cold-SOLO-decode-1 pass 1 conv: 1066 tokens (stop), 125.9 tok/s decode
+cold-SOLO-decode-1 pass 1 struct: 7230 tokens (stop), 210.1 tok/s decode
+cold-SOLO-decode-1 pass 1 prose: 1156 tokens (stop), 123.5 tok/s decode
+server ready (guard pid 3135726, server pid 3135741) load_time_s 13.318466920 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-SOLO-pp16k-1_20261103T060202.log
+engine pid 3135746: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+cold-SOLO-pp16k-1 pass 1 pp16k: 16676 tokens, 3854.9 tok/s engine
+server ready (guard pid 3137105, server pid 3137120) load_time_s 13.319278704 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-SOLO-pp64k-1_20261103T060254.log
+engine pid 3137125: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+cold-SOLO-pp64k-1 pass 1 pp64k: 66617 tokens, 4402.3 tok/s engine
+server ready (guard pid 3138528, server pid 3138544) load_time_s 13.320535387 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-SOLO-decode-2_20261103T060358.log
+engine pid 3138551: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+cold-SOLO-decode-2 pass 2 conv: 1114 tokens (stop), 133.6 tok/s decode
+cold-SOLO-decode-2 pass 2 struct: 7230 tokens (stop), 208.7 tok/s decode
+cold-SOLO-decode-2 pass 2 prose: 1142 tokens (stop), 123.4 tok/s decode
+server ready (guard pid 3140551, server pid 3140566) load_time_s 13.316057181 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-SOLO-pp16k-2_20261103T060539.log
+engine pid 3140571: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+cold-SOLO-pp16k-2 pass 2 pp16k: 16676 tokens, 3886.9 tok/s engine
+server ready (guard pid 3141923, server pid 3141938) load_time_s 13.316859372 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-SOLO-pp64k-2_20261103T060631.log
+engine pid 3141943: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+cold-SOLO-pp64k-2 pass 2 pp64k: 66617 tokens, 4397.9 tok/s engine
+server ready (guard pid 3143357, server pid 3143372) load_time_s 14.334995842 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-ON-decode-2_20261103T060735.log
+engine pid 3143377: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+cold-ON-decode-2 pass 2 conv: 1124 tokens (stop), 155.6 tok/s decode
+cold-ON-decode-2 pass 2 struct: 7230 tokens (stop), 231.9 tok/s decode
+cold-ON-decode-2 pass 2 prose: 1118 tokens (stop), 129.5 tok/s decode
+server ready (guard pid 3145332, server pid 3145347) load_time_s 14.331256584 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-ON-pp16k-2_20261103T060912.log
+engine pid 3145352: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+cold-ON-pp16k-2 pass 2 pp16k: 16676 tokens, 3844.3 tok/s engine
+server ready (guard pid 3146749, server pid 3146764) load_time_s 14.331156107 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-ON-pp64k-2_20261103T061005.log
+engine pid 3146769: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+cold-ON-pp64k-2 pass 2 pp64k: 66617 tokens, 4386.5 tok/s engine
+server ready (guard pid 3148171, server pid 3148186) load_time_s 14.332968477 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-ON-decode-3_20261103T061110.log
+engine pid 3148191: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+cold-ON-decode-3 pass 3 conv: 1024 tokens (stop), 144.3 tok/s decode
+cold-ON-decode-3 pass 3 struct: 7230 tokens (stop), 228.4 tok/s decode
+cold-ON-decode-3 pass 3 prose: 1200 tokens (length), 130.8 tok/s decode
+server ready (guard pid 3150169, server pid 3150184) load_time_s 14.330932372 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-ON-pp16k-3_20261103T061247.log
+engine pid 3150189: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+cold-ON-pp16k-3 pass 3 pp16k: 16676 tokens, 3818.1 tok/s engine
+server ready (guard pid 3151582, server pid 3151597) load_time_s 14.329324365 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-ON-pp64k-3_20261103T061341.log
+engine pid 3151602: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+cold-ON-pp64k-3 pass 3 pp64k: 66617 tokens, 4369.5 tok/s engine
+server ready (guard pid 3153026, server pid 3153041) load_time_s 13.316309621 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-SOLO-decode-3_20261103T061445.log
+engine pid 3153046: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+cold-SOLO-decode-3 pass 3 conv: 1124 tokens (stop), 126.3 tok/s decode
+cold-SOLO-decode-3 pass 3 struct: 7230 tokens (stop), 208.8 tok/s decode
+cold-SOLO-decode-3 pass 3 prose: 1200 tokens (length), 118.7 tok/s decode
+server ready (guard pid 3155041, server pid 3155056) load_time_s 13.312604243 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-SOLO-pp16k-3_20261103T061627.log
+engine pid 3155062: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+cold-SOLO-pp16k-3 pass 3 pp16k: 16676 tokens, 3888.7 tok/s engine
+server ready (guard pid 3156458, server pid 3156473) load_time_s 13.321568733 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_bfu-bp-SOLO-pp64k-3_20261103T061720.log
+engine pid 3156478: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 1 GPU(s)
+cold-SOLO-pp64k-3 pass 3 pp64k: 66617 tokens, 4402.0 tok/s engine
+# Basalt follow-up - the decision (rule fixed 11-02 before the results; FOLLOWUP-PLAN.md)
+
+## The screen (client clock; per pass the geometric mean over 9 workloads)
+
+| arm | decode | prompt |
+|---|---|---|
+| Basalt 0.2.0 stock (two-stage head) | 161.5 (158.5-164.4, 3 passes) | 2,430.3 (2,395.3-2,452.8, 3 passes) |
+| Basalt exact head (BASALT_EXACT_HEAD=1) | 156.7 (151.9-159.4, 3 passes) | 2,431.6 (2,415.8-2,439.4, 3 passes) |
+| P028x (x28h, 4060 Ti on) | 154.8 (154.6-155.3, 3 passes) | 2,102.2 (2,100.5-2,104.4, 3 passes) |
+| P028x, 4060 Ti off (x28h-solo) | 134.5 (133.2-136.2, 3 passes) | 2,098.4 (2,095.7-2,100.7, 3 passes) |
+
+## The arithmetic
+
+- exact head, measured: -2.96 % decode vs stock (156.7 vs 161.5)
+- hyper-connections in BF16, estimated: exact-head arm 3.03 tokens per verify window -> +0.313 ms/token central (+0.294 to +0.353, drafter 0.020 ms in the upper end)
+- Basalt lossless: 149.4 tok/s (-3.5 % vs P028x)
+- helper value on P028x, measured: 0.976 ms/token saved (+15.1 % for P028x; range 0.875 to 1.067 ms)
+- **Basalt lossless + 4060 Ti: 174.9 tok/s = +13.0 % vs P028x 154.8** (range 164.9 to 181.8 = +6.2 to +17.6 %)
+
+**Verdict (the rule): +8 % OR BETTER on the central value, but the range's low end is +6.2 %: reported as such - Karl decides.** Either way: revisit Basalt if it supports Qwen4 before Strata does.
+
+=== 2026-11-03 06:18:22 4 P028x back on 8080 (port_gap4.sh end)
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-03 06:18:39 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-03 06:18:39 follow-up gap done (74 min with 8080 down)

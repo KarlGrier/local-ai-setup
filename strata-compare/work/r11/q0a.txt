@@ -1,0 +1,5 @@
+BDIR=build work/r11/build.sh strata-r11p engine-r11p && .venv/bin/python work/r11/buildrec.py R11P configs/R11P.json "Phase 0 profile build: C*12.1's tree (r11-base 123e2d8 = v38-c12) + MEASUREMENT 090feb5 (STRATA_R11_LAYERPROF per-layer profile)"
+[ -x engine-r11p/strata ] && ENVX="STRATA_R11_LAYERPROF=1 STRATA_VERIFY_PROFILE=1 STRATA_DECODE_TIMING=1" work/r11/exact7.sh r11p-on configs/R11P-off.json
+[ -x engine-r11p/strata ] && work/r11/p0prof.sh P0PROF-a configs/R11P.json
+.venv/bin/python work/r11/layer_table.py logs/r11/prof-P0PROF-a.engine.log --groups ldr:0-11,math:12,code:13 --out results/r11/p0-profile-a.md | head -60
+echo "=== $(date -Is) MARK q0a"

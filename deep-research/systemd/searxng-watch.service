@@ -1,0 +1,13 @@
+[Unit]
+Description=SearXNG watcher (deep-research tools/searxng_watch.py): alerts when 8889, 8890 or 8888 stops answering
+After=default.target searxng-ldr.service searxng-ldr-baseline.service searxng-chat.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/USER/ai/deep-research
+ExecStart=/usr/bin/python3 -I /home/USER/ai/deep-research/tools/searxng_watch.py
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=default.target

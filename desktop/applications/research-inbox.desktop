@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Research inbox
+Comment=Open the folder Jan's research reads when you say "use my inbox" (~/ai/deep-research/inbox)
+Exec=xdg-open /home/USER/ai/deep-research/inbox
+Icon=folder-documents
+Terminal=false
+Categories=Utility;

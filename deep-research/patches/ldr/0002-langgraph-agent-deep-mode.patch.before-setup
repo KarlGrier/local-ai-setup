@@ -1,0 +1,403 @@
+--- a/local_deep_research/advanced_search_system/strategies/langgraph_agent_strategy.py
++++ b/local_deep_research/advanced_search_system/strategies/langgraph_agent_strategy.py
+@@ -10,6 +10,7 @@
+ 
+ import hashlib
+ import math
++import os
+ import re
+ import threading
+ import time
+@@ -103,6 +104,35 @@
+ # CONTENT_FETCH_TIMEOUT and CONTENT_MAX_LENGTH live alongside the fetch
+ # tool builders in advanced_search_system/tools/fetch/.
+ 
++# --- deep-research patch (workspace): raised caps, evidence store, context management, report stage. Active only
++# with LDR_DEEP=1 (see local_deep_research/deep/__init__.py); otherwise everything below behaves as upstream 1.10.7.
++from ... import deep as _deep  # noqa: E402
++
++_DEEP = _deep.config()
++
++
++def _deep_clock() -> float:
++    """time.time() on the research clock (pauses held by strata-proxy's gate do not count) in deep mode."""
++    if _DEEP.enabled:
++        from ...deep.control import clock
++
++        return clock()
++    return time.time()
++
++
++def _pool_now() -> float:
++    """time.monotonic() on the research clock in deep mode (the subagent pool's backstop must not fire during a
++    night pause)."""
++    if _DEEP.enabled:
++        from ...deep.control import mono
++
++        return mono()
++    return time.monotonic()
++if _DEEP.enabled:
++    MAX_SUBTOPICS = _DEEP.max_subtopics
++    MAX_SUBTOPICS_HARD_LIMIT = max(_DEEP.max_subtopics_hard, _DEEP.max_subtopics)
++    SUBAGENT_TIMEOUT_SECONDS = _DEEP.subagent_hard_s
++
+ # Cap for credential-scrubbed tool/agent error strings. Larger than the
+ # 200-char HTTP-client default of ``sanitize_error_for_client`` because these
+ # strings feed the agent's reasoning AND the ErrorReporter pattern map, where
+@@ -1159,6 +1189,8 @@
+         title = r.get("title", "No title")
+         link = r.get("link", r.get("url", ""))
+         snippet = r.get("snippet", r.get("body", ""))
++        if _DEEP.enabled and isinstance(snippet, str) and len(snippet) > _DEEP.snippet_chars:
++            snippet = snippet[: _DEEP.snippet_chars].rsplit(" ", 1)[0] + " …"
+         lines.append(f"[{idx}] {title} ({link})\n{snippet}")
+     return "\n\n".join(lines) if lines else "No results."
+ 
+@@ -1196,6 +1228,9 @@
+             start, indexed = collector.add_results(
+                 results, engine_name=search_engine_name
+             )
++            _store = getattr(collector, "deep_store", None)
++            if _store is not None:
++                _store.add_search(query, indexed, engine=search_engine_name)
+             return _format_results(indexed, start)
+         except Exception as exc:
+             logger.exception("web_search tool error")
+@@ -1538,6 +1573,8 @@
+         )
+         if sub_fetch is not None:
+             sub_tools.append(sub_fetch)
++        # deep: the user's files (read_file) when the job has any
++        sub_tools.extend(getattr(collector, "deep_extra_tools", None) or [])
+         # Give subagents the same specialized-engine set the lead agent
+         # gets, filtered by the same egress policy / agent_enabled gate via
+         # the shared helper — without this, a subagent researching a
+@@ -1606,6 +1643,10 @@
+             "Reference sources by their [N] index numbers. "
+             "Do NOT ask clarifying questions — provide your findings directly."
+         )
++        if _DEEP.enabled:
++            from ...deep.prompts import SUBAGENT_PROMPT as _DEEP_SUBAGENT_PROMPT
++
++            subagent_prompt = _DEEP_SUBAGENT_PROMPT.format(date=current_date)
+         specialized_names = [
+             t.name
+             for t in sub_tools
+@@ -1621,7 +1662,90 @@
+                 f"matches the topic: {', '.join(specialized_names)}."
+             )
+ 
++        _deep_store = getattr(collector, "deep_store", None)
++        _deep_counter = getattr(collector, "deep_subagent_counter", None)
++        # subagents of this batch that have started (to share the remaining research time fairly, see below)
++        _deep_batch = {"started": 0, "lock": threading.Lock()}
++
++        def _deep_terminate_check() -> None:
++            if progress_callback:
++                progress_callback(
++                    "Checking termination status",
++                    None,
++                    {"phase": "termination_check", "context": "deep_subagent"},
++                )
++
++        def run_deep_subagent(topic: str) -> str:
++            """Deep mode: budgeted, compacting subagent whose findings are kept in the evidence store."""
++            from langchain.agents import create_agent
++            from ...deep import current_agent
++            from ...deep.middleware import DeepAgentMiddleware
++
++            n = next(_deep_counter) if _deep_counter is not None else 0
++            label = f"sub{n}"
++            current_agent.set(label)
++            t0 = time.time()
++            c0 = _deep_clock()                     # deadlines run on the research clock (pauses do not count)
++            with _deep_batch["lock"]:
++                _deep_batch["started"] += 1
++                left_in_batch = len(subtopics) - _deep_batch["started"] + 1      # this one included
++            deadline = c0 + _DEEP.subagent_budget_s
++            if _deep_store is not None and getattr(_deep_store, "deadline", None):
++                # share the remaining research time among the waves of this batch still to run, keeping a quarter
++                # for the lead to follow up (with 1 worker, 8 subtopics x the full subagent budget would otherwise
++                # use up the whole run and the last ones would never start)
++                remaining = _deep_store.deadline - c0
++                waves = math.ceil(left_in_batch / max(1, effective_workers))
++                deadline = min(deadline, c0 + max(0.0, 0.75 * remaining / waves), _deep_store.deadline)
++            if deadline - c0 < 60:
++                # the research budget is (nearly) used up: do not start a subagent only to tell it to wrap up
++                msg = f"Not researched: the research time budget was used up before '{topic}' could start."
++                if _deep_store is not None:
++                    _deep_store.add_subagent(topic, msg, "not started (budget)", 0.0, 0)
++                return msg
++            mw = DeepAgentMiddleware(
++                role="sub", label=label, model=model, store=_deep_store,
++                task=topic, deadline=deadline, max_calls=max_sub_iterations,
++                terminate_check=_deep_terminate_check,
++            )
++            status, text = "ok", ""
++            try:
++                agent = create_agent(
++                    model=model,
++                    tools=sub_tools,
++                    system_prompt=subagent_prompt,
++                    middleware=[mw],
++                )
++                result = agent.invoke(
++                    {"messages": [{"role": "user", "content": topic}]},
++                    {"recursion_limit": max_sub_iterations * 2 + 10},
++                )
++                messages = result.get("messages", [])
++                if messages:
++                    text = getattr(messages[-1], "content", "") or ""
++                    if isinstance(text, list):
++                        text = "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in text)
++                if not text:
++                    status, text = "empty", f"No findings for: {topic}"
++            except GraphRecursionError:
++                status, text = "recursion_limit", f"Research on '{topic}' reached iteration limit."
++            except Exception as exc:
++                logger.exception(f"Subagent failed for: {topic[:80]}")
++                status, text = "error", _scrub_tool_error(f"Research on '{topic}' failed: {exc}")
++            if mw.wrapped:
++                status += f" (wrapped up: {mw.wrapped})"
++            if _deep_store is not None:
++                _deep_store.add_subagent(topic, text, status, time.time() - t0, mw.calls)
++            logger.info(f"deep[{label}]: done in {time.time() - t0:.0f} s, {mw.calls} model calls, "
++                        f"{mw.compactions} compactions, status {status}: {topic[:80]}")
++            if len(text) > _DEEP.sub_return_max_chars:
++                text = (text[: _DEEP.sub_return_max_chars]
++                        + "\n[... findings shortened for the lead; the full text is kept for the report]")
++            return text
++
+         def run_subagent(topic: str) -> str:
++            if _DEEP.enabled:
++                return run_deep_subagent(topic)
+             try:
+                 # create_agent() calls model.bind_tools(); ProcessingLLMWrapper
+                 # (config/llm_config.py) overrides bind_tools to re-wrap the
+@@ -1677,7 +1801,7 @@
+         def _run_subagent_with_egress(task: tuple[int, str]) -> str:
+             task_id, topic = task
+             with task_state_changed:
+-                task_start_times[task_id] = time.monotonic()
++                task_start_times[task_id] = _pool_now()
+                 task_state_changed.notify_all()
+ 
+             try:
+@@ -1699,7 +1823,7 @@
+                         return run_subagent(topic)
+             finally:
+                 with task_state_changed:
+-                    task_end_times[task_id] = time.monotonic()
++                    task_end_times[task_id] = _pool_now()
+                     task_state_changed.notify_all()
+ 
+         ordered_results: dict[int, str] = {}
+@@ -1711,7 +1835,7 @@
+             * max(1, math.ceil(len(subtopics) / effective_workers))
+             * SUBAGENT_TIMEOUT_OVERALL_MULTIPLIER
+         )
+-        drain_start = time.monotonic()
++        drain_start = _pool_now()
+         overall_deadline = drain_start + overall_timeout_seconds
+ 
+         def _record_per_task_timeout(
+@@ -1746,7 +1870,7 @@
+ 
+                 with task_state_changed:
+                     while True:
+-                        now = time.monotonic()
++                        now = _pool_now()
+                         completed = [
+                             future
+                             for future in pending
+@@ -1806,7 +1930,7 @@
+                 # deadline has arrived. ThreadPoolExecutor cannot preempt a
+                 # running Python callable, so ignore its eventual result and
+                 # let shutdown(wait=False) release the lead agent promptly.
+-                now = time.monotonic()
++                now = _pool_now()
+                 for future in expired:
+                     pending.remove(future)
+                     task_id, topic = futures[future]
+@@ -1815,7 +1939,7 @@
+                     future.cancel()
+ 
+                 if overall_expired:
+-                    now = time.monotonic()
++                    now = _pool_now()
+                     for future in pending:
+                         task_id, topic = futures[future]
+                         start = task_start_times.get(task_id)
+@@ -1927,6 +2051,10 @@
+             else DEFAULT_MAX_ITERATIONS
+         )
+         self.max_sub_iterations = int(max_sub_iterations)
++        if _DEEP.enabled:
++            self.max_iterations = _DEEP.max_iterations
++            self.max_sub_iterations = _DEEP.max_sub_iterations
++        self.deep_store = None
+         self.include_sub_research = include_sub_research
+         self.citation_handler = citation_handler or CitationHandler(
+             model,
+@@ -2551,10 +2679,58 @@
+         )
+         self.check_termination(CHECK_CONTEXT_ENTRY)
+ 
++        if _DEEP.enabled:
++            import itertools
++
++            from ...deep.evidence import EvidenceStore
++
++            ctx = get_search_context() or {}
++            rid = ctx.get("research_id") or datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
++            self._deep_research_id = str(rid)
++            from ...deep import control as _deep_control
++            from ...deep import seed as _deep_seed
++
++            out = _deep.out_path(f"research-{rid}", "x")
++            # a job from the research runner (Jan): its research time, the user's files, earlier runs to continue
++            job = _deep_control.take_job(query) or {}
++            budget_s = int(job.get("budget_s") or _DEEP.time_budget_s)
++            seed = _deep_seed.load(job.get("seed_dirs") or []) if job.get("seed_dirs") else None
++            if seed is not None:
++                # the earlier runs' sources keep their [N]: seed the collector through its constructor
++                self.all_links_of_system.extend(_deep_seed.link_entries(seed))
++                self.collector = SearchResultsCollector(self.all_links_of_system)
++            self.deep_store = EvidenceStore(query, out.parent if out else None)
++            self.deep_store.budget_s = budget_s
++            self.deep_store.job = job
++            self.deep_store.deadline = _deep_clock() + budget_s
++            if seed is not None:
++                _deep_seed.fill_store(seed, self.deep_store)
++            self.deep_seed = seed
++            self.deep_files = [f for f in (job.get("files") or []) if os.path.isfile(f)]
++            if job:
++                self.deep_store.add_note("job", job_id=job.get("job_id"), budget_s=budget_s,
++                                         files=self.deep_files, seed_dirs=job.get("seed_dirs") or [])
++            self.collector.deep_store = self.deep_store
++            self.collector.deep_subagent_counter = itertools.count(1)
++            self.collector.deep_extra_tools = []
++            if self.deep_files:
++                from ...deep.files import make_read_file_tool
++
++                self.collector.deep_extra_tools.append(
++                    make_read_file_tool(self.deep_files, self.collector, self.model, query))
++            logger.info(
++                f"deep: research {rid}: budget {budget_s} s, lead {self.max_iterations} calls, "
++                f"subagents {self.max_sub_iterations} calls / {_DEEP.subagent_budget_s} s, "
++                f"{MAX_SUBTOPICS} subtopics per call, files {out.parent if out else '-'}, "
++                f"user files {len(self.deep_files)}, seeded {'yes' if seed else 'no'}"
++            )
++
+         # Build tools (overall_query feeds summary-mode fetch tools)
+         tools = self._build_tools(overall_query=query)
+         if not tools:
+             return self._error_result("No tools available")
++        if _DEEP.enabled:
++            tools.extend(getattr(self.collector, "deep_extra_tools", None) or [])
+         # Stash tool names for the per-step heartbeat — gives the user
+         # concrete info ("from the web (SearXNG), PubMed, …") instead of
+         # a vague spinner while the LLM picks its next move. The raw ids
+@@ -2646,6 +2822,22 @@
+             "citing sources as [1], [2], etc.\n"
+             f"{policy_addendum}"
+         )
++        if _DEEP.enabled:
++            from ...deep.prompts import LEAD_ADDENDUM
++
++            system_prompt += LEAD_ADDENDUM.format(
++                max_subtopics=MAX_SUBTOPICS,
++                budget_min=int(getattr(self.deep_store, "budget_s", _DEEP.time_budget_s)) // 60,
++                max_iterations=self.max_iterations,
++            )
++            if getattr(self, "deep_files", None):
++                from ...deep.files import files_addendum
++
++                system_prompt += files_addendum(self.deep_files)
++            if getattr(self, "deep_seed", None) is not None:
++                from ...deep.seed import lead_addendum
++
++                system_prompt += lead_addendum(self.deep_seed)
+ 
+         # Create agent — may fail if model doesn't support tool calling.
+         # create_agent() calls model.bind_tools(); ProcessingLLMWrapper overrides
+@@ -2654,11 +2846,24 @@
+         # transforms still escape the wrapper (with_config/bind/stream delegate
+         # via __getattr__ unstripped; `|` raises TypeError, no __or__), but none
+         # are on this create_agent path — see config/llm_config.py.
++        middleware = []
++        self._deep_mw = None
++        if _DEEP.enabled:
++            from ...deep.middleware import DeepAgentMiddleware
++
++            self._deep_mw = DeepAgentMiddleware(
++                role="lead", label="lead", model=self.model, store=self.deep_store, task=query,
++                deadline=self.deep_store.deadline, max_calls=self.max_iterations,
++                terminate_check=lambda: self.check_termination("deep_lead"),
++                progress=lambda msg: self._update_progress(msg, None, {"phase": "agent_thinking"}),
++            )
++            middleware.append(self._deep_mw)
+         try:
+             agent = create_agent(
+                 model=self.model,
+                 tools=tools,
+                 system_prompt=system_prompt,
++                middleware=middleware,
+             )
+         except Exception as exc:
+             logger.exception("Failed to create LangGraph agent")
+@@ -2671,7 +2876,7 @@
+ 
+         # Stream agent execution
+         effective_max = max(MIN_ITERATIONS, self.max_iterations)
+-        config = {"recursion_limit": effective_max * 2 + 1}
++        config = {"recursion_limit": effective_max * 2 + (10 if _DEEP.enabled else 1)}
+         iteration = 0
+         final_content = ""
+         agent_messages: list = []
+@@ -2804,6 +3009,8 @@
+             logger.warning(
+                 "LangGraph agent hit recursion limit, synthesizing partial results"
+             )
++            if not final_content and _DEEP.enabled and self.deep_store is not None:
++                final_content = "(The lead agent stopped at its step limit; the report is written from the evidence.)"
+             if not final_content:
+                 final_content = self._synthesize_from_collector(query)
+         except Exception as exc:
+@@ -2948,9 +3155,35 @@
+         synthesized_content = final_answer
+         documents: list = []
+         citation_failed = False
++        deep_done = False
++
++        if (
++            _DEEP.enabled
++            and _DEEP.report
++            and self.deep_store is not None
++            and final_answer not in (NO_RESULTS_MESSAGE,)
++        ):
++            from ...deep.report import ReportWriter, write_files
++
++            try:
++                self.deep_store.add_note("lead_answer", text=final_answer, iterations=iteration)
++                writer = ReportWriter(
++                    query, self.deep_store, self.model, final_answer,
++                    progress=lambda msg, pct: self._update_progress(msg, pct, {"phase": "synthesis"}),
++                    terminate_check=lambda: self.check_termination("deep_report"),
++                )
++                deep_result = writer.run()
++                synthesized_content = deep_result["markdown"]
++                write_files(self.deep_store.out_dir, deep_result, self.deep_store, final_answer)
++                logger.info(f"deep: report written: {deep_result['stats']}")
++                deep_done = True
++            except Exception:
++                logger.exception("deep: report stage failed; keeping the lead agent's answer")
++            finally:
++                self.deep_store.close()
+ 
+         # Citation handling — only if we have results
+-        if all_search_results:
++        if all_search_results and not deep_done:
+             try:
+                 citation_result = self.citation_handler.analyze_followup(
+                     query,

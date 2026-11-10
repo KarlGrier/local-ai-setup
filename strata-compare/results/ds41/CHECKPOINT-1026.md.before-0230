@@ -1,0 +1,98 @@
+# DeepSeek-V4.1-Flash checkpoint - end of the 10-24 to 10-26 round
+
+Read this before the next DeepSeek round. Full detail: results/ds41/round-report-1026.md and NOTES.md (10-24 to 10-26).
+Status: DRAFT 10-26 20:50 - the hard set and the DSpark items run overnight; their results go in "Tonight" below.
+
+## What ships (daily, `./switch-model.sh deepseek`, configs/DS41-daily.json, port 8086)
+
+- Engine `engine-v026p343-ds41`: Strata v0.2.6 + our #343 port (prompt skip across the layer split). IQ_Q8K and BORROW
+  are not in it.
+- 4060 Ti first, layers 8 / 32; 6 experts per word (5 is lossy); decay 0.8, settle 0, Engram cache 16 MB; chunk 8192;
+  STRATA_DS4_PROMPT_SKIP=1; context 32K; sampling 1.0 / 0.95 / 20 / 0.05.
+- Slot keep on, cap 16, 2 GB per slot; RAM store 68 GB (lowest MemAvailable 15.5 GB with everything up and 16 slots
+  full; the store steps down per the daily-size rule if that changes).
+- Its own expert profile `logs/ds41/daily-profile.bin`, learning (the engine rewrites it at exit). Seeded once from
+  `configs/DS41-daily-profile.seed.bin` (sha 8db93e48...9568, what the final config was measured with). Measurements
+  always use their own pinned copies, never the daily file.
+- Speed (A/B/A, final config): decode ~28.3 tok/s, P4K ~350, P20K ~700 tok/s.
+- Gate: final config vs stock v0.2.6 PASS (changed top-1 picks 32, bound 33.0; text NLL +0.0013, bound 0.0111). Daily
+  end tests (conversation cache, follow-up re-reads with slot keep on, cap 16) PASS; released 10-26 16:44.
+- Effort default: medium as a placeholder - Karl decides from the graded and hard sets.
+
+## Gate rule (final, 10-26 16:55; skipcheck.rounding_checks, used by every gate)
+
+A candidate is rounding-level when, against two rounding references (R1 = chunk 4096, R2 = CPU share / reserve):
+KL mean and p90 <= 1.10 x the larger reference's; KL > 1 count <= the worse reference's + 1; changed top-1 picks vs the
+base <= 1.10 x the larger reference's; text NLL over the base <= 1.10 x the larger reference's distance from the base.
+Why the margins: rounding-level variants range 2,005-2,015 of 2,040 top-1 picks, so fixed margins of 1 were coin flips.
+
+## Next DeepSeek round - main item: BORROW (port into Strata)
+
+- What: Maya's in-place expert layout marker (every GGUF in-place layout uses it). Gain: more experts in VRAM on both
+  cards and fewer bytes over the 4060 Ti's PCIe x4 link, which now sets the prompt pace (per 20K prompt it streams 76 GB,
+  40 GB of it from the drive at ~1 GB/s, and waits 9.4 s of 38 s). Maya's measured lead (P20K +15 % in M1) came without
+  BORROW, so its gain on top is the round's open question.
+- Cost: re-laying out the expert slots, the tail region and the cache, ~1.5-2 days of code.
+- **Upstream watch:** Strata upstream may port it first (Niko has been pulling Maya changes within days). The Saturday
+  release check looks for it in the release notes and the diff (expert layout / slot / tail changes, "borrow"). If it
+  lands upstream: A/B that release against ours instead of porting (v0.2.6 + #343 still needs carrying over).
+- Then: the usual gate (above), 3-pass A/B/A vs the ship config, keep only on a real gain.
+
+## Maya: fallback only
+
+- Failed on this PC under the swap rule (10-26 h2h): the kernel swapped the engine's own memory while Maya read experts
+  through the page cache, with ~34 GB still free (M1: 229 -> 1,089 MB in ~4 s; M2: 544 MB). Likely cause: swappiness 60
+  (vfs_cache_pressure 100, min_free_kbytes 67584; read only, not changed - no system changes on our own).
+- Karl may lower swappiness later and retry the 10-minute check (mainly if the BORROW port turns out too hard).
+- What Maya showed before it failed: P4K 399 / 481, P20K 693 / 900 (M1 / M2) vs Strata + #343 333 / 601.
+
+## IQ_Q8K: dropped (findings to keep)
+
+- Where it acts in Strata: only on the async expert path (T <= DS4_ASYNC_T = 8: decode and windows of up to 8). Windows of
+  9-16 take the synchronous mv path and windows >= 96 the prompt path (F32 / F16) - a 16- or 128-token window gate never
+  reaches it. Any future test of decode-side rounding must use 8-token windows (ports.py iq_w8).
+- Gate PASS at 8-token windows; placement steps moved 2-15 % less KL (not the halving asked); the decode check showed no
+  gain in matching tokens (3 / 24 / 29 with vs 29 / 24 / 29 without). Dropped by Karl's rule.
+- Reading: GPU/CPU activation rounding is a small part of why placement changes answers; the prompt path, summation order
+  and batching matter as much. Maya's FP8 gain (KL 0.162 vs 0.171) is quality-vs-reference, not consistency.
+- The port (apply_variant.py "iqq8k", DS4_IQ_Q8K=0 byte-identical to stock) stays on disk if a reference path ever
+  makes the quality-vs-reference question testable here (the original FP8 / FP4 weights do not fit the disk).
+
+## Maya's prompt-compute ideas, re-ranked (the 4060 Ti is the pace)
+
+1. Fewer layers on the 4060 Ti - DONE (8/32, P20K +16 %).
+2. Earlier / larger read share for the 4060 Ti's pipeline (Strata side): +10-15 % if its 9.4 s of waits per 20K halve.
+3. Tensor-core prompt attention (ATTN_MMA): +5-8 %.
+4. Leaner expert tiles + FP16 rows + router rows: +3-6 %, exact.
+5. Wider attention slabs: ~0 on an 8 GB card. 6. FAT_ROWS: <= 1 %.
+(#360 is already in v0.2.6.) BORROW comes first; these after it.
+
+## Open questions
+
+- Repeatability: fixed-seed request pairs in one engine are not identical; the reuse path is ruled out, the sampler
+  counter (never reset per request, ds4_main.cpp:327) is part of it, something else carries over. DSpark is not loaded
+  with `auto` in this config ("routed experts 132 GB ... far more than the GPU holds (23 GB)"). Tonight: pairs with
+  `--dspark none` and the carry-over check.
+- Resuming is exact (4-piece resume = 4 pieces without resume, byte for byte; 1-piece resume = fresh); the 4-piece split
+  itself is rounding-level.
+- Context size: 128K costs 22 of 1,330 VRAM expert slots and nothing measurable in speed or RAM (reserved, not filled).
+  Raising the daily 32K is Karl's call.
+- Honesty: DeepSeek e50 made up 4 of 10 honesty answers in the graded set (Qwen 0) after ~100 s of thinking. Tonight's
+  effort 25 run checks whether less thinking helps.
+- Upstream issue for the follow-up re-read (pr-drafts/47): built and tested, 12 / 12 with slot keep off. Never post.
+
+## Tonight (filled in the morning)
+
+- Hard set (29 items; Qwen medium / xhigh, DeepSeek e50 / e75, e25 on the honesty items; 30,000 tokens of room each, no
+  separate thinking cap): Qwen medium 88.5, xhigh 67.4, DeepSeek e50 72.4, e75 66.7. DeepSeek best minus Qwen best
+  = -16.1 points per item (95 % -31.0 to -3.4); level without the honesty items (-3.2 on the other 21). Honesty: DeepSeek
+  e25 = e50 = 37.5 (less effort does not help), Qwen medium 87.5. Blind research: Qwen medium 7.25, DeepSeek e50 6.5.
+  DeepSeek ~200 s per answer vs Qwen medium 23 s. Suggested DeepSeek default effort 50 (Karl decides).
+- DSpark A/B/A: not run - DSpark never loads with `auto` in this config (checked in all three hard-set DeepSeek runs).
+- Repeat pairs with `--dspark none`, carry-over check: PENDING.
+
+## Then: LDR (with 8080 up)
+
+Before running anything: re-read the LDR checkpoint files and NOTES.md (not memory), send Karl a short where-we-are and
+next steps, and check Karl's open LDR list against the files. Don't read the user's own LDR research or chats (titles and
+dates only); benchmark runs (results/bench2) are ours.

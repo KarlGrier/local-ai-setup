@@ -1,0 +1,428 @@
+{
+ "_comment": "profile_pack.py inputs for the generator test on Qwen3.8-Flash-Next, refreshed 2026-11-10 for the build served since 2026-11-09 20:06: configs/P028x.json on the fetch build (engine-r23afetch, sha 153ce47d3ef0) + STRATA_ADAPT_FETCH=2 (and STRATA_HC_UPMIX=1); the 11-09 inputs (P028x engine f4c4f654fb24) are inputs-flashnext.json.before-afetch1110. Old-engine measurements kept where the current build has none are labelled 'P028x engine before the fetch patch'. Release day: copy this file, point config / engine_dir / model_first_shard / speed_sets / engine_logs / engine_start_log / guard_logs / monitor_sys_csv / decode_timing / *_summary_lines at that day's measurements, set output to results/qwen4/PROFILE-PACK.md, and review env_notes / arg_notes / path_labels for new switches.",
+ "title": "Profile pack: Qwen3.8-Flash-Next (IQ3_S GSQ-RCO) on a patched Strata build, one desktop PC - generator test run",
+ "date": "2026-11-10",
+ "root": "/home/USER/ai-speed-testing/strata-compare",
+ "output": "/home/USER/ai-speed-testing/strata-compare/results/qwen4/PROFILE-PACK-flashnext-test.md",
+ "release_day_list_out": "/home/USER/ai-speed-testing/strata-compare/work/qwen4-kit/profile-pack/release-day-measurements.txt",
+ "display_roots": [
+  [
+   "/home/USER/.claude/projects/-home-USER-ai-speed-testing/memory",
+   "notes/"
+  ],
+  [
+   "/home/USER/ai-speed-testing/strata-compare",
+   ""
+  ],
+  [
+   "/home/USER/ai-speed-testing",
+   "../"
+  ]
+ ],
+ "source_roots": {
+  "": "/home/USER/ai-speed-testing/strata-compare",
+  "notes/": "/home/USER/.claude/projects/-home-USER-ai-speed-testing/memory/",
+  "../": "/home/USER/ai-speed-testing/"
+ },
+ "private_words": [
+  "karl",
+  "grier"
+ ],
+ "strict_sources": true,
+ "intro": "**What this is.** How a 512-expert MoE model runs on one desktop PC with 24 GB of VRAM over two GPUs and 96 GB of RAM: Qwen3.8-Flash-Next (published as a preview of the Qwen4 architecture) as the ISTA-DASLab GSQ-RCO IQ3_S GGUF, on the Strata engine (upstream v0.2.8) plus the owner's patch series (build label **P028x**), since 2026-11-09 20:06 on the **fetch build**, which adds upstream's STRATA_ADAPT_FETCH and runs it beside the helper GPU; served locally on 127.0.0.1. All routed experts sit in pinned RAM (46.8 GiB); the main GPU caches 18.7 % of them and a helper GPU another 13.4 %. Because routing is skewed, and because the fetch build keeps often-routed experts that it had to read over PCIe in the main GPU's cache, those caches serve about 85 % of the routed expert work during decode on the 11-09 screen (80 % on the same screen before the fetch patch; section 5). Everything is lossless by the owner's rule: no switch that changes outputs beyond rounding is served. **Older measurements:** where the current build was not measured, the pack keeps figures from the P028x engine before the fetch patch (2026-11-09 or earlier) and says so where they appear: the per-window time split of section 8 (measured 11-05; it is also the source of the 'decode window' row in the table below, so that row describes the P028x engine before the fetch patch), the ten-day served-log figures, the 3-pass pp16k / pp64k fixtures (the current build has one pass of each) and the reference sets P, P-screen and PU. This file is the test run of a generator that will write the same pack for Qwen4 on its release day; section 10 lists what today's files only approximate.",
+ "hardware": {
+  "main_gpu": "NVIDIA RTX 5080 16 GB, PCIe Gen5 x16 (runs the model; no display attached)",
+  "helper_gpu": "NVIDIA RTX 4060 Ti 8 GB on a chipset PCIe Gen4 x4 link (a second expert cache only)",
+  "cpu": "AMD Ryzen 9 9950X3D, 16 cores / 32 threads, AVX-512",
+  "ram": "96 GB DDR5-6000 (about 77 GB/s measured); the desktop display runs on the CPU's integrated graphics",
+  "storage": "Samsung 9100 PRO 2 TB NVMe (Gen5 x4), holds the model files",
+  "source": [
+   "/home/USER/.claude/projects/-home-USER-ai-speed-testing/memory/pc-hardware.md",
+   [
+    8,
+    9,
+    10,
+    11,
+    12,
+    20
+   ]
+  ]
+ },
+ "config": "/home/USER/ai-speed-testing/strata-compare/configs/P028x.json",
+ "engine_dir": "/home/USER/ai-speed-testing/strata-compare/engine-r23afetch",
+ "engine_label": "P028x on the fetch build = upstream Strata v0.2.8 + the owner's patch series (P028x, served since 2026-10-30; STRATA_HC_UPMIX=1 since 2026-11-09 11:39) + upstream's STRATA_ADAPT_FETCH commit and the owner's patch that runs it beside the helper GPU, served since 2026-11-09 20:06 with STRATA_ADAPT_FETCH=2. What the fetch patch does: when the main GPU has to read a missed expert from RAM over PCIe and that expert is routed clearly more often than the least-used expert in that layer of the main GPU's cache, the engine keeps the copy in that cache slot instead of dropping it after the window.",
+ "verify_engine_sha": true,
+ "engine_notes": [
+  "The patch series carries, among others: exact speculative sampling (STRATA_SPEC_EXACT), the cost-aware draft gate and cumulative draft length, the fork hyper-connection read (STRATA_GR_FORK), Basalt-derived v2 prompt-expert kernels made bit-identical to the stock path (STRATA_PREFILL_V2), the router's Q8_K doorbell rows (STRATA_ROUTER_Q8K), a chat cache that parks conversations in RAM, and upstream 0.2.7's new defaults pinned off [[src:configs/P028x.json:58]].",
+  "The fetch build (`v0.2.8 + 31` in SOURCE) is P028x's 28 commits plus three: upstream's STRATA_ADAPT_FETCH commit (24c6c2f68, from v0.2.12, which turns the switch off when a helper GPU is present); the owner's patch f381bfdf5 that runs it beside the helper (the PCIe share's pick list leaves out experts the helper holds, admissions go to the main GPU's cache only, per-request admission counters and an optional read-back check in serve mode) [[src:results/r23/ADAPTFETCH-DESK-1109.md:12-14]] [[src:results/r23/ADAPTFETCH-DESK-1109.md:37-58]]; and one commit to the Python server only (an HTTP 400 for a request that names a model which is not loaded), not in the engine binary [[src:strata-r22p028x/serve/server.py:7341]].",
+  "With the switch unset the fetch build is bitwise P028x: exact7 7/7 at matched slots, 0 of 40 long-prompt first-token logit files differ [[src:results/r23/adaptfetch/gap/decision.txt:3]]. With =2 the GPU computes a different set of experts than P028x would, which changes outputs at rounding level [[src:results/r23/ADAPTFETCH-DESK-1109.md:53-57]]; a served-mode sampled-distribution test (D2 1.83 against a noise bound of 11.35) and a read-back of the 91,345 slots admitted in a check run (0 differ) passed [[src:results/r23/adaptfetch/gap/decision.txt:14-16]]. exact7 runs without adaptation, where the switch does not act [[src:results/r23/ADAPTFETCH-DESK-1109.md:102-103]]; it gave 7/7 with =2 set as well [[src:results/r23/afetch-adopt/summary.txt:55]].",
+  "The engine reports `engine 0.1.54` as its session version even though the tree is v0.2.8 + 31; the SOURCE file names the branch commit.",
+  "The served config file keeps the name P028x.json, and its own comment line still describes the build before the fetch patch [[src:configs/P028x.json:58]]; its `exe` names the fetch build [[src:configs/P028x.json:2]]."
+ ],
+ "model_first_shard": "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+ "gguf_reader_dir": "/home/USER/ai-speed-testing/strata-compare/strata-v0213stock/tools",
+ "path_labels": {
+  "/home/USER/ai-speed-testing/strata-compare/bringup/out/r20a/pack": "the engine's native pack built from the GGUF (dense weights, expert blobs, tokenizer)",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf": "the model's GGUF, shard 1 of 2",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf": "the model's GGUF, shard 2 of 2 (the per-layer embedding table)",
+  "/home/USER/ai-speed-testing/strata-compare/strata-cstar18/data/expert-profile.bin": "the expert routing-frequency profile shipped in the Strata tree",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt": "the MTP draft-layer pack (one draft layer + a reduced-vocabulary draft head)",
+  "/home/USER/ai-speed-testing/strata-compare/configs/r12-cost-gate.txt": "the cost-gate table fitted on this PC"
+ },
+ "arg_notes": {
+  "--pack": "dense weights and expert blobs in the engine's own layout",
+  "--native": "read the GGUF's tensors natively (no conversion)",
+  "--ple-gguf": "per-layer embedding table, rows read directly from the SSD",
+  "--expert-profile": "order in which the GPU expert cache is filled at start",
+  "--expert-cache": "main-GPU expert cache sized to the free VRAM minus the reserve (4,585 slots here)",
+  "--prefill": "prompt read in chunks of up to 16,384 tokens",
+  "--spec": "up to 7 MTP drafts per verify window (window up to 8 tokens)",
+  "--spec-min-p": "a draft is kept while its draft probability >= 0.5 (the cost gate and cumulative rule decide on top)",
+  "--mtp": "multi-token-prediction draft layer",
+  "--max-context": "context limit (the model's header allows 262,144)",
+  "--kv": "int8 KV cache",
+  "--kv-resident": "32,768 of the 131,072 KV cells per attention layer stay in VRAM; the rest stream from pinned RAM",
+  "--ple-inflight": "per-layer-embedding rows read ahead",
+  "--vram-reserve-mib": "VRAM kept free on the main GPU when the cache is sized",
+  "--chat-cache": "up to 16 parked conversations (prompt state) for follow-up requests",
+  "--chat-cache-mib": "RAM budget for parked conversations",
+  "--expert-cache-device1": "the helper GPU holds 3,300 experts (static; filled at start)",
+  "--conversation-cache-mib": "upstream 0.2.3's automatic conversation cache off (it parks synchronously)",
+  "--vision": "picture input on; the picture reader runs on the CPU in its own process"
+ },
+ "env_notes": {
+  "STRATA_IO_THREADS": "file-reading threads for the expert arena and the PLE rows",
+  "CUDA_MODULE_LOADING": "CUDA lazy module loading (less VRAM at start)",
+  "CUDA_VISIBLE_DEVICES": "GPU 0 = the RTX 5080 (main), GPU 1 = the RTX 4060 Ti (helper)",
+  "STRATA_SPEC_EXACT": "exact speculative sampling: sampled requests draft from the draft model's own q and verify by accept / residual / bonus (patch series)",
+  "STRATA_GR_V3": "hyper-connection read split over two kernels (upstream; rounding level)",
+  "STRATA_PF_FUSED": "prompt experts on the fused int8 kernels",
+  "STRATA_SIDE_MIXER": "the mixer's input-only work on graph branches (exact; owner's upstream PR)",
+  "STRATA_ROUTER_Q8K": "the router's doorbell kernel also writes the CPU pool's Q8_K activation rows (patch series)",
+  "STRATA_GR_FORK": "fork hyper-connection read (patch series)",
+  "STRATA_QSA_SPLIT_ATTN": "decode attention split across blocks on the int8 mma path (rounding level)",
+  "STRATA_MMVQ_IL": "interleaved quantized mat-vec kernels for the dense layers",
+  "STRATA_ADAPT_LAG": "the adaptive expert tier's swaps are used once two windows old",
+  "STRATA_DISJOINT_ADAPT": "the main cache never promotes an expert the helper already holds",
+  "STRATA_COST_GATE": "cost-aware draft length: prices draft steps 1-3 from this PC's measured row costs (patch series)",
+  "STRATA_PREFILL_CPU_SHARE": "prompt chunks below the MAX send 40 % of the expert work to the CPU",
+  "STRATA_MMVQ_IL_ROWS": "per-layer row table for the interleaved mat-vec kernels (tuned on this PC)",
+  "STRATA_PREFILL_CPU_SHARE_MAX": "the CPU share applies only to prompt chunks under 1,792 tokens",
+  "STRATA_DRAFT_CUM": "cumulative draft length: drafting continues while the product of the drafts' acceptance estimates stays above an adaptive threshold (adapted from Basalt; patch series)",
+  "STRATA_PREFILL_V2": "v2 prompt-expert kernels (adapted from Basalt; bit-identical to the stock path in this build)",
+  "STRATA_DEQUANT_WIDE": "wide dequantization of the prompt's dense weights (bit-exact)",
+  "STRATA_DEFAULTS": "pins the 0.2.6 per-card defaults (0.2.7's new ones off)",
+  "STRATA_ROUTE_PRIOR": "0 = off: routing bias toward cached experts (adds KL)",
+  "STRATA_PROMPT_ATTN_IMMA": "0 = off: int8 tensor-core prompt attention (failed the owner's top-1 check)",
+  "STRATA_PREFILL_LAYER_MAJOR": "0 = off: layer-major prompt reading (0.2.7 default for layer splits)",
+  "STRATA_PLE_AUTO_RAM": "0 = off: keep the PLE table on the SSD (direct reads) instead of RAM",
+  "STRATA_ROUTE_TAIL_SKIP": "0 = off: upstream's lossy skip of low-ranked missed experts",
+  "STRATA_ADAPT_ASYNC": "0 = off: the asynchronous adaptive tier (not repeatable run to run)",
+  "STRATA_HC_UPMIX": "hyper-connection up projection fused with its mix in one kernel, prompt path (upstream opt-in; exact here)",
+  "STRATA_ADAPT_FETCH": "2 = a missed expert that the main GPU read over PCIe is copied into the main cache when it is routed at least 1 and 0.5 more than the layer's least-used resident expert; in a layer where that ran, the adaptive tier's own swaps skip the experts the share can fetch (upstream v0.2.12 opt-in + the owner's helper-aware patch)"
+ },
+ "sampling_note": "Every client path and every measurement arm uses these, except the decode fixtures' own temperatures (section 4). The GGUF header suggests the same temperature / top-p / top-k [[src:notes/sampling-settings-everywhere.md:11]]",
+ "measurement_form_note": "**Measured form.** The speed and memory runs used the served config without the picture reader (`--vision` and its CPU process off); args, env and engine are otherwise identical (F2 and S2 below). The reference sets P, P-screen and PU ran the same args on the P028x engine before the fetch patch (engine sha f4c4f654fb24, the build served until 11-09 20:06) without STRATA_ADAPT_FETCH [[src:results/r23/adaptfetch/gap/decision.txt:1]].",
+ "compare_configs": [
+  {
+   "name": "F2 (gap arm)",
+   "path": "/home/USER/ai-speed-testing/strata-compare/results/r23/adaptfetch/gap/configs/F2.json",
+   "what": "the ADAPT_FETCH gap's arm for the current build: the served config minus the picture reader"
+  },
+  {
+   "name": "S2 (adoption check)",
+   "path": "/home/USER/ai-speed-testing/strata-compare/results/r23/afetch-adopt/S2.json",
+   "what": "the adoption check's config: the same"
+  },
+  {
+   "name": "P (gap reference)",
+   "path": "/home/USER/ai-speed-testing/strata-compare/results/r23/adaptfetch/gap/configs/P.json",
+   "what": "the gap's reference arm: the same args on the P028x engine before the fetch patch (engine-r22p028x); this list compares args and env only, not the engine"
+  }
+ ],
+ "speed_note": "Engine clock (the engine's own prompt and decode timers), cold prompts (nothing reused). **Fixtures** start a fresh engine for each test: pp16k = a 16,676-token prompt + up to 32 tokens; pp64k = a 66,617-token prompt + 1 token; decode = three short-prompt texts (conv 38 tokens at T 0.6 up to 1,200 tokens; struct 98 tokens at T 0.0 up to 8,192; prose 19 tokens at T 0.6 up to 1,200). **Screen** = 9 workloads in 3 groups, each pass on one fresh engine after one warm-up request, at the served sampling with thinking on: W1-think / W2-code / W3-research (short and long prompts, fixed 3,072 / 3,072 / 2,048 tokens), A-edit / B-write (agent tool-call turns), R1-verify20k / R2-report54k / R3-extract5k / R4-agent33k (research-style long prompts). 'Short prompt' = the screen's cold 1.4K-5K-token prompts; 'short-context decode' = W1 / W2 (110-125-token prompts) and the decode fixtures. Set **F2** joins two runs of the same config: the ADAPT_FETCH gap's three decode passes and the adoption check's single pp16k / pp64k / decode pass.",
+ "speed_sets": [
+  {
+   "name": "F2",
+   "kind": "fixture",
+   "label": "the current build (fetch build + STRATA_ADAPT_FETCH=2, no picture reader): decode 3 passes in the ADAPT_FETCH gap (11-09 17:54-18:03) + 1 pass of pp16k / pp64k / decode in the adoption check (11-09 20:02-20:05)",
+   "files": [
+    "results/r23/adaptfetch/gap/bp90/F2-decode-*.jsonl",
+    "results/r23/afetch-adopt/bp90/S2-*.jsonl"
+   ]
+  },
+  {
+   "name": "F2-screen",
+   "kind": "screen",
+   "label": "9-workload screen on the current build, 3 passes, 11-09 18:13-18:34 (the gap's arm F2)",
+   "files": [
+    "results/r23/adaptfetch/gap/speed/F2[123][nar].jsonl"
+   ]
+  },
+  {
+   "name": "P",
+   "kind": "fixture",
+   "label": "reference: the same form on the P028x engine before the fetch patch (P028x + STRATA_HC_UPMIX=1), decode 3 passes, same gap, 11-09 17:51-18:05",
+   "files": [
+    "results/r23/adaptfetch/gap/bp90/P-decode-*.jsonl"
+   ]
+  },
+  {
+   "name": "P-screen",
+   "kind": "screen",
+   "label": "reference: the same screen on the P028x engine before the fetch patch, 3 passes, same gap, 11-09 18:05-18:37",
+   "files": [
+    "results/r23/adaptfetch/gap/speed/P[123][nar].jsonl"
+   ]
+  },
+  {
+   "name": "PU",
+   "kind": "fixture",
+   "label": "reference: pp16k / pp64k, 3 passes, on the P028x engine before the fetch patch with STRATA_HC_UPMIX=1, 11-09 08:13-08:43",
+   "files": [
+    "results/r23/basalt-prompt/gap-speed/bp90/PU-pp16k-*.jsonl",
+    "results/r23/basalt-prompt/gap-speed/bp90/PU-pp64k-*.jsonl"
+   ]
+  }
+ ],
+ "primary_fixture_set": "F2",
+ "primary_screen_set": "F2-screen",
+ "context_targets": {
+  "16K": 16384,
+  "64K": 65536
+ },
+ "context_tolerance": 0.15,
+ "min_decode_tokens": 256,
+ "speed_extra_notes": [
+  "Two workloads (W1-think, R1-verify20k) are two engine requests each: the server ends the thinking pass at its room limit and continues the answer in a second request that reuses the first's state (the second reads only 19 new tokens) [[src:results/r23/adaptfetch/gap/speed/F21n.englog:3-10]]. The numbers above count the whole reply, and the server adds the continuation's ~80 ms prompt read to the prompt time, so R1-verify20k's prompt rate reads ~1.5 % low (pass 1: 4,534.5 tok/s for the reply vs 4,601.8 for its first engine request) [[src:results/r23/adaptfetch/gap/speed/F21r.englog:2-9]] [[src:results/r23/adaptfetch/gap/speed/F21r.jsonl:1]]; W1-think's 111-token prompt rate means nothing for the same reason.",
+  "The struct fixture (T 0.0, repetitive structured text) accepts ~96 % of drafts, so its ~237 tok/s is the upper end; W1 / W2 at T 1.0 with thinking are the realistic short-context decode.",
+  "Noise, as the spread of the 3 passes per arm in the ADAPT_FETCH gap: screen decode geomean 3.4 %, conv 11.0 %, struct 2.3 %, prose 4.0 % [[src:results/r23/adaptfetch/gap/decision.txt:13]]; pp16k / pp64k 0.1 / 0.5 % over 3 passes on the P028x engine before the fetch patch [[src:results/r23/basalt-prompt/gap-speed/decision.txt:9]]. The current build's pp16k / pp64k ran one pass each, level with that engine's 3-pass medians [[src:results/r23/afetch-adopt/summary.txt:74-75]].",
+  "**How =2 came to be served.** The gap's frozen rule made =1 (F1: screen decode +10.2 %, prompt +0.11 %) its proposal and failed =2 on one per-workload prompt check, R4-agent33k -0.1 % against a 0.1 % noise [[src:results/r23/adaptfetch/gap/decision.txt:4-5]] [[src:results/r23/adaptfetch/gap/decision.txt:12-13]]. The owner adopted =2 as a recorded exception for this decision only, with the rule unchanged: the loss is on the prompt path, which ADAPT_FETCH does not touch; =2 had the higher decode (+12.7 %); both quality checks passed [[src:results/r23/adaptfetch/OWNER-EXCEPTION-1109.md:28-35]]. The adoption check on the served config: exact7 7/7 with the switch unset and set, pp16k / pp64k level with the P028x engine before the fetch patch, decode +3.8 to +7.1 % over the gap's P in one pass [[src:results/r23/afetch-adopt/result.txt:1]]."
+ ],
+ "speed_summary_lines": [
+  {
+   "file": "results/r23/adaptfetch/gap/decision.txt",
+   "pattern": "^  speed vs P: FAIL \\(screen\\)",
+   "label": "ADAPT_FETCH gap, F2 (=2, the current build) vs P (the P028x engine before the fetch patch), 3 passes each"
+  },
+  {
+   "file": "results/r23/adaptfetch/gap/decision.txt",
+   "pattern": "^INFO F2 vs F1",
+   "label": "Same gap, =2 vs =1"
+  },
+  {
+   "file": "results/r23/afetch-adopt/summary.txt",
+   "pattern": "^  pp16k: S2 ",
+   "label": "Adoption check on the served config (11-09 20:02-20:05), pp16k; in these quoted lines 'this morning's PU' = set PU, 'this morning's P' = the same engine without U (not set P), 'the U adoption's check' = one pass on the same engine with U at 11:35"
+  },
+  {
+   "file": "results/r23/afetch-adopt/summary.txt",
+   "pattern": "^  pp64k: S2 ",
+   "label": "Adoption check, pp64k"
+  },
+  {
+   "file": "results/r23/afetch-adopt/summary.txt",
+   "pattern": "^  decode tok/s \\(1 pass",
+   "label": "Adoption check, decode ('gap P' = set P, 'gap F2' = the gap's three F2 passes)"
+  }
+ ],
+ "engine_logs": [
+  {
+   "label": "screen F2, current build (ADAPT_FETCH gap, 3 passes, one warm-up request each)",
+   "files": [
+    "results/r23/adaptfetch/gap/englog/scr-F2[123].englog"
+   ],
+   "big_routed": 200000
+  },
+  {
+   "label": "decode fixtures F2, current build (conv / struct / prose x3)",
+   "files": [
+    "results/r23/adaptfetch/gap/englog/bp-F2-decode-[123].englog"
+   ],
+   "no_big": true
+  },
+  {
+   "label": "served log on the current build, 11-09 20:06 - 11-10 (4 engine starts)",
+   "path": "/home/USER/ai-speed-testing/strata-compare/logs/engine-P028x.log",
+   "from_line": 238213,
+   "to_line": 238673,
+   "big_routed": 200000,
+   "details": true
+  },
+  {
+   "label": "screen P, the P028x engine before the fetch patch (same gap, 3 passes, one warm-up request each)",
+   "files": [
+    "results/r23/adaptfetch/gap/englog/scr-P[123].englog"
+   ],
+   "big_routed": 200000
+  },
+  {
+   "label": "decode fixtures P, the P028x engine before the fetch patch (same gap)",
+   "files": [
+    "results/r23/adaptfetch/gap/englog/bp-P-decode-[123].englog"
+   ],
+   "no_big": true
+  },
+  {
+   "label": "served log 10-30 16:55 - 11-09 11:39, the P028x engine before the fetch patch (103 engine starts)",
+   "path": "/home/USER/ai-speed-testing/strata-compare/logs/engine-P028x.log",
+   "from_line": 1,
+   "to_line": 237843,
+   "big_routed": 200000,
+   "details": true
+  },
+  {
+   "label": "decode-timing pass T2dv (11-05, the P028x engine before the fetch patch, without U)",
+   "files": [
+    "results/r23/decode-timing/t2/engine-T2dv.log"
+   ],
+   "no_big": true
+  }
+ ],
+ "placement_notes": [
+  "Decode only. The prompt pass works differently: it borrows 3,231 of the main GPU's cache slots for its chunks (section 7), and chunks under 1,792 tokens send 40 % of the expert work to the CPU.",
+  "What the fetch patch changes: with STRATA_ADAPT_FETCH=2 a missed expert that the main GPU read over PCIe is kept in the main cache when it is routed clearly more often than the layer's least-used resident expert [[src:results/r23/afetch-adopt/englog/r23aa11091954-S2-decode.englog:47]], about 83 admissions per verify window on the screen. Against the same screen on the P028x engine before the fetch patch, the main cache's share of routed entries rose from 62.6 to 67.3 % and the CPU's fell from 14.4 to 9.4 %; the helper's (17.3 %) and the PCIe share (about 6 %) stayed [[src:results/r23/adaptfetch/gap/fetchstats.txt:5]] [[src:results/r23/adaptfetch/gap/fetchstats.txt:9]].",
+  "Admissions land only in the main (RTX 5080) cache. The helper's experts are static (filled at start), and the owner's patch makes the PCIe share's pick list leave out experts the helper holds; without that, the picks would go to the helper and never be fetched [[src:results/r23/ADAPTFETCH-DESK-1109.md:21-30]] [[src:results/r23/ADAPTFETCH-DESK-1109.md:53-55]].",
+  "The served log on the current build is short (the 11-09 evening and the 11-10 morning), and four long generations (71,579, 27,946, 32,768 and 15,110 tokens) carry most of its routed entries [[src:logs/engine-P028x.log:238315]] [[src:logs/engine-P028x.log:238519]] [[src:logs/engine-P028x.log:238527]] [[src:logs/engine-P028x.log:238576]]; read the screen as the main figure.",
+  "On the P028x engine before the fetch patch (ten days of served traffic, 10-30 to 11-09): about 63 % of routed entries hit the main GPU's cache, 17 % the helper's, 6 % came over PCIe and 14 % were computed by the CPU, and the adaptive tier ran at its cap of 24 swaps per window in every request [[src:results/r23/ADAPTFETCH-DESK-1109.md:84]]."
+ ],
+ "placement_summary_lines": [
+  {
+   "file": "results/r23/adaptfetch/gap/fetchstats.txt",
+   "pattern": "^F2 B3:",
+   "label": "The gap's own count, screen F2 (cross-check of the first row)"
+  },
+  {
+   "file": "results/r23/adaptfetch/gap/fetchstats.txt",
+   "pattern": "^F2 B2:",
+   "label": "The gap's own count, decode fixtures F2"
+  },
+  {
+   "file": "results/r23/adaptfetch/gap/fetchstats.txt",
+   "pattern": "^P B3:",
+   "label": "The gap's own count, screen P (the P028x engine before the fetch patch)"
+  },
+  {
+   "file": "results/r23/adaptfetch/gap/fetchstats.txt",
+   "pattern": "^P B2:",
+   "label": "The gap's own count, decode fixtures P (the P028x engine before the fetch patch)"
+  },
+  {
+   "file": "results/r23/ADAPTFETCH-DESK-1109.md",
+   "pattern": "^\\| Served P028x, 32,797 requests",
+   "label": "The earlier desk study's figure from the ten-day served log (the P028x engine before the fetch patch; cross-check)"
+  }
+ ],
+ "mtp_note": "Drafting: one MTP draft layer (837 MiB of VRAM) with a 40,525-token draft head, `--spec 7` (verify windows of up to 8 tokens), `--spec-min-p 0.5`, the cost gate pricing draft steps 1-3 and the cumulative draft-length rule past them; exact speculative sampling. The engine also drafts from earlier repeats in the context (prompt lookup, `--suffix-draft`, default 3); those drafts are logged apart and subtracted below.",
+ "mtp_extra_notes": [
+  "The cumulative rule's threshold adapts per request between 0.371 and its floor 0.265 [[src:results/r23/afetch-adopt/englog/r23aa11091954-S2-decode.englog:52]]: greedy structured text drafts ~6 per window, sampled thinking text ~2-3.",
+  "The served slice on the current build is mostly four long generations [[src:logs/engine-P028x.log:238315]] [[src:logs/engine-P028x.log:238519]] [[src:logs/engine-P028x.log:238527]] [[src:logs/engine-P028x.log:238576]], so its acceptance is not comparable with the screen's."
+ ],
+ "mtp_summary_lines": [
+  {
+   "file": "results/r23/decode-timing/t2/report-T2dv.txt",
+   "pattern": "^11 requests",
+   "label": "Decode-timing pass (11-05, the P028x engine before the fetch patch): mean verify-window width T and tokens per window (tok/w)"
+  }
+ ],
+ "engine_start_log": "/home/USER/ai-speed-testing/strata-compare/results/r23/afetch-adopt/englog/r23aa11091954-S2-decode.englog",
+ "guard_logs": [
+  "bringup/out/logs/server_r23af11091734-bpF2-*.log",
+  "bringup/out/logs/server_r23af11091734-scrF2[123]_*.log",
+  "bringup/out/logs/server_r23aa11091954-S2-*.log"
+ ],
+ "monitor_sys_csv": [
+  "bringup/out/logs/monitor-r23af11091734-bpF2-*.sys.csv",
+  "bringup/out/logs/monitor-r23af11091734-scrF2[123].sys.csv",
+  "bringup/out/logs/monitor-r23aa11091954-S2-*.sys.csv"
+ ],
+ "memory_summary_lines": [
+  {
+   "file": "results/r23/afetch-adopt/summary.txt",
+   "pattern": "8080 down: engines left: none MemAvailable",
+   "label": "RAM available with no engine loaded (before the adoption check)"
+  },
+  {
+   "file": "results/r23/adaptfetch/gap/summary.txt",
+   "pattern": "^pfy F0L40: .*min_MemAvailable",
+   "label": "The 40-long-prompt exactness run on the fetch build with the switch unset (one engine, its own cache setting; read it for RAM and swap)"
+  },
+  {
+   "file": "results/r23/adaptfetch/gap/summary.txt",
+   "pattern": "no swap-out while P028x started",
+   "label": "Restart of the served engine after the gap (still the P028x engine before the fetch patch)"
+  },
+  {
+   "file": "results/r23/afetch-adopt/summary.txt",
+   "pattern": "no swap-out while P028x started",
+   "label": "Restart of the served engine on the current build after the adoption check"
+  }
+ ],
+ "memory_notes": [
+  "The owner's guard stops a run if the main GPU's free memory falls under 300 MiB or MemAvailable under 12 GiB [[src:bringup/lib/guard.py:7-8]] [[src:notes/memavailable-floor.md:8]]; every run above ended `ok`.",
+  "Swap in use stayed flat inside every measured run: about 4.3 GiB of other programs' pages were swapped out before the runs began and none moved during them, and the served engine restarted with no swap-out after the gap and after the adoption check (quoted above). The owner's swap rule fails a run on the engine's own swap or on sustained swap traffic inside it, not on pages swapped before it [[src:notes/kernel-oops-pinned-memory.md:51]].",
+  "The served config adds the CPU picture reader (about 1 GB of RAM in its own process), not in these runs [[src:notes/memavailable-floor.md:29-30]].",
+  "VRAM use is flat by design: the main GPU's expert cache takes all but the reserve at start, so its free memory is the reserve's remainder (about 440-500 MiB) whatever the context; the KV cells past 32,768 per attention layer live in 1.55 GiB of pinned RAM allocated at start, so a 64K prompt costs prompt time and a little RSS (51.5 vs 51.2 GiB for 16K), not VRAM. The fetch patch adds about 260 bytes of VRAM, carved after the cache is sized, so the main cache keeps its 4,585 slots [[src:results/r23/ADAPTFETCH-DESK-1109.md:58]]."
+ ],
+ "decode_timing": {
+  "report": "/home/USER/ai-speed-testing/strata-compare/results/r23/decode-timing/t2/report-T2dv.txt",
+  "config": "/home/USER/ai-speed-testing/strata-compare/results/r23/decode-timing/x28h-t2dv.json",
+  "notes": [
+   "**Everything in this section was measured on 11-05 on the P028x engine before the fetch patch, without U.** The fetch patch acts on exactly this split: on the 11-09 screen it cut the CPU's share of routed entries from 14.4 to 9.4 % (section 5), so on the current build the CPU pool takes a smaller part of each window than shown here; whether it is still the slowest step was not measured.",
+   "Method: one 9-workload screen pass with STRATA_DECODE_TIMING=1 (the host's split per window) and STRATA_VERIFY_PROFILE=1 (the GPU stage table); the profile changes the graph (shared expert inline, fused waits off), so its rates run ~2 % low [[src:results/r23/decode-timing/ANALYSIS.md:174-176]]. The first request (warm-up) is left out; means are window-weighted.",
+   "Reading it: a window is a serial chain per layer. The GPU runs the dense part of a layer (GDN mixer, hyper-connection reads, router) while the CPU pool idles; then the CPU pool computes the layer's missed experts while the GPU mostly waits (`waitB` in the stage table) [[src:results/r23/decode-timing/ANALYSIS.md:11-14]]. The GPU's serial part is 98-99 % busy with 1.5-3 us of launch gaps per layer, so only kernel work shortens it [[src:results/r23/decode-timing/ANALYSIS.md:15-17]].",
+   "The CPU pool (9.67 ms) and the GPU-reach wait (9.60 ms) are nearly equal; per layer-window the CPU pool is the long pole in 69 % of layer-windows on two cards (an older build's trace, 10-21) [[src:results/r23/decode-timing/ANALYSIS.md:89-90]]. Fewer CPU-computed experts (a bigger or smarter GPU cache) is the lever; a faster GPU kernel helps only the other half. The fetch patch is such a lever (section 5)."
+  ]
+ },
+ "timing_summary_lines": [
+  {
+   "file": "results/r23/decode-timing/t2/summary.txt",
+   "pattern": "T2dvn W1-think",
+   "label": "Timing pass (11-05, the P028x engine before the fetch patch), W1-think (client decode speed under the profiler)"
+  },
+  {
+   "file": "results/r23/decode-timing/t2/summary.txt",
+   "pattern": "T2dvr R2-report54k",
+   "label": "Timing pass, R2-report54k"
+  },
+  {
+   "file": "results/r23/decode-timing/gap-a/decision.txt",
+   "pattern": "^timing Bt \\(INFO\\)",
+   "label": "Cross-check: the two-card base arm of the 11-05 decode-timing gate (the P028x engine before the fetch patch; host split only, no GPU profile)"
+  }
+ ],
+ "already_tried": "/home/USER/ai-speed-testing/strata-compare/work/qwen4-kit/profile-pack/already-tried-flashnext.txt",
+ "release_day_static": [
+  [
+   "Short-prompt reading speed on fixed fixtures",
+   "today's short-prompt figures are screen workloads (1.4K-5K-token prompts with chat formatting and tool schemas, one request per pass); add pp1k / pp4k cold fixtures, 3 passes"
+  ],
+  [
+   "Prompt fixtures with 3 passes on the served build",
+   "today's current-build pp16k / pp64k ran 1 pass (the adoption check); the 3-pass figures are from the P028x engine before the fetch patch; run 3 passes of every fixture"
+  ],
+  [
+   "Prompt speed at 128K",
+   "nothing above a 66,617-token prompt on the served form; the exactness run's 112K prompt used a pinned smaller cache"
+  ],
+  [
+   "Expert placement on the new model",
+   "today's main placement figure is the 9-workload screen; long served traffic exists only for the P028x engine before the fetch patch (the current build has one evening and one morning); on day one only the screen and fixtures exist, so report the screen figure and say so"
+  ],
+  [
+   "Helper GPU memory over time",
+   "only the guard's minimum free (one value per run); the helper's own use is flat by design but not sampled"
+  ],
+  [
+   "Per-position MTP acceptance at the served sampling",
+   "take it on the screen at T 1.0 with thinking on, not on the decode fixtures (T 0.6 / 0.0)"
+  ]
+ ],
+ "guard_key_labels": {
+  "min_MemAvailable": "MemAvailable",
+  "min_5080_free": "main GPU free VRAM",
+  "max_tree_RSS": "server + engine RSS",
+  "max_swap_used": "system swap in use (pages swapped before the runs)",
+  "min_4060Ti_free": "helper GPU free VRAM"
+ }
+}

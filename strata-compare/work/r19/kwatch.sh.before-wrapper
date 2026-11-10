@@ -1,0 +1,26 @@
+#!/bin/bash
+# kwatch.sh - round 19 (after the RAM fault at 6200 MT/s): follows the kernel log and, at the first error line, stops
+# everything: records the line (logs/r19/kwatch.log, tmp/r19/KERNEL_ERROR), puts STOP at the head of the queue (the rest
+# saved in work/r19/queue-at-kernel-error.txt), kills the queue's job tree by PID (tmp/r19/queue.pid) and every process named
+# strata or stressapptest, then exits. The user's rule: check the kernel log after each big run and stop at the first error.
+#   start:  setsid nohup bringup/lib/kwatch.sh > /dev/null 2>&1 < /dev/null &      stop: kill $(cat tmp/r19/kwatch.pid)
+WS=/home/USER/ai-speed-testing/strata-compare; cd $WS
+LOG=logs/r19/kwatch.log; FLAG=tmp/r19/KERNEL_ERROR; Q=bringup/lib/queue.txt
+mkdir -p logs/r19 tmp/r19; echo $$ > tmp/r19/kwatch.pid
+PAT='Oops|BUG:|kernel BUG|Machine check|mce: |\[Hardware Error\]|EDAC .*(error|CE|UE)|Bad page|Bad rss|general protection|soft lockup|hung_task|blocked for more than|Out of memory|oom-kill|oom_reaper|NVRM: Xid|segfault|WARNING: CPU|watchdog: |page allocation failure|I/O error|nvme.*(timeout|reset)'
+echo "$(date -Is) kwatch start (pid $$, tainted $(cat /proc/sys/kernel/tainted))" >> $LOG
+desc() { local p; for p in $(pgrep -P $1); do desc $p; echo $p; done; }
+journalctl -k -f -n 0 --no-pager -o short-iso | while IFS= read -r line; do
+  grep -qiE "$PAT" <<< "$line" || continue
+  echo "$(date -Is) KERNEL ERROR: $line" >> $LOG
+  echo "$line" > $FLAG
+  cp $Q work/r19/queue-at-kernel-error.txt; { echo STOP; cat $Q; } > $Q.new && mv $Q.new $Q
+  if [ -f tmp/r19/queue.pid ] && kill -0 "$(cat tmp/r19/queue.pid)" 2>/dev/null; then
+    kids=$(desc "$(cat tmp/r19/queue.pid)"); [ -n "$kids" ] && kill $kids 2>/dev/null
+    echo "$(date -Is) killed the queue's jobs: $kids" >> $LOG
+  fi
+  for p in $(pgrep -x strata) $(pgrep -x stressapptest); do kill $p 2>/dev/null && echo "$(date -Is) killed $p ($(cat /proc/$p/comm 2>/dev/null))" >> $LOG; done
+  sleep 3; journalctl -k -b 0 --no-pager -o short-iso | tail -40 >> $LOG
+  echo "$(date -Is) kwatch stop (tainted $(cat /proc/sys/kernel/tainted))" >> $LOG
+  pkill -P $$ journalctl 2>/dev/null; exit 0
+done

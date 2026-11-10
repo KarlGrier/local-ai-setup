@@ -1,0 +1,17 @@
+BDIR=build work/r11/build.sh strata-v39-fix engine-v39fix && .venv/bin/python work/r11/buildrec.py V39F configs/V39F.json "Phase 0 fixes on v0.1.39 (Phase B base): v39-c121 + #550 #700 #454 #652 + switches (#454 merged with #606's repeat stop)"
+work/r11/servertests.sh /home/USER/ai-speed-testing/strata-compare/strata-v39-fix
+[ -x engine-v39fix/strata ] && REF=v39 work/r11/exact7.sh v39fix configs/V39F.json
+[ -x engine-v39fix/strata ] && work/r11/with_server.sh F39-t652 configs/V39F.json -- ".venv/bin/python work/r11/followup652.py http://127.0.0.1:8081 v39f plain think"
+[ -x engine-v39fix/strata ] && work/r11/with_server.sh F39-tstop configs/V39F.json -- ".venv/bin/python work/r11/stoptest.py http://127.0.0.1:8081 v39f; .venv/bin/python work/r11/tooltag_test.py http://127.0.0.1:8081 v39f 3"
+[ -x engine-v39fix/strata ] && work/r11/fixpair.sh det39f configs/V39F.json configs/V39F.json
+[ -x engine-v39fix/strata ] && work/r11/fixpair.sh det39r configs/V39F-res0.json configs/V39F-res0.json
+[ -x engine-v39fix/strata ] && work/r11/ldrscreen.sh F39o-a configs/V39F-old.json
+[ -x engine-v39fix/strata ] && work/r11/ldrscreen.sh F39-a configs/V39F.json
+[ -x engine-v39fix/strata ] && work/r11/ldrscreen.sh F39-b configs/V39F.json
+[ -x engine-v39fix/strata ] && work/r11/ldrscreen.sh F39o-b configs/V39F-old.json
+.venv/bin/python work/r11/ldr_table.py old=F39o-a,F39o-b fixed=F39-a,F39-b | tee results/r11/ldr-v39fix.md
+[ -x engine-v39fix/strata ] && work/r11/decscreen.sh F39do-a configs/V39F-old.json
+[ -x engine-v39fix/strata ] && work/r11/decscreen.sh F39d-a configs/V39F.json
+[ -x engine-v39fix/strata ] && work/r11/decscreen.sh F39d-b configs/V39F.json
+[ -x engine-v39fix/strata ] && work/r11/decscreen.sh F39do-b configs/V39F-old.json
+.venv/bin/python work/r11/ab_table.py old=F39do-a,F39do-b fixed=F39d-a,F39d-b | tee results/r11/dec-v39fix.md

@@ -1,0 +1,23 @@
+work/r8/tagcheck.sh r9-start
+work/r8/build.sh strata-r9 engine-r9c
+work/r8/run.sh pDx-r9-math configs/R9c-helper.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pDx-c9-math configs/Cstar9.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pDs-r9-math configs/R9c-helper.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pDs-c9-math configs/Cstar9.json math 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pDx-r9-code configs/R9c-helper.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pDx-c9-code configs/Cstar9.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pDs-r9-code configs/R9c-helper.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r8/run.sh pDs-c9-code configs/Cstar9.json code 1024 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pDx-r9-32k configs/R9c-helper.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pDx-c9-32k configs/Cstar9.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pDx-r9-tf-long112k configs/R9c-helper.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/run.sh pDx-c9-tf-long112k configs/Cstar9.json tf-long112k.prompt 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+work/r8/decscreen.sh D9d-a configs/R9c-helper.json
+work/r8/decscreen.sh C9d2-a configs/Cstar9.json
+work/r8/decscreen.sh C9d2-b configs/Cstar9.json
+work/r8/decscreen.sh D9d-b configs/R9c-helper.json
+work/r8/screen.sh D9-a configs/R9c-helper.json
+work/r8/screen.sh C9s-a configs/Cstar9.json
+work/r8/screen.sh C9s-b configs/Cstar9.json
+work/r8/screen.sh D9-b configs/R9c-helper.json
+work/r8/tagcheck.sh r9-ab-done

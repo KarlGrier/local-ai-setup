@@ -1,0 +1,5 @@
+work/r8/build.sh strata-r8s engine-r8s
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_PREFILL_PTR_SPAN=17' work/r8/run.sh pBm-span17-32k configs/R8s-helper.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_PREFILL_PTR_SPAN=17' work/r8/run.sh pBm-span17-rep4k configs/R8s-helper.json rep4k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_PREFILL_PTR_SPAN=20' work/r8/run.sh pBm-span20-32k configs/R8s-helper.json 32k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500
+ENVX='STRATA_PREFILL_TIMING=1 STRATA_PREFILL_PTR_SPAN=20' work/r8/run.sh pBm-span20-rep4k configs/R8s-helper.json rep4k 64 --adapt-swaps 0 --suffix-draft 0 --expert-cache 3500

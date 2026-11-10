@@ -1,0 +1,12 @@
+[Unit]
+Description=Alert push (deep-research tools/alert-push.py): critical alerts of our own automation -> ntfy.sh (Karl 11-06), short path-free messages
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I /home/USER/ai/deep-research/tools/alert-push.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

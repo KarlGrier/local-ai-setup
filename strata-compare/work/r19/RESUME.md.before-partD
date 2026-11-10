@@ -1,0 +1,59 @@
+# Round 19 — where it stopped (2026-10-11 ~12:50, the user's planned reboot into Windows) and how to resume
+
+**Nothing starts before the user says "continue".** The previous version of this file (the 10-10 stop for the RAM fault)
+is work/r19/RESUME.md.before-1250.
+
+## State at the stop
+
+* **C\*16.1 is the promoted build** (configs/Cstar161.json, engine-cstar161 sha 5a449f45f950, rebuilt clean on 10-10); the
+  launchers default to it. It was stopped for the reboot (8080 down, SearXNG down).
+* **C\*17 = the FALLBACK, built and checked, NOT promoted:** v0.1.42 + C\*16.1's series (branch r19-port 524a66b3, tree
+  1c05934d: our exact sampling STRATA_SPEC_EXACT=1 + our cost gate), STRATA_PREFILL_CPU_SHARE=0.4 on chunks below
+  STRATA_PREFILL_CPU_SHARE_MAX=1792, C\*16.1's other flags. Assets: engine-cstar17/, engine-twin17/ (r19-meas), worktree
+  strata-cstar17/, configs Cstar17.json, Cstar17-single.json (5080, STRATA_ROUTE_TAIL_SKIP=0), twin17, R17RT, BR17;
+  launcher copies work/r19/run-strata.sh.c17 / switch-model.sh.c17 (installed by work/r19/promote-c17.sh).
+  Checks (work/r19/c17x_pipeline.sh, logs/r19/c17x_pipeline.log): **passed** — exact7 2ad1b419 6148c14a 2c21861d 854d0149 3e219376 651f56c8 a393ca0a (= B3's share-0.4 hashes on C\*16.1's series + C\*16.1's long items), repeats 7/7; our exact-sampling chi-square ALL PASS; the suite's 6 near-tie cases x 200 all pass (p 0.20–0.99); gates (results/r19/g-gates-c17x.txt): exact7 7/7, needles 12 x 6/6, stop at 120K all PASS, #652 13/14 + 4/5, stops ALL PASS, every tool call parsed (3 runs whose prose did not name the tag), #931 20/0/0, repeat 3/3, round trips identical, browser 42 / 1 (the known chat-cache line). **One borderline result to decide on:** arith-j3 x 2,000 with our exact sampling: '=' 54.7 % vs 51.8 % (p 0.0103, bound 0.01); vs the spec-off arm directly (52.3 %) p 0.13. (Upstream's STRATA_SPEC_PROB: 62.2 %, z 6.2 vs spec off.) Option before the soak: more samples of our exact sampling and spec off at arith-j3 (~30 min per 4,000).
+* **Why the fallback:** upstream's STRATA_SPEC_PROB is biased at a near-tie at T 0.6 (arith-j3: '=' 62.2 % without our
+  gate, 59.6 % with it, vs 52.3 % with speculation off on the same build = the reference 51.6–51.8 %); not at T 1.0
+  (52.6 % vs 51.1 %). results/r19/sp-recheck/. The user's plan: C\*17 = our exact sampling + the gate (B5: 144.5 tok/s
+  each, no cost).
+* GitHub: #1682 / #1683 replies posted 10-11 (publish/r19/MANIFEST.md). Drafts waiting for ONE OK at the very end:
+  publish/r19/04-comment-1684.md (#1684 thank-you), 03-issue-cmake-native-experts.md (to update to v0.1.43 in Part D);
+  to write in Part D: the #1896 test comment, the sampler issue (if stock v0.1.43 confirms it), the #1889 force-push.
+* Queue: empty, queue.sh stopped. The next lines are saved in **work/r19/queue-held-1250.txt** (the soak, then STOP).
+* RAM 6000 MT/s, driver 615.71.09, kernel 7.0.0-38. The 48-hour monitor of C\*16.1 has not run since 10-10 15:32 (the
+  round's start); the reboot is noted in logs/r18/uptime-c161/events.log and logs/r19/planned-reboot.txt.
+
+## When the user is back (in this order; nothing before "continue")
+
+1. **Kernel log of the new boot:** `journalctl -k -b 0 | grep -iE 'oops|bug:|mce|edac|bad page|segfault|nvrm: xid'`;
+   `cat /proc/sys/kernel/tainted` (0 or 4096 = the NVIDIA module); `uname -r`, `nvidia-smi` (both GPUs, driver
+   615.71.09); a Windows boot can change the clock or the GPU state, so check the date too.
+2. **Integrity checks** (as on 10-10 evening, results/r19/integrity/): the model files' hashes
+   (work/r19/integrity/verify_models.py), git fsck + worktrees (work/r19/integrity/verify_git.sh), and the engines:
+   sha256 of engine-cstar161 / engine-cstar17 / engine-twin17 against their SHA256 files.
+3. **Start the kernel-log watcher:** `setsid nohup bringup/lib/kwatch.sh > /dev/null 2>&1 < /dev/null &` (pid in
+   tmp/r19/kwatch.pid; check with bringup/lib/kcheck.sh).
+4. **C\*16.1 back on 8080:** `bringup/lib/phase_end.sh r19-resume keep` (health + one answer; SearXNG up).
+5. **The 48-hour monitor is restarted after the promotion** (on C\*17), not before.
+6. On "continue": `cp work/r19/queue-held-1250.txt bringup/lib/queue.txt`; start `bringup/lib/queue.sh` with its pid in
+   tmp/r19/queue.pid (`pgrep -f '^/bin/bash bringup/lib/queue.sh'` after setsid). Then:
+   1. **the 2-hour soak of C\*17 on 8080** + the soaked decode screen (queued) → read logs/r19/soak17.log;
+   2. **promotion:** `work/r19/promote-c17.sh > logs/r19/promote-c17.log` (launchers → Cstar17.json; the rollback test
+      to C\*16.1 and back);
+   3. **the 48-hour monitor on C\*17:** `setsid nohup .venv/bin/python work/r13/uptime_monitor.py --out
+      logs/r19/uptime-c17 > /dev/null 2>&1 &`;
+   4. **B7:** `work/r19/b7_q4.sh configs/Cstar17-single.json strata-cstar17` (the Q4 config on C\*17 with tail skip 0 +
+      the user's --resident-experts vs budget-66 test: exact7 items equal, B A A B, kernel check after each run);
+   5. **the report:** REPORT.md "Round 19" (draft work/r19/report-r19.md) + results/round19-summary.md; memory updates
+      (strata-posted-threads, the cost-gate / sampler findings);
+   6. **Part D (v0.1.43, work/r19/PARTD.md):** the port → C\*17.1, the overlap A/Bs, the #1896 test + draft, the #1889
+      rebase, the CMake draft to v0.1.43, the sampler issue (stock twin on v0.1.43 first);
+   7. **all OK items together** to the user.
+
+## Rules (unchanged)
+
+One model server at a time; the 20 GB floor (6 GiB for the stand-in files); lossless only; every step ends with the
+promoted build on 8080; nothing posted without the user's OK per item; the monitor is on the motherboard output. After
+the RAM fault: the kernel-log watcher runs during every queue; check the kernel log after each big run and stop at the
+first error.

@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""gguf_head.py — read a GGUF's HEADER only (metadata + tensor table), standard library only, never the tensor data.
+
+    from gguf_head import read_model
+    m = read_model("/path/model-00001-of-00002.gguf")     # every shard of a split is found and read
+    m.meta["qwen4exp.embedding_length"], m.tensors["blk.0.ffn_gate_exps.weight"].type_name, m.tensors[...].shape
+
+    python3 gguf_head.py FILE [--keys] [--tensors] [--grep PATTERN]
+
+A shard's header is a few MB (most of it the tokenizer's arrays); reading it takes well under a second.  Shapes are in
+GGUF order (ne0 first: the row length first).  Byte sizes come from ggml's block sizes, so every tensor's size is known
+without reading it.
+
+10-27 (v0.2.6 refresh): the type table follows v0.2.6's tools/gguf_reader.py (NVFP4 = 40, Q1_0 = 41, Gyro's trellis
+types 143-146); a short read anywhere in the header raises "truncated header" (a head-only file fetched by
+bringup/fetch_model.py --heads that was cut too early); a head-only file NAME carries the real shard size in NAME.size
+(written by fetch_model.py), which the shard layout uses instead of the cut file's size."""
+from __future__ import annotations
+
+import re
+import struct
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+# ggml types: (name, block size in values, bytes per block)
+GGML_TYPES = {
+    0: ("F32", 1, 4), 1: ("F16", 1, 2), 2: ("Q4_0", 32, 18), 3: ("Q4_1", 32, 20), 6: ("Q5_0", 32, 22), 7: ("Q5_1", 32, 24),
+    8: ("Q8_0", 32, 34), 9: ("Q8_1", 32, 36), 10: ("Q2_K", 256, 84), 11: ("Q3_K", 256, 110), 12: ("Q4_K", 256, 144),
+    13: ("Q5_K", 256, 176), 14: ("Q6_K", 256, 210), 15: ("Q8_K", 256, 292), 16: ("IQ2_XXS", 256, 66),
+    17: ("IQ2_XS", 256, 74), 18: ("IQ3_XXS", 256, 98), 19: ("IQ1_S", 256, 50), 20: ("IQ4_NL", 32, 18),
+    21: ("IQ3_S", 256, 110), 22: ("IQ2_S", 256, 82), 23: ("IQ4_XS", 256, 136), 24: ("I8", 1, 1), 25: ("I16", 1, 2),
+    26: ("I32", 1, 4), 27: ("I64", 1, 8), 28: ("F64", 1, 8), 29: ("IQ1_M", 256, 56), 30: ("BF16", 1, 2),
+    34: ("TQ1_0", 256, 54), 35: ("TQ2_0", 256, 66), 39: ("MXFP4", 32, 17), 42: ("Q2_0", 64, 18),
+    # 10-27: v0.2.6 tools/gguf_reader.py GGML_TYPES / BLOCK_GEOMETRY (ggml-common.h: block_nvfp4 64 values in 36 bytes,
+    # block_q1_0 128 in 18); agentionai's trellis types (Gyro: 128-value blocks)
+    40: ("NVFP4", 64, 36), 41: ("Q1_0", 128, 18),
+    143: ("PTQ1_0", 128, 28), 144: ("TQ2_T", 128, 34), 145: ("TQK6", 128, 26), 146: ("TQK7", 128, 30),
+}
+TYPE_BY_NAME = {v[0]: k for k, v in GGML_TYPES.items()}
+
+
+@dataclass
+class Tensor:
+    name: str
+    type: int
+    shape: tuple
+    offset: int
+    shard: int
+
+    @property
+    def type_name(self) -> str:
+        return GGML_TYPES.get(self.type, (f"type{self.type}", 0, 0))[0]
+
+    @property
+    def n_values(self) -> int:
+        n = 1
+        for d in self.shape:
+            n *= d
+        return n
+
+    @property
+    def nbytes(self) -> int:
+        name, bs, bb = GGML_TYPES.get(self.type, (None, 0, 0))
+        if not bs:
+            return -1
+        return self.n_values // bs * bb
+
+
+@dataclass
+class Model:
+    paths: list
+    meta: dict = field(default_factory=dict)          # merged over shards (shard 1 first)
+    shard_meta: list = field(default_factory=list)    # each shard's own keys
+    shard_layout: list = field(default_factory=list)  # round 15: (header end, file size, tensor count) per shard
+    tensors: dict = field(default_factory=dict)
+    version: int = 0
+    head_only: list = field(default_factory=list)     # 10-27: per shard, True for a head-only file (NAME.size beside it)
+
+    def file_bytes(self) -> int:
+        """10-27: the model's size on disk / to download (every shard's real size, also for head-only files)."""
+        return sum(s for _, s, _ in self.shard_layout)
+
+    def get(self, key, default=None):
+        return self.meta.get(key, default)
+
+    def arch(self) -> str:
+        return self.meta.get("general.architecture", "?")
+
+    def a(self, suffix, default=None):
+        """The architecture's own key: a('embedding_length') = meta['<arch>.embedding_length']."""
+        return self.meta.get(f"{self.arch()}.{suffix}", default)
+
+
+class _R:
+    def __init__(self, f):
+        self.f = f
+
+    def u(self, fmt):
+        n = struct.calcsize(fmt)
+        b = self.f.read(n)
+        if len(b) != n:
+            raise ValueError("truncated header")
+        return struct.unpack("<" + fmt, b)[0]
+
+    def s(self):
+        n = self.u("Q")
+        if n > 1 << 24:
+            raise ValueError(f"string of {n} bytes: not a GGUF header")
+        b = self.f.read(n)
+        if len(b) != n:            # 10-27: a head-only file cut inside a string
+            raise ValueError("truncated header")
+        return b.decode("utf-8", errors="replace")
+
+    def val(self, t):
+        if t == 8:
+            return self.s()
+        if t == 9:
+            et, n = self.u("I"), self.u("Q")
+            if et == 8:
+                return [self.s() for _ in range(n)]
+            fmt = {0: "B", 1: "b", 2: "H", 3: "h", 4: "I", 5: "i", 6: "f", 7: "?", 10: "Q", 11: "q", 12: "d"}[et]
+            sz = struct.calcsize(fmt)
+            raw = self.f.read(sz * n)
+            if len(raw) != sz * n:   # 10-27: cut inside an array
+                raise ValueError("truncated header")
+            return list(struct.unpack(f"<{n}{fmt}", raw))
+        fmt = {0: "B", 1: "b", 2: "H", 3: "h", 4: "I", 5: "i", 6: "f", 7: "?", 10: "Q", 11: "q", 12: "d"}[t]
+        return self.u(fmt)
+
+
+def read_shard(path):
+    with open(path, "rb") as f:
+        r = _R(f)
+        if f.read(4) != b"GGUF":
+            raise ValueError(f"{path}: not a GGUF file")
+        ver = r.u("I")
+        nt, nkv = r.u("Q"), r.u("Q")
+        meta = {}
+        for _ in range(nkv):
+            k = r.s()
+            t = r.u("I")
+            meta[k] = r.val(t)
+        tensors = []
+        for _ in range(nt):
+            name = r.s()
+            nd = r.u("I")
+            shape = tuple(r.u("Q") for _ in range(nd))
+            t = r.u("I")
+            off = r.u("Q")
+            tensors.append((name, t, shape, off))
+        # round 15: where the header ends; 10-27: a head-only file (fetch_model.py --heads) gives its real size in NAME.size
+        side = Path(str(path) + ".size")
+        size = int(side.read_text().split()[0]) if side.exists() else Path(path).stat().st_size
+        read_shard.layout = (f.tell(), size, nt)
+        read_shard.head_only = side.exists()
+        return ver, meta, tensors
+
+
+def shards_of(path) -> list:
+    p = Path(path)
+    m = re.match(r"(.*)-(\d{5})-of-(\d{5})\.gguf$", p.name)
+    if not m:
+        return [p]
+    n = int(m.group(3))
+    return [p.with_name(f"{m.group(1)}-{i:05d}-of-{m.group(3)}.gguf") for i in range(1, n + 1)]
+
+
+def read_model(path) -> Model:
+    paths = shards_of(path)
+    missing = [str(p) for p in paths if not p.exists()]
+    if missing:
+        raise FileNotFoundError("missing shards: " + ", ".join(missing))
+    m = Model(paths=[str(p) for p in paths])
+    for i, p in enumerate(paths):
+        ver, meta, tens = read_shard(p)
+        m.version = m.version or ver
+        m.shard_meta.append(meta)
+        m.shard_layout.append(read_shard.layout)
+        m.head_only.append(read_shard.head_only)
+        for k, v in meta.items():
+            m.meta.setdefault(k, v)
+        for name, t, shape, off in tens:
+            m.tensors[name] = Tensor(name, t, shape, off, i)
+    return m
+
+
+def main():
+    a = sys.argv[1:]
+    if not a:
+        print(__doc__)
+        return 2
+    m = read_model(a[0])
+    pat = re.compile(a[a.index("--grep") + 1]) if "--grep" in a else None
+    if "--keys" in a or "--tensors" not in a:
+        for k, v in m.meta.items():
+            if pat and not pat.search(k):
+                continue
+            if isinstance(v, list):
+                v = f"[{len(v)} items: {v[:4]}{' ...' if len(v) > 4 else ''}]"
+            print(f"{k} = {v}")
+    if "--tensors" in a:
+        for t in m.tensors.values():
+            if pat and not pat.search(t.name):
+                continue
+            print(f"{t.name}\t{t.type_name}\t{list(t.shape)}\t{t.nbytes}\tshard{t.shard + 1}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

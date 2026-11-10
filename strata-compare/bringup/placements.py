@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""placements.py MODEL-00001-of-0000N.gguf [--floor-gib 12] [--chat-cache-gib 2] [--json OUT] — round 15: every placement
+the engine allows for a file, from the GGUF's HEADERS only (a head-only file from fetch_model.py --heads too), with the
+predicted 5080 / second-card slots, the RAM tier, and how many GiB of routed experts must come from the SSD (fitplan.py's
+byte and slot model underneath).
+
+10-27 (v0.2.6): the helper card's cache is allowed BESIDE the RAM budget since v0.1.45 (generate.cpp, "The helper-GPU
+caches are allowed beside the resident RAM mode too": its experts are left out of the RAM copy) -> B is now both cards +
+the budget, B1 the 5080 alone; the floor is the standing 12 GB (the 6 GB stand-in floor was the NVFP4 exception's); the
+lookup-share curve and the experts per token come from the header (expert_used_count x layers), not 48 x 512 x 10.
+
+Placements (generate.cpp's own rules; v0.1.40.2 as measured in Round 15, B as changed in v0.1.45):
+  A  both GPUs, the helper cache on the 4060 Ti (--expert-cache-device1) + --mmap-experts: the experts the two caches do
+     not hold are read through the OS page cache (an LRU the kernel sizes; it counts as available memory)
+  B  the 5080 + the helper cache + --resident-budget-gib N: a page-locked RAM copy of the next-hottest experts (v0.1.39 -
+     v0.1.44 refused a budget beside a helper cache; v0.1.45+ leave the helper's experts out of the copy); the rest is
+     read from the files by the file tier - through the page cache, or unbuffered when the cache cannot hold a 20th of
+     what it reads (0.1.40.2, #1194); a copy larger than the RAM left is page-locked as far as the reserve allows (#1250)
+  B1 the same on the 5080 alone (Round 15's B: measured 31-33 tok/s on the Q4 file, v0.1.40)
+  C  a layer split, 4060 Ti stage + 5080 stage (--layer-split K, --trim-stage-weights) + the RAM budget (#642 / #848;
+     v0.1.40 allows a budget with a split), optionally --pipeline-windows (opt-in)
+  D  the 5080 + --peer-device 1 (an adaptive expert tier on the 4060 Ti, rows over host memory without P2P; not with a
+     split or the helper caches) + the RAM budget - generate.cpp does not refuse the pair (the refusal names only the
+     helper caches); unmeasured here before round 15
+  E  --resident-experts (setup's low-RAM mode): the RAM copy with 4 GiB headroom, plain mmap when it does not fit
+     -> on a file larger than the RAM it is A's file path on one GPU, or B with the engine's own budget
+Lookup shares are ESTIMATES from the static profile's rank order and the shares measured on IQ3_S (C*14: the 5080's
+4,559 slots 65 %, the helper's next 3,300 18 %, the other 16,717 17 %; below 4,559 slots the local slope of those
+points, share ~ slots^0.45), scaled to this model's experts as fractions of all (10-27); the adaptive tier makes the
+real GPU shares higher. A new model's routing may be flatter or steeper: read them as a rough guide."""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fitplan import GIB, MIB, HELPER_FREE_GIB, HELPER_KEEP_MIB, plan, read_profile, blob_bytes  # noqa: E402
+from gguf_head import read_model  # noqa: E402
+
+N_IQ3S = 48 * 512
+FRACS = [(0.0, 0.0), (4559 / N_IQ3S, 0.65), (7859 / N_IQ3S, 0.83), (1.0, 1.0)]   # IQ3_S: top fraction -> lookup share
+
+
+def share(n: float, n_all: int = N_IQ3S) -> float:
+    """Estimated share of expert lookups that the n hottest (profile rank) experts serve, of n_all (10-27: IQ3_S's
+    curve as fractions of all experts)."""
+    pts = [(f * n_all, s) for f, s in FRACS]
+    n = max(0.0, min(float(n_all), n))
+    if n <= pts[1][0]:
+        return pts[1][1] * (n / pts[1][0]) ** 0.45 if n > 0 else 0.0
+    for (n0, s0), (n1, s1) in zip(pts[1:], pts[2:]):
+        if n <= n1:
+            return s0 + (s1 - s0) * (n - n0) / (n1 - n0)
+    return 1.0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("gguf")
+    ap.add_argument("--profile", default="/home/USER/ai-speed-testing/strata-compare/strata-v026/data/expert-profile.bin")
+    ap.add_argument("--floor-gib", type=float, default=12.0)       # 10-27: the standing floor (6 = the NVFP4 exception only)
+    ap.add_argument("--other-gib", type=float, default=10.0)       # desktop + services (fitplan's default)
+    ap.add_argument("--chat-cache-gib", type=float, default=2.0)
+    ap.add_argument("--ctx", type=int, default=131072)
+    ap.add_argument("--kv-resident", type=int, default=32768)
+    ap.add_argument("--reserve-mib", type=int, default=713)
+    ap.add_argument("--headroom-gib", type=float, default=4.0)     # STRATA_RESIDENT_HEADROOM_GIB default
+    ap.add_argument("--json")
+    a = ap.parse_args()
+    ram = int(open("/proc/meminfo").read().split("MemTotal:")[1].split()[0]) / 2**20
+    m = read_model(a.gguf)
+    nl = m.a("block_count", 48) - m.a("nextn_predict_layers", 0)
+    n_all = nl * m.a("expert_count", 512)
+    per_tok = nl * m.a("expert_used_count", 10)             # routed lookups per token (Flash-Next: 48 x 10 = 480)
+    blobs = [blob_bytes(m, l) for l in range(nl)]
+    if not blobs or not max(blobs):
+        print(f"# {Path(a.gguf).name}: no routed experts - no placements (a dense model: fitplan.py says what it needs)")
+        return 0
+    mean_blob = sum(blobs) / len(blobs)
+    both = plan(a.gguf, a.ctx, a.kv_resident, a.reserve_mib, 89, a.profile, True, ram, a.floor_gib, a.other_gib,
+                a.chat_cache_gib, serve_floor_gib=None)
+    bud2 = plan(a.gguf, a.ctx, a.kv_resident, a.reserve_mib + 100, 89, a.profile, True, ram, a.floor_gib, a.other_gib,
+                a.chat_cache_gib, serve_floor_gib=None)
+    one = plan(a.gguf, a.ctx, a.kv_resident, a.reserve_mib + 100, 89, a.profile, False, ram, a.floor_gib, a.other_gib,
+               a.chat_cache_gib, serve_floor_gib=None)
+    experts = both["experts_gib"]
+    kv_host = both["kv_host_gib"]
+    room = ram - a.floor_gib - a.other_gib                   # what the engine may hold in RAM at the floor
+    proc = kv_host + a.chat_cache_gib + 0.5 + both["prompt_checkpoints_gib"]   # its own RAM beside the experts (fitplan's model)
+    budget = max(0.0, room - proc)                           # the RAM copy at the floor
+    s5080, s5080_1 = both["slots_5080"], one["slots_5080"]
+    g5080, g5080_1 = both["slots_5080_gib"], one["slots_5080_gib"]
+    hs, hg = both["helper_slots_max"], both["helper_gib"]
+    peer_gib = HELPER_FREE_GIB - 0.6                         # --peer-reserve-mib 600 (default) instead of the helper's 512
+    ps = int(peer_gib * GIB // mean_blob)
+    rows = []
+
+    def row(key, name, flags, gpu_slots, gpu_gib, card2_slots, card2_gib, ram_gib, ram_kind, note):
+        held = gpu_gib + card2_gib + ram_gib
+        ssd = max(0.0, experts - held)
+        n_gpu, n_2 = gpu_slots, card2_slots
+        n_ram = ram_gib * GIB / mean_blob
+        s1 = share(n_gpu, n_all)
+        s2 = share(n_gpu + n_2, n_all) - s1
+        s3 = share(n_gpu + n_2 + n_ram, n_all) - s1 - s2
+        s4 = max(0.0, 1.0 - s1 - s2 - s3)
+        # expert_used_count x layers lookups per token; the SSD tier's at the mean blob size (before any page-cache reuse)
+        mib_tok = per_tok * s4 * mean_blob / MIB
+        rows.append(dict(key=key, placement=name, flags=flags, slots_5080=gpu_slots, gib_5080=round(gpu_gib, 2),
+                         card2_slots=card2_slots, card2_gib=round(card2_gib, 2), ram_tier_gib=round(ram_gib, 1),
+                         ram_kind=ram_kind, ssd_gib=round(ssd, 1),
+                         share_est=dict(gpu5080=round(s1, 3), card2=round(s2, 3), ram=round(s3, 3), ssd=round(s4, 3)),
+                         ssd_mib_per_token_est=round(mib_tok, 0), note=note))
+
+    # A: both GPUs + mmap: the page cache is what the RAM has left beside the process (it is reclaimable: MemAvailable
+    # counts it, so the 6 GB floor does not cap it; the kernel keeps ~2 GiB of its own)
+    pc = max(0.0, ram - a.other_gib - proc - 2.0)
+    row("A", "both GPUs: helper cache + --mmap-experts", f"--expert-cache-device1 {int(hs * 0.9) // 100 * 100} --mmap-experts",
+        s5080, g5080, hs, hg, min(pc, max(0.0, experts - g5080 - hg)), "page cache (LRU)",
+        "the page cache is the kernel's, not the engine's: it holds what was read last, not the hottest")
+    # B: both cards + budget (v0.1.45+: the helper's experts are left out of the RAM copy)
+    hs2, hg2 = bud2["helper_slots_max"], bud2["helper_gib"]
+    row("B", "5080 + helper cache + RAM budget (v0.1.45+)", f"--expert-cache-device1 {int(hs2 * 0.9) // 100 * 100} "
+        f"--resident-budget-gib {int(budget)} (+100 MiB reserve)", bud2["slots_5080"], bud2["slots_5080_gib"], hs2, hg2,
+        min(budget, max(0.0, experts - bud2["slots_5080_gib"] - hg2)), "page-locked copy",
+        "not measured here yet: v0.1.39 - v0.1.44 refused the pair (Round 15 measured B1)")
+    # B1: one GPU + budget (Round 15's B)
+    row("B1", "5080 + RAM budget", f"--resident-budget-gib {int(budget)} (+100 MiB reserve)", s5080_1, g5080_1, 0, 0.0,
+        min(budget, max(0.0, experts - g5080_1)), "page-locked copy",
+        f"the file tier's page cache beside it is the floor itself (~{a.floor_gib:.0f} GiB): buffered while it holds a 20th of "
+        f"what it reads (>= 1.5 GiB + {a.headroom_gib:.0f} GiB headroom), else unbuffered (#1194)")
+    # C: layer split + budget: each card caches only its own layers; the 4060 Ti stage keeps its layers' dense weights,
+    # the 5080 drops them (--trim-stage-weights) - modelled as the two caches together (coarse)
+    row("C", "layer split 4060 Ti + 5080 + RAM budget (#848)", f"--layer-split auto --trim-stage-weights --resident-budget-gib {int(budget)}",
+        s5080_1, g5080_1, hs, hg, min(budget, max(0.0, experts - g5080_1 - hg)), "page-locked copy",
+        "coarse: each card's cache is limited to its own layers; the stages run in turn (--pipeline-windows overlaps them)")
+    # D: peer tier + budget
+    row("D", "5080 + --peer-device 1 + RAM budget", f"--peer-device 1 --resident-budget-gib {int(budget)}", s5080_1, g5080_1,
+        ps, ps * mean_blob / GIB, min(budget, max(0.0, experts - g5080_1 - ps * mean_blob / GIB)), "page-locked copy",
+        "not refused by generate.cpp; rows over mapped host memory (no P2P between these cards)")
+    # E: setup's low-RAM mode
+    fits = experts - g5080_1 <= ram - a.other_gib - proc - a.headroom_gib
+    row("E", "--resident-experts (setup's low-RAM mode)", "--resident-experts", s5080_1, g5080_1, 0, 0.0,
+        (experts - g5080_1) if fits else min(pc, max(0.0, experts - g5080_1)), "page-locked copy" if fits else "page cache (plain mmap)",
+        "fits: the whole RAM copy" if fits else "does not fit: plain mmap on one GPU (A's file path without the helper)")
+    out = dict(file=Path(a.gguf).name, experts_gib=experts, mean_blob_mib=round(mean_blob / MIB, 3), ram_gib=round(ram, 2),
+               floor_gib=a.floor_gib, other_gib=a.other_gib, process_gib=round(proc, 2), budget_at_floor_gib=round(budget, 1),
+               ngram_table_gib=both["ngram_table_gib"], dense_gpu_gib=both["dense_gpu_gib"], placements=rows)
+    print(f"# {out['file']}: routed experts {experts} GiB (mean blob {out['mean_blob_mib']} MiB), n-gram table "
+          f"{out['ngram_table_gib']} GiB (read unbuffered, --ple-io direct), RAM {ram:.1f} GiB, floor {a.floor_gib} GiB, "
+          f"desktop + services {a.other_gib} GiB, the engine's own {proc:.1f} GiB -> RAM budget at the floor {budget:.1f} GiB")
+    print("| | placement | flags | 5080 slots (GiB) | 4060 Ti slots (GiB) | RAM tier GiB | experts from the SSD, GiB | "
+          "lookup share est. 5080 / 4060 Ti / RAM / SSD | SSD MiB / token est. | note |")
+    print("|---|---|---|---|---|---|---|---|---|---|")
+    for r in rows:
+        s = r["share_est"]
+        print(f"| {r['key']} | {r['placement']} | `{r['flags']}` | {r['slots_5080']} ({r['gib_5080']}) | "
+              f"{r['card2_slots']} ({r['card2_gib']}) | {r['ram_tier_gib']} ({r['ram_kind']}) | **{r['ssd_gib']}** | "
+              f"{s['gpu5080']:.2f} / {s['card2']:.2f} / {s['ram']:.2f} / {s['ssd']:.3f} | {r['ssd_mib_per_token_est']:.0f} | {r['note']} |")
+    if a.json:
+        Path(a.json).write_text(json.dumps(out, indent=1))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

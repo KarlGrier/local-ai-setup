@@ -1,0 +1,7 @@
+# Frozen 2026-10-28 11:55 - Phase 5 harder checkable questions (4), added to the holdout's 25 and scored as their own line. sha256. Do not edit; a change needs a new version.
+# Built + independently verified 10-28 (hard-build-p5/candidates.md incl. its Verification section); Karl approved 10-28 with stated time frames; no pilot, no drop step.
+# Grading: the Answer-section rule, blind; classes correct / wrong commitment / hedged / non-answer (hard-build-p5/PHASE5-CHECKABLE-RULES.md).
+d2eac4f2bc0b96df355008d55f8664d47bbe7e44d308aeb81a9c1ae42b374a12  questions-p5-harder.jsonl
+1596d85cfa1c4de8d60ac10b44b0938904b5c42020748be3ffb9690909528afa  answers/answers-p5-harder.jsonl
+670e9d2f5a17e15815e0c4551a995e590eec49273b4ddaebeedf7505f9fd3eeb  hard-build-p5/candidates.md
+7e2eaa12d2436032d7bc72ae6bdd74de754a5825daac2617c5f61f0fd43a1a83  hard-build-p5/PHASE5-CHECKABLE-RULES.md

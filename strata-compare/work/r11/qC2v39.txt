@@ -1,0 +1,41 @@
+work/r11/tagcheck.sh "Phase C part 2"
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r11/ldrscreen.sh C1b-3300a configs/V39C-h3300.json
+work/r11/ldrscreen.sh C1b-3500a configs/V39C-h3500.json
+work/r11/ldrscreen.sh C1b-3500b configs/V39C-h3500.json
+work/r11/ldrscreen.sh C1b-3300b configs/V39C-h3300.json
+.venv/bin/python work/r11/ldr_table.py h3300=C1b-3300a,C1b-3300b h3500=C1b-3500a,C1b-3500b | tee results/r11/ab-C1b-3500.md
+.venv/bin/python work/r11/r10a_table.py h3300=logs/engine-V39C-h3300.log h3500=logs/engine-V39C-h3500.log | tee -a results/r11/ab-C1b-3500.md
+BDIR=build work/r11/build.sh strata-v39-c2 engine-v39c2 && .venv/bin/python work/r11/buildrec.py V39C2 configs/V39C2-a.json "C.2: v39-win + STRATA_HELPER_CAP (9dd46dc)"
+BDIR=build work/r11/build.sh strata-v39-c3 engine-v39c3 && .venv/bin/python work/r11/buildrec.py V39R configs/V39R-all.json "C.3: v39-win + STRATA_REO_PARTS (233f3ed)"
+[ -x engine-v39c2/strata ] && REF=v39won work/r11/exact7.sh v39c2off configs/V39C2-off.json && REF=v39won work/r11/exact7.sh v39c2a configs/V39C2-a.json
+[ -x engine-v39c3/strata ] && REF=v39won work/r11/exact7.sh v39rbase configs/V39R-base.json && REF=v39won work/r11/exact7.sh v39rall configs/V39R-all.json
+work/r11/ldrscreen.sh C2-o1 configs/V39C2-off.json
+work/r11/ldrscreen.sh C2-a1 configs/V39C2-a.json
+work/r11/ldrscreen.sh C2-b1 configs/V39C2-b.json
+work/r11/ldrscreen.sh C2-c1 configs/V39C2-c.json
+work/r11/ldrscreen.sh C2-c2 configs/V39C2-c.json
+work/r11/ldrscreen.sh C2-b2 configs/V39C2-b.json
+work/r11/ldrscreen.sh C2-a2 configs/V39C2-a.json
+work/r11/ldrscreen.sh C2-o2 configs/V39C2-off.json
+.venv/bin/python work/r11/ldr_table.py off=C2-o1,C2-o2 cap2_075=C2-a1,C2-a2 cap4_075=C2-b1,C2-b2 cap0_1=C2-c1,C2-c2 | tee results/r11/ab-C2-cap.md
+work/r11/ldrscreen.sh C3-base1 configs/V39R-base.json
+work/r11/ldrscreen.sh C3-all1 configs/V39R-all.json
+work/r11/ldrscreen.sh C3-avoid1 configs/V39R-avoid.json
+work/r11/ldrscreen.sh C3-move1 configs/V39R-move.json
+work/r11/ldrscreen.sh C3-reduce1 configs/V39R-reduce.json
+work/r11/ldrscreen.sh C3-reduce2 configs/V39R-reduce.json
+work/r11/ldrscreen.sh C3-move2 configs/V39R-move.json
+work/r11/ldrscreen.sh C3-avoid2 configs/V39R-avoid.json
+work/r11/ldrscreen.sh C3-all2 configs/V39R-all.json
+work/r11/ldrscreen.sh C3-base2 configs/V39R-base.json
+.venv/bin/python work/r11/ldr_table.py base=C3-base1,C3-base2 all=C3-all1,C3-all2 avoid=C3-avoid1,C3-avoid2 move=C3-move1,C3-move2 reduce=C3-reduce1,C3-reduce2 | tee results/r11/ab-C3-parts.md
+work/r11/ldrscreen.sh C4-h1 configs/V39W.json
+work/r11/ldrscreen.sh C4-p1 configs/V39P-def.json
+work/r11/ldrscreen.sh C4-r1 configs/V39P-r0.json
+work/r11/ldrscreen.sh C4-r2 configs/V39P-r0.json
+work/r11/ldrscreen.sh C4-p2 configs/V39P-def.json
+work/r11/ldrscreen.sh C4-h2 configs/V39W.json
+.venv/bin/python work/r11/ldr_table.py helper=C4-h1,C4-h2 peer=C4-p1,C4-p2 peer_rows0=C4-r1,C4-r2 | tee results/r11/ab-C4-peer.md
+work/r11/phase_end.sh pC2 keep
+echo "=== $(date -Is) MARK qC2v39"

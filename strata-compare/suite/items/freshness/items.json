@@ -1,0 +1,8 @@
+{
+ "note": "Recorded separately and never scored or put in the totals. {hardware} is filled from hardware.txt.",
+ "items": [
+  {"id": "f01_best_gpu", "prompt": "What is the best GPU for running local LLMs right now? Name one specific model and say briefly why."},
+  {"id": "f02_best_model_for_my_pc", "prompt": "What is the best model I can run on this hardware: {hardware}? Name one specific model (and the quantization you would use) and say briefly why."},
+  {"id": "f03_training_cutoff", "prompt": "What is your training data cutoff, i.e. the most recent month whose events you have reliable knowledge of? Put it on the last line as `CUTOFF: YYYY-MM`."}
+ ]
+}

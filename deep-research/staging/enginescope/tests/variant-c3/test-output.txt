@@ -1,0 +1,130 @@
+variant: c3 (staged files from /home/USER/ai/deep-research/staging/enginescope/c3-merged/deep; compared with /home/USER/ai/deep-research/staging/c3/deep)
+
+== 1. which engine the task is about
+PASS  the 10-24 question -> Strata's DeepSeek engine
+PASS  a Strata task naming no engine -> no scope
+PASS  a task naming both engines -> no scope
+PASS  a Qwen task -> Strata's Qwen engine
+PASS  an unrelated project (llama.cpp) with DeepSeek named -> no scope
+PASS  no engine in the task, one in the profile -> the profile's
+PASS  no engine in the task, two in the profile -> no scope
+PASS  the task's engine wins over the profile's
+PASS  prompt rule only with a scope
+   lead / subagent rule: ENGINE SCOPE: the task is about Strata's DeepSeek engine. Tool results mark pages, files, search hits and quoted parts that describe another engine of Strata (its Qwen engine) with [OTHER ENGINE ...] or [PARTLY OTHER ENGINE ...]: their flags, environment variables, defaults and measured numbers are not the DeepSeek engine's - do not report them as the DeepSeek engine's options unless the DeepSeek 
+
+== 2. GitHub paths (folder table, checked against the v0.2.4 tree; the v0.2.4 map and the base map)
+PASS  v0.2.4: Qwen engine folders -> OTHER ENGINE (file)
+PASS  v0.2.4: src/core, src/platform, src/prefill, src/ngram (+ include/strata/), sycl/src/platform, tests/platform -> OTHER ENGINE 'at v0.2.4'
+PASS  v0.2.4: DeepSeek engine folders / doc -> no label
+PASS  v0.2.4: shared (device.cu, hip_compat, kernels, serve, launcher, setup, tools/) -> no label
+PASS  no pin: the conservative map - src/core, src/platform, src/prefill, src/ngram shared; the Qwen folders still labelled
+   version -> folder map: v0.2.3=base, v0.2.4=v0.2.4, v0.2.4.2=v0.2.4, v0.2.5=v0.2.4, 0.2.6=v0.2.6, v0.2.6=v0.2.6, v0.2.7=v0.2.7, v0.2.7.1=v0.2.7, v0.3.0=v0.2.7, main=base, None=base
+PASS  version rule: the newest entry at or below; below every entry / unpinned / unparseable -> base
+PASS  every folder / file of the table exists at v0.2.4
+PASS  every src/ and include/strata/ folder of v0.2.4 is in the table (base and v0.2.4 maps)
+   v0.2.4: include/strata/artifact/=shared, include/strata/core/=qwen, include/strata/dsv41/=dsv41, include/strata/hip_compat/=shared, include/strata/kernels/=shared, include/strata/ngram/=qwen, include/strata/plan/=shared, include/strata/platform/=qwen, include/strata/prefill/=qwen, include/strata/program/=qwen, include/strata/qwen35/=qwen, include/strata/spec/=qwen, src/artifact/=shared, src/core/=qwen, src/dsv41/=dsv41, src/kernels/=shared, src/ngram/=qwen, src/plan/=shared, src/platform/=qwen, src/prefill/=qwen, src/program/=qwen, src/qwen35/=qwen, src/spec/=qwen
+
+== 2b. the per-version folder maps against the clone (CMakeLists.txt and #includes at each tag)
+   v0.2.4: links -; includes strata/['dsv41', 'kernels']; Qwen-only here: src/core/, src/platform/, src/prefill/, src/ngram/
+PASS  v0.2.4: no folder the DeepSeek engine links or includes is called the Qwen engine's
+   v0.2.6: links -; includes strata/['dsv41', 'kernels']; Qwen-only here: src/core/, src/platform/, src/prefill/, src/ngram/
+PASS  v0.2.6: no folder the DeepSeek engine links or includes is called the Qwen engine's
+   v0.2.7: links ['strata_prefill']; includes strata/['dsv41', 'kernels']; Qwen-only here: none (base map)
+PASS  v0.2.7: no folder the DeepSeek engine links or includes is called the Qwen engine's
+PASS  v0.2.6: the clone shows src/core and src/platform NOT linked into strata-dsv41 (outside Windows HIP)
+PASS  v0.2.7: the clone shows strata_prefill linked -> core / platform / prefill / ngram shared from v0.2.7
+PASS  v0.2.7 map: sycl/src/platform stays shared (as found)
+   src/core/expert_cache.cpp for a DeepSeek task at v0.2.4 / v0.2.6 / v0.2.7 / no version: OTHER ENGINE: this file is part of Strata's Qwen engine at v0.2.4; the... | OTHER ENGINE: this file is part of Strata's Qwen engine at v0.2.6; the... | - | -
+PASS  a v0.2.4 and a v0.2.6 task label src/core (the clone: Qwen-only there); a v0.2.7 task and an unpinned one keep it shared
+
+== 3. which read sources of the verpin rerun would be labelled (page / file / parts)
+   7 of 539 read sources labelled:
+     [4387] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/docs/PREFILL_HEAD_ALIAS.md#L1-L100
+     [4388] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/docs/MULTI_GPU.md#L1-L120
+     [4393] PARTS (sections) https://github.com/Niko1221/Strata
+     [7735] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/docs/MULTI_GPU.md#L190-L240
+     [7736] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-4x-rx-7900-xt/README.md#L1-L120
+     [7737] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md#L1-L110
+     [7738] PAGE (content) https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md#L108-L121
+PASS  MULTI_GPU.md and the community bench results are labelled (all their reads)
+PASS  DEEPSEEK41.md, src/dsv41, tools/dsv41 and the 0.2.4 release notes are not labelled
+PASS  no source of another project is labelled (Xolotl, Abyss, project-maya, llama.cpp, papers ...)
+PASS  forks / related repos are another project (no label)
+PASS  GitHub search pages (lists of repos) are not labelled
+PASS  code tool (whole file) and writer (evidence) agree on all 38 Strata v0.2.4 reads
+PASS  no source labelled for a task with no engine named
+PASS  no source labelled for a task with unrelated project
+
+== 4. a mixed page: labels per section
+   README.md parts: (top) 1-37 {'dsv41': 0, 'qwen': 6}; ### Low on memory? Try Gyro 154-165 {'dsv41': 0, 'qwen': 11}; ### The other sizes 166-190 {'dsv41': 0, 'qwen': 16}; ## How fast is it? 206-232 {'dsv41': 0, 'qwen': 6}; ## Build from source 307-353 {'dsv41': 0, 'qwen': 3}; ## Credits and license 394-401 {'dsv41': 0, 'qwen': 10}
+PASS  README.md is mixed -> PARTLY (not the whole page)
+PASS  README.md: the Qwen model sections are labelled
+PASS  README.md: the DeepSeek section is not
+PASS  README.md: a line in the DeepSeek section is in no labelled part
+PASS  quotes: the Qwen-section quote is marked, the DeepSeek one is not
+PASS  the repo root page as read (4393) -> PARTLY, its DeepSeek section unlabelled
+PASS  DEEPSEEK41.md (59 DeepSeek / 2 Qwen markers) -> no label at all
+PASS  newreleases.io v0.2.4 notes (a DeepSeek release) -> no label
+
+== 5. the fetch tool's output (deep mode, summary_focus_query; the page from the store's page cache)
+PASS  fetch bench: labelled under the URL line, the rest as installed
+PASS  fetch multigpu: labelled under the URL line, the rest as installed
+PASS  fetch readme: PARTLY note, the Qwen-section quote marked, the DeepSeek one not
+PASS  fetch deepseek41: no label, byte-identical to the installed tool
+PASS  fetch unrelated: no label, byte-identical to the installed tool
+PASS  fetch (full mode): labelled too
+PASS  fetch: no label when LDR_DEEP_FIX lacks 'version'
+
+== 6. the code tool's read and search output (local v0.2.4 tree as the open clone)
+PASS  code_read docs/MULTI_GPU.md:190-240: OTHER ENGINE (page); the lines as installed
+PASS  code_read bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md:108-121: OTHER ENGINE (page); the lines as installed
+PASS  code_read src/program/generate.cpp:2880-2900: OTHER ENGINE (file); the lines as installed
+PASS  code_read README.md:140-200: PARTLY, start / end marks around the Qwen part
+PASS  code_read docs/DEEPSEEK41.md:1-60: no label, byte-identical to the installed tool
+PASS  code_read src/dsv41/ds4_main.cpp:60-100: no label, byte-identical to the installed tool
+PASS  code_read src/core/expert_cache.cpp:1-30: OTHER ENGINE (file); the lines as installed
+PASS  code_read src/platform/direct_file.cpp:1-30: OTHER ENGINE (file); the lines as installed
+PASS  code_read src/core/device.cu:170-200: no label, byte-identical to the installed tool
+PASS  code_read serve/server.py:1-30: no label, byte-identical to the installed tool
+   code_search --trim-stage-weights: 35 of 38 shown hits marked; unmarked files: strata_control/tune_knobs.py, tools/batch_test.py
+PASS  code_search: Qwen engine files / docs marked, legend line added, shared files (serve, launcher) unmarked
+PASS  code_search: without the marks and the legend, identical to the installed output
+PASS  code_search for a DeepSeek-only name: unchanged
+PASS  code tool with no engine named: every read / search byte-identical to the installed tool
+PASS  codetool.py still loads on its own (code-mcp.py); enginescope found next to it; Repo.read works
+
+== 7. the writers' source labels, quotes and section prompt (verpin evidence; fake model)
+PASS  section prompt carries the engine rule
+   [7735] [OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them] Niko1221/Strata@v0.2.4: docs/MULTI_GPU.md lines 190-240 (source code) (https://github.com/Niko1221/Strata/blob/v0.2.4/docs/MULTI_GPU.md#L190-L240)
+   [7738] [OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them] Niko1221/Strata@v0.2.4: bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md lines 10 (https://github.com/Niko1221/Strata/blob/v0.2.4/bench/results/2026-10-09-community-rtx-5080-4060ti-0.1.41/README.md#L108-L121)
+   [4276] Niko1221/Strata@v0.2.4: docs/DEEPSEEK41.md lines 1-120 (source code) (https://github.com/Niko1221/Strata/blob/v0.2.4/docs/DEEPSEEK41.md#L1-L120)
+   [4384] Niko1221/Strata@v0.2.4: src/dsv41/ds4_model.cu lines 960-1079 (source code) (https://github.com/Niko1221/Strata/blob/v0.2.4/src/dsv41/ds4_model.cu#L960-L1079)
+   [103] Xolotl (formerly Strata-DSV4.1): run DeepSeek-V4.1-Flash ... - GitHub (https://github.com/Indras-Mirror/Xolotl)
+   [4387] [OTHER ENGINE: this page describes Strata's Qwen engine; the task is about its DeepSeek engine - its flags, settings and numbers are not the DeepSeek engine's unless that engine's code shows them] Niko1221/Strata@v0.2.4: docs/PREFILL_HEAD_ALIAS.md lines 1-100 (source code) (https://github.com/Niko1221/Strata/blob/v0.2.4/docs/PREFILL_HEAD_ALIAS.md#L1-L100)
+PASS  writer label: MULTI_GPU.md and the 5080 bench (lines 108-121) say OTHER ENGINE ahead of the title
+PASS  writer label: DEEPSEEK41.md, src/dsv41 and Xolotl unlabelled
+PASS  section evidence: OTHER ENGINE ahead of the Qwen pages' titles, PARTLY on the root page, none on DEEPSEEK41
+PASS  section evidence: the root page's Qwen-section passages / quotes carry [OTHER ENGINE: Strata's Qwen engine]
+PASS  citation check: the Qwen page's block says OTHER ENGINE, the DeepSeek doc's does not
+PASS  writer with no engine named: section rules, section prompt and outline digest identical to installed
+PASS  writer with LDR_DEEP_FIX lacking 'version': identical to installed (switch off)
+
+== 8. the 7 wrong names: in which sources the research saw them, and would those be labelled
+   --pcie-frac              reads 3/3 labelled, snippets 0/0, code-search hit lines 65/71; only labelled: reads YES, with search hits no; unlabelled in: strata_control/calibration.py, strata_control/tune_knobs.py, strata_control/tuning.py, tools/batch_test.py
+   --adapt-every            reads 1/1 labelled, snippets 0/0, code-search hit lines 53/56; only labelled: reads YES, with search hits no; unlabelled in: bench/results/exchange-rotation-ab.json, strata_control/tune_knobs.py, tools/batch_test.py
+   --trim-stage-weights     reads 0/0 labelled, snippets 0/0, code-search hit lines 42/45; only labelled: reads no, with search hits no; unlabelled in: strata_control/tune_knobs.py, tools/batch_test.py
+   --vram-reserve-mib       reads 3/4 labelled, snippets 0/0, code-search hit lines 65/106; only labelled: reads no, with search hits no; unlabelled in: https://github.com/mw00/project-maya, apps/host/server/native-control.mjs, apps/host/server/native-resources.mjs, apps/host/server/native-settings.mjs
+   STRATA_IO_THREADS        reads 1/1 labelled, snippets 0/0, code-search hit lines 70/70; only labelled: reads YES, with search hits YES
+   STRATA_UNBUFFERED_LOAD   reads 1/1 labelled, snippets 0/0, code-search hit lines 40/40; only labelled: reads YES, with search hits YES
+   --layer-split            reads 2/8 labelled, snippets 0/0, code-search hit lines 58/63; only labelled: reads no, with search hits no; unlabelled in: https://github.com/zephel01/Abyss, https://github.com/Indras-Mirror/Xolotl, https://github.com/Indras-Mirror/Xolotl, https://github.com/zephel01/Abyss
+   => 4 of 7 appear ONLY in read sources that would be labelled; 2 of 7 counting the code-search hit lines too
+PASS  at least the 4 names from MULTI_GPU.md / the 5080 bench are only in labelled reads
+
+== 9. the strategy: search-result titles and the lead / subagent rule line
+   [OTHER ENGINE: Strata's Qwen engine] generate.cpp | [OTHER ENGINE: Strata's Qwen engine] QWEN36.md | DEEPSEEK41.md | [OTHER ENGINE: Strata's Qwen engine] Strata on Reddit: Qwen3.8-Flash-N | llama.cpp Qwen3.8 offload
+PASS  search titles: Qwen engine code / doc file / a Strata page about Qwen marked; DeepSeek doc and llama.cpp not
+PASS  search titles: the inputs are not changed (the collector keeps plain titles)
+PASS  search titles: unchanged with no engine named
+PASS  strategy: the rule line goes into the lead's system prompt and the subagents' prompt
+
+75 of 75 checks pass (29 s)

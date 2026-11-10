@@ -1,0 +1,260 @@
+=== 2026-11-10 10:48:25 v0.2.13 SWITCH CHECKS (work/r23/switch-gap/gap-switch0213.sh, Karl 11-10): B = the daily (153ce47d3ef0) vs P = the port (639dfb1b7042); C1 parity + read-back, C2 served outputs, C3 the sampled test, C4 web search, C5 the lost-answer guard - measurements only, nothing switches
+=== 2026-11-10 10:48:25   PRIORITY CLEAR: 0 Qwen4 repo(s) in the watch, none an open Flash with weights (last poll 2026-11-10 10:45)
+=== 2026-11-10 10:48:25   files, engines (B 153ce47d3ef0, P 639dfb1b7042), the port tree at 6dd81ecd1, build-switch and port_gap4.sh checked
+=== 2026-11-10 10:48:25   switch_rules selftest: 0 failure(s)
+=== 2026-11-10 10:48:25   the switches (frozen into rules.txt): CITE_FORM=tool-url C2_NOREF_FORM=differs 
+=== 2026-11-10 10:48:26   CONFIG CHECK OK: B = x28h + U + STRATA_ADAPT_FETCH=2 on engine-r23afetch (the daily's test form); P = P0213x's test form + STRATA_ADAPT_FETCH=2 on engine-r23p0213 = B + the port's pins and keys; the debug arms + STRATA_DEBUG=1 = the sampled R1 / R2 / X (VF = X + read-back); engine shas 153ce47d3ef0 / 639dfb1b7042
+=== 2026-11-10 10:48:26   ctestlist /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/build-switch: 7 CPU + 89 GPU registered entries of 25 programs (cost_gate_test 1, draft_cum_test 1, elementwise_parity 1, gated_proposal_test 1, gdn_parity 2, gguf_geometry_test 1, gr_multi_parity 1, gr_parity 1, gr_upmix_parity 1,
+    /home/USER/ai-speed-testing/strata-compare/strata-r22p028x/serve/websearch.py: PAID PATH - imports the deep-research search fallback (Exa, then Tavily); calls a search fallback after SearXNG; names Tavily
+    /home/USER/ai-speed-testing/strata-compare/strata-r23p0213/serve/websearch.py: PAID PATH - imports the deep-research search fallback (Exa, then Tavily); calls a search fallback after SearXNG; names Tavily
+    /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/configs/B.json: web_search.searxng http://127.0.0.1:8888 (local)
+    /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/configs/P.json: web_search.searxng http://127.0.0.1:8888 (local)
+  WEB PATH CAN REACH A PAID API, WITHIN THE BUDGET: C4 runs bounded (10 paid calls at most, PAID_SEARCH_KIND=test) - exa: 1.168 of 10 USD used this month (292 calls), 8.832 left, >= 25 % + 10 calls = 2.54; tavily: 365 of 1000 searches used this month (365 calls), 635 left, >= 25 % + 10 calls = 260
+=== 2026-11-10 10:48:26   WEB PATH CAN REACH A PAID API, WITHIN THE BUDGET: C4 runs bounded (10 paid calls at most, PAID_SEARCH_KIND=test) - exa: 1.168 of 10 USD used this month (292 calls), 8.832 left, >= 25 % + 10 calls = 2.54; tavily: 365 of 1000 searches used this month (365 calls), 635 left, >= 25 % + 10 calls = 260
+=== 2026-11-10 10:48:26   C4 runs on the paid path, bounded: 10 paid calls at most (PAID_SEARCH_KIND=test, the budget checked again right before C4)
+=== 2026-11-10 10:48:26   RENDER OK: the plan's prompts through B's (strata-r22p028x) and P's (strata-r23p0213) server code: {'math': 97, 'code': 111, 'conv': 38, 'prose': 19}; identical ids
+=== 2026-11-10 10:48:27   fixtures plan: conv 38 ids, struct 98 ids, prose 19 ids -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/c5/fixtures-plan.json
+C2 plan: 8 requests -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/c2/plan.json (sha 26cbcf5beee5)
+C4 plan: 3 requests -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/c4/plan.json (sha 4f228c29ba2c)
+=== 2026-11-10 10:48:27   plans: C2 26cbcf5beee5, C4 4f228c29ba2c, fixtures a89eeb57e491 (the standard sampling in every one)
+=== 2026-11-10 10:48:28   c2_client.py selftest: C2 CLIENT SELFTEST OK
+=== 2026-11-10 10:48:28   c4_web.py selftest: C4 WEB SELFTEST OK
+=== 2026-11-10 10:48:28   fixtures_client.py selftest: FIXTURES CLIENT SELFTEST OK
+=== 2026-11-10 10:50:17   sq.py selftest: SELFTEST OK
+=== 2026-11-10 10:50:17   sq_client.py selftest: CLIENT SELFTEST OK
+=== 2026-11-10 10:50:17   sq.py selftest-real: SELFTEST-REAL OK
+=== 2026-11-10 10:50:18   sq.py derive: derive OK: 4 arm configs + the scorer in /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/sampled/cfg; /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/sampled/spec.json (spec sha 8f0ef423bdaad772) 
+=== 2026-11-10 10:50:18   the sampled rule frozen: sampled/rule.txt sha a921924f15d4 (before any engine start)
+  rules frozen: /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/rules.txt sha 4076ed3abcad
+=== 2026-11-10 10:50:18   estimate: ~72 min with 8080 down (~60 without C4; open 2, parity 8, VF 4, C2 6, C3 23, C4 12, C5 + INFO 9, exact7 3.5, close 4); deadline 150 min for new steps after the gap opens; 8080 down ~2.9 h at most (175 min)
+=== 2026-11-10 10:50:18 C1 CPU parts before the gap: 7 ctest entries + patch_guard_test, the server suite with node, node --check
+=== 2026-11-10 10:50:21   ctest cpu rc 0: 100% tests passed, 0 tests failed out of 7
+parity cpu: 8 pass / 0 skip / 0 fail of 8
+  Ran 1524 tests in 620.180s
+  
+  FAILED (failures=1, skipped=17)
+servetests: 1524 tests, 1 failed or erred (known: test_hip_ordinal); 16 skipped -> PASS
+node: node --check app.js rc 0; 57 web / node test(s) ok, 0 skipped for 'node is not installed' -> PASS
+parity status: cpu: 8 pass / 0 skip / 0 fail of 8 -> PASS
+2026-11-10 11:00:42 port_gap4: hold set; waiting for the running research run to finish
+run-strata: not running
+2026-11-10 11:01:28 port_gap4: gap open: test lock held (pid 634219), 8080 stopped
+=== 2026-11-10 11:01:28 8080 down: engines left: none MemAvailable 87 GB; deadline 13:31 (150 min)
+=== 2026-11-10 11:01:28 2 C1 the GPU parity programs: 89 ctest entries of build-switch (both GPUs, cut at 1500 s) + 2 direct runs
+=== 2026-11-10 11:07:29   ctest gpu rc 0: 100% tests passed, 0 tests failed out of 89
+parity gpu: 90 pass / 1 skip / 0 fail of 91
+=== 2026-11-10 11:09:06   gate par_gpu INFO gpu: 90 pass / 1 skip / 0 fail of 91
+=== 2026-11-10 11:09:06 3 C1 THE READ-BACK START: VF = P + STRATA_ADAPT_FETCH_VERIFY=1 + STRATA_ADAPT_CHECKRES=1, K 2
+=== 2026-11-10 11:09:06 server r23sw11101048-sqVF (VF.json)
+server ready (guard pid 642245, server pid 642262) load_time_s 14.330095700 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-sqVF_20261110T110907.log
+engine pid 642279: 51 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 642262, 2 server pin(s)
+ENV CHECK OK
+engine pid 642279: binary 639dfb1b7042, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_ADAPT_FETCH_VERIFY': '1', 'STRATA_ADAPT_CHECKRES': '1', 'STRATA_DEBUG': '1'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_ADAPT_FETCH_VERIFY': '1', 'STRATA_ADAPT_CHECKRES': '1', 'STRATA_DEB
+ARM ENV OK (P): 1 engine, binary 639dfb1b7042, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+engine pid 642279: 51 config env keys, --spec 7 --spec-min-p 0.5 (INFO)
+ENV CHECK OK
+done: 8 of 8 requests in 45 s; server.out / engine.out copied
+sqVF chain rc 0
+sqVF.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:10:45   gate start_sqVF INFO sqVF chain rc 0; 8 client record(s)
+=== 2026-11-10 11:10:45   gate envsq_sqVF PASS ENV CHECK OK
+=== 2026-11-10 11:10:45   read-back VF (try 1): PASS (read-back VF: PASS - 91375 admitted slots read back, 0 differ, no mismatch line; sq.py verify exit 0)
+=== 2026-11-10 11:10:45   gate readback_VF PASS try 1: verify-VF.json PASS; sq.py verify exit 0
+=== 2026-11-10 11:10:45 4 C2 SERVED OUTPUTS: 4 prompts x 2 seeds (the think prompt with an answer_room continuation) on B1, B2 (B-dbg twice), P (P-dbg)
+=== 2026-11-10 11:10:45 server r23sw11101048-c2B1 (B-dbg.json)
+server ready (guard pid 644927, server pid 644942) load_time_s 14.336161023 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-c2B1_20261110T111046.log
+engine pid 644947: 30 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 644942, 0 server pin(s)
+ENV CHECK OK
+engine pid 644947: binary 153ce47d3ef0, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}
+ARM ENV OK (B): 1 engine, binary 153ce47d3ef0, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+done: 8 of 8 requests; server.out / engine.out copied
+c2B1 chain rc 0
+c2B1.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:12:14   gate start_c2B1 INFO c2B1 chain rc 0; 8 client record(s)
+=== 2026-11-10 11:12:14 server r23sw11101048-c2B2 (B-dbg.json)
+server ready (guard pid 647535, server pid 647550) load_time_s 14.328082287 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-c2B2_20261110T111215.log
+engine pid 647555: 30 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 647550, 0 server pin(s)
+ENV CHECK OK
+engine pid 647555: binary 153ce47d3ef0, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}
+ARM ENV OK (B): 1 engine, binary 153ce47d3ef0, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+done: 8 of 8 requests; server.out / engine.out copied
+c2B2 chain rc 0
+c2B2.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:13:43   gate start_c2B2 INFO c2B2 chain rc 0; 8 client record(s)
+=== 2026-11-10 11:13:43 server r23sw11101048-c2P (P-dbg.json)
+server ready (guard pid 650148, server pid 650163) load_time_s 14.314349999 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-c2P_20261110T111344.log
+engine pid 650180: 49 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 650163, 2 server pin(s)
+ENV CHECK OK
+engine pid 650180: binary 639dfb1b7042, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}
+ARM ENV OK (P): 1 engine, binary 639dfb1b7042, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+done: 8 of 8 requests; server.out / engine.out copied
+c2P chain rc 0
+c2P.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:15:12   gate start_c2P INFO c2P chain rc 0; 8 client record(s)
+C2 EXACT: 8 of 8 requests B-reproducible, 0 of them differ on P; B not reproducible on 0; the think continuation seen B1 / B2 / P 2 / 2 / 2 of 2
+=== 2026-11-10 11:15:12 5 C3 THE SAMPLED TEST: R1 (= B, K 8), X (= P, K 8), R2 (= B, K 4); with R1: ids and the scorer; sq.py decide
+=== 2026-11-10 11:15:12 server r23sw11101048-sqR1 (R1.json)
+server ready (guard pid 652807, server pid 652822) load_time_s 14.323995756 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-sqR1_20261110T111513.log
+engine pid 652827: 30 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 652822, 0 server pin(s)
+ENV CHECK OK
+engine pid 652827: binary 153ce47d3ef0, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}
+ARM ENV OK (B): 1 engine, binary 153ce47d3ef0, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+engine pid 652827: 30 config env keys, --spec 7 --spec-min-p 0.5 (INFO)
+ENV CHECK OK
+done: 32 of 32 requests in 106 s; server.out / engine.out copied
+sqR1 chain rc 0
+sqR1.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:17:49   gate start_sqR1 INFO sqR1 chain rc 0; 32 client record(s)
+=== 2026-11-10 11:17:49   gate envsq_sqR1 PASS ENV CHECK OK
+=== 2026-11-10 11:17:49 server r23sw11101048-sqX (X.json)
+server ready (guard pid 658199, server pid 658214) load_time_s 14.328075084 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-sqX_20261110T111750.log
+engine pid 658231: 49 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 658214, 2 server pin(s)
+ENV CHECK OK
+engine pid 658231: binary 639dfb1b7042, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}
+ARM ENV OK (P): 1 engine, binary 639dfb1b7042, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+engine pid 658231: 49 config env keys, --spec 7 --spec-min-p 0.5 (INFO)
+ENV CHECK OK
+done: 32 of 32 requests in 107 s; server.out / engine.out copied
+sqX chain rc 0
+sqX.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:20:30   gate start_sqX INFO sqX chain rc 0; 32 client record(s)
+=== 2026-11-10 11:20:30   gate envsq_sqX PASS ENV CHECK OK
+=== 2026-11-10 11:20:30 server r23sw11101048-sqR2 (R2.json)
+server ready (guard pid 663733, server pid 663748) load_time_s 14.333309855 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-sqR2_20261110T112031.log
+engine pid 663753: 30 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 663748, 0 server pin(s)
+ENV CHECK OK
+engine pid 663753: binary 153ce47d3ef0, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2', 'STRATA_DEBUG': '1'}
+ARM ENV OK (B): 1 engine, binary 153ce47d3ef0, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+engine pid 663753: 30 config env keys, --spec 7 --spec-min-p 0.5 (INFO)
+ENV CHECK OK
+done: 16 of 16 requests in 53 s; server.out / engine.out copied
+sqR2 chain rc 0
+sqR2.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:22:14   gate start_sqR2 INFO sqR2 chain rc 0; 16 client record(s)
+=== 2026-11-10 11:22:14   gate envsq_sqR2 PASS ENV CHECK OK
+=== 2026-11-10 11:22:15   gate ids INFO rc 0: ids R2: 16 of 16 samples valid -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/sampled/R2/score-ids.json
+  ids R1: 32 of 32 samples valid -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/sampled/R1/score-ids.json
+  ids X: 32 of 32 samples valid -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/sampled/X/score-ids.json
+  ids R2: 16 of 16 samples valid -> /home/USER/ai-speed-testing/strata-compare/results/r23/port-0213/switch-gap/sampled/R2/score-ids.json
+=== 2026-11-10 11:22:15   the scorer: one CLI engine (x28h, the decode-path reference) over R1 X R2, --max-min 25
+engine pid 666979 -> ENV OK
+ENV CHECK OK: 1 scorer engine start(s)
+=== 2026-11-10 11:32:58   gate env_sqscore PASS ENV CHECK OK: 1 scorer engine start(s)
+=== 2026-11-10 11:32:58   gate score INFO rc 0: scored 80 of 80 samples (46260 positions) in 641 s 
+=== 2026-11-10 11:32:59   sq.py decide (exit 0): decision ALL PASS: X PASS
+=== 2026-11-10 11:32:59   gate sampled_decide INFO exit 0: decision ALL PASS: X PASS
+  PAID BUDGET OK: exa: 1.168 of 10 USD used this month (292 calls), 8.832 left, >= 25 % + 10 calls = 2.54; tavily: 365 of 1000 searches used this month (365 calls), 635 left, >= 25 % + 10 calls = 260
+=== 2026-11-10 11:32:59 6 C4 WEB SEARCH: 3 search prompts with "strata_web": true on B, then P (the paid fallback bounded: 10 paid calls at most)
+=== 2026-11-10 11:32:59 server r23sw11101048-webB (B.json)
+server ready (guard pid 678663, server pid 678678) load_time_s 14.333004767 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-webB_20261110T113300.log
+engine pid 678683: 29 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 678678, 0 server pin(s)
+ENV CHECK OK
+engine pid 678683: binary 153ce47d3ef0, fetch keys {'STRATA_ADAPT_FETCH': '2'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2'}
+ARM ENV OK (B): 1 engine, binary 153ce47d3ef0, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+webB chain rc 0
+webB.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:34:17   gate start_webB INFO webB chain rc 0; 3 client record(s)
+=== 2026-11-10 11:34:17 server r23sw11101048-webP (P.json)
+server ready (guard pid 680828, server pid 680843) load_time_s 14.327891294 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-webP_20261110T113418.log
+engine pid 680860: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 680843, 2 server pin(s)
+ENV CHECK OK
+engine pid 680860: binary 639dfb1b7042, fetch keys {'STRATA_ADAPT_FETCH': '2'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2'}
+ARM ENV OK (P): 1 engine, binary 639dfb1b7042, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+webP chain rc 0
+webP.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:35:34   gate start_webP INFO webP chain rc 0; 3 client record(s)
+=== 2026-11-10 11:35:34   the paid counters after C4: PAID BUDGET OK: exa: 1.168 of 10 USD used this month (292 calls), 8.832 left, >= 25 % + 10 calls = 2.54; tavily: 365 of 1000 searches used this month (365 calls), 635 left, >= 25 % + 10 calls = 260
+C4 PASS: 3 of 3 requests completed on B and judged on P, 3 pass (CITE_FORM tool-url); ran B 3 / P 3; paid searches during C4: 0 (B 0, P 0; the stop at 10); the counters moved exa +0, tavily +0 (Jan chat's own calls in that time included)
+=== 2026-11-10 11:35:34 7 C5: the 9-workload screen and the three chat fixtures on P; the screen on B (INFO speed); exact7 P (INFO)
+=== 2026-11-10 11:35:34 server r23sw11101048-scrP1 (P.json)
+server ready (guard pid 683160, server pid 683175) load_time_s 14.325739309 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-scrP1_20261110T113535.log
+engine pid 683192: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 683175, 2 server pin(s)
+ENV CHECK OK
+engine pid 683192: binary 639dfb1b7042, fetch keys {'STRATA_ADAPT_FETCH': '2'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2'}
+ARM ENV OK (P): 1 engine, binary 639dfb1b7042, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+scrP1 chain rc 0
+scrP1.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:38:57   gate start_scrP1 INFO scrP1 chain rc 0; 10 client record(s)
+=== 2026-11-10 11:38:57 server r23sw11101048-bpP (P.json)
+server ready (guard pid 688644, server pid 688659) load_time_s 14.336395403 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-bpP_20261110T113858.log
+engine pid 688676: 48 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 688659, 2 server pin(s)
+ENV CHECK OK
+engine pid 688676: binary 639dfb1b7042, fetch keys {'STRATA_ADAPT_FETCH': '2'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2'}
+ARM ENV OK (P): 1 engine, binary 639dfb1b7042, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+bpP chain rc 0
+bpP.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:40:40   gate start_bpP INFO bpP chain rc 0; 3 client record(s)
+=== 2026-11-10 11:40:40 server r23sw11101048-scrB1 (B.json)
+server ready (guard pid 691491, server pid 691506) load_time_s 14.329441295 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23sw11101048-scrB1_20261110T114041.log
+engine pid 691511: 29 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768; server pid 691506, 0 server pin(s)
+ENV CHECK OK
+engine pid 691511: binary 153ce47d3ef0, fetch keys {'STRATA_ADAPT_FETCH': '2'}; its server: 10 args, fetch keys {'STRATA_ADAPT_FETCH': '2'}
+ARM ENV OK (B): 1 engine, binary 153ce47d3ef0, the fetch / debug keys as configured in the engine and its server, the parent server.py names the config
+scrB1 chain rc 0
+scrB1.englog: 1 'STRATA_ADAPT_FETCH=2' start line(s) -> PASS
+=== 2026-11-10 11:44:07   gate start_scrB1 INFO scrB1 chain rc 0; 10 client record(s)
+=== 2026-11-10 11:44:07 INFO exact7 r23sw11101048-P (P.json against x28h-e7a, pin 2500; bit-identity not expected with STRATA_ADAPT_FETCH=2)
+engine pid 697201: 48 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 --kv-resident 32768 -> ENV OK
+engine pid 697820: 48 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 --kv-resident 32768 -> ENV OK
+engine pid 698447: 48 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 --kv-resident 32768 -> ENV OK
+engine pid 698933: 48 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 --kv-resident 32768 -> ENV OK
+engine pid 699573: 48 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 --kv-resident 32768 -> ENV OK
+engine pid 700035: 48 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 --kv-resident 32768 -> ENV OK
+engine pid 700554: 48 env keys, STRATA_ROUTE_TAIL_SKIP=0, --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --prefill auto:16384 --kv-resident 32768 -> ENV OK
+r23sw11101048-P-x-math   out 6b251415 (x28h-e7a 6b251415) =  ms/round 32.87  prompt ms 447
+r23sw11101048-P-s-math   out 8c25c022 (x28h-e7a 8c25c022) =  ms/round 32.23  prompt ms 445
+r23sw11101048-P-x-code   out 3585ad6f (x28h-e7a 3585ad6f) =  ms/round 24.77  prompt ms 445
+r23sw11101048-P-s-code   out 2fe9fd9e (x28h-e7a 2fe9fd9e) =  ms/round 23.55  prompt ms 448
+r23sw11101048-P-x-p2000  out 3e219376 (x28h-e7a 3e219376) =  ms/round 37.12  prompt ms 1049
+r23sw11101048-P-x-32k    out 651f56c8 (x28h-e7a 651f56c8) =  ms/round 39.05  prompt ms 7193
+r23sw11101048-P-x-112k   out a393ca0a (x28h-e7a a393ca0a) =  ms/round 32.02  prompt ms 24473
+exact7 r23sw11101048-P: 7/7 identical to x28h-e7a
+exact7-slots r23sw11101048-P: 3238+3300 slots (5080 + 4060 Ti); x28h-e7a: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 48 env keys as configured, STRATA_ROUTE_TAIL_SKIP=0, no other STRATA_*, harness args as expected
+exact7 r23sw11101048-P: 7/7, slots MATCHED -> PASS
+=== 2026-11-10 11:47:23 the gap's work took 45 min (deadline 150)
+v0.2.13 PORT SWITCH CHECKS (work/r23/switch-gap/gap-switch0213.sh; rules switch_rules.py, frozen 4076ed3abcad): B = the daily as served for tests (engine-r23afetch 153ce47d3ef0, x28h + U + STRATA_ADAPT_FETCH=2) against P = the port (engine-r23p0213 639dfb1b7042, P0213x + STRATA_ADAPT_FETCH=2); measurements only
+rules forms (frozen): CITE_FORM tool-url, C2_NOREF_FORM differs
+VERDICT: SWITCH CHECKS PASS
+C1 parity / unit tests + the read-back: PASS
+  cpu: PASS - cpu: 8 pass / 0 skip / 0 fail of 8
+  servetests: PASS - 1524 tests, 1 failed or erred (known: test_hip_ordinal); 16 skipped
+  node: PASS - node --check app.js rc 0; 57 web / node test(s) ok, 0 skipped for 'node is not installed'
+  gpu: PASS - gpu: 90 pass / 1 skip / 0 fail of 91
+  readback: PASS - PASS: 91375 admitted slots read back, 0 differ, no mismatch line (read back 91375, differ 0, mismatch lines 0)
+C2 served outputs against the daily: EXACT - EXACT: 8 of 8 requests B-reproducible, 0 of them differ on P; B not reproducible on 0; the think continuation seen B1 / B2 / P 2 / 2 / 2 of 2
+  think-s1: EXACT
+  think-s2: EXACT
+  code-s1: EXACT
+  code-s2: EXACT
+  conv-s1: EXACT
+  conv-s2: EXACT
+  prose-s1: EXACT
+  prose-s2: EXACT
+C3 the sampled test (X = P vs R1 = B, noise twin R2 = B): PASS - D2(X, R1) 1.328 <= the noise bound 11.345 (band >= it whatever R2 gives)
+  (info) D2(X, R1) 1.3278, band 11.3449; sq.py overall X (with the read-back) PASS; sq.py verdict ALL PASS
+C4 web search end to end: PASS - PASS: 3 of 3 requests completed on B and judged on P, 3 pass (CITE_FORM tool-url); ran B 3 / P 3; paid searches during C4: 0 (B 0, P 0; the stop at 10); the counters moved exa +0, tavily +0 (Jan chat's own calls in that time included)
+  python: PASS
+  btree: PASS
+  searxng: PASS
+C5 (information): the lost-answer guard fired 0 time(s) over 64 client requests (70 server runs) in 6 P server log(s); on our workload (the screen + the fixtures) 0 in 13 requests
+  sqVF: 0 firing(s), 8 runs, 8 requests (server_r23sw11101048-sqVF_20261110T110907.log)
+  c2P: 0 firing(s), 8 runs, 8 requests (server_r23sw11101048-c2P_20261110T111344.log)
+  sqX: 0 firing(s), 32 runs, 32 requests (server_r23sw11101048-sqX_20261110T111750.log)
+  webP: 0 firing(s), 9 runs, 3 requests (server_r23sw11101048-webP_20261110T113418.log)
+  scrP1: 0 firing(s), 10 runs, 10 requests (server_r23sw11101048-scrP1_20261110T113535.log)
+  bpP: 0 firing(s), 3 runs, 3 requests (server_r23sw11101048-bpP_20261110T113858.log)
+  recommendation: no firing on our workload - no switch patch needed now (the guard stays as upstream ships it)
+INFO screen speed (one pass each, no noise estimate): decode geomean P 166.1 vs B 170.4 tok/s (-2.5 %), prompt geomean P 2,203.1 vs B 2,205.1 tok/s (-0.1 %; the 11-07 amendment's client clock minus the save)
+INFO fixtures on P (standard sampling): conv 1062 tokens (stop) 153.4 tok/s, struct 7230 tokens (stop) 219.9 tok/s, prose 1200 tokens (length) 138.6 tok/s
+INFO exact7 P (test form, pin 2500) vs the stored x28h-e7a: PASS exact7 r23sw11101048-P: 7/7, slots MATCHED (env PASS; bit-identity is not expected with STRATA_ADAPT_FETCH=2)
+NOT COVERED (the plan): the port's baseline gate (exactness on the CLI path, long40, the 3-pass screen, Basalt's speed rule) and REVIEW 4.7 (the single-card fallback, still Cstar18-single).
+NOTHING SWITCHES: 8080 stays the daily. Karl decides.
+=== 2026-11-10 11:47:23   lock sweep before the end
+=== 2026-11-10 11:47:24 port_gap4.sh end: the daily back on 8080 - nothing switched
+2026-11-10 11:47:29 port_gap4: memory back: MemAvailable 87 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-10 11:47:41 port_gap4: no swap-out while P028x started
+2026-11-10 11:47:41 port_gap4: served build back (153ce47d3ef0), policy on, queue released
+=== 2026-11-10 11:47:41 8080 was down for about 46 min; kernel check after the gap: ok
+=== 2026-11-10 11:47:41 RESULT: DONE (measurements only, nothing switched; 8080 down 46 min; kernel check after: ok): SWITCH CHECKS PASS | C1 PASS, C2 EXACT, C3 PASS, C4 PASS (0 paid), C5 0 firing(s) in 64 requests

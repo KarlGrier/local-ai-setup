@@ -1,0 +1,104 @@
+# Remaining work - LDR and the rest (10-27)
+
+Collected from our own files: LDR PLAN.md and CHECKPOINT-phase3.md (+ their older versions), LDR NOTES.md (all), the
+bench2 grading summaries, strata-compare HANDOFF / NOTES / round summaries, the DeepSeek checkpoint, and memory. Karl sets
+the order. Effort = code hours / GPU hours, estimated from how long the same kind of step took before (stage costs
+below). Not in the morning report and worth knowing: Phase 4 build items 5-8 and the whole of Phase 5 are still open on
+paper - nothing in the files drops them; MORNING-1027 listed only the code tool, the six fixes and two later items.
+
+**LDR stage costs (from NOTES):** stage 1 (replays of saved runs) ~1-2 GPU h per report-stage item; stage 2 (full runs)
+~3.2-3.4 h per open question, the 10-24 DeepSeek question ~5-5.5 h; stage 3 (o01-o03 + hard five) ~11.4 h; a blind
+grading round ~30-45 min of Claude time per pair, no GPU.
+
+## A. LDR - Phase 4, Karl's 10-24 backlog (the code tool + the six fixes)
+
+| # | Item | Why | Code h / GPU h | Depends on | Done |
+|---|---|---|---|---|---|
+| A1 | **[CODE TOOL]** read-only GitHub code tool (LDR_DEEP_CODE=1) - **DONE 10-27: rerun 08:00-12:51, graded blind (key 4.0 vs -2.0 /7, overall 3.75 vs 3.5 /10; results/bench2/codetool/SUMMARY-1027.md); adoption = Karl's call** | the 10-24 run missed the two-GPU lm_begin / yoco gating and used other engines' flags | ~1 / ~4 left (rerun ends ~13:30) + 1-2 h grading; +11.4 GPU h if it goes through stage 3 for Jan's default | rerun, then Karl's call | built, 50 checks, smoke found K1, answer key, coderefs-check, grader brief |
+| A2 | **[FIX 1]** engine/version check: every flag in an action plan from a source about that engine + version, else "other engine, unverified" | 10-24 report: 20 of 43 flags not in Strata at all, 19 from other Strata engines | 3-4 / ~1 (stage 1) | A1 graded; A3's inline marks; Karl's OK to reuse his 10-24 report as the test case (today's OK covers the code-tool test only) | coderefs-check.py's repo lookup can be reused |
+| A3 | **[FIX 2]** checker findings marked inline on the lines they concern ("Check these", unsupported citations), like the setup check | readers miss the list at the end | 2-3 / 0-0.5 (offline from saved advisory / verification files) | blind-open.py must strip the new marks | setup-check inline marks exist; known pitfall: quote matching on bold / capitals / citation marks |
+| A4 | **[FIX 3]** arithmetic done in code (restricted calculator or recompute pass; never arbitrary code) | ~250x off on Engram row counts | 4-6 / 1-2 | - | nothing |
+| A5 | **[FIX 4]** no citations outside the evidence (every [N] must exist; Answer first) | a [0] reached the headline | ~1 / 0 (offline on all saved reports) | - | ldr-client already counts unlisted numbers |
+| A6 | **[FIX 5]** gains stated against the user's measured baselines (like with like) | it compared a prompt speed with a decode speed | ~2 / 0.5-1 | user-setup.md has Qwen numbers only, no DeepSeek baselines - Karl's file to update | - |
+| A7 | **[FIX 6]** enforce the time budget | 5 h 06 m on 4 h (research ~19 min over, report + checks ~47 min) | 2-3 / 0 (measured on stage 2 runs) | Karl: does the budget cover research only or the whole run? | old item "subagent wrap-up overrun in the fair share" never done |
+| A8 | **Six-fix follow-ups (Karl 10-27) - NOT before the combined rerun AND stage 3 p4s6 are graded; no change before then** - (1) Fix 1: list the wrong-engine settings it missed in the 10-24 report (reference: the code-reference check, codetool/blind/ds41q-refs/B.json), grouped by kind - prose mentions, config keys ("gpu":[0], "layer_split"), env vars without code formatting, other; extend detection for the biggest groups and replay. (2) Fix 5: when the question states its own setup (versions, settings), recommendations are checked against that; the profile only for what the question does not say. (3) Consistency pass: why it missed the DSpark contradiction (K4) - wording, sections too far apart, or claim extraction - and fix it if it is a pattern, not a one-off. **Each change replayed on the saved reports before the next full run** | replays 10-27: Fix 1 caught ~16 of ~30 on the 10-24 report; Fix 5 noisy on an old-state question; consistency missed K4 | ~3-5 / ~1-2 (replays only) | A2-A7 graded (rerun ends ~21:00 10-27, stage 3 ~09:00 10-28); the 10-24 report only for Fix 1 (Karl's OK covers Fix 1); Fix 5 and consistency replays on our own reports (run-full, run-full-fixes, p4s6) | queued |
+
+Six fixes together: ~14-19 code h; stage 1 ~4 GPU h, then one combined stage 2 (~5.5 h) and stage 3 (~11.4 h) ≈ 21 GPU
+h. Bundling needs Karl's OK (precedent: item 2 rode in item 4's runs); one stage 2 per fix would add ~25 GPU h.
+
+## B. LDR - Phase 4 build order, still open on paper (CHECKPOINT-phase3 build order, 10-20)
+
+| # | Item | Code h / GPU h | Notes |
+|---|---|---|---|
+| B1 | Item 5: evidence store of claims (quote, URL, date); rewrite o01-o03 from it | 4-6 / ~1-2 + ~10 + 11.4 | evidence.jsonl and the kept verifier code are a start |
+| B2 | Item 6: read sources whole, follow links to primary sources | 3-5 / 15-20 | ~85 % of cited sources were unread snippets; changes fetching, so it starts at stage 2 |
+| B3 | Item 7: extra search sources - Tavily, Exa Lite, S2 on every search (~25 h, credit-limited; Exa resets 11-01), Exa highlights (~11 h), Exa shopping (3-5 product questions written + frozen first, ~15 h) | 3-5 / ~50 | fallback code, S2 engine already exist |
+| B4 | Item 8: 2-3 short runs merged vs one long run | ~3 / 15-20 | deep/seed.py already continues from saved evidence |
+
+B1-B4 together: ~15-20 code h, ~90-110 GPU h (2-3 weeks of queue time). Karl's call whether they stay.
+**10-27 20:50 KARL'S DECISION: all four, aiming for the best result** - dated plan ~/ai/deep-research/results/bench2/PLAN-ITEMS5-8-1027.md: (1) items 5 + 6 bundle led by item 6's rule (every cited source fetched and read) with A8 folded in - one combined rerun (the 10-24 question vs run-full-fixes) + one stage 3 (vs p4s6), ~10-31; (2) D1 Strata v0.2.7 port (repeat-run gate first) + a fresh stage 3 baseline, ~11-01..11-05; (3) item 7 in parts 7a-7e under Karl's new search rule (30 paid searches per test run, 100 per run of Karl's research; ~850 Tavily / ~2,250 Exa a month shared with Jan chat; 25 % kept for Jan chat, all paid search stops at ~10 % left; next month if needed), ~11-05..11-13; (4) item 8 merge test first (~3 GPU h, no new research runs), short runs only if good; then C3c (my placement, before Phase 5) and Phase 5; Opus 4.5 in 11-01..11-24 after Karl's credit OK; Sonnet experiment last. Each result to Karl; go on unless bad or mixed.
+**10-27 re-estimate (after the six fixes; ~/ai/deep-research/results/bench2/ESTIMATE-ITEMS5-8-1027.md):** per item code / GPU / cycles - 5: 6-8 / ~23 / 3; 6: 4-6 / ~20 / 2-3; 7: 5-8 / ~50 / 5 (credit-limited, split in 7a-7e); 8: 3-5 / ~21 / 3. Items 5 + 6 bundled (replays ~6-8 h, one combined o03 rerun ~2.9 h, one stage 3 ~12 h): 9-12 code h, ~21-24 GPU h, 3 cycles, ~3-4 days (vs ~43 GPU h apart). +~12 h for a fresh "without" side if the build moves first.
+
+## C. LDR - Phase 5 and later
+
+| # | Item | Code h / GPU h | Notes |
+|---|---|---|---|
+| C1 | Phase 5 holdout: hard-holdout h11-h20 (sanity) + o04-o06 on baseline and the final setup, graded blind | ~1 / ~17 | **Karl 10-27: on Flash-Next once the code tool + six fixes are settled; when Qwen4 Flash comes out, a shorter re-check on it instead of a full holdout.** o04-o06 references date from 10-18 (o05 says "no Qwen4 release") - may need a dated addendum |
+| C2 | A code tool inside Jan (likely an MCP server around deep/codetool.py, like web-mcp.py) | 3-4 / <1 | after A1 is adopted; no spec yet |
+| C3 | Why long-context paths disagree (yardstick follow-up; KL 0.16-0.36, one row 9.76; IMMA rides along) | 3-4 / 4-6 | needs a higher-precision reference: the Q8_0 (176 GB) was deleted 10-17 and the disk has 126 GB free (keep-free floor 100) |
+| C3b | **Per-model profile files (Karl 10-27, from the Flash-Next tuning audit, ~/ai/deep-research/results/AUDIT-FLASHNEXT-TUNING-1027.md)**: one file per model loaded by run-ldr.sh - context and output sizes, compaction derived from the context, what the lead and writers see (subagent return, snippets, page / extraction sizes, section evidence and findings, outline / opening caps), the tokenizer, effort per call type with a name map (and a same-effort retry for APIs), worker count and step limits, code-tool read sizes; flash-next.env = today's values (no behaviour change), sonnet-5-5.env for C4 | ~4-6 / ~1 (a replay showing flash-next.env is identical) | **NOT during the six-fix work**; before C4 and before Qwen4 arrives (a Qwen4 profile then) | planned |
+| C3c | **Bigger fixed sizes for Flash-Next (Karl 10-27; with C3b)** - (1) at the current 131K context: the lead's view of each subagent report 16K -> ~32K chars, findings per section 12K -> ~24K tokens, evidence per section 48K -> ~72K tokens, search snippets 300 -> ~600 chars; graded blind against the current sizes, plus run time and steps completed (bigger reads are slower; the lead compacts more often). The two report-stage sizes are replayable from saved evidence; the subagent view and the snippets change the research phase, so they need runs. (2) ONLY if (1) helps: 256K context for Qwen on Strata - decode speed, VRAM experts, memory against the 12 GB floor, a long-prompt time check, long-context quality (needle checks; tied to C3's open long-context divergence question); if it passes, the profile derives the sizes from the context. **Either way the sizes become derived from the profile's context setting**, so a future model with a bigger context scales by itself. Fit at 131K checked on paper: a section prompt of ~102K tokens stays under the report writer's 121.8K limit (~28K left for output) | ~2-3 / ~2 (report replays) + ~10 (research runs) + ~4 (256K checks) | after the six fixes, with or after C3b; before C4 | planned |
+| C4 | **LAST LDR item (Karl 10-27, rescaled): Sonnet 5.5, our LDR build vs stock LDR on ONE question (o03, EU AI Act - no code, so stock is not handicapped)**; (a) our build with the six fixes + code tool and a Sonnet profile (C3b), (b) stock 1.10.7 in its own install; SearXNG only, same budget, prompt caching on, per-run caps, **total hard stop $60**; blind A/B, fresh grader, citation check; Flash-Next o03 reports as reference. results/SONNET55-LDR-PLAN-1027.md | ~1 day / 0 GPU | after the six fixes, Phase 5, items 5-8 (if done) and C3b; only after Karl's API credits reset; **the Opus 4.5 run comes first in November; if the month's $100 does not cover both, this moves to the next month** | planned |
+
+Small / conditional: quick-answer length live check (waits for a quick request; free); a separate quick LDR (only if
+quick answers are often blocked; 3-4 code h); tool-call check of the research tools at the next 8080 switch (minutes);
+the 20 GB relief trigger "revisit at the phase 4 switch" (Karl's call); LDR upgrade past 1.10.7 (Karl's OK); the critic's
+"targeted re-research + revision" (never built, never dropped); stale 09-30 README items (262K context proposal, 4-worker
+comparison, lxml upstream report).
+
+**Totals:** the "week" Karl remembers = A1-A7 + C1 + C2 ≈ 22-25 code h and ~43 GPU h + ~5 h grading, 5-7 days with queue
+gaps. B1-B4 add 2-3 weeks if kept.
+
+## D. Not LDR
+
+**D0. Release watch - found stopped, half fixed today.** The tag watch stopped itself 10-25 04:47 when v0.2.5 touched
+the Qwen path; Karl said that morning no pause was needed, but the baseline was never raised (my slip in the DeepSeek
+round). Done now: `tagcheck.sh --accept v0.2.5` (baseline v0.2.5). v0.2.6 then paused on 2 changes on our path - a
+comment in generate.cpp (`--spec-split` no longer called exact), and in server.py a one-token reply shows no tok/s and
+an empty `messages` gets a 400. Recommendation: accept v0.2.6 and restart the watch (needs Karl's OK; until then the
+watch would stop again at its first check, so a Thursday release would not be noticed automatically).
+
+| # | Item | Code h / GPU h | Depends on | Done / notes |
+|---|---|---|---|---|
+| D1 | **Qwen patch-series port - Karl 10-27: to ~~v0.2.6~~ **v0.2.7** (Karl 10-27 ~11:00; plan results/PORT-V027-PLAN.md: 0.2.7's new defaults pinned off - STRATA_DEFAULTS=026 + ROUTE_PRIOR / PROMPT_ATTN_IMMA / PREFILL_LAYER_MAJOR / PLE_AUTO_RAM = 0 - then KL gate + speed A/B per switch) after the LDR week, repeat-run gate first (--adapt-async); tell Karl if Strata adds Qwen4 support before then** (P021m = v0.2.1 + 30 commits: server chat cache / side stash / web search / think-fence / continuation fix; engine SPEC_EXACT, #652, ROUTER_Q8K, GR_FORK, guards, #619 nextn, cost gate, DRAFT_CUM, PREFILL_V2) to **v0.2.6** (memory says v0.2.3; v0.2.6 carries v0.2.5's Qwen engine + small server fixes - Karl picks) | 8-12 / 8-9 | release summary + Karl's go; gaps; "never 0.2.x during phase 4" vs the LDR stages (a switch mid-phase-4 changes the model under the comparisons) | 0.2.2 port built + checked in gaps 5 and 7, never switched (r22-port022-next, 29 commits; the continuation fix not on it). Gate first: find why 0.2.2/0.2.3 runs did not repeat (exact7 4/7, 5/7) - rerun at the matched slot pin; new candidate: v0.2.5's automatic `--adapt-async` default, "not bit-exact from run to run" by its own header |
+| D2 | **STRATA_SPEC_COST A/B** (upstream's cost-aware draft window, v0.2.3) vs our arm C (--spec 7 + DRAFT_CUM + our cost gate, +3.2 % on W1-W3) | 1-2 / 1-1.5 | D1 (not in v0.2.1) | if equal or better, two of our patches can go; needs the near-tie probe with a spec-off arm |
+| D3 | **IMMA retest** (int8 tensor-core prompt attention, TTFT -2.7 %; a default on sm_80+ since v0.2.7 - pinned off in the port, Karl 10-27) | ? / ? | a higher-precision reference (as C3) | lowest KL of all variants but failed top-1 (gap 9: 104 / 120, floor 108); under the 10-26 spread rule it still fails (16 changed vs bound 12.1, if that rule carries over to the Qwen yardstick) |
+| D4 | v0.2.5 IQ_GATHER exact test on Zen 5 | 0.5 / 0.5 | D1 | Karl's 10-25 backlog line |
+| D5 | **Next DeepSeek round:** (Karl 10-27: on v0.2.7 - rebase #343 + the slot-RAM cap, --vision off, keep --experts 6, A/B the new prompt-path defaults against DS4_DEFAULTS=026) BORROW port (main item, P20K +20-50 % est.) | 12-16 / ~2.5 | upstream may port it first (Saturday release check) | then Maya's prompt-compute ideas: 4060 Ti read share +10-15 %, ATTN_MMA +5-8 % (~1 day), lean tiles / FP16 / router rows +3-6 % (1-1.5 days), store huge pages +1-4 % (1 h), exact-size store slots +3-7 % (1-1.5 days) |
+| D6 | DeepSeek repeat-pair test (frozen, window 128, --ssd-cache 0) | 0.5 / 0.25 | - | written as a runnable next step in CHECKPOINT-1026 |
+| D7 | DeepSeek long-context comparison (Karl: not rerun this round) | 0 / ~0.7 | - | passes the 10-27 swap rule on replay |
+| D8 | Swappiness 60 -> lower (Maya's retry; long prompts' swap-outs) | 0 / 0.2 | Karl (sudo) | |
+| D9 | Unposted drafts (pr-drafts/47 follow-up re-read fix 12/12; cost-gate PR; three stale comments); threads to check for replies (#2028 - fixed upstream in v0.2.7 by #3416, which refs it; #1889, #1896, #2794) | - | Karl's per-item OK | never posted without it |
+| D10 | Suite: **Opus 4.5 hard-set run scheduled 11-02 but GATED (Karl 10-27): it starts only after Karl confirms his monthly API credits have reset (tmp/suite/opus45-credits-ok; the timer re-checks daily 09:00 through 11-24) - ask Karl before 11-02**; Opus 4.5 only until 11-24 and no Claude spending before November -> any Opus 4.5 run (e.g. the hard set) fits 11-01..11-24; r03 ratings / 27B cut streams from 10-13 (status not rechecked) | - / - | Karl | |
+| D11 | Gyro-L: **supported since v0.2.7** (#3806, CPU + CUDA + MMQ prompt path; upstream has not run the 50 GiB file; the Gyro-L watch fired 10-27 10:20 and stopped); ~108 GB download vs the disk | - | disk, Karl's order | plan in HANDOFF |
+
+## E. When Qwen4 Flash lands (Karl 10-27: news expected Thursday, the Flash model itself probably later; the Strata port for it comes first then)
+
+Nothing about a Qwen4 release is recorded (as of 10-12 not released; Flash-Next is its preview; a 27B announced 09-22).
+Precedent: DeepSeek V4.1 - files downloaded ahead (~2 h), release seen 21:30, stock build + pack + lossless speed arms done
+by 00:25, then a 3-day tuning round. Steps, in order:
+1. Release watch re-armed (D0: accept v0.2.6) so the supporting release pauses the queue and alerts.
+2. **Disk:** 126 GB free = ~26 GB above the 100 GB floor. A Qwen4 download almost certainly needs deletions first - Karl's
+   OK per file (candidates in the DeepSeek plan notes; GLM-5.3-Flash is never deleted).
+3. Header check, then a pinned, sha256-checked download unit (like ds41-download).
+4. Release summary -> Karl's go -> stock build in its own folder with a lossless config (tail skip 0 on one GPU,
+   adapt-async and CPU prompt share off, effort medium, the sampling block) -> speed screen + suite quick run at medium.
+5. Only then our series, whose model-specific parts need refitting (cost-gate table, B.3 table, helper slots, PREFILL_V2
+   - written for IQ3_XXS / IQ4_NL experts, GR_FORK geometry), and a new higher-precision yardstick reference.
+Prep that can be done before Thursday, code only: D0; the bringup runbook / fitplan / inspect scripts date from
+v0.1.39-0.1.41 and need refreshing for v0.2.x (~2-4 h); a deletion list for Karl. Interaction: switching 8080 mid-phase-4
+changes the model under the LDR stage comparisons (stage 2-3 baselines would need rerunning on the new model).
+
+Sources for every line: the two survey reports' file:line references (kept in this session's notes); key lines -
+LDR CHECKPOINT-phase3.md:134-144 (build order), 250-262 (estimates), PLAN.md:64-86 (phase 5); strata-compare
+NOTES.md:8064-8096 (0.2.2 port), 8193-8195 / 8342-8343 (IMMA), 8231 (arm C), 8502-8504 (v0.2.5); CHECKPOINT-1026.md.

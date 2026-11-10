@@ -1,0 +1,10 @@
+[
+ {"set": "hard-screen", "profile": "baseline", "needs": "FROZEN-hard.txt"},
+ {"set": "screen", "profile": "deep", "ids": ["o01", "o02", "o03"], "effort": "medium", "label": "medium"},
+ {"set": "screen-extra", "profile": "baseline", "needs": "FROZEN-extra.txt"},
+ {"set": "screen-extra", "profile": "deep", "needs": "FROZEN-extra.txt", "effort": "medium", "label": "medium"},
+ {"set": "hard-screen", "profile": "deep", "ids": ["h02", "h04", "h05", "h06", "h08"], "needs": "FROZEN-hard.txt", "effort": "medium", "label": "medium"},
+ {"set": "hard-screen", "profile": "deep", "ids": ["h02", "h04", "h05", "h06", "h08"], "needs": "FROZEN-hard.txt"},
+ {"set": "screen", "profile": "deep", "ids": ["o01", "o02", "o03"], "only_if": "xhigh_beats_medium_hard"},
+ {"set": "screen-extra", "profile": "deep", "needs": "FROZEN-extra.txt", "only_if": "xhigh_beats_medium_hard"}
+]

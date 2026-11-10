@@ -1,0 +1,10 @@
+[Unit]
+Description=Karl 11-05: revert the weekend power-key setting on Monday 08:00
+
+[Timer]
+OnCalendar=2026-11-09 08:00:00
+Persistent=true
+Unit=power-key-revert.service
+
+[Install]
+WantedBy=timers.target

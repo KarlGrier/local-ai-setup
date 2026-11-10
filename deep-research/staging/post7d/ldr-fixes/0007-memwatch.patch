@@ -1,0 +1,262 @@
+--- a/local_deep_research/advanced_search_system/strategies/langgraph_agent_strategy.py
++++ b/local_deep_research/advanced_search_system/strategies/langgraph_agent_strategy.py
+@@ -2735,6 +2735,10 @@
+                 self.all_links_of_system.extend(_deep_seed.link_entries(seed))
+                 self.collector = SearchResultsCollector(self.all_links_of_system)
+             self.deep_store = EvidenceStore(query, out.parent if out else None)
++            # deep-research patch 0007 (2026-11-04): a memory record per research start / end (deep/memwatch.py)
++            from ...deep import memwatch as _memwatch
++
++            _memwatch.research_start(rid)
+             self.deep_store.budget_s = budget_s
+             self.deep_store.job = job
+             self.deep_store.deadline = _deep_clock() + budget_s
+@@ -3294,6 +3298,12 @@
+             from ...deep import codetool as _codetool
+ 
+             _codetool.close(self.collector)
++        # deep-research patch 0007 (2026-11-04): a memory record now and gc + malloc_trim 30 s after this research's
++        # thread has let go of its objects (deep/memwatch.py; LDR_MEM_TRIM=0 keeps only the records)
++        if _DEEP.enabled:
++            from ...deep import memwatch as _memwatch
++
++            _memwatch.research_end(getattr(self, "_deep_research_id", ""))
+ 
+         # Citation handling — only if we have results
+         if all_search_results and not deep_done:
+--- a/local_deep_research/advanced_search_system/tools/fetch/__init__.py
++++ b/local_deep_research/advanced_search_system/tools/fetch/__init__.py
+@@ -355,6 +355,15 @@
+             egress_context=egress_context,
+         ) as fetcher:
+             result = fetcher.fetch(url, max_length=CONTENT_MAX_LENGTH)
++        # deep-research patch 0007 (2026-11-04): after a big page or a PDF, give its freed parse memory back to the OS
++        # (deep/memwatch.py; LDR_MEM_TRIM=0 turns it off). The agents' fetch tools and the deep reader all come here.
++        if _DEEP.enabled:
++            try:
++                from ....deep import memwatch as _memwatch
++
++                _memwatch.after_fetch(result)
++            except Exception:  # noqa: BLE001 - memory hygiene must never fail a fetch
++                pass
+         if _store is not None and isinstance(result, dict):
+             _store.cache_page(url, result)
+ 
+--- /dev/null
++++ b/local_deep_research/deep/memwatch.py
+@@ -0,0 +1,215 @@
++"""Memory watch and trim for ldr-web (deep-research workspace patch 0007, 2026-11-04; staged, not installed).
++
++Why (staging/ldr-study/MEMORY.md): ldr-web's RSS climbs to the highest transient peak it has seen and stays there
++(0.3 GB fresh -> 1.0-2.6 GB within one deep question -> a 4.2-4.5 GB plateau on a long-lived LDR). The peaks are
++freed - one research's whole evidence is ~60-75 MB live - but glibc keeps freed memory in its per-thread arenas (28 of
++them, 795 MB, fully resident in the idle LDR of 11-04 09:32) and only trims a heap's top. Nothing logged RSS between
++the start line and the ram-dip snapshots, so the peaks could not be tied to a phase.
++
++What it does (stdlib + loguru only; every step is skipped quietly where glibc's calls are missing):
++  * record(tag): one JSON line in LOG_PATH (LDR_MEMWATCH_LOG, default logs/ldr-mem.jsonl in the workspace): RSS, HWM,
++    anonymous RSS, threads, glibc's in-use / free / mmapped bytes over all arenas (mallinfo2), the number of 64 MiB
++    arena heaps, Python's allocated blocks, gc counts. Tags: "research start", "research end", "trim ...", "periodic".
++  * a periodic record every INTERVAL_S (LDR_MEMWATCH_INTERVAL_S, default 600; started at the first research).
++  * trim(why): gc.collect() + malloc_trim(0), with the RSS before / after in the record. Called
++      - TRIM_DELAY_S (30 s) after a research ends (a timer thread: by then the research thread has returned and the
++        research's objects are unreferenced, so gc can free their cycles), and
++      - after a fetch whose text was at least BIG_CHARS (LDR_MEM_TRIM_BIG_CHARS, default 100,000) or that was a PDF
++        (tools/fetch _fetch_raw_content: the agents' fetch tools and the deep reader); at most once every MIN_GAP_S
++        (20 s).
++    LDR_MEM_TRIM=0 turns the trims off (the records stay); LDR_MEMWATCH=0 turns everything off.
++It does not change what any research reads, sends or writes.
++"""
++
++from __future__ import annotations
++
++import ctypes
++import gc
++import json
++import os
++import sys
++import threading
++import time
++from pathlib import Path
++
++from loguru import logger
++
++LOG_PATH = Path(os.environ.get("LDR_MEMWATCH_LOG") or "/home/USER/ai/deep-research/logs/ldr-mem.jsonl")
++ENABLED = os.environ.get("LDR_MEMWATCH", "1").strip() != "0"
++TRIM = os.environ.get("LDR_MEM_TRIM", "1").strip() != "0"
++
++
++def _num(name: str, default: float) -> float:
++    try:
++        return float(os.environ.get(name, "").strip() or default)
++    except ValueError:
++        return default
++
++
++INTERVAL_S = _num("LDR_MEMWATCH_INTERVAL_S", 600)
++BIG_CHARS = int(_num("LDR_MEM_TRIM_BIG_CHARS", 100_000))
++TRIM_DELAY_S = _num("LDR_MEM_TRIM_DELAY_S", 30)
++MIN_GAP_S = _num("LDR_MEM_TRIM_MIN_GAP_S", 20)
++
++_lock = threading.Lock()
++_state = {"periodic": None, "last_trim": 0.0, "trims": 0, "freed_mb": 0.0, "research": ""}
++
++
++class _MallInfo2(ctypes.Structure):
++    _fields_ = [(n, ctypes.c_size_t) for n in ("arena", "ordblks", "smblks", "hblks", "hblkhd", "usmblks",
++                                                "fsmblks", "uordblks", "fordblks", "keepcost")]
++
++
++def _load_libc():
++    try:
++        lib = ctypes.CDLL("libc.so.6")
++        lib.malloc_trim.argtypes = [ctypes.c_size_t]
++        lib.malloc_trim.restype = ctypes.c_int
++        try:
++            lib.mallinfo2.restype = _MallInfo2
++        except AttributeError:               # glibc < 2.33
++            pass
++        return lib
++    except (OSError, AttributeError):
++        return None
++
++
++_libc = _load_libc()
++
++
++def _status() -> dict:
++    out = {}
++    try:
++        with open("/proc/self/status") as f:
++            for line in f:
++                k, _, v = line.partition(":")
++                if k in ("VmRSS", "VmHWM", "RssAnon", "VmSwap"):
++                    out[k] = round(int(v.split()[0]) / 1024, 1)
++                elif k == "Threads":
++                    out[k] = int(v.split()[0])
++    except OSError:
++        pass
++    return out
++
++
++def _arena_heaps() -> int:
++    n = 0
++    try:
++        with open("/proc/self/maps") as f:
++            for line in f:
++                p = line.split()
++                if len(p) == 5 and p[1].startswith("rw") and int(p[0].split("-")[0], 16) % (64 << 20) == 0:
++                    n += 1
++    except (OSError, ValueError):
++        return -1
++    return n
++
++
++def snapshot() -> dict:
++    s = _status()
++    rec = {"rss_mb": s.get("VmRSS"), "hwm_mb": s.get("VmHWM"), "anon_mb": s.get("RssAnon"),
++           "swap_mb": s.get("VmSwap"), "threads": s.get("Threads"), "arena_heaps": _arena_heaps(),
++           "py_blocks": sys.getallocatedblocks(), "gc_counts": list(gc.get_count())}
++    if _libc is not None and hasattr(_libc, "mallinfo2"):
++        try:
++            m = _libc.mallinfo2()
++            rec.update(malloc_in_use_mb=round(m.uordblks / 2**20, 1), malloc_free_mb=round(m.fordblks / 2**20, 1),
++                       malloc_mmap_mb=round(m.hblkhd / 2**20, 1))
++        except Exception:  # noqa: BLE001
++            pass
++    return rec
++
++
++def record(tag: str, **extra) -> dict:
++    if not ENABLED:
++        return {}
++    rec = {"t": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "pid": os.getpid(), "tag": tag,
++           "research": _state["research"], **snapshot(), **extra}
++    try:
++        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
++        with _lock, open(LOG_PATH, "a", encoding="utf-8") as f:
++            f.write(json.dumps(rec) + "\n")
++    except OSError:
++        pass
++    return rec
++
++
++def trim(why: str) -> float:
++    """gc.collect() + malloc_trim(0); returns the MB of RSS given back (0 when off or unavailable)."""
++    if not (ENABLED and TRIM):
++        return 0.0
++    t0 = time.time()
++    before = _status().get("VmRSS") or 0.0
++    gc.collect()
++    if _libc is not None:
++        try:
++            _libc.malloc_trim(0)
++        except Exception:  # noqa: BLE001
++            pass
++    after = _status().get("VmRSS") or 0.0
++    freed = round(before - after, 1)
++    with _lock:
++        _state["last_trim"] = time.time()
++        _state["trims"] += 1
++        _state["freed_mb"] += max(0.0, freed)
++    record(f"trim ({why})", rss_before_mb=before, freed_mb=freed, trim_s=round(time.time() - t0, 3))
++    logger.info(f"[MEMWATCH] trim ({why}): RSS {before:.0f} -> {after:.0f} MB in {time.time() - t0:.2f} s")
++    return freed
++
++
++def _periodic() -> None:
++    while True:
++        time.sleep(max(30.0, INTERVAL_S))
++        record("periodic")
++
++
++def research_start(research_id: str = "") -> None:
++    if not ENABLED:
++        return
++    _state["research"] = str(research_id or "")
++    record("research start")
++    with _lock:
++        if _state["periodic"] is None:
++            th = threading.Thread(target=_periodic, name="ldr-memwatch", daemon=True)
++            _state["periodic"] = th
++            th.start()
++
++
++def research_end(research_id: str = "") -> None:
++    """Record now; trim TRIM_DELAY_S later in a timer thread (after the research thread has let go of its objects).
++    Also empties the user-file text cache (deep/files.py), which otherwise lives as long as ldr-web."""
++    if not ENABLED:
++        return
++    record("research end")
++    try:
++        from . import files as _files
++
++        with _files._lock:
++            _files._texts.clear()
++    except Exception:  # noqa: BLE001
++        pass
++    if TRIM:
++        t = threading.Timer(TRIM_DELAY_S, trim, args=(f"research end + {TRIM_DELAY_S:.0f} s",))
++        t.daemon = True
++        t.start()
++
++
++def after_fetch(result) -> None:
++    """Called after each page fetch (tools/fetch _fetch_raw_content): trim after a big page or any PDF."""
++    if not (ENABLED and TRIM) or not isinstance(result, dict):
++        return
++    try:
++        n = len(result.get("content") or "")
++        # URLClassifier's names: PDFs come as "PDF" (direct links) and "arXiv" (the PDF is fetched and read)
++        pdf = str(result.get("source_type") or "") in ("PDF", "arXiv", "bioRxiv", "medRxiv")
++    except Exception:  # noqa: BLE001
++        return
++    if n < BIG_CHARS and not pdf:
++        return
++    if time.time() - _state["last_trim"] < MIN_GAP_S:
++        return
++    trim(f"after a {'PDF' if pdf else 'big page'} of {n:,} chars")
++
++
++def stats() -> dict:
++    return {"trims": _state["trims"], "freed_mb": round(_state["freed_mb"], 1)}

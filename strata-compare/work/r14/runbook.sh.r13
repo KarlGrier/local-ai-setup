@@ -1,0 +1,305 @@
+#!/bin/bash
+# bringup/runbook.sh RUN STAGE [STAGE...] | RUN all — bring a model up on this PC, stage by stage (bringup/RUNBOOK.md).
+# Every stage writes into bringup/out/RUN/ and appends its time to times.tsv; a stage that cannot continue writes
+# STOP-<stage> with the reason (a manual step) and the script stops. Needs the GPUs free: run it through a queue.
+#
+# Inputs (environment, or bringup/out/RUN/run.env, which is sourced first):
+#   RB_TAG        the release tag (v0.1.39)                 RB_REPO     where to clone from (default: the local mirror strata/)
+#   RB_GGUF       the model's first shard                   RB_MTP      the drafter directory (dense.bin, experts.bin, draft_vocab.bin)
+#   RB_PATCHES    our series (default patches/r13c39)       RB_MEAS     the MEASUREMENT commits for the twin (default patches/r13-meas)
+#   RB_BASECFG    my config, whose flags / env / sampling / web search are kept (default configs/Cstar131.json)
+#   RB_REF        exact7 reference: c13 (C*13 / C*13.1's hashes) or the label of an earlier exact7 run; empty = stock's
+#   RB_PROMOTED   the build the screens compare against (default configs/Cstar131.json)
+#   RB_HELPER     1 = the 4060 Ti helper (default 1)        RB_KQUANTS  1 = -DSTRATA_MMQ_KQUANTS=ON (the inspector says when)
+#   RB_CALIB_MIN  calibration budget in minutes (90)        RB_SOAK     1 = run the 2-hour soak on 8080 (stage soak)
+#   RB_SCREENS    "ldr dec" (default) or "dec" (decode screens only)
+#   RB_FIT        1 = apply the planner's resident budget / chat cache / helper slots / reserve (a file that does not fit)
+# Stages, in order:
+#   clone      clean clones of RB_TAG: strata-stock (as released) and strata-patched (+ RB_PATCHES via git am)
+#   inspect    bringup/inspect_model.py (headers only): RUNS / RUNS WITH THESE PATCHES OFF / NEEDS UPSTREAM SUPPORT
+#   fitplan    bringup/fitplan.py: slots, RAM, a conservative starting config
+#   prompts    the harness's prompts re-encoded with this model's tokenizer (exact7, TF texts)
+#   pack       the release's tools/iq_pack.py (+ --compat-bf16 when the hyper-connection weights are not BF16)
+#   build      engine-stock, engine-patched, engine-twin (patched + RB_MEAS), sm_89 + sm_120
+#   stock      the stock release with my config's flags (no local switches): starts, answers, exact7 -> the reference
+#   patched    the patched build, every local switch off: exact7 = stock 7/7 (the always-on patches are exact);
+#              its guard line; the server's model check line
+#   patches    the local switches on one at a time in order of measured value, each with its gate (bringup/patchtest.sh);
+#              then all on: exact7 vs RB_REF (when given)
+#   calib      bounded calibration (RB_CALIB_MIN): helper slots, cache reserve, resident KV, prompt chunk, draft floor:
+#              the old value vs one justified alternative each (decode or TTFT screen); an alternative needs >= +2 %
+#   b3table    B.3's rows-a-warp table re-derived on this model's projection shapes (mmvq_il_parity --bench)
+#   screens    LDR + decode screens, A B B A, the candidate vs RB_PROMOTED
+#   accept     bringup/acceptance.sh (Part 5) on the candidate
+#   soak       2 hours on 127.0.0.1:8080 (RB_SOAK=1 only)       promote   prints the promotion commands (manual)
+set -u
+WS=/home/USER/ai-speed-testing/strata-compare; cd $WS
+RUN=$1; shift
+R=$WS/bringup/out/$RUN; mkdir -p $R/configs $R/state
+[ -f $R/run.env ] && source $R/run.env
+source $WS/bringup/lib/env.sh
+P=$WS/.venv/bin/python
+RB_TAG=${RB_TAG:-v0.1.39} RB_REPO=${RB_REPO:-$WS/strata} RB_PATCHES=${RB_PATCHES:-$WS/patches/r13c39}
+RB_MEAS=${RB_MEAS:-$WS/patches/r13-meas} RB_BASECFG=${RB_BASECFG:-$WS/configs/Cstar131.json} RB_REF=${RB_REF:-}
+RB_PROMOTED=${RB_PROMOTED:-$WS/configs/Cstar131.json} RB_HELPER=${RB_HELPER:-1} RB_CALIB_MIN=${RB_CALIB_MIN:-90}
+RB_GGUF=${RB_GGUF:?set RB_GGUF} RB_MTP=${RB_MTP:?set RB_MTP}
+export EVICT_GLOB="$(dirname $RB_GGUF)/*.gguf" PROMPT_DIR=$R/prompts
+# exact7's pinned cache: 90 % of the planner's 5080 slots (3500 for IQ3_S was Round 8's choice; a bigger expert needs fewer)
+[ -f $R/fitplan.json ] && export PIN_CACHE=$($WS/.venv/bin/python -c "import json; print(min(3500, int(json.load(open('$R/fitplan.json'))['slots_5080'] * 0.9)))")
+log() { echo "=== $(date -Is) [$RUN] $*" | tee -a $R/runbook.log; }
+stop() { echo "$*" > $R/STOP-$STAGE; log "STOP at $STAGE: $*"; exit 2; }
+G="pr245 ple_prefetch spec_exact side_mixer router_q8k qsa_split_attn mmvq_il gr_fork"
+
+mkcfg() {   # mkcfg NAME EXE TREE [extra python edits] -> $R/configs/NAME.json from RB_BASECFG, paths replaced
+  $P - "$@" <<'PY'
+import json, os, sys
+from pathlib import Path
+name, exe, tree = sys.argv[1:4]
+R = Path(os.environ["R"]); base = json.loads(Path(os.environ["RB_BASECFG"]).read_text())
+fit = json.loads((R / "fitplan.json").read_text()) if (R / "fitplan.json").exists() else {}
+ins = json.loads((R / "inspect.json").read_text()) if (R / "inspect.json").exists() else {}
+a = base["args"]
+def setarg(flag, val):
+    if flag in a: a[a.index(flag) + 1] = val
+    else: a.extend([flag, val])
+def droparg(flag):
+    if flag in a:
+        i = a.index(flag); del a[i:i + 2]
+shards = ins.get("file", [os.environ["RB_GGUF"]])
+setarg("--pack", str(R / "pack")); setarg("--native", shards[0])
+ple = ins.get("ple_shard") or (shards[-1] if len(shards) > 1 else shards[0])
+setarg("--ple-gguf", ple)
+setarg("--mtp", os.environ["RB_MTP"]); setarg("--expert-profile", str(Path(tree) / "data/expert-profile.bin"))
+if os.environ.get("RB_HELPER", "1") != "1":
+    droparg("--expert-cache-device1")
+    base["env"]["CUDA_VISIBLE_DEVICES"] = base["env"]["CUDA_VISIBLE_DEVICES"].split(",")[0]
+elif fit.get("helper_slots_max") and os.environ.get("RB_HELPER_SLOTS"):
+    setarg("--expert-cache-device1", os.environ["RB_HELPER_SLOTS"])
+if os.environ.get("RB_FIT") == "1" and fit.get("start_config"):   # the planner's RAM / VRAM choices (stage fitplan)
+    sc = fit["start_config"].split()
+    for i in range(0, len(sc) - 1):
+        if sc[i] in ("--resident-budget-gib", "--chat-cache", "--chat-cache-mib", "--expert-cache-device1", "--vram-reserve-mib") \
+                and not sc[i + 1].startswith("--"):
+            setarg(sc[i], sc[i + 1])
+    if "--mmap-experts" in sc and "--mmap-experts" not in a:     # a flag without a value (both GPUs, too big for RAM)
+        a.append("--mmap-experts")
+    if "--resident-budget-gib" in sc:     # v0.1.39 / 0.1.40 refuse a RAM budget beside a helper cache: one GPU
+        droparg("--expert-cache-device1")
+        base["env"]["CUDA_VISIBLE_DEVICES"] = base["env"]["CUDA_VISIBLE_DEVICES"].split(",")[0]
+        if "--mmap-experts" in a:
+            a.remove("--mmap-experts")
+for kv in os.environ.get("RB_ARGS", "").split():
+    f, v = kv.split("=", 1); setarg(f, v)
+for f in os.environ.get("RB_DROP", "").split():
+    droparg(f)
+base.update(exe=exe, server=str(Path(tree) / "serve/server.py"), cwd=str(R), tokenizer=str(R / "pack/tokenizer"),
+            log=str(R / f"engine-{name}.log"), fallback=None, model_name=base.get("model_name", "strata"))
+env = base.setdefault("env", {})
+for k in os.environ.get("RB_ENV_DROP", "").split():
+    env.pop(k, None)
+for kv in os.environ.get("RB_ENV", "").split():
+    k, v = kv.split("=", 1); env[k] = v
+base.pop("web_search", None) if os.environ.get("RB_NOWEB") == "1" else None
+(R / "configs" / f"{name}.json").write_text(json.dumps(base, indent=1) + "\n")
+# the base config's shared settings (your chat defaults: effort, temperature, top_p, top_k) go with every config, or a
+# screen samples at the config's own "sampling" instead (Rehearsal A's first screens did: T 0.6 against the promoted 1.0)
+sh = Path(os.environ["RB_BASECFG"]).with_suffix("").as_posix() + ".shared-settings.json"
+if Path(sh).exists():
+    (R / "configs" / f"{name}.shared-settings.json").write_text(Path(sh).read_text())
+print(R / "configs" / f"{name}.json")
+PY
+}
+export R RB_BASECFG RB_GGUF RB_MTP RB_HELPER RB_HELPER_SLOTS=${RB_HELPER_SLOTS:-} RB_FIT=${RB_FIT:-0}
+SWITCH_ENV="STRATA_SPEC_EXACT STRATA_ADAPT_LAND STRATA_ADAPT_HELPER STRATA_SIDE_MIXER STRATA_ROUTER_Q8K STRATA_GR_FORK STRATA_QSA_SPLIT_ATTN STRATA_MMVQ_IL"
+
+build_tree() {   # build_tree TREE OUTDIR
+  local T=$1 OUT=$2
+  [ -d $T/third_party/llama.cpp/ggml ] || ln -sfn $(readlink -f $WS/strata-v0115/third_party/llama.cpp) $T/third_party/llama.cpp
+  (cd $T && cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release -DSTRATA_ENABLE_CUDA=ON -DSTRATA_BUILD_TESTS=OFF \
+    "-DCMAKE_CUDA_ARCHITECTURES=89;120" -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.3/bin/nvcc \
+    $([ "${RB_KQUANTS:-0}" = 1 ] && echo -DSTRATA_MMQ_KQUANTS=ON) -DSTRATA_GGML_DIR="$T/third_party/llama.cpp" > build-configure.log \
+    && cmake --build build --target strata -j 16 > build.log 2>&1) || return 1
+  mkdir -p $OUT && cp $T/build/strata $OUT/strata && sha256sum $OUT/strata > $OUT/SHA256
+  echo "$(git -C $T describe --tags --always) + $(git -C $T log --oneline $RB_TAG..HEAD | wc -l) commits, tree $(git -C $T rev-parse HEAD^{tree})" > $OUT/SOURCE
+}
+
+exact7_hashes() { $P - "$1" <<'PY'
+import sys
+sys.path.insert(0, "/home/USER/ai-speed-testing/strata-compare/bringup/lib")
+from p0_table import parse
+print(" ".join(parse(f"{sys.argv[1]}-{k}").get("out", "-") for k in ("x-math", "s-math", "x-code", "s-code", "x-p2000", "x-32k", "x-112k")))
+PY
+}
+
+st_clone() {
+  rm -rf $R/strata-stock $R/strata-patched $R/strata-twin
+  for T in stock patched twin; do git clone -q $RB_REPO $R/strata-$T && git -C $R/strata-$T checkout -q $RB_TAG || stop "clone of $RB_TAG failed"; done
+  local gi="-c user.name=bringup -c user.email=noreply@localhost"
+  git -C $R/strata-patched $gi am -q $RB_PATCHES/0*.patch > $R/am.log 2>&1 || { git -C $R/strata-patched am --abort; stop "our series does not apply to $RB_TAG ($(grep -m1 'Patch failed\|error' $R/am.log)): resolve by hand (bringup/RUNBOOK.md: conflicts)"; }
+  git -C $R/strata-twin $gi am -q $RB_PATCHES/0*.patch $RB_MEAS/0*.patch > $R/am-twin.log 2>&1 || stop "the twin's MEASUREMENT commits do not apply"
+  # the pinned llama.cpp (ggml for the build, gguf-py for the packer): an ABSOLUTE link (strata-v0115's own link is
+  # relative and points nowhere from bringup/out/RUN/)
+  local LL; LL=$(readlink -f $WS/strata-v0115/third_party/llama.cpp)
+  for T in stock patched twin; do rm -rf $R/strata-$T/third_party/llama.cpp; ln -sfn $LL $R/strata-$T/third_party/llama.cpp; done
+  [ -d $R/strata-patched/third_party/llama.cpp/ggml ] || stop "the pinned llama.cpp ($LL) has no ggml/"
+  log "clone: $RB_TAG; patched = +$(ls $RB_PATCHES/0*.patch | wc -l) patches; twin = + $(ls $RB_MEAS/0*.patch | wc -l) MEASUREMENT"
+}
+st_inspect() {
+  $P bringup/inspect_model.py $RB_GGUF --mtp $RB_MTP --tree $R/strata-patched --json $R/inspect.json > $R/inspect.txt; local rc=$?
+  log "inspect: $(grep VERDICT $R/inspect.txt | cut -c1-300)"
+  [ $rc = 0 ] || stop "$(grep VERDICT $R/inspect.txt)"
+  grep -q "STRATA_MMQ_KQUANTS" $R/inspect.txt && [ "${RB_KQUANTS:-0}" != 1 ] && log "inspect: the prompt path's K-quant experts want RB_KQUANTS=1 (set it in run.env for the builds)"
+  true
+}
+st_fitplan() {
+  $P bringup/fitplan.py $RB_GGUF --profile $R/strata-patched/data/expert-profile.bin $([ "$RB_HELPER" = 1 ] || echo --no-helper) --json $R/fitplan.json > $R/fitplan.txt || stop "fitplan: $(tail -1 $R/fitplan.txt)"
+  log "fitplan: $(grep -E 'slots_5080 |helper_slots_max|ram_need_gib|ram_ok' $R/fitplan.txt | tr -s ' ' | tr '\n' ';')"
+}
+st_prompts() {
+  mkdir -p $R/prompts
+  $P - $R <<'PY'
+import json, sys
+from pathlib import Path
+R = Path(sys.argv[1]); WS = Path("/home/USER/ai-speed-testing/strata-compare")
+sys.path.insert(0, str(R / "strata-patched/tools"))
+import strata_tokenizer as ST
+tp = R / "pack/tokenizer" if (R / "pack/tokenizer/vocab.json").exists() else None
+if tp is None:   # before the pack: the tokenizer straight from the GGUF
+    import os, subprocess
+    subprocess.run([sys.executable, str(R / "strata-patched/tools/strata_tokenizer.py"), "--gguf", os.environ["RB_GGUF"], "--out", str(R / "tok")], check=True)
+    tp = R / "tok/tokenizer"
+vocab = json.loads((tp / "vocab.json").read_text(encoding="utf-8")); toks = [None] * len(vocab)
+for t, i in vocab.items(): toks[i] = t
+tok = ST.Tokenizer(toks, (tp / "merges.txt").read_text(encoding="utf-8").split("\n"), json.loads((tp / "token_type.json").read_text()))
+n = 0
+for p in sorted((WS / "bringup/prompts").glob("*.txt")):
+    ids = tok.encode(p.read_text(encoding="utf-8"), parse_special=True)
+    (R / "prompts" / p.name[:-4]).write_text(",".join(map(str, ids)))
+    n += 1
+print(f"{n} prompt files re-encoded with {tp}")
+PY
+  log "prompts: $(ls $R/prompts | wc -l) files -> PROMPT_DIR=$R/prompts"
+}
+st_pack() {
+  local args=""; $P -c "import json,sys; d=json.load(open('$R/inspect.json')); sys.exit(0 if any(t not in ('BF16',) for k,v in d['roles'].items() if 'hc_' in k and (k.endswith('_down.weight') or k.endswith('_up.weight')) for t in v['types']) else 1)" && args="--compat-bf16"
+  local t0=$(date +%s)
+  (cd $R/strata-patched && STRATA_GGUF_PY=$R/strata-patched/third_party/llama.cpp/gguf-py $P tools/iq_pack.py --gguf $RB_GGUF --out $R/pack $args > $R/pack.log 2>&1) || stop "the packer refused the file: $(tail -3 $R/pack.log)"
+  [ -f $R/pack/tokenizer/vocab.json ] || (cd $R/strata-patched && $P tools/strata_tokenizer.py --gguf $RB_GGUF --out $R/pack >> $R/pack.log 2>&1)
+  log "pack: $(du -sh $R/pack | cut -f1) in $(( $(date +%s) - t0 )) s ($args)"
+  st_prompts
+}
+st_build() {
+  for T in stock patched twin; do build_tree $R/strata-$T $R/engine-$T || stop "the $T build failed: $(tail -5 $R/strata-$T/build.log)"; done
+  log "build: $(cat $R/engine-stock/SOURCE) | $(cat $R/engine-patched/SOURCE) | $(cat $R/engine-twin/SOURCE)"
+}
+st_stock() {
+  # the release as shipped: my flags minus ours (--chat-cache*: our patch 2; the web_search block: our patch 5)
+  RB_ENV_DROP="$SWITCH_ENV" RB_DROP="--chat-cache --chat-cache-mib --side-stash" RB_NOWEB=1 mkcfg stock $R/engine-stock/strata $R/strata-stock > /dev/null
+  REF=c13 bringup/lib/exact7.sh rb-$RUN-stock $R/configs/stock.json > $R/exact7-stock.txt 2>&1
+  log "stock: exact7 $(exact7_hashes rb-$RUN-stock) ($(tail -1 $R/exact7-stock.txt | cut -c1-80))"
+  [ "$(exact7_hashes rb-$RUN-stock | grep -c -- '-')" = 0 ] || stop "the stock release did not produce all seven outputs (see $R/exact7-stock.txt)"
+  # does the release repeat itself on this file and placement? (Rehearsal B: experts partly read from the files -> no)
+  REF=rb-$RUN-stock bringup/lib/exact7.sh rb-$RUN-stock2 $R/configs/stock.json > $R/exact7-stock2.txt 2>&1
+  rm -f $R/state/nonrepeat
+  # experts read from the files (a RAM budget or --mmap-experts): Rehearsal B's bisect saw both placements vary run to run
+  # even when two runs happened to agree (budget: x-math 2 of 3 alike) -> never bit-identity gates there
+  if grep -qE -- "--resident-budget-gib|--mmap-experts" $R/configs/stock.json; then touch $R/state/nonrepeat
+    log "stock: $(tail -1 $R/exact7-stock2.txt | cut -c1-60); experts partly read from the files -> treated as not repeatable (first-difference agreement, teacher-forced NLL)"
+  elif grep -q "7/7" $R/exact7-stock2.txt; then log "stock: repeats itself 7/7 -> bit-identity gates"
+  else touch $R/state/nonrepeat
+    log "stock: does NOT repeat itself ($(tail -1 $R/exact7-stock2.txt | cut -c1-60)) -> patched-off by first-difference agreement, switches by teacher-forced NLL"; fi
+  (cd $R/strata-stock && timeout 900 $P -m unittest discover -s serve -t . > $R/servertests-stock.txt 2>&1); log "stock: server tests $(tail -1 $R/servertests-stock.txt)"
+}
+st_patched() {
+  RB_ENV_DROP="$SWITCH_ENV" mkcfg patched-off $R/engine-patched/strata $R/strata-patched > /dev/null
+  REF=rb-$RUN-stock bringup/lib/exact7.sh rb-$RUN-poff $R/configs/patched-off.json > $R/exact7-poff.txt 2>&1
+  log "patched, switches off: $(tail -1 $R/exact7-poff.txt) | $(grep -h 'patch guards:' bringup/out/logs/prof/rb-$RUN-poff-x-math.err bringup/out/logs/prof/rb-$RUN-poff-x-math.out 2>/dev/null | head -1 | cut -c1-160)"
+  if [ -f $R/state/nonrepeat ]; then
+    REF=rb-$RUN-poff bringup/lib/exact7.sh rb-$RUN-poff2 $R/configs/patched-off.json > $R/exact7-poff2.txt 2>&1
+    $P bringup/lib/repeat_gate.py rb-$RUN-stock rb-$RUN-stock2 rb-$RUN-poff rb-$RUN-poff2 > $R/repeat-gate.txt 2>&1
+    log "patched, switches off (stock does not repeat): $(tail -1 $R/repeat-gate.txt) | $(grep -v '^repeat gate' $R/repeat-gate.txt | tr '\n' ';' | cut -c1-300)"
+    grep -q "repeat gate: PASS" $R/repeat-gate.txt || stop "the patched build with its switches off differs from the release earlier than the release differs from itself: $(tail -1 $R/repeat-gate.txt)"
+  else
+    grep -q "7/7" $R/exact7-poff.txt || stop "the patched build with its switches off does not compute what the release computes: $(tail -1 $R/exact7-poff.txt)"
+  fi
+  (cd $R/strata-patched && timeout 900 $P -m unittest discover -s serve -t . > $R/servertests-patched.txt 2>&1); log "patched: server tests $(tail -1 $R/servertests-patched.txt)"
+}
+st_patches() {
+  mkcfg cand $R/engine-patched/strata $R/strata-patched > /dev/null
+  RB_ENV="STRATA_STATE_HASH=1" RB_ARGS="--adapt-swaps=0" mkcfg twin $R/engine-twin/strata $R/strata-twin > /dev/null
+  # in order of measured value on this PC (patches/LEDGER.md): each switch alone on top of the ones before it
+  local tfo=0 list="adapt_helper qsa_split_attn gr_fork spec_exact router_q8k mmvq_il side_mixer adapt_land"
+  # a placement that does not repeat: every exact switch by teacher-forced NLL, after the TF noise of two identical arms
+  [ -f $R/state/nonrepeat ] && { tfo=1; list="tf_noise $list"; }
+  grep -q -- "--expert-cache-device1" $R/configs/cand.json || list=${list/adapt_helper /}
+  for n in $list; do
+    PT_TF_ONLY=$tfo CFG=$R/configs/cand.json TREE=$(realpath --relative-to=$WS $R/strata-patched) TFEXE=$R/engine-twin/strata bringup/patchtest.sh $n > $R/patch-$n.txt 2>&1
+    log "patch $n: $(grep '^patchtest' $R/patch-$n.txt | tail -1 | cut -c1-200)"
+  done
+  if [ -n "$RB_REF" ]; then REF=$RB_REF bringup/lib/exact7.sh rb-$RUN-cand $R/configs/cand.json > $R/exact7-cand.txt 2>&1
+    log "all on: $(tail -1 $R/exact7-cand.txt)"; fi
+}
+calib_ab() {   # calib_ab PARAM OLD NEW SCREEN(dec|ttft) MAKE_OLD MAKE_NEW
+  local p=$1 old=$2 new=$3 sc=$4
+  [ $(( ($(date +%s) - CAL0) / 60 )) -ge $RB_CALIB_MIN ] && { log "calib $p: skipped (budget of $RB_CALIB_MIN min used)"; return; }
+  eval "$5" > /dev/null; eval "$6" > /dev/null
+  local S=bringup/lib/decscreen.sh; [ $sc = ttft ] && S=bringup/lib/ttftscreen.sh
+  $S rb-$RUN-cal-$p-old $R/configs/cal-$p-old.json > $R/cal-$p-old.txt 2>&1
+  $S rb-$RUN-cal-$p-new $R/configs/cal-$p-new.json > $R/cal-$p-new.txt 2>&1
+  local tab; tab=$(SINCE=$CALSINCE $P bringup/lib/ab_table.py old=rb-$RUN-cal-$p-old new=rb-$RUN-cal-$p-new 2>&1 | tail -4)
+  echo "$tab" > $R/cal-$p.md
+  log "calib $p: old $old vs new $new: $(echo "$tab" | tr '\n' ' ' | cut -c1-220)"
+}
+st_calib() {
+  CAL0=$(date +%s); CALSINCE=$(date -Iseconds | cut -c1-19)
+  local hs; hs=$($P -c "import json; print(json.load(open('$R/fitplan.json'))['helper_slots_max'])")
+  local oldh; oldh=$($P -c "import json; a=json.load(open('$RB_BASECFG'))['args']; print(a[a.index('--expert-cache-device1')+1] if '--expert-cache-device1' in a else 0)")
+  # the justified alternatives: the planner's helper maximum (less 3 %), a 100 MiB smaller reserve, half the resident KV
+  # (Round 12 A6d: +-150 slots), a 32K prompt chunk (Round 11 D), the draft floor 0.4 (Round 12 A1: +0.78 % modeled)
+  [ "$RB_HELPER" = 1 ] && grep -q -- "--expert-cache-device1" $R/configs/cand.json && calib_ab helper $oldh $(( hs * 97 / 100 )) dec "mkcfg cal-helper-old $R/engine-patched/strata $R/strata-patched" "RB_ARGS=--expert-cache-device1=$(( hs * 97 / 100 )) mkcfg cal-helper-new $R/engine-patched/strata $R/strata-patched"
+  local oldr; oldr=$($P -c "import json; a=json.load(open('$R/configs/cand.json'))['args']; print(a[a.index('--vram-reserve-mib')+1])")
+  calib_ab reserve $oldr $(( oldr - 100 )) dec "mkcfg cal-reserve-old $R/engine-patched/strata $R/strata-patched" "RB_ARGS=--vram-reserve-mib=$(( oldr - 100 )) mkcfg cal-reserve-new $R/engine-patched/strata $R/strata-patched"
+  calib_ab kvres 32768 16384 dec "mkcfg cal-kvres-old $R/engine-patched/strata $R/strata-patched" "RB_ARGS=--kv-resident=16384 mkcfg cal-kvres-new $R/engine-patched/strata $R/strata-patched"
+  calib_ab chunk auto:16384 auto:32768 ttft "mkcfg cal-chunk-old $R/engine-patched/strata $R/strata-patched" "RB_ARGS=--prefill=auto:32768 mkcfg cal-chunk-new $R/engine-patched/strata $R/strata-patched"
+  calib_ab draft 0.5 0.4 dec "mkcfg cal-draft-old $R/engine-patched/strata $R/strata-patched" "RB_ARGS=--spec-min-p=0.4 mkcfg cal-draft-new $R/engine-patched/strata $R/strata-patched"
+  log "calib: $(( ($(date +%s) - CAL0) / 60 )) min of $RB_CALIB_MIN (decide by hand from cal-*.md: an alternative needs >= +2 % beyond the noise)"
+}
+st_b3table() {
+  local T=$R/strata-patched
+  /usr/local/cuda-13.3/bin/nvcc -O2 -std=c++17 -arch=sm_120 -I$T/include -o $R/mmvq_il_parity $T/src/kernels/mmvq_il_parity.cu \
+    $T/build/libstrata_kernels.a $T/build/libstrata_core.a -lcuda > $R/b3-build.log 2>&1 || stop "mmvq_il_parity did not build"
+  CUDA_VISIBLE_DEVICES=GPU-UUID-RTX5080 $P bringup/lib/guard.py rb-$RUN-b3 -- $R/mmvq_il_parity > $R/b3-parity.txt 2>&1
+  CUDA_VISIBLE_DEVICES=GPU-UUID-RTX5080 $P bringup/lib/guard.py rb-$RUN-b3b -- $R/mmvq_il_parity --bench > $R/b3-bench.txt 2>&1
+  $P bringup/lib/b3_table.py $R/b3-bench.txt $T/src/kernels/cuda/native_mmvq.cu > $R/b3-table.md 2>&1
+  log "b3table: parity $(tail -1 $R/b3-parity.txt | cut -c1-80); $(tail -1 $R/b3-table.md)"
+}
+st_screens() {
+  local SS; SS=$(date -Iseconds | cut -c1-19)
+  if [ "${RB_SCREENS:-ldr dec}" != dec ]; then
+  bringup/lib/ldrscreen.sh rb-$RUN-L-prom-a $RB_PROMOTED > /dev/null 2>&1; bringup/lib/ldrscreen.sh rb-$RUN-L-cand-a $R/configs/cand.json > /dev/null 2>&1
+  bringup/lib/ldrscreen.sh rb-$RUN-L-cand-b $R/configs/cand.json > /dev/null 2>&1; bringup/lib/ldrscreen.sh rb-$RUN-L-prom-b $RB_PROMOTED > /dev/null 2>&1
+  SINCE=$SS $P bringup/lib/ldr_table.py promoted=rb-$RUN-L-prom-a,rb-$RUN-L-prom-b candidate=rb-$RUN-L-cand-a,rb-$RUN-L-cand-b > $R/screen-ldr.md 2>&1
+  fi
+  bringup/lib/decscreen.sh rb-$RUN-D-prom-a $RB_PROMOTED > /dev/null 2>&1; bringup/lib/decscreen.sh rb-$RUN-D-cand-a $R/configs/cand.json > /dev/null 2>&1
+  bringup/lib/decscreen.sh rb-$RUN-D-cand-b $R/configs/cand.json > /dev/null 2>&1; bringup/lib/decscreen.sh rb-$RUN-D-prom-b $RB_PROMOTED > /dev/null 2>&1
+  SINCE=$SS $P bringup/lib/ab_table.py promoted=rb-$RUN-D-prom-a,rb-$RUN-D-prom-b candidate=rb-$RUN-D-cand-a,rb-$RUN-D-cand-b > $R/screen-dec.md 2>&1
+  log "screens: LDR $(grep -iE 'decode|tok/s' $R/screen-ldr.md | head -2 | tr '\n' ' ' | cut -c1-160) | decode $(grep -iE 'decode|tok/s' $R/screen-dec.md | head -2 | tr '\n' ' ' | cut -c1-160)"
+}
+st_accept() {
+  bringup/acceptance.sh rb-$RUN $R/configs/cand.json $R/configs/twin.json $RB_GGUF > $R/accept.txt 2>&1
+  log "accept: $(grep -E 'pass, .* fail' $R/accept.txt | tail -1) $(grep 'suite run time' $R/accept.txt)"
+}
+st_soak() {
+  [ "${RB_SOAK:-0}" = 1 ] || { log "soak: skipped (RB_SOAK=1 runs it on 8080)"; return; }
+  STRATA_CONFIG=$R/configs/cand.json bringup/lib/soak13.sh 120 > $R/soak.txt 2>&1; log "soak: $(tail -3 $R/soak.txt | tr '\n' ' ' | cut -c1-200)"
+}
+st_promote() { log "promote (manual): copy $R/configs/cand.json to configs/, point the launchers at it (work/r13/promote-c131.sh is the pattern), rollback test"; }
+
+STAGES="clone inspect fitplan pack build stock patched patches calib b3table screens accept soak promote"
+[ "${1:-}" = all ] && set -- $STAGES
+for STAGE in "$@"; do
+  t0=$(date +%s); log "stage $STAGE start"
+  st_$STAGE
+  dt=$(( $(date +%s) - t0 )); printf "%s\t%s\t%d\n" "$STAGE" "$(date -Is)" $dt >> $R/times.tsv; touch $R/state/$STAGE.done
+  log "stage $STAGE done in $dt s"
+done

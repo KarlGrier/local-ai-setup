@@ -1,0 +1,35 @@
+# SearXNG for Local Deep Research (its own instance; the chat page's SearXNG on 8888 is separate and untouched).
+# 127.0.0.1:8889 only, JSON API on, no limiter (single local client).
+use_default_settings: true
+general:
+  instance_name: "repro (8888 engine set)"
+  enable_metrics: false
+server:
+  bind_address: "127.0.0.1"
+  port: 8898
+  secret_key: "<generate: openssl rand -hex 32>"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+valkey:
+  url: false
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 10.0
+  pool_connections: 50
+  pool_maxsize: 10
+engines:
+  - name: duckduckgo
+    disabled: true
+  - name: ahmia
+    inactive: true
+  - name: torch
+    inactive: true

@@ -1,0 +1,61 @@
+--- a/tools/research-runner.py
++++ b/tools/research-runner.py
+@@ -191,6 +191,37 @@
+         return None
+ 
+ 
++# 2026-11-04 (staged: staging/ldr-study/MEMORY.md): ldr-web keeps the memory of its biggest transient peak (0.3 GB fresh,
++# 1.0-2.6 GB after one deep research, 4.2-4.7 GB on a long-lived LDR), which shrinks Strata's room before a relief
++# restart. The bench gives every question a fresh LDR since 11-01; a Jan job gets one too when the running LDR is above
++# this RSS (a fresh, idle LDR is ~0.3 GB). LDR_FRESH_RSS_GB=0 turns it off.
++FRESH_RSS_GB = float(os.environ.get("LDR_FRESH_RSS_GB", "1.0") or 0)
++
++
++def ldr_rss_gb(pid: int | None = None) -> float | None:
++    """ldr-web's resident memory (VmRSS) in GB, read from /proc; None when it is not running."""
++    pid = pid if pid is not None else ldr_pid()
++    if not pid:
++        return None
++    try:
++        for line in Path(f"/proc/{pid}/status").read_text().splitlines():
++            if line.startswith("VmRSS:"):
++                return int(line.split()[1]) / 1024 / 1024
++    except (OSError, ValueError, IndexError):
++        return None
++    return None
++
++
++def ldr_memory_reasons(limit_gb: float = FRESH_RSS_GB, pid: int | None = None) -> list[str]:
++    """['LDR holds X GB (fresh LDR above Y GB)'] when the running LDR should be restarted before a job, else []."""
++    if not limit_gb or limit_gb <= 0:
++        return []
++    rss = ldr_rss_gb(pid)
++    if rss is None or rss < limit_gb:
++        return []
++    return [f"LDR holds {rss:.1f} GB (a fresh LDR for every job above {limit_gb:g} GB)"]
++
++
+ def ldr_up() -> bool:
+     try:
+         return requests.get(f"{LDR}/auth/login", timeout=5).status_code == 200
+@@ -483,7 +514,7 @@
+             self.ldr.s = None
+         have = (RUN_DIR / "ldr.profile").read_text().strip()
+         # the stamps (profile, fallback, S2, quick limits, efforts, phase 4 items; 10-29: + the model profile)
+-        why = ldr_restart_reasons(want, quick, RUN_DIR)
++        why = ldr_restart_reasons(want, quick, RUN_DIR) + ldr_memory_reasons()
+         if why:
+             # left in the other profile (by a measurement, or a quick / deep job): restart LDR in this job's profile
+             code, out = run_ldr("stop")
+@@ -493,7 +524,10 @@
+                 time.sleep(60)
+                 return
+             self.ldr.s = None
+-            log(f"{jid}: LDR was in the {have} profile; restarted in the {want} profile ({'; '.join(why)})")
++            if have == want and all(w.startswith("LDR holds ") for w in why):
++                log(f"{jid}: LDR restarted fresh in the {want} profile ({'; '.join(why)})")
++            else:
++                log(f"{jid}: LDR was in the {have} profile; restarted in the {want} profile ({'; '.join(why)})")
+         MODE_FILE.write_text(json.dumps({} if quick else DEEP_EFFORTS))     # quick: pass-through (Strata's default)
+         seed_dirs = [r["out_dir"] for r in job.get("runs", []) if r.get("out_dir") and Path(r["out_dir"]).exists()]
+         if quick:

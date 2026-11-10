@@ -1,0 +1,72 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-cstar6/strata",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/packs/iq3_s",
+  "--native",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+  "--ple-gguf",
+  "/home/USER/ai-speed-testing/strata-compare/models/ISTA-GSQ-RCO/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/data/expert-profile.bin",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "auto",
+  "--spec",
+  "4",
+  "--spec-min-p",
+  "0.5",
+  "--mtp",
+  "/home/USER/ai-speed-testing/strata-compare/strata-v0115/mtp/rt",
+  "--max-context",
+  "131072",
+  "--kv",
+  "int8",
+  "--kv-resident",
+  "32768",
+  "--pcie-frac",
+  "0",
+  "--ple-inflight",
+  "128",
+  "--vram-reserve-mib",
+  "800",
+  "--chat-cache",
+  "6",
+  "--chat-cache-mib",
+  "16384",
+  "--expert-cache-device1",
+  "3300"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v0115",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/strata-v0115/packs/iq3_s/tokenizer",
+ "model_name": "strata-qwen3.8-flash-next-iq3s",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/engine-Cstar6.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8081,
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "host": "127.0.0.1",
+ "_comment": "C*6 (round 6): Strata v0.1.24 (3ce2523) + patches/r6/0001-0012 = C*5's 9 patches + 3 round-6 patches (--dump-routing writes only kept verify-window rows; on Linux a helper GPU no longer caps the pinned expert arena at 8 GiB; the next window's first-token n-gram rows are read while the window commits and the drafter runs). The RTX 4060 Ti is a helper GPU holding 3,300 more experts (--expert-cache-device1 3300); with the whole arena pinned it is faster than the 5080 alone (round 5's loss came from the 8 GiB pin cap). Built for sm_89 + sm_120 (engine-cstar6/SHA256). run-strata.sh starts 'fallback' (the same on the 5080 alone) when the 4060 Ti has too little free memory. Other flags = C*5. Rollback: configs/Cstar5.json.",
+ "env": {
+  "STRATA_IO_THREADS": "64",
+  "CUDA_MODULE_LOADING": "LAZY",
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX5080,GPU-UUID-RTX4060TI"
+ },
+ "server": "/home/USER/ai-speed-testing/strata-compare/strata-cstar6/serve/server.py",
+ "web_search": {
+  "searxng": "http://127.0.0.1:8888",
+  "max_results": 6,
+  "max_page_chars": 12000,
+  "timeout_s": 20,
+  "max_rounds": 6
+ },
+ "fallback": "/home/USER/ai-speed-testing/strata-compare/configs/Cstar6-single.json"
+}

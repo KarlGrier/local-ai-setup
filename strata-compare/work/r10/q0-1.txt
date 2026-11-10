@@ -1,0 +1,32 @@
+work/r10/tagcheck.sh "P0.1 v0.1.35 port: build"
+work/r10/basecheck.sh
+BDIR=build work/r10/build.sh strata-v35 engine-v35c
+BDIR=build work/r10/build.sh strata-v35m engine-v35m
+.venv/bin/python work/r10/buildrec.py V35 configs/V35.json "v0.1.35 port (worktree build, branch v35-c11 = v0.1.35 + C*11's 16 patches) - measured on its own"
+.venv/bin/python work/r10/buildrec.py V35m configs/V35m-tf-helper.json "v0.1.35 port's measurement twin (v35-c11-meas)"
+.venv/bin/python work/r10/buildrec.py C11 configs/R10-C11.json "C*11 as promoted (reference, measurement copy of configs/Cstar11.json)"
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r10/exact7.sh v35 configs/V35.json
+work/r10/tf.sh V35mtf-helper configs/V35m-tf-helper.json engine-v35m/strata math corpus long16k long24k long28k long40k long64k
+work/r10/tf.sh V35mtf-single configs/V35m-tf-single.json engine-v35m/strata math corpus long16k long24k long28k long40k long64k
+.venv/bin/python work/r10/tf_compare9.py V35mtf-helper=R11mtf3500-helper V35mtf-single=R11mtf3500-single | tee results/r10/tf-v35-vs-c11.txt
+work/r10/with_server.sh RT35-direct configs/V35m-rt.json -- ".venv/bin/python work/r10/roundtrip.py direct small r35-direct1"
+work/r10/with_server.sh RT35-direct configs/V35m-rt.json -- ".venv/bin/python work/r10/roundtrip.py direct small r35-direct2"
+work/r10/with_server.sh RT35-park configs/V35m-rt.json -- ".venv/bin/python work/r10/roundtrip.py park small r35-park"
+work/r10/with_server.sh RT35-editref configs/V35m-rt.json -- ".venv/bin/python work/r10/roundtrip.py editref small r35-editref"
+.venv/bin/python work/r10/rt_compare.py r35 > results/r10/roundtrip-v35.md; cat results/r10/roundtrip-v35.md
+work/r10/with_server.sh RT35o-direct configs/V35m-rt-essoff.json -- ".venv/bin/python work/r10/roundtrip.py direct small r35o-direct1"
+work/r10/with_server.sh RT35o-direct configs/V35m-rt-essoff.json -- ".venv/bin/python work/r10/roundtrip.py direct small r35o-direct2"
+work/r10/with_server.sh RT35o-park configs/V35m-rt-essoff.json -- ".venv/bin/python work/r10/roundtrip.py park small r35o-park"
+work/r10/with_server.sh RT35o-editref configs/V35m-rt-essoff.json -- ".venv/bin/python work/r10/roundtrip.py editref small r35o-editref"
+.venv/bin/python work/r10/rt_compare.py r35o > results/r10/roundtrip-v35-essoff.md; cat results/r10/roundtrip-v35-essoff.md
+work/r10/with_server.sh FAIL35 configs/V35.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r5/failures.py --engine-log \$ELOG stop120k"
+work/r10/tagcheck.sh "P0.1 v0.1.35 port: gates done"
+work/r10/basecheck.sh
+work/r10/screen.sh V35-a configs/V35.json
+work/r10/screen.sh C11-a configs/R10-C11.json
+work/r10/screen.sh C11-b configs/R10-C11.json
+work/r10/screen.sh V35-b configs/V35.json
+.venv/bin/python work/r10/ab_table.py C11=C11-a,C11-b V35=V35-a,V35-b | tee results/r10/ab-v35-vs-c11.md
+work/r10/tagcheck.sh "P0.1 v0.1.35 port: ABBA done"
+work/r10/basecheck.sh

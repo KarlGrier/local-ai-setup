@@ -1,0 +1,35 @@
+work/r10/tagcheck.sh "Phase B start"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v35b453 engine-v35b453
+BDIR=build work/r10/build.sh strata-v35b453m engine-v35b453m
+BDIR=build work/r10/build.sh strata-v35b413 engine-v35b413
+BDIR=build work/r10/build.sh strata-v35b443 engine-v35b443
+.venv/bin/python work/r10/buildrec.py B453 configs/B453.json "B.1 #453 transplant (v35-b453 = v35-c11 + efd79ba)"
+.venv/bin/python work/r10/buildrec.py B413 configs/B413.json "B.2 #413 transplant (v35-b413 = v35-c11 + c4436ec fbc399c 8405a04 8badd17)"
+work/r10/exact7.sh b453 configs/B453.json
+work/r10/exact7.sh b453off configs/B453off.json
+work/r10/with_server.sh B453m configs/B453m.json -- ".venv/bin/python work/r10/b453state.py new"
+work/r10/with_server.sh B453moff configs/B453moff.json -- ".venv/bin/python work/r10/b453state.py old"
+.venv/bin/python work/r10/b453state.py --compare new old | tee results/r10/b453-state.txt
+work/r10/screen.sh B453-a configs/B453.json
+work/r10/screen.sh B453off-a configs/B453off.json
+work/r10/screen.sh B453off-b configs/B453off.json
+work/r10/screen.sh B453-b configs/B453.json
+.venv/bin/python work/r10/ab_table.py old=B453off-a,B453off-b new=B453-a,B453-b | tee results/r10/ab-B453.md
+work/r10/tagcheck.sh "B.1 done"
+work/r10/basecheck.sh
+work/r10/b413parity.sh
+work/r10/exact7.sh b413 configs/B413.json
+work/r10/exact7.sh b413off configs/B413off.json
+work/r10/screen.sh B413-a configs/B413.json
+work/r10/screen.sh B413off-a configs/B413off.json
+work/r10/screen.sh B413off-b configs/B413off.json
+work/r10/screen.sh B413-b configs/B413.json
+.venv/bin/python work/r10/ab_table.py old=B413off-a,B413off-b new=B413-a,B413-b | tee results/r10/ab-B413.md
+work/r10/tagcheck.sh "B.2 done"
+work/r10/basecheck.sh
+work/r10/grbench35.sh
+work/r10/b443tests.sh
+work/r10/tagcheck.sh "B.3 tests done"
+work/r10/basecheck.sh

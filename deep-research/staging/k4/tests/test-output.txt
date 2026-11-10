@@ -1,0 +1,106 @@
+== 1. prompts (fake model, b-f5c-full and b-f5c-fixes)
+  ok    b-f5c-full: 3 calls (Fix 1b 3): 1 main + 2 focused
+  ok    b-f5c-full: the main prompt is byte-identical (122,276 chars)
+  ok    b-f5c-full: the same focused settings ['--dspark', '--ssd-cache', '--experts', '--prefill-chunk', 'DS4_LAYER_MAJOR', 'IQ2_XXS', 'DS4_SPLIT', 'STRATA_SPLIT_UNIFORM', 'IQ4_NL', '--prompt-cache']
+  ok    b-f5c-full focused call 1: the block is the old one plus ids
+  ok    b-f5c-full focused call 1: the task and the setup facts are in the prompt
+        focused call 1: 24,995 -> 27,061 chars (instructions 585 -> 1,978)
+  ok    b-f5c-full focused call 2: the block is the old one plus ids
+  ok    b-f5c-full focused call 2: the task and the setup facts are in the prompt
+        focused call 2: 21,117 -> 23,145 chars (instructions 585 -> 1,978)
+  ok    b-f5c-fixes: 3 calls (Fix 1b 3): 1 main + 2 focused
+  ok    b-f5c-fixes: the main prompt is byte-identical (150,611 chars)
+  ok    b-f5c-fixes: the same focused settings ['IQ2_XXS', 'IQ4_NL', '--ssd-cache', 'DS4_AHEAD', '--prefill-chunk', '--reserve-mib', 'STRATA_DS4_SLOT_KEEP', 'STRATA_DS4_SLOT_AUTO_PIN', 'STRATA_ROUTE_TAIL_SKIP', 'ROUTE_TAIL_SKIP']
+  ok    b-f5c-fixes focused call 1: the block is the old one plus ids
+  ok    b-f5c-fixes focused call 1: the task and the setup facts are in the prompt
+        focused call 1: 27,472 -> 29,581 chars (instructions 585 -> 1,978)
+  ok    b-f5c-fixes focused call 2: the block is the old one plus ids
+  ok    b-f5c-fixes focused call 2: the task and the setup facts are in the prompt
+        focused call 2: 20,922 -> 22,923 chars (instructions 585 -> 1,978)
+  ok    b-f5c-full: one focused call carries --dspark
+  ok    K4 claim (auto loads) is in the --dspark block: "The default `--dspark auto` loads the 8 GB Q8_0 DSpark drafter (Unslot..."
+  ok    K4 claim (Answer) is in the --dspark block: "freeing the 8 GB DSpark drafter from VRAM (`--dspark none`)..."
+  ok    K4 claim (plan item 1) is in the --dspark block: "`--dspark none` — frees ~5.6 GB VRAM (≈592 expert slots at 9.4 MB/expe..."
+  ok    the 1.5x rule is in the --dspark block
+  ok    the task's number is in the same prompt: "backbone 138 GB on disk"
+  ok    the task's number is in the same prompt: "RTX 5080 16 GB"
+  ok    the task's number is in the same prompt: "RTX 4060 Ti 8 GB"
+  ok    the task's number is in the same prompt: "40 layers x 384 experts"
+  ok    the task's number is in the same prompt: "1,357 of 15,360 experts pinned in VRAM"
+  ok    the task's number is in the same prompt: "dense/shared weights (~5.9 GB)"
+  ok    the setup facts' number is in the same prompt: "Total VRAM 24 GB"
+  ok    the evaluation instruction is in the same prompt: "1. RULES."
+  ok    the evaluation instruction is in the same prompt: "Evaluate it on this setup"
+  ok    the evaluation instruction is in the same prompt: "write the arithmetic out with the numbers"
+  ok    the evaluation instruction is in the same prompt: "whether the condition holds here"
+  ok    the evaluation instruction is in the same prompt: "2. CLAIMS. Only then compare that outcome"
+  ok    the evaluation instruction is in the same prompt: ""arithmetic": "<the calculation, written out>""
+  ok    the evaluation instruction is in the same prompt: ""holds": "yes|no|unknown""
+  ok    rules come before claims, both before the sentences
+        the --dspark block as the model sees it:
+          - S1 [Answer] The single biggest lossless win available on this rig is freeing the 8 GB DSpark drafter from VRAM (`--dspark none`) and raising the RAM expert store from the 48 GB auto-cap to
+          - S2 [Key findings] - **DSpark is net-negative on this rig.** The 8 GB Q8_0 drafter displaced 592 expert slots (1,357→765 VRAM-resident), collapsing coverage from 8.8% to 5.0% of the 15,360-
+          - S3 [Key findings] `--dspark none` (not `off`, which still loads the drafter (494)) is the mandatory first action.
+          - S4 [Key findings] - **No speculative drafter costing >2 GB VRAM can win at batch-1 on 24 GB split VRAM.** DSpark (8 GB) (494), MTP companion GGUF (7 GB) (6372), and EAGLE (1.6–2 GB at batc
+          - S5 [Artifact Verification: What Exists as of Late 2026, and What Does Not] The engine's C++ source is visible at `src/dsv41/`: `ds4_model.hpp` exposes options including `ssd_cache_gb` (def
+          - S6 [Artifact Verification: What Exists as of Late 2026, and What Does Not] Unsloth's documentation states: "DSpark enables inference for DeepSeek-V4.1-Flash-GGUF to be around 1.3 to 1.5x f
+          - S7 [Tier A — Ranked Environment Variables and Command-Line Flags (Try Tonight, No] **(a) Exact change.** Append `--dspark none` to the engine invocation.
+          - S8 [Tier A — Ranked Environment Variables and Command-Line Flags (Try Tonight, No] In v0.2.4 source, `ds4_main.cpp` line 1227 reads: `o.dspark = v != "none"; // none: not even loaded` (152
+          - S9 [Tier A — Ranked Environment Variables and Command-Line Flags (Try Tonight, No] The default `--dspark auto` loads the 8 GB Q8_0 DSpark drafter (Unsloth's draft model) into VRAM (151)(12
+          - S10 [Tier B and C — Rebuild Required and Engine Code Changes] **Test:** grep `verify.cpp` / `dspark_verify` for the acceptance formula; run the same 100-token prompt 20× with `--seed 42` a
+          - S11 [Tier B and C — Rebuild Required and Engine Code Changes] **Losslessness:** must confirm the exact formula; if approximate, the feature is already lossy and should be disabled (`--dspa
+          - S12 [Near-Zero-VRAM Speculative Decoding and Why DSpark Lost on This Rig] Strata loads it as additional layers appended to the model graph: in `ds4_model.cu` lines 2022–2036, the engine co
+          - S13 [Near-Zero-VRAM Speculative Decoding and Why DSpark Lost on This Rig] The Strata tuner (`strata launch --tune thorough`) already tests "the DSpark drafter forced on, then a shorter dra
+          - S14 [Prior Art Landscape, Skepticism Against Blog Claims, and Prioritized Action P] **"Use speculative decoding for faster decode."** DSpark (8 GB Q8_0 drafter loaded into VRAM) reduced VR
+          - S15 [Prior Art Landscape, Skepticism Against Blog Claims, and Prioritized Action P] On an RTX 3060 with 46 GB RAM, Strata docs note "DSpark stays off there, `--dspark on` adds 2–13%" — i.e
+          - S16 [Prior Art Landscape, Skepticism Against Blog Claims, and Prioritized Action P] `--dspark none` — frees ~5.6 GB VRAM (≈592 expert slots at 9.4 MB/expert), directly recovers the measure
+  ok    all 46 sentence ids of the call map to sentences found in the report (Locator)
+  ok    the K4 sentences' ids: {'auto loads': 'S9', 'Answer': 'S1', 'plan item 1': 'S16', 'rule': 'S12'}
+== 2. replies in the new format (fake model)
+  ok    K4 catch: 3 rule-step pairs (one per disagreeing claim), got 3
+  ok    K4 catch: quote_a = the 'auto loads' sentence, quote_b = the 1.5x rule sentence, both exact from the ids
+  ok    K4 catch: the rule side holds (right = b)
+  ok    K4 catch: the evaluation is kept with the pair
+  ok    K4 catch: the arithmetic recomputes in code ({'equations': 2, 'comparisons': 1, 'wrong': []})
+  ok    K4 catch: every compared claim is in rule_checks (3 disagree, 1 agrees)
+  ok    a plain pair by ids still comes back (focused)
+  ok    all 5 marks placed in the report
+  ok    the mark after 'auto loads ...' names the rule by its condition, the fix and the arithmetic (not cut)
+         [151][125] **[Consistency check: contradicts the rule elsewhere in this report (the drafter is not loaded when the routed experts exceed 1.5x the room), which the evidence supports; On this PC `--dspark auto` already leaves the drafter out (138 GB of experts > 1.5 x the room); applied to this setup: 24 GB - 5.9 GB = 18.1 GB; 1.5 x 18.1 GB = 27.15 GB; 138 GB > 27.15 GB]**.
+  ok    a long evaluation: the mark keeps its deciding step (the section has it whole)
+  ok    the section shows the evaluation under the pair
+        section:   - The rule applied to this setup: condition the drafter is not loaded when the routed experts exceed 1.5x the room; inputs routed experts 138 GB (task: backbone 138 GB); room 24 GB VRAM (task: 16 + 8 GB) minus dense 5.9 GB (task); arithmetic 24 GB - 5.9 GB = 18.1 GB; 1.5 x 18.1 GB = 27.15 GB; 138 
+  ok    non-catch (the claims agree): no pair, the rule's evaluation is still in rule_checks
+  ok    holds 'unknown' + claims that disagree: no pair (the rule could not be applied), kept in rule_checks
+  ok    an empty reply: nothing found, nothing unparsed
+  ok    no JSON in either focused reply: counted (focused_unparsed 2), the main result kept
+  ok    a reply cut off after the first setting (finish=length): the complete setting is salvaged
+  ok    wrong types (rules a string, claims a dict, an unknown id, a rule against itself, bool holds / agrees, '[S9]', 'RULE'): no crash, only the one valid pair kept
+  ok    plain pairs with an unknown id or one sentence twice: dropped
+  ok    a reply in the old shape (contradictions with quotes) is still taken, and its marks are placed
+  ok    wrong arithmetic in the evaluation: the pairs stay but are not settled, with the recomputed step
+  ok      ... and both statements of each are marked 'not settled'
+        recheck: {"equations": 1, "comparisons": 1, "wrong": ["1.5 x 18.1 GB = 40 GB (recomputed 27.1)", "138 GB < 27.15 GB does not hold"]}
+== 3. unchanged where intended
+  ok    CONSIST_PROMPT (the main pass) is identical
+  ok    b-f5c-full: action_settings identical
+  ok    b-f5c-full: sentences_about identical for all 61 setting names (rows=True gives the same lines)
+  ok    b-f5c-full: the marks of the saved result (26 pairs) are identical
+  ok    b-f5c-full: the section of the saved result is identical
+  ok    b-f5c-full: the marked report is identical (26 of 26 marks placed)
+  ok    b-f5c-fixes: action_settings identical
+  ok    b-f5c-fixes: sentences_about identical for all 66 setting names (rows=True gives the same lines)
+  ok    b-f5c-fixes: the marks of the saved result (29 pairs) are identical
+  ok    b-f5c-fixes: the section of the saved result is identical
+  ok    b-f5c-fixes: the marked report is identical (29 of 30 marks placed)
+  ok    the section for 'did not complete' / no pairs is identical
+  ok    no change outside the consistency pass, its docstring entry and EST (lines [])
+  ok    EST: only 'consist' changed (480 -> 900)
+        diff against checks.py.fix1b: 227 lines (+/-)
+== 4. judge_k4.py (for the GPU replays) on the old replays and on the faked catch
+  ok    b-f5c-full (10-28, Fix 1b's pass): K4 NOT caught, K1 kept [5, 21] - as BUNDLE-1028 F5c says
+  ok    b-f5c-fixes: K4 n/a (no K4 claim in the report), no K4-reversed false alarm
+  ok    the faked K4 catch is judged 'strong' for all 3 claims (['strong', 'strong', 'strong', ''])
+  ok    the weaker 10-28 pair (8 GB vs 5.6 GB freed) is not counted as K4
+
+ALL OK

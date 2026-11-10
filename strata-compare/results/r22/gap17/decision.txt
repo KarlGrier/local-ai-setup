@@ -1,0 +1,57 @@
+exact7 vs P028x: 7/7 identical (the port with the pins is P028x bit for bit on exact7)
+speed screen decode: P -0.87 % vs B (B 155.0, P 153.7; noise 5.6 %) -> PASS
+speed screen prompt: P +0.04 % vs B (B 2,103.3, P 2,104.1; noise 0.6 %) -> PASS
+Basalt conv decode: P 147.2 vs B 147.9 (-0.5 %; spread 6.7 %) -> PASS
+Basalt struct decode: P 224.5 vs B 230.0 (-2.4 %; spread 2.3 %) -> FAIL
+Basalt prose decode: P 132.8 vs B 134.6 (-1.3 %; spread 6.1 %) -> PASS
+Basalt blend: P 196.1 vs B 201.1 (-2.5 %) -> FAIL
+Basalt 16K prompt: P 3,822.5 vs B 3,783.0 (+1.0 %) -> PASS
+Basalt 64K prompt: P 4,378.8 vs B 4,356.1 (+0.5 %) -> PASS
+BASELINE (pinned-off port = P028x): FAIL
+  - Basalt fixtures: FAIL
+  (info) logits_vs_p028x: INFO 0 of 40 first-token logit files differ from gap 16's x28h (the same yardstick settings) [17a 11-03 23:55]
+  (info) chk2diag_p210: INFO 3831 of 4000 samples at the tie; '=' 51.9 % vs 55.3 % expected (-3.4 points); chi-square 17.82 (1), p 0.000, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points
+  (info) chk2_s210: INFO 3847 of 4000 samples at the tie; '=' 54.2 % vs 52.7 % expected (+1.5 points); chi-square 3.33 (1), p 0.068, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points
+  (info) build_stwin: INFO engine-r22s0210t 7ee49046f367 [17b 11-04 04:37]
+(0) GDN_TC + GDN_CONVL2, the stack: FAIL (baseline FAIL)
+  G 16K cold prompt: G 0 / P 3 passes - not priced
+  G 64K cold prompt: G 0 / P 3 passes - not priced
+  per-workload no-loss: G or P has fewer than 2 passes of a workload - not decided
+  - kl2_gdn: FAIL p210gdn top-1 35/40 KL mean 0.575080 p90 1.101426 rows > 1: 5 (max 13.6821, not judged) -> FAIL (mean, p90, KL>1 rows) [17a 11-03 23:55]
+  - kl3_gdn: FAIL p210gdn KL mean 0.575080 p90 1.101426 rows > 1: 5 changed top-1 5/40 NLL 3.8475 (-0.2798) -> FAIL (mean, p90, KL>1 rows) [17a 11-03 23:55]
+  - not run / missing: env_bpG* (the arm never ran)
+  - not run / missing: env_G\d* (the arm never ran)
+(0t) GDN_TC alone, KL-gated alone (the stack did not pass KL): FAIL (baseline FAIL)
+  T 16K cold prompt: T 0 / P 3 passes - not priced
+  T 64K cold prompt: T 0 / P 3 passes - not priced
+  per-workload no-loss: T or P has fewer than 2 passes of a workload - not decided
+  CANDIDATE = this path adds a gain; NO GAIN = it adds nothing and can stay off
+  - kl2_gdntc: FAIL p210gdntc top-1 33/40 KL mean 0.859140 p90 1.133460 rows > 1: 5 (max 14.4181, not judged) -> FAIL (top-1, mean, p90, KL>1 rows) [17a 11-04 00:13]
+  - kl3_gdntc: FAIL p210gdntc KL mean 0.859140 p90 1.133460 rows > 1: 5 changed top-1 7/40 NLL 3.9716 (-0.1557) -> FAIL (mean, p90, KL>1 rows, top-1) [17a 11-04 00:13]
+  - not run / missing: env_bpT* (the arm never ran)
+  - not run / missing: env_T\d* (the arm never ran)
+(0v) GDN_CONVL2 alone, KL-gated alone (the stack did not pass KL): FAIL (baseline FAIL)
+  V 16K cold prompt: V 0 / P 3 passes - not priced
+  V 64K cold prompt: V 0 / P 3 passes - not priced
+  per-workload no-loss: V or P has fewer than 2 passes of a workload - not decided
+  CANDIDATE = this path adds a gain; NO GAIN = it adds nothing and can stay off
+  - kl2_gdncv: FAIL p210gdncv top-1 36/40 KL mean 0.485822 p90 0.295464 rows > 1: 3 (max 14.1978, not judged) -> FAIL (mean) [17a 11-04 00:13]
+  - kl3_gdncv: FAIL p210gdncv KL mean 0.485822 p90 0.295464 rows > 1: 3 changed top-1 4/40 NLL 3.9052 (-0.2222) -> FAIL (mean) [17a 11-04 00:13]
+  - not run / missing: env_bpV* (the arm never ran)
+  - not run / missing: env_V\d* (the arm never ran)
+(1) lookup windows up to 12: FAIL (baseline FAIL)
+  exactness: lookup_e7 DIFFER, control (GR_FORK=0) DIFFER -> WINDOW-VARIANT (not the fork; the distribution checks decide)
+  speed (9 workloads, no loss): L vs P: decode +0.96 % (noise 5.6 %, 3 pass(es)), prompt -0.23 % (noise 1.1 %, 3 pass(es)) -> PASS
+  E1-rewrite decode: L 165.8 vs P 166.0 tok/s (-0.1 %; noise 2.4 %)
+  E2-rewrite-nothink decode: L 193.6 vs P 192.5 tok/s (+0.6 %; noise 2.6 %)
+  A-edit decode (reported): L 135.9 vs P 128.7 (+5.6 %)
+  B-write decode (reported): L 164.4 vs P 160.3 (+2.6 %)
+  per-workload no-loss: none of the 9 slower beyond its noise
+  - chk1_p210_essL: FAIL g17-essL 2137/3852 vs g17-hnospec 1987/3831 at the tie: +3.6 points, p 0.002; 95 % +/- 2.2 points, smallest detectable 3.2 points
+  - chk2_p210_essL: FAIL 3852 of 4000 samples at the tie; '=' 55.5 % vs 51.6 % expected (+3.9 points); chi-square 23.14 (1), p 0.000, outside 0; 95 % +/- 1.6 points, smallest detectable 2.3 points
+(2) GR_V3_PF=133 with GR_FORK=1 (identity): PASS (baseline FAIL)
+  speed: F vs P: decode +2.06 % (noise 5.6 %, 3 pass(es)), prompt -0.10 % (noise 0.6 %, 3 pass(es)) -> PASS
+(3) PF_HC_REGION=1 with PREFILL_V2: FAIL (baseline FAIL)
+  one quick screen: R vs P: decode +0.34 % (noise 5.6 %, 1 pass(es)), prompt +0.26 % (noise 0.6 %, 1 pass(es)) -> PASS
+  - e7_hcr: FAIL exact7 g17-hcr: 3/7, slots MATCHED
+Nothing switches (Karl 11-02: P028x stays served until item 7 is done); a CANDIDATE / PASS here is a candidate for after item 7, Karl's call.

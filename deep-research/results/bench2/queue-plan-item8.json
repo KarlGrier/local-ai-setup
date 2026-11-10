@@ -1,0 +1,128 @@
+[
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o01"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p8a",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims",
+   "fix:steps"
+  ],
+  "open_min": 62,
+  "checkable_min": 47
+ },
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o01"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p8b",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims",
+   "fix:steps"
+  ],
+  "open_min": 62,
+  "checkable_min": 47
+ },
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o01"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p8c",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims",
+   "fix:steps"
+  ],
+  "open_min": 62,
+  "checkable_min": 47
+ },
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o03"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p8a",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims",
+   "fix:steps"
+  ],
+  "open_min": 62,
+  "checkable_min": 47
+ },
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o03"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p8b",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims",
+   "fix:steps"
+  ],
+  "open_min": 62,
+  "checkable_min": 47
+ },
+ {
+  "set": "screen",
+  "profile": "deep",
+  "ids": [
+   "o03"
+  ],
+  "effort": "medium",
+  "verify_effort": "xhigh",
+  "label": "p8c",
+  "items": [
+   "setup",
+   "critic",
+   "code",
+   "fixes",
+   "read",
+   "claims",
+   "fix:steps"
+  ],
+  "open_min": 62,
+  "checkable_min": 47
+ }
+]

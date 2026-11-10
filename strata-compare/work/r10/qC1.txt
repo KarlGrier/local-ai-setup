@@ -1,0 +1,23 @@
+work/r10/tagcheck.sh "Phase C start"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-fork engine-fork
+BDIR=build-trace CMAKE_EXTRA=-DCMAKE_CXX_FLAGS=-DSTRATA_NVTX work/r10/build.sh strata-v36t engine-v36t
+.venv/bin/python work/r10/buildrec.py FK32 configs/FK32.json "Eddoursul fork (branch custom 3a19944), measurement arm only"
+work/r10/startcheck.sh FK32s configs/FK32.json
+work/r10/startcheck.sh FK131s configs/FK131.json
+work/r10/run.sh C2-v36-xmath configs/V36.json math 1024
+work/r10/run.sh C2-fk-xmath configs/FK32.json math 1024
+work/r10/run.sh C2-fk-xcode configs/FK32.json code 1024
+work/r10/run.sh C2-v36-xcode configs/V36.json code 1024
+work/r10/run.sh C2-v36-xmath2 configs/V36.json math 1024
+work/r10/run.sh C2-fk-xmath2 configs/FK32.json math 1024
+work/r10/run.sh C2-fk-xcode2 configs/FK32.json code 1024
+work/r10/run.sh C2-v36-xcode2 configs/V36.json code 1024
+ENVX=STRATA_VERIFY_PROFILE=1 EXE=/home/USER/ai-speed-testing/strata-compare/engine-v36t/strata work/r10/run.sh C3p-v36-math configs/V36.json math 1024
+work/r10/run.sh C3p-fk-math configs/FK32.json math 1024 --window-profile
+work/r10/run.sh C3p-fk-code configs/FK32.json code 1024 --window-profile
+ENVX=STRATA_VERIFY_PROFILE=1 EXE=/home/USER/ai-speed-testing/strata-compare/engine-v36t/strata work/r10/run.sh C3p-v36-code configs/V36.json code 1024
+PROF_SAMPLING="--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20" ENVX=STRATA_VERIFY_PROFILE=1 EXE=/home/USER/ai-speed-testing/strata-compare/engine-v36t/strata work/r10/run.sh C3p-v36-smath configs/V36.json math 1024
+PROF_SAMPLING="--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20" work/r10/run.sh C3p-fk-smath configs/FK32.json math 1024 --window-profile
+work/r10/tagcheck.sh "C.2 CLI done"

@@ -1,0 +1,7 @@
+work/r11/onereq.sh ISO-c121 configs/R11-C121.json memsafety-triage,fasting-analysis
+work/r11/onereq.sh ISO-off configs/R11P-off.json memsafety-triage,fasting-analysis
+work/r11/onereq.sh ISO-dt configs/R11P-dt.json memsafety-triage,fasting-analysis
+work/r11/onereq.sh ISO-lp configs/R11P-lp.json memsafety-triage,fasting-analysis
+work/r11/onereq.sh ISO-vp configs/R11P-vp.json memsafety-triage,fasting-analysis
+work/r11/onereq.sh ISO-all configs/R11P.json memsafety-triage,fasting-analysis
+echo "=== $(date -Is) MARK q0iso"

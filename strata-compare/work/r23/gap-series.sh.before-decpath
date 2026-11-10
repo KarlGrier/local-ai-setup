@@ -1,0 +1,55 @@
+#!/bin/bash
+# gap-series.sh (11-04, Karl: "queue them in the table's order, one per gap between the remaining 7d questions: Gap 19
+# (already chained), NLL many-positions, decode items part a, decode items part b, Basalt prompt-path port. P028x stays
+# served; nothing switches until item 7 is done."). Runs each gap driver in turn, each one only after the previous gap
+# has ended AND the bench queue has started a question since then - so every gap sits between two questions (the
+# driver's port_gap4 begin then waits for that question to finish). The first step waits for gap 19 (unit gap19-chain).
+# A driver not written yet is waited for (up to 12 h). A driver's exit 1 (refused before its gap opened) skips it;
+# exit 3 (kernel-check failure, gap left OPEN), 4 (P028x not back) or any other non-zero exit stops the series with a desktop alert and a NOTES line: Karl decides. Children get 8>&- 9>&-.
+set -u
+SC=/home/USER/ai-speed-testing/strata-compare; Q=/home/USER/ai/deep-research/logs/bench2-queue.log
+L=$SC/results/r23/gap-series.log; mkdir -p $SC/results/r23
+STEPS=(work/r23/gap-nll.sh work/r23/gap-gdn-nll.sh work/r23/gap-decode-a.sh work/ds41/gate/gap-csample.sh work/r23/gap-decode-b.sh work/r23/gap-basalt-a.sh work/r23/gap-basalt-b.sh work/r23/gap-ud31.sh)
+say() { echo "$(date '+%F %T') $*" | tee -a $L; }
+alert() { say "$1"; echo "$(date '+%m-%d %H:%M') GAP SERIES STOPPED: $1" >> $SC/NOTES.md
+          notify-send -a "Strata gaps" -u critical "Gap series stopped" "$1" 2> /dev/null || true; }
+# a question has started after the gap launched at time T ended: the first "hold released" line at or after T (the
+# queue logs it when the gap's hold goes), then a "running" line at or after that - or the queue has nothing left / is
+# not running. (During a gap the queue is held, so no question can start between T and the release.)
+# 11-05: an idle queue counts as "nothing left" only when the post-7d chain is not about to start the next plan -
+# otherwise the gaps would run back to back after 7d's last question and hold the next plan off for hours
+nothing_left() { ! systemctl --user is-active -q post7d-chain.service; }
+started_after_gap() { local rel run
+  rel=$(awk -v t="$1" 'substr($0, 1, 19) >= t && /hold released/ {print substr($0, 1, 19); exit}' $Q)
+  [ -n "$rel" ] || { systemctl --user is-active -q deep-research-bench.service || nothing_left; return; }
+  run=$(awk -v t="$rel" 'substr($0, 1, 19) >= t && /: running/ {print; exit}' $Q)
+  [ -n "$run" ] && return 0
+  systemctl --user is-active -q deep-research-bench.service || { nothing_left; return; }
+  awk -v t="$rel" 'substr($0, 1, 19) >= t && /queue finished|all planned questions done/ {f = 1} END {exit !f}' $Q && nothing_left; }
+
+say "series start: ${STEPS[*]}; first after gap19-chain"
+for i in $(seq 5040); do systemctl --user is-active -q gap19-chain.service || break; sleep 10; done
+systemctl --user is-active -q gap19-chain.service && { alert "gap 19 still running after 14 h - series not started"; exit 1; }
+t_gap=${GAP19_T0:-2026-11-04 10:01:28}; say "gap 19 ended (it set the hold at $t_gap)"
+for s in "${STEPS[@]}"; do
+  f=$SC/$s
+  # a driver is used only after Claude reviewed it and wrote "$f.ready"; the series runs a snapshot copy, so a later
+  # edit of the driver cannot change a running gap
+  for i in $(seq 4320); do [ -f "$f.ready" ] && bash -n "$f" 2> /dev/null && break; sleep 10; done
+  { [ -f "$f.ready" ] && bash -n "$f" 2> /dev/null; } || { alert "driver $s not ready (no .ready file, or bash -n fails) after 12 h"; exit 1; }
+  snap=$SC/results/r23/run-copies/$(basename "$f" .sh)-$(date +%m%d-%H%M).sh; mkdir -p $SC/results/r23/run-copies; cp -p "$f" "$snap"
+  say "$s ready; waiting for a question to start after the gap launched at $t_gap"
+  for i in $(seq 1440); do started_after_gap "$t_gap" && break; sleep 10; done
+  say "a question started after that gap: $(grep -E ': running' $Q | tail -1 | cut -c1-110); starting $s"
+  t_prev=$t_gap; t_gap=$(date '+%F %T')
+  say "running the snapshot $snap"
+  bash "$snap" 8>&- 9>&- >> $L 2>&1
+  rc=$?; say "$s exit $rc"
+  if [ $rc = 3 ]; then alert "$s: kernel-check failure, the gap is left OPEN (8080 down) - Karl decides"; exit 3; fi
+  if [ $rc = 1 ]; then   # the drivers' exit 1 = refused before the gap opened, 8080 untouched: skip to the next step
+    t_gap=$t_prev; say "$s refused before opening its gap (exit 1; 8080 untouched) - skipped; the next step goes on"
+    notify-send -a "Strata gaps" "Gap skipped" "$s refused before opening (see $L)" 2> /dev/null || true
+    echo "$(date '+%m-%d %H:%M') GAP SERIES: $s refused before opening its gap (exit 1) - skipped" >> $SC/NOTES.md; continue; fi
+  if [ $rc != 0 ]; then alert "$s did not complete (exit $rc; see $L)"; exit 1; fi
+done
+say "series done"

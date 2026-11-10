@@ -1,0 +1,8 @@
+[Unit]
+Description=Karl 11-05: the power key back to suspend (it was set to nothing for the weekend)
+
+[Service]
+Type=oneshot
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+ExecStart=/usr/bin/gsettings set org.gnome.settings-daemon.plugins.power power-button-action suspend
+ExecStartPost=/bin/sh -c 'echo "* $(date "+%%F %%H:%%M") power key back to suspend (power-key-revert.timer, Karl 11-05: ignore until Monday morning)" >> /home/USER/ai/deep-research/NOTES.md'

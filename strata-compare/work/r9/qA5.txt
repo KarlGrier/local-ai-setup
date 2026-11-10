@@ -1,0 +1,8 @@
+work/r9/tagcheck.sh "phase A track 5 (hyper-connection v3) start"
+work/r9/w1.sh
+work/r9/decscreen.sh GRv3-c configs/R9-C10-v3.json
+work/r9/decscreen.sh GRv5-c configs/R9-C10.json
+work/r9/decscreen.sh GRv5-d configs/R9-C10.json
+work/r9/decscreen.sh GRv3-d configs/R9-C10-v3.json
+TF_ENV=STRATA_GR_V3=1 work/r9/tf.sh TF-C10v3 configs/R9-C10.json engine-r9m/strata math corpus long16k long24k long28k long40k long64k
+work/r9/tagcheck.sh "track 5 done"

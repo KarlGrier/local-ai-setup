@@ -1,0 +1,57 @@
+{
+ "exe": "/home/USER/ai-speed-testing/strata-compare/engine-v026p343-ds41/strata-dsv41",
+ "args": [
+  "--pack",
+  "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw",
+  "--max-context",
+  "32768",
+  "--eos",
+  "1",
+  "--dspark",
+  "auto",
+  "--dspark-conf",
+  "0.65",
+  "--tp",
+  "2",
+  "--ssd-cache",
+  "68",
+  "--experts",
+  "6",
+  "--prefill-chunk",
+  "8192",
+  "--expert-profile",
+  "/home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin"
+ ],
+ "cwd": "/home/USER/ai-speed-testing/strata-compare/strata-v026",
+ "tokenizer": "/home/USER/ai-speed-testing/strata-compare/models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/pack-ist-das-2.00bpw/tokenizer",
+ "model_name": "deepseek-v4.1-flash",
+ "arch": "deepseek41",
+ "log": "/home/USER/ai-speed-testing/strata-compare/logs/ds41/engine-DS41-v024.log",
+ "lib_dirs": [
+  "/usr/local/cuda-13.3/bin",
+  "/usr/local/cuda-13.3/lib64"
+ ],
+ "port": 8086,
+ "host": "127.0.0.1",
+ "engine_ready_s": 3600,
+ "sampling": {
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.05
+ },
+ "env": {
+  "CUDA_VISIBLE_DEVICES": "GPU-UUID-RTX4060TI,GPU-UUID-RTX5080",
+  "STRATA_DS4_PROMPT_SKIP": "1",
+  "DS4_STORE_FLOOR_GB": "14",
+  "DS4_SPLIT": "8,32",
+  "DS4_SETTLE_MS": "0",
+  "DS4_CACHE_DECAY": "0.8",
+  "DS4_ENGRAM_CACHE_MB": "16",
+  "STRATA_DS4_SLOT_KEEP": "1",
+  "STRATA_DS4_SLOT_CAP": "16",
+  "STRATA_DS4_SLOT_GB": "2",
+  "STRATA_DS4_SLOT_DIR": "/home/USER/ai-speed-testing/strata-compare/results/ds41/hard/slots"
+ },
+ "_comment": "10-24 DS4.1 tuning: after-h-ds-e25 = {\"order\": \"rev\", \"DS4_SPLIT\": \"8,32\", \"DS4_SETTLE_MS\": 0, \"DS4_CACHE_DECAY\": \"0.8\", \"DS4_ENGRAM_CACHE_MB\": 16, \"engine\": \"v026p343\", \"STRATA_DS4_PROMPT_SKIP\": \"1\", \"--ssd-cache\": 68, \"DS4_STORE_FLOOR_GB\": 14, \"STRATA_DS4_SLOT_KEEP\": \"1\", \"STRATA_DS4_SLOT_CAP\": \"16\", \"STRATA_DS4_SLOT_GB\": \"2\", \"STRATA_DS4_SLOT_DIR\": \"/home/USER/ai-speed-testing/strata-compare/results/ds41/hard/slots\"} on DS41-v024-s70.json"
+}

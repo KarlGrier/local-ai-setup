@@ -1,0 +1,29 @@
+=== 2026-10-26 20:09:10 context cost: the daily config at --max-context 131072 (report only) - DS4.1 arm ctx-128k (/home/USER/ai-speed-testing/strata-compare/configs/DS41-tune-after-ctx-128k.json, server /home/USER/ai-speed-testing/strata-compare/strata-v026/serve/server.py, 3 passes): --max-context 131072 --eos 1 --dspark auto --dspark-conf 0.65 --tp 2 --ssd-cache 68 --experts 6 --prefill-chunk 8192 --expert-profile /home/USER/ai-speed-testing/strata-compare/tmp/ds41-profile-arm.bin {'CUDA_VISIBLE_DEVICES': 'GPU-UUID-RTX4060TI,GPU-UUID-RTX5080', 'STRATA_DS4_PROMPT_SKIP': '1', 'DS4_STORE_FLOOR_GB': '14', 'DS4_SPLIT': '8,32', 'DS4_SETTLE_MS': '0', 'DS4_CACHE_DECAY': '0.8', 'DS4_ENGRAM_CACHE_MB': '16', 'STRATA_DS4_SLOT_KEEP': '1', 'STRATA_DS4_SLOT_CAP': '16', 'STRATA_DS4_SLOT_GB': '2', 'STRATA_DS4_SLOT_DIR': '/home/USER/ai-speed-testing/strata-compare/results/ds41/after/ctx-slots'} -> /home/USER/ai-speed-testing/strata-compare/results/ds41/tuning/ctx-128k-1026-2009
+=== 2026-10-26 20:10:10 cool-down before the arm: 60 s, drive 38 -> 36 C
+dropcache: 7 model files dropped from the page cache in 0.6 s
+=== 2026-10-26 20:10:11 before: MemAvailable 88.3 GB; swap in use 2155 MB; vram 0, 15 MiB, 15919 MiB;1, 15 MiB, 7875 MiB;
+=== 2026-10-26 20:10:23 ready after 12 s: MemAvailable 30.2 GB, engine RSS 59073 MB; vram 0, 15347 MiB, 587 MiB;1, 7301 MiB, 589 MiB;
+=== 2026-10-26 20:29:52 requests done (rc 0): 17 responses
+ds4: tensor parallel 2 -> 1: the experts' 256-value blocks split n_ff 2304 no other way (each GPU its own layers)
+ds4: DSpark not loaded: the routed experts (132 GB) are far more than the GPU holds (23 GB), where its verify rounds read 3.3x a token's bytes and gain nothing (--dspark on loads it anyway)
+ds4: RAM store: up to 6619 slots of 10.3 MB (68.0 GB), policy 0, 8 reader threads, unbuffered reads
+ds4: RAM store: 6363 of the profile's hottest experts read in (49.4 GB) in 5.4 s
+ds4: CUDA0 layers [0, 7]: weights 1.14 GB, experts 3.59 GB (451 of 3072 in VRAM), caches 0.02 GB, 590 MiB free
+ds4: CUDA1 layers [8, 39] + head: weights 4.72 GB, experts 7.83 GB (857 of 12288 in VRAM), caches 0.10 GB, 586 MiB free
+ds4: 14052 routed experts on the CPU lane (121.4 GB, in place in the model's files), 16 threads
+monitor: lowest MemAvailable 19.4 GB, peak engine RSS 70368 MB, peak VRAM used 5080 15421 MiB / 4060 Ti 7375 MiB
+swap: 0 swap-out burst(s) (the first is logged only), 0.0 MB out, 1.2 MB in, engine VmSwap max 0 kB
+=== 2026-10-26 20:29:59 kcheck clean
+P4K: [341.6, 368.8, 339.8] tok/s (mean 350.1, spread 4.14 %), tokens [4125, 4399, 4241], SSD [55.557, 53.552, 50.102] GB per prompt
+P20K: [703.9, 690.2, 703.0] tok/s (mean 699.0, spread 0.98 %), tokens [19753, 18888, 19521], SSD [114.417, 113.114, 113.126] GB per prompt
+W1-think: decode [32.56, 32.31, 31.93] tok/s, [3072, 3072, 3072] tokens, finish ['length', 'length', 'length'], SSD [0.0323, 0.0382, 0.0398] GB/token, thinking chars [5488, 5502, 5514] / answer chars [1834, 1766, 1793]
+W2-code: decode [28.15, 28.2, 27.53] tok/s, [3072, 3072, 3072] tokens, finish ['length', 'length', 'length'], SSD [0.0575, 0.058, 0.0592] GB/token, thinking chars [10293, 9993, 9857] / answer chars [3227, 3551, 3497]
+W3-research: decode [24.52, 24.39, 24.81] tok/s, [2048, 2048, 2048] tokens, finish ['length', 'length', 'length'], SSD [0.1328, 0.1317, 0.1297] GB/token, thinking chars [4612, 5092, 5359] / answer chars [1340, 1314, 1517]
+W1-W3 decode mean 28.27 tok/s over 9 responses; pass means [28.41, 28.3, 28.09] (spread 0.57 %); SSD 0.0755 GB/token
+CUDA0 layers [0,7]: 451 experts in VRAM (3.59 GB), weights 1.14 GB, 590 MiB free
+CUDA1 layers [8,39]: 857 experts in VRAM (7.83 GB), weights 4.72 GB, 586 MiB free
+GPU clocks while decode: GPU0 SM 2820 MHz (p10 2805), util 73 %, 105.3 W; GPU1 SM 2550 MHz (p10 2550), util 25 %, 42.6 W
+GPU clocks while prompt: GPU0 SM 2812 MHz (p10 2805), util 100 %, 171.1 W; GPU1 SM 2670 MHz (p10 2550), util 100 %, 109.3 W
+lowest MemAvailable 19.4 GB, peak engine RSS 70368 MB, peak VRAM [15421, 7375] MiB
+nvme0 (Samsung 9100 PRO): 42 samples 20:09-20:29, composite 37-42 C (sensor 1 max 48 C), alarm bit never set; no request above 70 C
+=== 2026-10-26 20:29:59 done

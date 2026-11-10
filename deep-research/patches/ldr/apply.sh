@@ -1,0 +1,45 @@
+#!/bin/bash
+# apply.sh apply|revert|status — the deep-research patches on LDR 1.10.7 in the workspace venv.
+#   apply   pristine install -> patched (refuses if the install is neither pristine nor already patched)
+#   revert  patched -> pristine (copies the files back from the pristine wheel in src/whl)
+#   status  which state the install is in
+# The patches only act with LDR_DEEP=1 (run-ldr.sh's default "deep" profile); without it LDR behaves as upstream.
+set -euo pipefail
+WS=/home/USER/ai/deep-research
+SP=$WS/.venv/lib/python3.12/site-packages; A=$WS/src/whl; P=$WS/patches/ldr
+PATCHES=($P/0001-deep-package.patch $P/0002-langgraph-agent-deep-mode.patch $P/0003-fetch-deep-mode.patch
+         $P/0004-fetch-one-page-at-a-time.patch $P/0005-search-fallback.patch $P/0006-fetch-guard.patch)
+FILES=(local_deep_research/advanced_search_system/strategies/langgraph_agent_strategy.py
+       local_deep_research/advanced_search_system/tools/fetch/__init__.py
+       local_deep_research/content_fetcher/fetcher.py
+       local_deep_research/web_search_engines/engines/search_engine_searxng.py
+       local_deep_research/research_library/downloaders/html.py
+       local_deep_research/research_library/downloaders/playwright_html.py
+       local_deep_research/research_library/downloaders/extraction/pipeline.py)
+# 0006 (2026-11-03) adds this file (not in the wheel): removed on revert, absent when pristine
+NEWFILES=(local_deep_research/research_library/downloaders/extraction/fetch_guard.py)
+# 0004 (2026-10-18) is also applied to the baseline profile's copy (baseline/site): one page at a time in both profiles
+# (lxml parsing in parallel threads corrupted the heap). It acts without LDR_DEEP too.
+# 0006 (2026-11-03, the fetch guard: skip pages over 16 MiB / 400k tags before parsing; watchdog log at 60 s) acts
+# without LDR_DEEP too; LDR_FETCH_GUARD=0 turns its skips off. staging/fetchguard/INSTALL.md says whether baseline/site
+# gets it as well.
+state() {
+  if [ ! -d $SP/local_deep_research/deep ] && [ ! -e $SP/${NEWFILES[0]} ] \
+     && (for f in "${FILES[@]}"; do cmp -s $A/$f $SP/$f || exit 1; done); then echo pristine
+  elif for p in "${PATCHES[@]}"; do patch -d $SP -p1 -R --dry-run -s -f < $p > /dev/null || exit 1; done; then echo patched
+  else echo modified; fi
+}
+case ${1:-status} in
+  status) state;;
+  apply)
+    s=$(state); [ $s = patched ] && { echo "already patched"; exit 0; }
+    [ $s = pristine ] || { echo "install is neither pristine nor patched; not touching it"; exit 1; }
+    for p in "${PATCHES[@]}"; do patch -d $SP -p1 -s -f < $p; done
+    find $SP/local_deep_research -name __pycache__ -path '*strategies*' -prune -exec rm -rf {} + ; echo "applied: $(state)";;
+  revert)
+    for f in "${FILES[@]}"; do cp $A/$f $SP/$f; done
+    for f in "${NEWFILES[@]}"; do rm -f $SP/$f; done
+    rm -rf $SP/local_deep_research/deep
+    find $SP/local_deep_research -name __pycache__ -path '*strategies*' -prune -exec rm -rf {} + ; echo "reverted: $(state)";;
+  *) sed -n 2,6p $0; exit 2;;
+esac

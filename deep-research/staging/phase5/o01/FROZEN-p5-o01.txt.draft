@@ -1,0 +1,6 @@
+# DRAFT - not frozen. Freeze only on Karl's OK: copy questions-p5-o01.jsonl and this file (renamed FROZEN-p5-o01.txt)
+# into results/bench2/, chmod 444 both, then set "include_o01": true in staging/phase5/p5.json.
+# Phase 5 o01 (set p5-o01), 2026-10-29: o01 from questions-screen.jsonl (FROZEN.txt, 10-17; unchanged and still frozen)
+# with one correction: 'RTX 4060 Ti 16 GB' -> 'RTX 4060 Ti 8 GB' (the PC's card is 8 GB: nvidia-smi 8188 MiB; Karl
+# 10-28, MORNING-1028.md decision 3). Same id, same files (files/strata-REPORT.md, strata-NOTES.md, FROZEN.txt).
+602db37242ffb748ae916cc401fab54da5d1edb25702d8d7e4e1598d288bf271  questions-p5-o01.jsonl

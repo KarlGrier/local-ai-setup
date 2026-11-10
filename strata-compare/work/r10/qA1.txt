@@ -1,0 +1,12 @@
+work/r10/tagcheck.sh "A.1/A.2 builds"
+work/r10/basecheck.sh
+STRATA_PORT=8080 ./run-strata.sh stop
+BDIR=build work/r10/build.sh strata-v35a2 engine-v35a2
+BDIR=build work/r10/build.sh strata-v35a2h engine-v35a2h
+.venv/bin/python work/r10/buildrec.py A2 configs/A2-0.json "A.2 (v35-a2: v0.1.35 base + STRATA_ADAPT_HELPER)"
+.venv/bin/python work/r10/buildrec.py A2h configs/A2h-0.json "A.1/A.2 counting build (v35-a2h: v35-a2 + the R10A MEASUREMENT line)"
+work/r10/exact7.sh a2off configs/A2-0.json
+work/r10/with_server.sh A1c configs/A2h-0.json -- "work/r10/a1count.sh A1c 60"
+.venv/bin/python work/r10/a1_counts.py A1c logs/engine-A2h-0.log | tee results/r10/a1-counts.md
+work/r10/tagcheck.sh "A.1 counts done"
+work/r10/basecheck.sh

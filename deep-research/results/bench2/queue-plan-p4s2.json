@@ -1,0 +1,4 @@
+[
+ {"set": "screen-extra", "profile": "deep", "ids": ["o07"], "needs": "FROZEN-extra.txt", "effort": "medium", "verify_effort": "xhigh", "label": "p4s2", "items": ["setup", "critic", "verify2"]},
+ {"set": "screen", "profile": "deep", "ids": ["o02", "o03"], "effort": "medium", "verify_effort": "xhigh", "label": "p4s2", "items": ["setup", "critic", "verify2"]}
+]

@@ -1,0 +1,265 @@
+=== 2026-11-04 20:19:18 DECODE ITEMS GAP A (work/r23/gap-decode-a.sh): build + tests + exact7 + pf_yardstick + timing (GATE-PLAN.md) - measurements only, P028x stays served, nothing switches (Karl 11-04)
+=== 2026-11-04 20:19:18 the tree: r23-decode-exact c4c15d32c845a4e811f22b662ab63752140cad09 (v0.2.10 + 30); engine-r23decode before the build: none
+2026-11-04 20:19:18 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 640964 (engine 640979)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-04 23:02:52 port_gap4: gap open: test lock held (pid 772645), 8080 stopped
+=== 2026-11-04 23:02:52 8080 down: engines left: none, MemAvailable 85 GB
+=== 2026-11-04 23:02:52 2 build strata-r23decode (tests ON) -> engine-r23decode
+=== 2026-11-04 23:06:42   gate build_x PASS engine-r23decode 48337a6023d8 = v0.2.10 + 30 commits (branch r23-decode-exact c4c15d32c845a4e811f22b662ab63752140cad09), tree 6b3a1983f98715e0
+=== 2026-11-04 23:06:43   build memory guard: 2026-11-04 23:06:43 end: lowest MemAvailable 77731 MB
+=== 2026-11-04 23:06:43   gate build8 PASS configure: verify / batch windows hold up to 8 rows (the port's 8-row build)
+begin() = claim() && launch(); LateLaunch::run; aligned ObExpert / ExitStamp; generate.cpp's drive.d.pool / copy_before - all in the tree built -> PASS
+2 distinct warning(s) in the 7 files the r23 commits touch, 0 not in the port's own build logs -> PASS
+=== 2026-11-04 23:06:43 3 tests: pool_tasks_test (synthetic + one real blob per type pair), pool_test, numa_pool_test, pool_stress x2, patch_guard_test, serve tests
+=== 2026-11-04 23:06:55   t_pooltasks rc 0: 2026-11-04T23:06:55 r23a-t_pooltasks exit=0 12s min_MemAvailable=85.0GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_4060Ti_free=
+=== 2026-11-04 23:06:55   gate t_pooltasks PASS rc 0: 2026-11-04T23:06:55 r23a-t_pooltasks exit=0 12s min_MemAvailable=85.0GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0Gi
+=== 2026-11-04 23:07:04   t_pooltasks_IQ2_S_IQ4_NL rc 0: 2026-11-04T23:07:04 r23a-t_pooltasks_IQ2_S_IQ4_NL exit=0 8s min_MemAvailable=85.2GiB@1s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_
+=== 2026-11-04 23:07:04   gate t_pooltasks_IQ2_S_IQ4_NL PASS rc 0: 2026-11-04T23:07:04 r23a-t_pooltasks_IQ2_S_IQ4_NL exit=0 8s min_MemAvailable=85.2GiB@1s min_5080_free=15918MiB@0s max_tr
+=== 2026-11-04 23:07:12   t_pooltasks_IQ2_S_Q2_0 rc 0: 2026-11-04T23:07:12 r23a-t_pooltasks_IQ2_S_Q2_0 exit=0 8s min_MemAvailable=85.3GiB@1s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_40
+=== 2026-11-04 23:07:12   gate t_pooltasks_IQ2_S_Q2_0 PASS rc 0: 2026-11-04T23:07:12 r23a-t_pooltasks_IQ2_S_Q2_0 exit=0 8s min_MemAvailable=85.3GiB@1s min_5080_free=15918MiB@0s max_tree
+=== 2026-11-04 23:07:24   t_pooltasks_IQ3_S_IQ4_NL rc 0: 2026-11-04T23:07:24 r23a-t_pooltasks_IQ3_S_IQ4_NL exit=0 11s min_MemAvailable=85.3GiB@1s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min
+=== 2026-11-04 23:07:24   gate t_pooltasks_IQ3_S_IQ4_NL PASS rc 0: 2026-11-04T23:07:24 r23a-t_pooltasks_IQ3_S_IQ4_NL exit=0 11s min_MemAvailable=85.3GiB@1s min_5080_free=15918MiB@0s max_t
+=== 2026-11-04 23:07:35   t_pooltasks_IQ3_S_Q2_0 rc 0: 2026-11-04T23:07:35 r23a-t_pooltasks_IQ3_S_Q2_0 exit=0 11s min_MemAvailable=85.4GiB@1s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_4
+=== 2026-11-04 23:07:35   gate t_pooltasks_IQ3_S_Q2_0 PASS rc 0: 2026-11-04T23:07:35 r23a-t_pooltasks_IQ3_S_Q2_0 exit=0 11s min_MemAvailable=85.4GiB@1s min_5080_free=15918MiB@0s max_tre
+=== 2026-11-04 23:07:45   t_pooltasks_IQ3_XXS_IQ4_NL rc 0: 2026-11-04T23:07:45 r23a-t_pooltasks_IQ3_XXS_IQ4_NL exit=0 9s min_MemAvailable=85.4GiB@1s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB mi
+=== 2026-11-04 23:07:45   gate t_pooltasks_IQ3_XXS_IQ4_NL PASS rc 0: 2026-11-04T23:07:45 r23a-t_pooltasks_IQ3_XXS_IQ4_NL exit=0 9s min_MemAvailable=85.4GiB@1s min_5080_free=15918MiB@0s max_
+=== 2026-11-04 23:07:54   t_pooltasks_IQ3_XXS_Q2_0 rc 0: 2026-11-04T23:07:54 r23a-t_pooltasks_IQ3_XXS_Q2_0 exit=0 9s min_MemAvailable=85.4GiB@1s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_
+=== 2026-11-04 23:07:54   gate t_pooltasks_IQ3_XXS_Q2_0 PASS rc 0: 2026-11-04T23:07:54 r23a-t_pooltasks_IQ3_XXS_Q2_0 exit=0 9s min_MemAvailable=85.4GiB@1s min_5080_free=15918MiB@0s max_tr
+=== 2026-11-04 23:08:05   t_pooltasks_IQ4_XS_IQ4_NL rc 0: 2026-11-04T23:08:05 r23a-t_pooltasks_IQ4_XS_IQ4_NL exit=0 10s min_MemAvailable=85.4GiB@1s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB mi
+=== 2026-11-04 23:08:05   gate t_pooltasks_IQ4_XS_IQ4_NL PASS rc 0: 2026-11-04T23:08:05 r23a-t_pooltasks_IQ4_XS_IQ4_NL exit=0 10s min_MemAvailable=85.4GiB@1s min_5080_free=15918MiB@0s max_
+=== 2026-11-04 23:08:06   t_pool rc 0: 2026-11-04T23:08:06 r23a-t_pool exit=0 0s min_MemAvailable=85.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_4060Ti_free=7875Mi
+=== 2026-11-04 23:08:06   gate t_pool PASS rc 0: 2026-11-04T23:08:06 r23a-t_pool exit=0 0s min_MemAvailable=85.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_
+=== 2026-11-04 23:08:07   t_numa rc 0: 2026-11-04T23:08:07 r23a-t_numa exit=0 0s min_MemAvailable=85.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_4060Ti_free=7875Mi
+=== 2026-11-04 23:08:07   gate t_numa PASS rc 0: 2026-11-04T23:08:07 r23a-t_numa exit=0 0s min_MemAvailable=85.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_
+=== 2026-11-04 23:08:27   t_stress rc 0: 2026-11-04T23:08:27 r23a-t_stress exit=0 20s min_MemAvailable=85.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_4060Ti_free=787
+=== 2026-11-04 23:08:27   gate t_stress PASS rc 0: 2026-11-04T23:08:27 r23a-t_stress exit=0 20s min_MemAvailable=85.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB m
+=== 2026-11-04 23:08:48   t_stress_ob rc 0: 2026-11-04T23:08:48 r23a-t_stress_ob exit=0 20s min_MemAvailable=85.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_4060Ti_free=
+=== 2026-11-04 23:08:48   gate t_stress_ob PASS rc 0: 2026-11-04T23:08:48 r23a-t_stress_ob exit=0 20s min_MemAvailable=85.4GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0Gi
+=== 2026-11-04 23:08:49   t_guard rc 0: 2026-11-04T23:08:49 r23a-t_guard exit=0 0s min_MemAvailable=85.5GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max_swap_used=3.84GiB min_4060Ti_free=7875M
+=== 2026-11-04 23:08:49   gate t_guard PASS rc 0: 2026-11-04T23:08:49 r23a-t_guard exit=0 0s min_MemAvailable=85.5GiB@0s min_5080_free=15918MiB@0s max_tree_RSS=0.0GiB max
+Ran 1397 tests in 386.515s
+
+FAILED (failures=1, skipped=44)
+1397 tests, 1 failed or erred (known: test_hip_ordinal) -> PASS
+=== 2026-11-04 23:15:16 4 exact7 at pin 2500: the base against the port, its repeat, each item against the base; the solo pair
+=== 2026-11-04 23:15:16 exact7 r23-B (r23-B.json, 2 GPU(s), against g17-p210a)
+r23-B-x-math   out 6b251415 (g17-p210a 6b251415) =  ms/round 33.29  prompt ms 518
+r23-B-s-math   out 8c25c022 (g17-p210a 8c25c022) =  ms/round 32.21  prompt ms 480
+r23-B-x-code   out 3585ad6f (g17-p210a 3585ad6f) =  ms/round 24.76  prompt ms 480
+r23-B-s-code   out 2fe9fd9e (g17-p210a 2fe9fd9e) =  ms/round 23.58  prompt ms 489
+r23-B-x-p2000  out 3e219376 (g17-p210a 3e219376) =  ms/round 37.44  prompt ms 1087
+r23-B-x-32k    out 651f56c8 (g17-p210a 651f56c8) =  ms/round 39.40  prompt ms 7531
+r23-B-x-112k   out a393ca0a (g17-p210a a393ca0a) =  ms/round 32.25  prompt ms 25606
+exact7 r23-B: 7/7 identical to g17-p210a
+exact7-slots r23-B: 3238+3300 slots (5080 + 4060 Ti); g17-p210a: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7, 2 GPU(s)), 41 env keys as configured, no other STRATA_*, harness args as expected
+exact7 r23-B: 7/7 vs g17-p210a, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); g17-p210a: 3238+3300), 7/7 item outputs -> PASS
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-04 23:18:31 exact7 r23-B2 (r23-B.json, 2 GPU(s), against r23-B)
+r23-B2-x-math   out 6b251415 (r23-B 6b251415) =  ms/round 33.03  prompt ms 482
+r23-B2-s-math   out 8c25c022 (r23-B 8c25c022) =  ms/round 32.31  prompt ms 490
+r23-B2-x-code   out 3585ad6f (r23-B 3585ad6f) =  ms/round 24.86  prompt ms 489
+r23-B2-s-code   out 2fe9fd9e (r23-B 2fe9fd9e) =  ms/round 23.48  prompt ms 467
+r23-B2-x-p2000  out 3e219376 (r23-B 3e219376) =  ms/round 40.99  prompt ms 1087
+r23-B2-x-32k    out 651f56c8 (r23-B 651f56c8) =  ms/round 39.16  prompt ms 7525
+r23-B2-x-112k   out a393ca0a (r23-B a393ca0a) =  ms/round 32.11  prompt ms 25580
+exact7 r23-B2: 7/7 identical to r23-B
+exact7-slots r23-B2: 3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7, 2 GPU(s)), 41 env keys as configured, no other STRATA_*, harness args as expected
+exact7 r23-B2: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs -> PASS
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-04 23:21:47 exact7 r23-L (r23-B.json, 2 GPU(s), against r23-B; STRATA_REMOTE_LATE_LAUNCH=1)
+r23-L-x-math   out 6b251415 (r23-B 6b251415) =  ms/round 32.70  prompt ms 492
+r23-L-s-math   out 8c25c022 (r23-B 8c25c022) =  ms/round 32.20  prompt ms 483
+r23-L-x-code   out 3585ad6f (r23-B 3585ad6f) =  ms/round 24.60  prompt ms 504
+r23-L-s-code   out 2fe9fd9e (r23-B 2fe9fd9e) =  ms/round 23.27  prompt ms 475
+r23-L-x-p2000  out 3e219376 (r23-B 3e219376) =  ms/round 39.53  prompt ms 1093
+r23-L-x-32k    out 651f56c8 (r23-B 651f56c8) =  ms/round 38.90  prompt ms 7517
+r23-L-x-112k   out a393ca0a (r23-B a393ca0a) =  ms/round 32.05  prompt ms 25628
+exact7 r23-L: 7/7 identical to r23-B
+exact7-slots r23-L: 3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7, 2 GPU(s)), 42 env keys as configured + STRATA_REMOTE_LATE_LAUNCH=1, no other STRATA_*, harness args as expected
+exact7 r23-L: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs -> PASS
+start lines (want late): late present, one absent -> PASS
+=== 2026-11-04 23:25:03 exact7 r23-O (r23-B.json, 2 GPU(s), against r23-B; STRATA_POOL_ONE_BATCH=1)
+r23-O-x-math   out 6b251415 (r23-B 6b251415) =  ms/round 33.15  prompt ms 482
+r23-O-s-math   out 8c25c022 (r23-B 8c25c022) =  ms/round 32.30  prompt ms 494
+r23-O-x-code   out 3585ad6f (r23-B 3585ad6f) =  ms/round 24.81  prompt ms 525
+r23-O-s-code   out 2fe9fd9e (r23-B 2fe9fd9e) =  ms/round 23.53  prompt ms 532
+r23-O-x-p2000  out 3e219376 (r23-B 3e219376) =  ms/round 37.19  prompt ms 1082
+r23-O-x-32k    out 651f56c8 (r23-B 651f56c8) =  ms/round 39.14  prompt ms 7479
+r23-O-x-112k   out a393ca0a (r23-B a393ca0a) =  ms/round 32.29  prompt ms 25619
+exact7 r23-O: 7/7 identical to r23-B
+exact7-slots r23-O: 3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7, 2 GPU(s)), 42 env keys as configured + STRATA_POOL_ONE_BATCH=1, no other STRATA_*, harness args as expected
+exact7 r23-O: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs -> PASS
+start lines (want one): late absent, one present -> PASS
+=== 2026-11-04 23:28:18 exact7 r23-LO (r23-B.json, 2 GPU(s), against r23-B; STRATA_REMOTE_LATE_LAUNCH=1 STRATA_POOL_ONE_BATCH=1)
+r23-LO-x-math   out 6b251415 (r23-B 6b251415) =  ms/round 32.76  prompt ms 503
+r23-LO-s-math   out 8c25c022 (r23-B 8c25c022) =  ms/round 32.19  prompt ms 492
+r23-LO-x-code   out 3585ad6f (r23-B 3585ad6f) =  ms/round 24.72  prompt ms 452
+r23-LO-s-code   out 2fe9fd9e (r23-B 2fe9fd9e) =  ms/round 23.39  prompt ms 480
+r23-LO-x-p2000  out 3e219376 (r23-B 3e219376) =  ms/round 40.39  prompt ms 1101
+r23-LO-x-32k    out 651f56c8 (r23-B 651f56c8) =  ms/round 39.29  prompt ms 7549
+r23-LO-x-112k   out a393ca0a (r23-B a393ca0a) =  ms/round 32.07  prompt ms 25596
+exact7 r23-LO: 7/7 identical to r23-B
+exact7-slots r23-LO: 3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7, 2 GPU(s)), 43 env keys as configured + STRATA_REMOTE_LATE_LAUNCH=1 STRATA_POOL_ONE_BATCH=1, no other STRATA_*, harness args as expected
+exact7 r23-LO: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs -> PASS
+start lines (want late,one): late present, one present -> PASS
+=== 2026-11-04 23:31:34 exact7 r23-Bs (r23-Bs.json, 1 GPU(s), against c13)
+r23-Bs-x-math   out f8bcefd0 (C*13 a46e2e9f) DIFFERENT  ms/round 36.70  prompt ms 424
+r23-Bs-s-math   out a7255a37 (C*13 ea6fbe6c) DIFFERENT  ms/round 37.53  prompt ms 446
+r23-Bs-x-code   out ef926a0d (C*13 3748f95d) DIFFERENT  ms/round 27.73  prompt ms 427
+r23-Bs-s-code   out 5b803344 (C*13 94953719) DIFFERENT  ms/round 28.85  prompt ms 476
+r23-Bs-x-p2000  out 3e219376 (C*13 3e219376) =  ms/round 42.52  prompt ms 1048
+r23-Bs-x-32k    out 651f56c8 (C*13 651f56c8) =  ms/round 46.56  prompt ms 7473
+r23-Bs-x-112k   out a393ca0a (C*13 a944c147) DIFFERENT  ms/round 35.93  prompt ms 25606
+exact7 r23-Bs: 2/7 identical to C*13
+exact7-slots r23-Bs: 3238+0 slots (5080 + 4060 Ti); C*13: ? -> DIFFER
+ENV CHECK OK: 7 engine start(s) (e7, 1 GPU(s)), 41 env keys as configured, no other STRATA_*, harness args as expected
+exact7 r23-Bs: 2/7 vs C*13, slots DIFFER (3238+0 slots (5080 + 4060 Ti); C*13: ?), 7/7 item outputs -> INFO
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-04 23:34:44 exact7 r23-Os (r23-Bs.json, 1 GPU(s), against r23-Bs; STRATA_POOL_ONE_BATCH=1)
+r23-Os-x-math   out f8bcefd0 (r23-Bs f8bcefd0) =  ms/round 36.76  prompt ms 424
+r23-Os-s-math   out a7255a37 (r23-Bs a7255a37) =  ms/round 37.53  prompt ms 487
+r23-Os-x-code   out ef926a0d (r23-Bs ef926a0d) =  ms/round 27.78  prompt ms 499
+r23-Os-s-code   out 5b803344 (r23-Bs 5b803344) =  ms/round 28.84  prompt ms 426
+r23-Os-x-p2000  out 3e219376 (r23-Bs 3e219376) =  ms/round 44.44  prompt ms 1059
+r23-Os-x-32k    out 651f56c8 (r23-Bs 651f56c8) =  ms/round 46.32  prompt ms 7488
+r23-Os-x-112k   out a393ca0a (r23-Bs a393ca0a) =  ms/round 35.89  prompt ms 25578
+exact7 r23-Os: 7/7 identical to r23-Bs
+exact7-slots r23-Os: 3238+0 slots (5080 + 4060 Ti); r23-Bs: 3238+0 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7, 1 GPU(s)), 42 env keys as configured + STRATA_POOL_ONE_BATCH=1, no other STRATA_*, harness args as expected
+exact7 r23-Os: 7/7 vs r23-Bs, slots MATCHED (3238+0 slots (5080 + 4060 Ti); r23-Bs: 3238+0), 7/7 item outputs -> PASS
+start lines (want one): late absent, one present -> PASS
+=== 2026-11-04 23:37:54 5 pf_yardstick long40 on r23-B and r23-LO
+=== 2026-11-04 23:37:54 pf_yardstick long40 B (r23-B.json)
+pfy B: 40 prompts, 40 logit rows
+pfy B:   strata: prompt experts: v2 kernels for IQ3_XXS gate/up (17 of 48 layers), IQ4_NL down (39 of 48 layers) (STRATA_PREFILL_V2=1, adapted from Basalt)
+pfy B: 2026-11-04T23:46:29 pfy23-B exit=0 514s min_MemAvailable=37.2GiB@466s min_5080_free=7358MiB@15s max_tree_RSS=48.7GiB max_swap_used=3.65GiB min_4060Ti_free=1179MiB ok
+ENV CHECK OK: 1 engine start(s) (pfy, 2 GPU(s)), 42 env keys as configured, no other STRATA_*, harness args as expected
+=== 2026-11-04 23:46:30 pf_yardstick long40 LO (r23-LO.json)
+pfy LO: 40 prompts, 40 logit rows
+pfy LO:   strata: prompt experts: v2 kernels for IQ3_XXS gate/up (17 of 48 layers), IQ4_NL down (39 of 48 layers) (STRATA_PREFILL_V2=1, adapted from Basalt)
+pfy LO: 2026-11-04T23:55:04 pfy23-LO exit=0 514s min_MemAvailable=37.2GiB@279s min_5080_free=7358MiB@15s max_tree_RSS=48.7GiB max_swap_used=3.65GiB min_4060Ti_free=1179MiB ok
+ENV CHECK OK: 1 engine start(s) (pfy, 2 GPU(s)), 44 env keys as configured, no other STRATA_*, harness args as expected
+=== 2026-11-04 23:55:05   gate pfy_B_LO PASS 0 of 40 first-token logit files differ (B vs LO)
+=== 2026-11-04 23:55:05   gate pfy_B_p210 PASS 0 of 40 differ (B vs gap 17's P0210x-h)
+=== 2026-11-04 23:55:05 6 timing arms: r23-Bt, r23-LOt (both cards), r23-Bst, r23-Ost (the 5080 alone)
+=== 2026-11-04 23:55:05 timing arm Bt (r23-Bt.json, 2 GPU(s))
+server ready (guard pid 807570, server pid 807585) load_time_s 14.344667809 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23a-Bt_20261104T235506.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 807603: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+Btn W1-think r0: prompt 110 ttft 0.293 s, 3072 tokens, 165.77 tok/s, length
+Btn W2-code r0: prompt 126 ttft 0.348 s, 3072 tokens, 155.07 tok/s, length
+Btn W3-research r0: prompt 26727 ttft 6.034 s, 2048 tokens, 182.24 tok/s, length
+Bta A-edit r0: prompt 2678 ttft 1.016 s, 179 tokens, 126.33 tok/s, tool_calls
+Bta B-write r0: prompt 1372 ttft 0.87 s, 1246 tokens, 173.69 tok/s, tool_calls
+Btr R1-verify20k r0: prompt 24241 ttft 5.524 s, 3648 tokens, 154.13 tok/s, stop
+Btr R2-report54k r0: prompt 54070 ttft 12.021 s, 2690 tokens, 151.49 tok/s, stop
+Btr R3-extract5k r0: prompt 5011 ttft 1.442 s, 1376 tokens, 182.5 tok/s, stop
+Btr R4-agent33k r0: prompt 33416 ttft 7.84 s, 286 tokens, 131.69 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-04 23:58:31   timing Bt: 12 requests, 4958 windows: 22.01 ms/window = GPU-reach 8.88 + host 10.05 (plan 0.64, CPU 9.31) + draft 2.30 + tail 0.75; T 4.44, 3.54 tok/w
+=== 2026-11-04 23:58:31 timing arm LOt (r23-LOt.json, 2 GPU(s))
+server ready (guard pid 810025, server pid 810040) load_time_s 14.335993863 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23a-LOt_20261104T235832.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 6601 MiB, 1289 MiB 
+engine pid 810058: 44 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --kv-resident 32768
+ENV CHECK OK
+LOtn W1-think r0: prompt 110 ttft 0.292 s, 3072 tokens, 170.05 tok/s, length
+LOtn W2-code r0: prompt 126 ttft 0.319 s, 3072 tokens, 170.04 tok/s, length
+LOtn W3-research r0: prompt 26727 ttft 6.038 s, 2048 tokens, 158.44 tok/s, length
+LOta A-edit r0: prompt 2675 ttft 1.013 s, 251 tokens, 137.12 tok/s, tool_calls
+LOta B-write r0: prompt 1372 ttft 0.854 s, 3490 tokens, 158.63 tok/s, tool_calls
+LOtr R1-verify20k r0: prompt 24239 ttft 5.522 s, 3661 tokens, 161.37 tok/s, stop
+LOtr R2-report54k r0: prompt 54071 ttft 12.014 s, 3258 tokens, 153.8 tok/s, stop
+LOtr R3-extract5k r0: prompt 5013 ttft 1.445 s, 1720 tokens, 182.74 tok/s, stop
+LOtr R4-agent33k r0: prompt 33416 ttft 7.835 s, 411 tokens, 131.87 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 6603 MiB, 1287 MiB 
+start lines (want late,one): late present, one present -> PASS
+=== 2026-11-05 00:02:17   timing LOt: 11 requests, 5833 windows: 22.15 ms/window = GPU-reach 8.96 + host 10.08 (plan 0.87, CPU 9.11) + draft 2.33 + tail 0.75; T 4.55, 3.59 tok/w
+=== 2026-11-05 00:02:17 timing arm Bst (r23-Bst.json, 1 GPU(s))
+server ready (guard pid 812863, server pid 812878) load_time_s 13.328555860 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23a-Bst_20261105T000218.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 15 MiB, 7875 MiB 
+engine pid 812896: 42 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s), --kv-resident 32768
+ENV CHECK OK
+Bstn W1-think r0: prompt 108 ttft 0.309 s, 3072 tokens, 155.75 tok/s, length
+Bstn W2-code r0: prompt 124 ttft 0.323 s, 3072 tokens, 135.6 tok/s, length
+Bstn W3-research r0: prompt 26728 ttft 6.055 s, 2048 tokens, 133.15 tok/s, length
+Bsta A-edit r0: prompt 2675 ttft 1.062 s, 304 tokens, 108.4 tok/s, tool_calls
+Bsta B-write r0: prompt 1370 ttft 0.849 s, 1318 tokens, 149.67 tok/s, tool_calls
+Bstr R1-verify20k r0: prompt 24240 ttft 5.54 s, 3600 tokens, 132.56 tok/s, stop
+Bstr R2-report54k r0: prompt 54070 ttft 12.023 s, 2695 tokens, 124.7 tok/s, stop
+Bstr R3-extract5k r0: prompt 5010 ttft 1.431 s, 1106 tokens, 149.5 tok/s, stop
+Bstr R4-agent33k r0: prompt 33416 ttft 7.84 s, 266 tokens, 104.3 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 15 MiB, 7875 MiB 
+start lines (want none): late absent, one absent -> PASS
+=== 2026-11-05 00:06:01   timing Bst: 11 requests, 4987 windows: 25.65 ms/window = GPU-reach 8.91 + host 13.65 (plan 0.09, CPU 13.51) + draft 2.31 + tail 0.75; T 4.43, 3.50 tok/w
+=== 2026-11-05 00:06:01 timing arm Ost (r23-Ost.json, 1 GPU(s))
+server ready (guard pid 815335, server pid 815350) load_time_s 13.317215613 log /home/USER/ai-speed-testing/strata-compare/bringup/out/logs/server_r23a-Ost_20261105T000602.log
+vram after load: 0, 15410 MiB, 524 MiB 1, 15 MiB, 7875 MiB 
+engine pid 815368: 43 config env keys checked, STRATA_ROUTE_TAIL_SKIP=0, 1 GPU(s), --kv-resident 32768
+ENV CHECK OK
+Ostn W1-think r0: prompt 110 ttft 0.299 s, 3072 tokens, 154.91 tok/s, length
+Ostn W2-code r0: prompt 124 ttft 0.318 s, 3072 tokens, 132.92 tok/s, length
+Ostn W3-research r0: prompt 26727 ttft 6.039 s, 2048 tokens, 139.56 tok/s, length
+Osta A-edit r0: prompt 2677 ttft 1.022 s, 849 tokens, 114.67 tok/s, tool_calls
+Osta B-write r0: prompt 1368 ttft 0.855 s, 2843 tokens, 138.52 tok/s, tool_calls
+Ostr R1-verify20k r0: prompt 24238 ttft 5.532 s, 3686 tokens, 135.04 tok/s, stop
+Ostr R2-report54k r0: prompt 54071 ttft 12.025 s, 2764 tokens, 131.14 tok/s, stop
+Ostr R3-extract5k r0: prompt 5011 ttft 1.43 s, 1150 tokens, 152.33 tok/s, stop
+Ostr R4-agent33k r0: prompt 33417 ttft 7.838 s, 404 tokens, 111.09 tok/s, tool_calls
+vram at end: 0, 15492 MiB, 442 MiB 1, 15 MiB, 7875 MiB 
+start lines (want one): late absent, one present -> PASS
+=== 2026-11-05 00:10:03   timing Ost: 11 requests, 5660 windows: 25.61 ms/window = GPU-reach 9.06 + host 13.46 (plan 0.09, CPU 13.33) + draft 2.30 + tail 0.76; T 4.45, 3.51 tok/w
+=== 2026-11-05 00:10:03 6b the two-card timing pass: results/r23/decode-timing/t2pass.sh dv
+engine pid 818058: STRATA_ROUTE_TAIL_SKIP=0, CUDA_VISIBLE_DEVICES has 2 GPU(s)
+T2dvn W1-think r0: prompt 108 ttft 0.29 s, 3072 tokens, 163.97 tok/s, length
+T2dvn W2-code r0: prompt 126 ttft 0.323 s, 3072 tokens, 157.5 tok/s, length
+T2dvn W3-research r0: prompt 26727 ttft 6.035 s, 2048 tokens, 163.89 tok/s, length
+T2dva A-edit r0: prompt 2678 ttft 1.017 s, 307 tokens, 133.58 tok/s, tool_calls
+T2dva B-write r0: prompt 1370 ttft 0.85 s, 1536 tokens, 159.81 tok/s, tool_calls
+T2dvr R1-verify20k r0: prompt 24237 ttft 5.532 s, 3942 tokens, 153.59 tok/s, stop
+T2dvr R2-report54k r0: prompt 54070 ttft 12.014 s, 3462 tokens, 155.02 tok/s, stop
+T2dvr R3-extract5k r0: prompt 5012 ttft 1.446 s, 1191 tokens, 164.88 tok/s, stop
+T2dvr R4-agent33k r0: prompt 33418 ttft 7.837 s, 370 tokens, 129.56 tok/s, tool_calls
+=== 2026-11-05 00:13:41 T2dv: 11 requests, 5208 windows: 23.17 ms/window = GPU-reach 9.60 + host 10.41 (plan 0.64, CPU 9.67) + draft 2.35 + tail 0.77; T 4.55, 3.64 tok/w
+=== 2026-11-05 00:13:41 two-card timing pass done (dv); reports in /home/USER/ai-speed-testing/strata-compare/results/r23/decode-timing/t2/report-*.txt
+=== 2026-11-05 00:13:41   gate t2pass INFO t2/report-T2dv.txt: 11 requests, 5208 windows: 23.17 ms/window = GPU-reach 9.60 + host 10.41 (plan 0.64, CPU 9.67) + draft 2.35 + tail 0.77; T 4.55, 3.64 tok/w
+decode items, gap a - decision (2026-11-05 00:13:41; rules: work/r23/decode_rules.py, written before the gap)
+build: PASS - engine-r23decode 48337a6023d8 = v0.2.10 + 30 commits (branch r23-decode-exact c4c15d32c845a4e811f22b662ab63752140cad09), tree 6b3a1983f98715e0 [23a 11-04 23:06]
+tests: PASS - every step-2 test rc 0
+exact7 r23-B: PASS - exact7 r23-B: 7/7 vs g17-p210a, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); g17-p210a: 3238+3300), 7/7 item outputs
+exact7 r23-B2: PASS - exact7 r23-B2: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs
+exact7 r23-L: PASS - exact7 r23-L: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs
+exact7 r23-O: PASS - exact7 r23-O: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs
+exact7 r23-LO: PASS - exact7 r23-LO: 7/7 vs r23-B, slots MATCHED (3238+3300 slots (5080 + 4060 Ti); r23-B: 3238+3300), 7/7 item outputs
+exact7 r23-Bs: PASS - exact7 r23-Bs: 2/7 vs C*13, slots DIFFER (3238+0 slots (5080 + 4060 Ti); C*13: ?), 7/7 item outputs
+exact7 r23-Os: PASS - exact7 r23-Os: 7/7 vs r23-Bs, slots MATCHED (3238+0 slots (5080 + 4060 Ti); r23-Bs: 3238+0), 7/7 item outputs
+logits (pf_yardstick long40): PASS - pfy_B_LO PASS 0 of 40 first-token logit files differ (B vs LO) [23a 11-04 23:55]; pfy_B_p210 PASS 0 of 40 differ (B vs gap 17's P0210x-h) [23a 11-04 23:55]
+=> item L (STRATA_REMOTE_LATE_LAUNCH=1): EXACT PASS
+=> item O (STRATA_POOL_ONE_BATCH=1): EXACT PASS
+timing Bt (INFO): 12 requests, 4958 windows: 22.01 ms/window = GPU-reach 8.88 + host 10.05 (plan 0.64, CPU 9.31) + draft 2.30 + tail 0.75; T 4.44, 3.54 tok/w |   per layer: GPU-reach 185.0 us, CPU 194.0 us, plan 13.35 us; CPU experts 4.62, PCIe 2.19, VRAM hits 28.2 per layer-window
+timing LOt (INFO): 11 requests, 5833 windows: 22.15 ms/window = GPU-reach 8.96 + host 10.08 (plan 0.87, CPU 9.11) + draft 2.33 + tail 0.75; T 4.55, 3.59 tok/w |   per layer: GPU-reach 186.6 us, CPU 189.8 us, plan 18.11 us; CPU experts 5.07, PCIe 2.08, VRAM hits 28.7 per layer-window
+timing Bst (INFO): 11 requests, 4987 windows: 25.65 ms/window = GPU-reach 8.91 + host 13.65 (plan 0.09, CPU 13.51) + draft 2.31 + tail 0.75; T 4.43, 3.50 tok/w |   per layer: GPU-reach 185.7 us, CPU 281.5 us, plan 1.83 us; CPU experts 7.80, PCIe 3.51, VRAM hits 30.0 per layer-window
+timing Ost (INFO): 11 requests, 5660 windows: 25.61 ms/window = GPU-reach 9.06 + host 13.46 (plan 0.09, CPU 13.33) + draft 2.30 + tail 0.76; T 4.45, 3.51 tok/w |   per layer: GPU-reach 188.7 us, CPU 277.6 us, plan 1.82 us; CPU experts 7.83, PCIe 3.52, VRAM hits 30.1 per layer-window
+env_t-Bt (INFO): PASS 1 engine process(es), 42 env keys as configured
+lines_t-Bt (INFO): PASS start lines (want none): late absent, one absent
+env_t-LOt (INFO): PASS 1 engine process(es), 44 env keys as configured
+lines_t-LOt (INFO): PASS start lines (want late,one): late present, one present
+env_t-Bst (INFO): PASS 1 engine process(es), 42 env keys as configured
+lines_t-Bst (INFO): PASS start lines (want none): late absent, one absent
+env_t-Ost (INFO): PASS 1 engine process(es), 43 env keys as configured
+lines_t-Ost (INFO): PASS start lines (want one): late absent, one present
+t2pass (INFO): INFO t2/report-T2dv.txt: 11 requests, 5208 windows: 23.17 ms/window = GPU-reach 9.60 + host 10.41 (plan 0.64, CPU 9.67) + draft 2.35 + tail 0.77; T 4.55, 3.64 tok/w 
+=== 2026-11-05 00:13:41 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-05 00:13:47 port_gap4: memory back: MemAvailable 86 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-05 00:14:00 port_gap4: WARNING: 1 MB swapped out while P028x started
+2026-11-05 00:14:00 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-05 00:14:00 decode gap a done (71 min with 8080 down)

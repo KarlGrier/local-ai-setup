@@ -1,0 +1,6 @@
+# Frozen 2026-11-05 12:26 - Phase 5 o01 with the 8 GB card (set p5-o01), Karl's OK 11-04 (staging/post7d/README.md: o01 with the 8 GB text as its own line). sha256. Do not edit; a change needs a new version.
+# Its own line: not in p5.json's lines (include_o01 stays false), graded as its own round (results/bench2/RULES-p5.md).
+# Phase 5 o01 (set p5-o01), 2026-10-29: o01 from questions-screen.jsonl (FROZEN.txt, 10-17; unchanged and still frozen)
+# with one correction: 'RTX 4060 Ti 16 GB' -> 'RTX 4060 Ti 8 GB' (the PC's card is 8 GB: nvidia-smi 8188 MiB; Karl
+# 10-28, MORNING-1028.md decision 3). Same id, same files (files/strata-REPORT.md, strata-NOTES.md, FROZEN.txt).
+602db37242ffb748ae916cc401fab54da5d1edb25702d8d7e4e1598d288bf271  questions-p5-o01.jsonl

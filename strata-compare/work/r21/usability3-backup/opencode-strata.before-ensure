@@ -1,0 +1,18 @@
+#!/bin/bash
+# opencode-strata - OpenCode 2 on Strata (127.0.0.1:8080), offline otherwise. Usage: opencode-strata [opencode args]
+#   e.g.  cd ~/myproject && opencode-strata            (the TUI, a private server for this run)
+#         opencode-strata run "fix the failing test"   (one task, then exit)
+# --standalone keeps OpenCode's server private to this run instead of a shared background service.
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+source "$HERE/offline-env.sh"
+export OPENCODE_CONFIG="${OPENCODE_CONFIG:-$HERE/../opencode/opencode.jsonc}"
+export OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1
+export OPENCODE_DISABLE_CLAUDE_CODE=1 OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1   # do not read ~/.claude
+# OpenCode downloads ripgrep from GitHub on first use (refused here): use the ripgrep 15.2 that ships in the Codex
+# package installed beside it instead
+export PATH="$HOME/.local/opt/codex-0.162.1/codex-path:$PATH"
+OC=$HOME/.local/opt/opencode-2.0.30/bin/opencode
+case "${1:-}" in
+  run|"") exec "$OC" "$@" --standalone ;;
+  *) exec "$OC" "$@" ;;
+esac

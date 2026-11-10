@@ -1,0 +1,480 @@
+"""Run the suite against one endpoint and write results/<label>/ (answers, grades, renders, scores)."""
+from __future__ import annotations
+
+import json
+import platform
+import sys
+import threading
+import time
+import traceback
+from pathlib import Path
+
+from .common import (CATEGORIES, RUNS, answer_path, items_fingerprint, label_dir, now_iso, read_json, sha256_text,
+                     write_json)
+from .common import research_fingerprint
+from .cats import agentic, coding, freshness, honesty, instruct, longctx, math, research, tools, visual
+
+MODULES = {"coding": coding, "agentic": agentic, "math": math, "instruct": instruct, "tools": tools,
+           "longctx": longctx, "honesty": honesty, "freshness": freshness, "visual": visual, "research": research}
+# cheap categories first, so an interrupted run still has whole categories
+ORDER = ["math", "instruct", "tools", "honesty", "freshness", "coding", "visual", "longctx", "research", "agentic"]
+
+
+class Log:
+    def __init__(self, path: Path):
+        self.f = open(path, "a", encoding="utf-8")
+
+    def __call__(self, msg):
+        line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+        print(line, flush=True)
+        self.f.write(line + "\n")
+        self.f.flush()
+
+
+def load_items(categories) -> list[dict]:
+    """Every item of the categories (grading needs them all, retired ones included)."""
+    items = []
+    for c in ORDER:
+        if c in categories:
+            items += MODULES[c].load()
+    return items
+
+
+def items_to_run(categories, log=print, web_capture=False) -> list[dict]:
+    """The items a new run asks: no retired items; research only after you approved its key, and only on the frozen
+    web snapshot (or, for the run that captures it, with --web-capture)."""
+    from . import web
+    items = [it for it in load_items(categories) if not it.get("retired")]
+    if "research" in categories:
+        why = None
+        if not research.approved():
+            why = "waiting for your OK on items/research/key.json (items/research/APPROVED)"
+        elif not web.is_frozen() and not web_capture:
+            why = "the web snapshot is not captured and frozen yet (C*17.1's research runs capture it)"
+        if why:
+            log(f"research: not run - {why}")
+            items = [it for it in items if it["category"] != "research"]
+    return items
+
+
+def messages_for(item: dict):
+    """(messages for the OpenAI-style API, a short record of the prompt for the answer file)."""
+    if item.get("long"):
+        doc = longctx.doc_block(item["doc"])
+        return ([{"role": "user", "content": doc + item["question"]}],
+                {"doc": item["doc"], "doc_sha256": sha256_text(doc)[:16], "question": item["question"]})
+    return [{"role": "user", "content": item["prompt"]}], {"prompt": item["prompt"]}
+
+
+def _save(label, item, run, rec, backend_desc, prompt_rec):
+    rec = dict(rec)
+    rec.update({"label": label, "item": item["id"], "category": item["category"], "run": run,
+                "model": backend_desc.get("model"), "prompt": prompt_rec, "saved": now_iso()})
+    write_json(answer_path(label, item["id"], run), rec)
+
+
+def _spent_before(label, old) -> float:
+    """What a resumed API run has already spent: meta's cost_usd, or the saved answers' own costs if they add up to
+    more (meta is written as answers come in; a crash between writes left it behind once - 27b, 2026-10-13)."""
+    s = 0.0
+    for p in (label_dir(label) / "answers").rglob("*.json"):
+        try:
+            s += float(read_json(p).get("cost_usd") or 0)
+        except (ValueError, TypeError):
+            pass
+    return max(float(old.get("cost_usd") or 0.0), round(s, 4))
+
+
+def _done(label, item, run) -> bool:
+    p = answer_path(label, item["id"], run)
+    if not p.exists():
+        return False
+    try:
+        r = read_json(p)
+    except ValueError:
+        return False
+    return not r.get("error")
+
+
+# ------------------------------------------------------------------------------------------------ local endpoint
+def run_local(args, backend, items, runs, log):
+    from .backend_openai import EndpointError
+    todo = [(it, r) for r in range(runs) for it in items if not _done(args.label, it, r)]
+    log(f"{len(todo)} answers to collect ({len(items)} items x {runs} run(s); "
+        f"{len(items) * runs - len(todo)} already on disk)")
+    for n, (it, r) in enumerate(todo, 1):
+        msgs, prec = messages_for(it)
+        log(f"[{n}/{len(todo)}] {it['id']} run {r}")
+        t0 = time.time()
+        try:
+            if it.get("agentic"):
+                rec = agentic.run_item(it, backend, log=log)
+            elif it.get("research"):
+                rec = research.run_item(it, backend, log=log)
+                log(f"  {rec['n_tool_calls']} tool calls (web cache: {rec['web_cache']['hits']} hits, "
+                    f"{rec['web_cache']['misses']} misses)")
+            else:
+                est = backend.counter.count(msgs[0]["content"]) if it.get("long") else len(msgs[0]["content"]) // 3
+                rec = backend.chat(msgs, tools=it.get("tools"), max_tokens=it.get("max_tokens"),
+                                   prompt_tokens_est=(est or 0) + 64)
+        except EndpointError as e:
+            log(f"  endpoint failed: {e} -- stopping (rerun the same command to resume)")
+            raise SystemExit(2)
+        tk = rec["tokens"]
+        log(f"  done in {time.time() - t0:.0f} s: {tk.get('completion')} tokens ({tk.get('reasoning')} reasoning), "
+            f"finish {rec['response'].get('finish_reason')}{' CUT OFF' if rec.get('cut_off') else ''}")
+        _save(args.label, it, r, rec, backend.describe(), prec)
+
+
+# ------------------------------------------------------------------------------------------------ Claude
+def _cid(item_id, run):
+    return (item_id.replace("/", "__") + f"__r{run}")[:64]
+
+
+def run_claude(args, backend, items, runs, log, meta):
+    from .backend_anthropic import BudgetExceeded
+    single = [(it, r) for r in range(runs) for it in items
+              if not it.get("agentic") and not it.get("long") and not it.get("research") and not _done(args.label, it, r)]
+    researching = [(it, r) for r in range(runs) for it in items if it.get("research") and not _done(args.label, it, r)]
+    longs = [(it, r) for r in range(runs) for it in items if it.get("long") and not _done(args.label, it, r)]
+    agents = [(it, r) for r in range(runs) for it in items if it.get("agentic") and not _done(args.label, it, r)]
+    log(f"to collect: {len(single)} single-turn (Batch API), {len(longs)} long-context (streamed, cached), "
+        f"{len(agents)} agentic runs (streamed)")
+
+    def stop_note(e):
+        meta["stopped"] = f"hard stop: {e}"
+        log(f"STOPPED at the cost limit: {e}")
+
+    try:
+        # 1. single-turn items through the Batch API, in chunks so the hard stop can act between them
+        chunk = max(1, args.batch_chunk)
+        for i in range(0, len(single), chunk):
+            part = single[i:i + chunk]
+            backend.cost.check(0.0)
+            reqs = []
+            for it, r in part:
+                msgs, _ = messages_for(it)
+                reqs.append((_cid(it["id"], r), backend.params(msgs, tools=it.get("tools"))))
+            log(f"batch {i // chunk + 1}: {len(reqs)} requests; spent so far ${backend.cost.spent:.2f}")
+            pend = label_dir(args.label) / "pending_batch.json"
+            res = backend.run_batch(reqs, log=log, resume_path=pend)
+            meta.setdefault("batches", []).append(res.pop("_batch"))
+            for it, r in part:
+                rec = res.get(_cid(it["id"], r))
+                if rec is None or "error" in rec:
+                    log(f"  {it['id']} run {r}: {rec.get('error') if rec else 'missing'}")
+                    continue
+                _save(args.label, it, r, rec, backend.describe(), messages_for(it)[1])
+            pend.unlink(missing_ok=True)                    # saved: a rerun submits only what is still missing
+            log(f"  batch done; spent ${backend.cost.spent:.2f}")
+            write_json(label_dir(args.label) / "meta.json", {**meta, "cost_usd": round(backend.cost.spent, 4)})
+            backend.cost.check(0.0)
+        # 2. long-context: per document, the first question writes the cache, the others start once it streams
+        by_doc = {}
+        for it, r in longs:
+            by_doc.setdefault((it["doc"], r), []).append(it)
+        for (doc, r), its in by_doc.items():
+            block = longctx.doc_block(doc)
+            def params_for(it):
+                msgs = [{"role": "user", "content": [{"type": "text", "text": block,
+                                                      "cache_control": {"type": "ephemeral"}},
+                                                     {"type": "text", "text": it["question"]}]}]
+                return backend.params(msgs)
+            first, rest = its[0], its[1:]
+            started = threading.Event()
+            results = {}
+
+            def worker(it, signal=None):
+                try:
+                    results[it["id"]] = backend.stream(params_for(it), on_first=signal)
+                except BudgetExceeded as e:
+                    results[it["id"]] = e
+                except Exception as e:                       # noqa: BLE001
+                    results[it["id"]] = e
+            log(f"long-context {doc} run {r}: {len(its)} questions (cache write by the first)")
+            t1 = threading.Thread(target=worker, args=(first, started.set))
+            t1.start()
+            started.wait(timeout=600)
+            others = [threading.Thread(target=worker, args=(it,)) for it in rest]
+            for t in others:
+                t.start()
+            for t in [t1] + others:
+                t.join()
+            for it in its:
+                rec = results.get(it["id"])
+                if isinstance(rec, BudgetExceeded):
+                    raise rec
+                if isinstance(rec, Exception) or rec is None:
+                    log(f"  {it['id']}: error {rec}")
+                    continue
+                u = rec["response"]["usage"]
+                log(f"  {it['id']}: {rec['tokens']['completion']} out, cache write "
+                    f"{u.get('cache_creation_input_tokens')}, read {u.get('cache_read_input_tokens')}, ${rec['cost_usd']:.3f}")
+                _save(args.label, it, r, rec, backend.describe(), messages_for(it)[1])
+            write_json(label_dir(args.label) / "meta.json", {**meta, "cost_usd": round(backend.cost.spent, 4)})
+        # 3. research loops (web tools; streamed turns)
+        for it, r in researching:
+            log(f"{it['id']} run {r} (spent so far ${backend.cost.spent:.2f})")
+            rec = research.run_item(it, backend, log=log)
+            _save(args.label, it, r, rec, backend.describe(), {"prompt": it["prompt"]})
+            write_json(label_dir(args.label) / "meta.json", {**meta, "cost_usd": round(backend.cost.spent, 4)})
+        # 4. agentic loops
+        for it, r in agents:
+            log(f"{it['id']} run {r} (spent so far ${backend.cost.spent:.2f})")
+            rec = agentic.run_item(it, backend, log=log)
+            _save(args.label, it, r, rec, backend.describe(), {"prompt": it["prompt"]})
+            write_json(label_dir(args.label) / "meta.json", {**meta, "cost_usd": round(backend.cost.spent, 4)})
+    except BudgetExceeded as e:
+        stop_note(e)
+
+
+# ------------------------------------------------------------------------------------------------ OpenRouter
+def run_openrouter(args, backend, items, runs, log, meta):
+    """Answers in parallel (args.concurrency); every request reserves its worst case against the hard stop."""
+    import concurrent.futures as cf
+    from .backend_openai import EndpointError
+    from .backend_openrouter import BudgetExceeded
+    todo = [(it, r) for r in range(runs) for it in items if not _done(args.label, it, r)]
+    log(f"{len(todo)} answers to collect over {args.concurrency} parallel requests; pinned endpoint "
+        f"{backend.slug} ({backend.provider_name}, published precision {backend.endpoint.get('quantization')}); "
+        f"sampling honoured {backend.honoured}, ignored {backend.ignored}")
+    stop = threading.Event()
+    done_n = [0]
+    lock = threading.Lock()
+
+    def one(it, r):
+        if stop.is_set():
+            return
+        msgs, prec = messages_for(it)
+        t0 = time.time()
+        try:
+            if it.get("agentic"):
+                rec = agentic.run_item(it, backend, log=lambda m: None)
+            elif it.get("research"):
+                rec = research.run_item(it, backend, log=lambda m: None)
+            else:
+                est = len(json.dumps(msgs, ensure_ascii=False)) // 3
+                rec = backend.chat(msgs, tools=it.get("tools"), max_tokens=it.get("max_tokens"), prompt_tokens_est=est)
+        except BudgetExceeded as e:
+            stop.set()
+            meta["stopped"] = f"hard stop: {e}"
+            log(f"  {it['id']} run {r}: not sent -- {e}")
+            return
+        except EndpointError as e:
+            if e.status == -1:                       # a response from another provider: stop everything
+                stop.set()
+                meta["stopped"] = str(e)
+            log(f"  {it['id']} run {r}: endpoint error after retries: {str(e)[:300]}")
+            return
+        except Exception as e:                       # one bad reply must not end the other requests in flight
+            log(f"  {it['id']} run {r}: not saved ({type(e).__name__}: {str(e)[:200]}); a rerun asks again")
+            return
+        _save(args.label, it, r, rec, backend.describe(), prec)
+        with lock:
+            done_n[0] += 1
+            n = done_n[0]
+        tk = rec["tokens"]
+        log(f"[{n}/{len(todo)}] {it['id']} run {r}: {time.time() - t0:.0f} s, {tk.get('completion')} tokens "
+            f"({tk.get('reasoning')} reasoning), finish {rec['response'].get('finish_reason')}"
+            f"{' CUT OFF' if rec.get('cut_off') else ''}, provider {(rec['response'].get('meta') or {}).get('provider')}, "
+            f"${rec.get('cost_usd') or 0:.4f}; spent ${backend.spent:.2f}")
+
+    with cf.ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as ex:
+        futs = [ex.submit(one, it, r) for it, r in todo]
+        for f in cf.as_completed(futs):
+            f.result()
+            write_json(label_dir(args.label) / "meta.json", {**meta, "cost_usd": round(backend.spent, 4)})
+    if meta.get("stopped"):
+        log(f"STOPPED: {meta['stopped']}")
+
+
+# ------------------------------------------------------------------------------------------------ grading
+def cut_reason(rec):
+    """Why an answer was cut off: the max_tokens cap, or the server ending it early ('length' well below the cap,
+    e.g. Strata's repeat guard after 256 identical tokens), a client timeout, or a Claude stop."""
+    if not rec.get("cut_off"):
+        return None
+    fin = (rec.get("response") or {}).get("finish_reason")
+    if rec.get("steps"):
+        return "agentic step cut off"
+    if fin == "timeout":
+        return "client timeout"
+    mt = (rec.get("request") or {}).get("max_tokens")
+    comp = (rec.get("tokens") or {}).get("completion")
+    if fin == "length" and mt and comp is not None and comp < mt - 64:
+        return f"server stopped it early ({comp} of {mt} tokens)"
+    return "max_tokens"
+
+
+def grade_label(label, log=print, render=True):
+    d = label_dir(label)
+    grades = {}
+    all_items = {it["id"]: it for it in load_items(CATEGORIES)}
+    files = sorted((d / "answers").rglob("*.json"))
+    chrome = None
+    try:
+        for p in files:
+            rec = read_json(p)
+            it = all_items.get(rec["item"])
+            if it is None:
+                continue
+            g = MODULES[it["category"]].grade(it, rec)
+            if it["category"] == "visual" and render:
+                if chrome is None:
+                    from . import render as R
+                    chrome, cdir = R.new_browser()
+                out = d / "visual" / f"{it['id'].split('/')[1]}.r{rec['run']}"
+                try:
+                    info = visual.render_answer(chrome, it, rec, out)
+                except Exception as e:                       # noqa: BLE001
+                    info = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+                g["render"] = {k: info.get(k) for k in ("ok", "error", "console_errors", "animated",
+                                                           "changed_after_keys", "blocked", "vendor")}
+                g["render"]["console_sample"] = (info.get("exceptions", []) + info.get("console", []))[:3]
+            grades[f"{rec['item']}#r{rec['run']}"] = {
+                "item": rec["item"], "category": it["category"], "run": rec["run"], **g,
+                "cut_off": rec.get("cut_off"), "cut_reason": cut_reason(rec),
+                "tokens": rec.get("tokens"), "timing": rec.get("timing"),
+                "cost_usd": rec.get("cost_usd"), "n_steps": rec.get("n_steps"),
+                "n_tool_calls": rec.get("n_tool_calls"), "web_cache": rec.get("web_cache"),
+                "weight": it.get("weight"), "stratum": it.get("stratum"), "level": it.get("level")}
+    finally:
+        if chrome is not None:
+            from . import render as R
+            R.cleanup_browser(chrome, cdir)
+    write_json(d / "grades.json", grades)
+    log(f"graded {len(grades)} answers")
+    return grades
+
+
+# ------------------------------------------------------------------------------------------------ main
+def cmd_run(args):
+    from . import report, privacy
+    label = args.label
+    d = label_dir(label)
+    d.mkdir(parents=True, exist_ok=True)
+    log = Log(d / "run.log")
+    cats = [c for c in CATEGORIES if not args.only or c in args.only.split(",")]
+    items = items_to_run(cats, log=lambda m: None, web_capture=getattr(args, "web_capture", False))
+    if getattr(args, "items", None):                    # diagnostics: only these items
+        want = {x.strip() for x in args.items.split(",") if x.strip()}
+        items = [it for it in items if it["id"] in want or it["id"].split("/")[-1] in want]
+    if getattr(args, "collect_only", False):
+        # API runs beside a local run: send requests and save answers only; the agentic loop (it runs tests on this
+        # PC) and all grading wait for a later invocation without --collect-only
+        items = [it for it in items if not it.get("agentic")]
+        args.no_grade = True
+    runs = args.runs or RUNS[args.mode]
+    meta_path = d / "meta.json"
+    old = read_json(meta_path) if meta_path.exists() else {}
+    if old and old.get("endpoint") != args.endpoint:
+        raise SystemExit(f"results/{label} holds a run against {old.get('endpoint')}; use another label")
+    meta = {**old, "label": label, "endpoint": args.endpoint, "mode": args.mode, "runs": runs,
+            "categories": cats, "items_fingerprint": items_fingerprint(), "suite_cmd": " ".join(sys.argv[1:]),
+            "research_fingerprint": research_fingerprint() if any(i["category"] == "research" for i in items)
+            else old.get("research_fingerprint"),
+            "started": old.get("started") or now_iso(), "status": "running", "python": platform.python_version()}
+    log(f"=== {label}: {args.endpoint}, mode {args.mode} ({runs} run(s) per item), {len(items)} items ===")
+    t_start = time.time()
+    if args.endpoint.startswith("claude:"):
+        from .backend_anthropic import AnthropicBackend, NoKey
+        from . import cost
+        model = args.endpoint.split(":", 1)[1]
+        remaining = [it for it in items if any(not _done(label, it, r) for r in range(runs))]
+        est = cost.estimate(model, remaining, runs, log=log, base_label=args.estimate_from)
+        meta["estimate_usd"] = old.get("estimate_usd") or est      # the first one, made before any request
+        if old.get("estimate_usd"):
+            meta["estimate_resume_usd"] = est                     # the items left at this resume
+        limit = args.max_estimate if args.max_estimate is not None else 25.0
+        if est["point"] > limit and not args.yes:
+            log(f"estimate ${est['point']:.2f} is over the ${limit:.2f} limit: not running "
+                f"(pass --max-estimate or --yes to override)")
+            meta["status"] = "not run: estimate over limit"
+            write_json(meta_path, meta)
+            raise SystemExit(4)
+        try:
+            backend = AnthropicBackend(model, hard_stop=args.budget if args.budget is not None else 40.0,
+                                       max_tokens=args.max_tokens,
+                                       spent=_spent_before(label, old))
+        except NoKey as e:
+            log(f"no API key: {e}. Nothing was sent.")
+            meta["status"] = "not run: no API key"
+            write_json(meta_path, meta)
+            raise SystemExit(3)
+        meta["backend"] = backend.describe()
+        write_json(meta_path, meta)
+        run_claude(args, backend, items, runs, log, meta)
+        meta["cost_usd"] = round(backend.cost.spent, 4)
+        log(f"API cost of this run (from reported usage): ${backend.cost.spent:.2f}")
+    elif args.endpoint.startswith("openrouter:"):
+        from .backend_openrouter import NoKey as ORNoKey, OpenRouterBackend, estimate as or_estimate
+        spec = args.endpoint.split(":", 1)[1]
+        model, _, slug = spec.partition("@")
+        budget = args.budget if args.budget is not None else 15.0
+        remaining = [it for it in items if any(not _done(label, it, r) for r in range(runs))]
+        est = or_estimate(model, remaining, runs, log=log, base_label=args.estimate_from, provider=slug or None)
+        meta["estimate_usd"] = old.get("estimate_usd") or est      # the first one, made before any request
+        if old.get("estimate_usd"):
+            meta["estimate_resume_usd"] = est                     # the items left at this resume
+        limit = args.max_estimate if args.max_estimate is not None else budget
+        if est["point"] > limit and not args.yes:
+            log(f"estimate ${est['point']:.2f} is over ${limit:.2f}: not running (pass --max-estimate or --yes)")
+            meta["status"] = "not run: estimate over limit"
+            write_json(meta_path, meta)
+            raise SystemExit(4)
+        try:
+            from .common import LOCAL_SAMPLING
+            or_sampling = ({**LOCAL_SAMPLING, **json.loads(args.sampling)} if getattr(args, "sampling", None) else None)
+            backend = OpenRouterBackend(model, provider=slug or None, max_tokens=args.max_tokens or 81920, hard_stop=budget,
+                                        spent=_spent_before(label, old), effort=getattr(args, "effort", None) or "xhigh",
+                                        sampling=or_sampling, rpm=getattr(args, "rpm", None),
+                                        free_only=getattr(args, "free_only", False))
+            if or_sampling:
+                log(f"sampling (not the standard): {backend.sampling}; honoured by the endpoint: {backend.honoured}")
+        except ORNoKey as e:
+            log(f"no API key: {e}. Nothing was sent.")
+            meta["status"] = "not run: no API key"
+            write_json(meta_path, meta)
+            raise SystemExit(3)
+        meta["backend"] = backend.describe()
+        write_json(meta_path, meta)
+        args.concurrency = args.concurrency or 6
+        run_openrouter(args, backend, items, runs, log, meta)
+        meta["cost_usd"] = round(backend.spent, 4)
+        log(f"cost of this run (OpenRouter's reported usage): ${backend.spent:.2f}")
+    else:
+        from .backend_openai import OpenAIBackend
+        from .common import LOCAL_SAMPLING
+        extra = json.loads(args.extra_body) if args.extra_body else None
+        sampling = {**LOCAL_SAMPLING, **json.loads(args.sampling)} if getattr(args, "sampling", None) else None
+        backend = OpenAIBackend(args.endpoint, model=args.model, max_tokens=args.max_tokens or 81920, ctx=args.ctx,
+                                tokenizer=args.tokenizer, extra_body=extra, sampling=sampling)
+        if sampling:
+            log(f"sampling (not the standard): {sampling}")
+        meta["backend"] = backend.describe()
+        write_json(meta_path, meta)
+        log(f"model {backend.model}, context {backend.ctx}, token split by {backend.counter.method}")
+        run_local(args, backend, items, runs, log)
+    meta["wall_s_this_invocation"] = round(time.time() - t_start, 1)
+    meta["wall_s_total"] = round(old.get("wall_s_total", 0) + meta["wall_s_this_invocation"], 1)
+    hist = old.get("invocations") or ([{"started": old.get("started"), "wall_s": old.get("wall_s_total"),
+                                        "categories": old.get("categories"), "mode": old.get("mode")}]
+                                      if old.get("wall_s_total") else [])
+    meta["invocations"] = hist + [{"started": now_iso(), "wall_s": meta["wall_s_this_invocation"], "categories": cats,
+                                   "mode": args.mode, "flags": [f for f in ("collect_only", "web_capture", "no_grade")
+                                                                if getattr(args, f, False)]}]
+    meta["finished"] = now_iso()
+    meta["status"] = meta.get("stopped") or ("collected; agentic items and grading pending"
+                                             if getattr(args, "collect_only", False) else "complete")
+    write_json(meta_path, meta)
+    if getattr(args, "no_grade", False):
+        log("answers collected; grading skipped (--no-grade): run `run.sh regrade %s` later" % label)
+        return 0
+    log("grading and rendering ...")
+    grade_label(label, log=log)
+    report.write_label_report(label)
+    log(f"scores: suite/results/{label}/scores.md")
+    findings = privacy.check_paths([d])
+    log("privacy check: " + ("CLEAN" if not findings else f"{len(findings)} findings -- see suite/results/{label}/privacy.txt"))
+    (d / "privacy.txt").write_text("\n".join(findings) + "\n" if findings else "CLEAN\n")
+    return 0

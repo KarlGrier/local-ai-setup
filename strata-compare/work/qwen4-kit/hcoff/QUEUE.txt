@@ -1,0 +1,3 @@
+gap-ud31-hcoff.sh (dayone.py 2026-11-05, 2026-11-06 08:08): Karl 11-06's HC_Q8-off check of the v3.1 U file. NOT QUEUED, no .ready.
+It refuses (exit 1, 8080 untouched) unless results/r23/ud31/decision.json says U NOT REPEATABLE / CHECK FAILED.
+To queue: review, write work/qwen4-kit/hcoff/gap-ud31-hcoff.sh.ready, add `work/qwen4-kit/hcoff/gap-ud31-hcoff.sh` to the STEPS after work/r23/gap-ud31-dec.sh (a refusal costs one retry and a skip). ~24 min with 8080 down. Result: /home/USER/ai-speed-testing/strata-compare/results/r23/ud31/hcoff/gap-exact/decision.json -> dayone.py u_exact_state (HC_Q8 OFF / VETOED).

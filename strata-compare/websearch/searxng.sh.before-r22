@@ -1,0 +1,33 @@
+#!/bin/bash
+# searxng.sh start|stop|status|install — the local SearXNG for the chat page's web search (127.0.0.1:8888 only).
+# Source: websearch/searxng (git clone of github.com/searxng/searxng), venv websearch/venv, settings websearch/settings.yml,
+# caches/temp in the workspace (work/r5/env.sh). Server: granian (SearXNG's production server), else Flask's.
+set -u
+WS=/home/USER/ai-speed-testing/strata-compare; D=$WS/websearch
+source $WS/work/r5/env.sh
+PIDF=$WS/logs/run/searxng.pid; LOG=$WS/logs/run/searxng.log
+export SEARXNG_SETTINGS_PATH=$D/settings.yml
+running() { [ -f $PIDF ] && kill -0 $(cat $PIDF) 2>/dev/null; }
+case ${1:-} in
+install)
+  [ -d $D/venv ] || python3 -m venv $D/venv
+  $D/venv/bin/pip install -q -r $D/searxng/requirements.txt -r $D/searxng/requirements-server.txt && echo "installed";;
+start)
+  running && { echo "searxng already running (pid $(cat $PIDF))"; exit 0; }
+  mkdir -p $WS/logs/run; cd $D/searxng
+  if [ -x $D/venv/bin/granian ]; then
+    setsid nohup $D/venv/bin/granian --interface wsgi --host 127.0.0.1 --port 8888 --workers 1 --blocking-threads 8 \
+      searx.webapp:app >> $LOG 2>&1 < /dev/null &
+  else
+    setsid nohup $D/venv/bin/python -m searx.webapp >> $LOG 2>&1 < /dev/null &
+  fi
+  echo $! > $PIDF
+  for i in $(seq 1 60); do curl -sf -m 2 http://127.0.0.1:8888/healthz >/dev/null 2>&1 && { echo "searxng up (pid $(cat $PIDF)) on http://127.0.0.1:8888"; exit 0; }; sleep 1; done
+  echo "searxng did not come up; see $LOG"; tail -20 $LOG; exit 1;;
+stop)
+  running && { kill -TERM -$(cat $PIDF) 2>/dev/null || kill -TERM $(cat $PIDF); for i in $(seq 1 20); do running || break; sleep 0.5; done; }
+  rm -f $PIDF; echo stopped;;
+status)
+  if running; then echo "running pid $(cat $PIDF); health: $(curl -s -m 3 http://127.0.0.1:8888/healthz)"; ss -ltnp 2>/dev/null | grep ':8888 '; else echo "not running"; exit 3; fi;;
+*) echo "usage: $0 install|start|stop|status";;
+esac

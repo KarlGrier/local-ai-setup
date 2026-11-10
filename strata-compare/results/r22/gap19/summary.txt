@@ -1,0 +1,231 @@
+=== 2026-11-04 10:01:28 GAP 19 (work/r22/gap19.sh): stock v0.2.10 - the GDN prompt paths and PF_HC_REGION on vs off (a diagnostic; P028x stays served, nothing switches - Karl 11-04)
+s0210-h-gdn: {'STRATA_GDN_CONVL2': ('0', '2'), 'STRATA_GDN_TC': ('0', '1')} | P0210x-h-gdn: {'STRATA_GDN_CONVL2': ('0', '2'), 'STRATA_GDN_TC': ('0', '1')} -> same difference
+s0210-h-gdntc: {'STRATA_GDN_TC': ('0', '1')} | P0210x-h-gdntc: {'STRATA_GDN_TC': ('0', '1')} -> same difference
+s0210-h-gdncv: {'STRATA_GDN_CONVL2': ('0', '2')} | P0210x-h-gdncv: {'STRATA_GDN_CONVL2': ('0', '2')} -> same difference
+s0210-h-hcr: {'STRATA_PF_HC_REGION': (None, '1')} | P0210x-h-hcr: {'STRATA_PF_HC_REGION': (None, '1')} -> same difference
+CONFIG CHECK OK: the stock arms differ from s0210-h exactly as the port's arms from P0210x-h; s0210-h = stock, 14 pins, none of ours
+=== 2026-11-04 10:01:28   gate build_stock PASS engine-v0210stock c8fe72abe45a = stock v0.2.10 (ffa80d73133ea5c548aefe57889a16e8085a938f, detached worktree strata-v0210stock), none 
+2026-11-04 10:01:28 port_gap4: hold set; waiting for the running research run to finish
+run-strata: stopping pid 145229 (engine 145250)
+run-strata: stopped
+run-strata: SearXNG: left running: SearXNG 8888 is the user service searxng-chat.service
+2026-11-04 12:51:02 port_gap4: gap open: test lock held (pid 302268), 8080 stopped
+=== 2026-11-04 12:51:02 1 pf_yardstick long40: s0210-h (both GDN paths off) and s0210-h-gdn (TC=1 + CONVL2=2, as stock's server.py sets them)
+=== 2026-11-04 12:51:02 pf_yardstick long40 s210 (s0210-h.json)
+engine pid 302479: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 1 --pcie-frac 0 --kv fp16 --prefill auto --adapt-every 100000 --suffix-draft 0 --prompt-cache 0 -> ENV OK
+pfy s210: 40 prompts, 40 logit rows
+pfy s210: 2026-11-04T12:59:38 pfy19-s210 exit=0 515s min_MemAvailable=36.8GiB@426s min_5080_free=7358MiB@449s max_tree_RSS=48.7GiB max_swap_used=3.41GiB min_4060Ti_free=1179MiB ok
+ENV CHECK OK: 1 engine start(s) (pfy), 36 env keys as configured, no other STRATA_*, harness args as expected
+=== 2026-11-04 12:59:38 pf_yardstick long40 s210gdn (s0210-h-gdn.json)
+engine pid 305386: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 1 --pcie-frac 0 --kv fp16 --prefill auto --adapt-every 100000 --suffix-draft 0 --prompt-cache 0 -> ENV OK
+pfy s210gdn: 40 prompts, 40 logit rows
+pfy s210gdn: 2026-11-04T13:08:18 pfy19-s210gdn exit=0 520s min_MemAvailable=36.1GiB@121s min_5080_free=7300MiB@134s max_tree_RSS=48.7GiB max_swap_used=3.41GiB min_4060Ti_free=1179MiB ok
+ENV CHECK OK: 1 engine start(s) (pfy), 36 env keys as configured, no other STRATA_*, harness args as expected
+=== 2026-11-04 13:08:19 2 gap 17's KL rules on the stock arms, the port's gap 17 arms beside them
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap19/pfy - bounds: top-1 >= 34 prompts, KL mean <= 0.401361, KL p90 <= 0.365952, rows KL > 1 <= 4
+unfused    top-1 35/40  KL mean 0.161958  p90 0.365952  rows > 1: 3  (max 2.4641, not judged)
+cpushare   top-1 35/40  KL mean 0.364874  p90 0.215046  rows > 1: 3  (max 9.7615, not judged)
+s210       top-1 37/40  KL mean 0.132306  p90 0.096319  rows > 1: 1  (max 4.1526, not judged)  -> PASS
+s210gdn    top-1 35/40  KL mean 0.507746  p90 0.966734  rows > 1: 4  (max 13.8261, not judged)  -> FAIL (mean, p90)
+p210       top-1 35/40  KL mean 0.085689  p90 0.193319  rows > 1: 0  (max 0.9993, not judged)  -> PASS
+p210gdn    top-1 35/40  KL mean 0.575080  p90 1.101426  rows > 1: 5  (max 13.6821, not judged)  -> FAIL (mean, p90, KL>1 rows)
+p210gdntc  top-1 33/40  KL mean 0.859140  p90 1.133460  rows > 1: 5  (max 14.4181, not judged)  -> FAIL (top-1, mean, p90, KL>1 rows)
+p210gdncv  top-1 36/40  KL mean 0.485822  p90 0.295464  rows > 1: 3  (max 14.1978, not judged)  -> FAIL (mean)
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap19/pfy (10-26 rule, 40 prompts, NLL on 36) - bounds: KL mean <= 0.401361, KL p90 <= 0.402547, rows KL > 1 <= 4, changed top-1 <= 5.5, NLL above ref's (4.1273) <= 0.0860
+unfused    KL mean 0.161958  p90 0.365952  rows > 1: 3  changed top-1 5/40  NLL 4.2055 (+0.0782)
+cpushare   KL mean 0.364874  p90 0.215046  rows > 1: 3  changed top-1 5/40  NLL 4.0883 (-0.0390)
+s210       KL mean 0.132306  p90 0.096319  rows > 1: 1  changed top-1 3/40  NLL 4.2453 (+0.1180)  -> FAIL (NLL)
+s210gdn    KL mean 0.507746  p90 0.966734  rows > 1: 4  changed top-1 5/40  NLL 3.9398 (-0.1875)  -> FAIL (mean, p90)
+p210       KL mean 0.085689  p90 0.193319  rows > 1: 0  changed top-1 5/40  NLL 4.1034 (-0.0239)  -> PASS
+p210gdn    KL mean 0.575080  p90 1.101426  rows > 1: 5  changed top-1 5/40  NLL 3.8475 (-0.2798)  -> FAIL (mean, p90, KL>1 rows)
+p210gdntc  KL mean 0.859140  p90 1.133460  rows > 1: 5  changed top-1 7/40  NLL 3.9716 (-0.1557)  -> FAIL (mean, p90, KL>1 rows, top-1)
+p210gdncv  KL mean 0.485822  p90 0.295464  rows > 1: 3  changed top-1 4/40  NLL 3.9052 (-0.2222)  -> FAIL (mean)
+  gate kl2_s210 PASS
+  gate kl3_s210 FAIL
+  gate kl2_sgdn FAIL
+  gate kl3_sgdn FAIL
+=== 2026-11-04 13:08:19 3 exact7 at pin 2500: stock off (against gap 17's g17-s210: the cross-gap repeat), then STRATA_PF_HC_REGION=1 against it
+=== 2026-11-04 13:08:19 exact7 g19-s210 (s0210-h.json against g17-s210)
+engine pid 308999: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 309246: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 309492: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 309766: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 310029: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 310223: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 310425: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+g19-s210-x-math   out fcf88201 (g17-s210 fcf88201) =  ms/round 34.41  prompt ms 455
+g19-s210-s-math   out 3159af33 (g17-s210 3159af33) =  ms/round 30.97  prompt ms 459
+g19-s210-x-code   out f0ee8954 (g17-s210 f0ee8954) =  ms/round 23.63  prompt ms 458
+g19-s210-s-code   out 7be7fe64 (g17-s210 7be7fe64) =  ms/round 19.06  prompt ms 459
+g19-s210-x-p2000  out 3e219376 (g17-s210 3e219376) =  ms/round 39.38  prompt ms 1076
+g19-s210-x-32k    out 651f56c8 (g17-s210 651f56c8) =  ms/round 43.56  prompt ms 7896
+g19-s210-x-112k   out a393ca0a (g17-s210 a393ca0a) =  ms/round 37.34  prompt ms 26793
+exact7 g19-s210: 7/7 identical to g17-s210
+exact7-slots g19-s210: 3238+3300 slots (5080 + 4060 Ti); g17-s210: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 35 env keys as configured, no other STRATA_*, harness args as expected
+=== 2026-11-04 13:11:42 exact7 g19-s210hcr (s0210-h-hcr.json against g19-s210)
+engine pid 310701: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 310975: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 311253: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 311519: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 311770: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 311934: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 312115: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+g19-s210hcr-x-math   out 67b5eb9e (g19-s210 fcf88201) DIFFERENT  ms/round 33.79  prompt ms 464
+g19-s210hcr-s-math   out 77142c8c (g19-s210 3159af33) DIFFERENT  ms/round 33.83  prompt ms 459
+g19-s210hcr-x-code   out 4deb57dc (g19-s210 f0ee8954) DIFFERENT  ms/round 27.09  prompt ms 459
+g19-s210hcr-s-code   out ac12c0e8 (g19-s210 7be7fe64) DIFFERENT  ms/round 21.51  prompt ms 454
+g19-s210hcr-x-p2000  out 3e219376 (g19-s210 3e219376) =  ms/round 39.36  prompt ms 1068
+g19-s210hcr-x-32k    out 651f56c8 (g19-s210 651f56c8) =  ms/round 41.61  prompt ms 7487
+g19-s210hcr-x-112k   out a393ca0a (g19-s210 a393ca0a) =  ms/round 35.36  prompt ms 26620
+exact7 g19-s210hcr: 3/7 identical to g19-s210
+exact7-slots g19-s210hcr: 3238+3300 slots (5080 + 4060 Ti); g19-s210: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 36 env keys as configured, no other STRATA_*, harness args as expected
+=== 2026-11-04 13:15:03 3b (G19_HCR_SHARE0=1) the HC pair with STRATA_PREFILL_CPU_SHARE=0 - is the change the prompt CPU share's placement? (g19-s210z's line against g19-s210 is not judged: the share itself changes bits)
+=== 2026-11-04 13:15:03 exact7 g19-s210z (s0210-h.json against g19-s210; STRATA_PREFILL_CPU_SHARE=0)
+engine pid 312376: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 312575: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 312779: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 312984: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 313184: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 313389: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 313586: 35 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+g19-s210z-x-math   out 8b38d4d0 (g19-s210 fcf88201) DIFFERENT  ms/round 34.85  prompt ms 538
+g19-s210z-s-math   out 9e4668c8 (g19-s210 3159af33) DIFFERENT  ms/round 32.46  prompt ms 539
+g19-s210z-x-code   out a009184f (g19-s210 f0ee8954) DIFFERENT  ms/round 21.34  prompt ms 539
+g19-s210z-s-code   out 368d6c1c (g19-s210 7be7fe64) DIFFERENT  ms/round 22.40  prompt ms 548
+g19-s210z-x-p2000  out 3e219376 (g19-s210 3e219376) =  ms/round 39.36  prompt ms 1082
+g19-s210z-x-32k    out 651f56c8 (g19-s210 651f56c8) =  ms/round 41.65  prompt ms 7804
+g19-s210z-x-112k   out a393ca0a (g19-s210 a393ca0a) =  ms/round 35.37  prompt ms 26794
+exact7 g19-s210z: 3/7 identical to g19-s210
+exact7-slots g19-s210z: 3238+3300 slots (5080 + 4060 Ti); g19-s210: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 35 env keys as configured, no other STRATA_*, harness args as expected
+=== 2026-11-04 13:18:24 exact7 g19-s210hcrz (s0210-h-hcr.json against g19-s210z; STRATA_PREFILL_CPU_SHARE=0)
+engine pid 313832: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 314031: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 314231: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 314430: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 314637: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 314811: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+engine pid 314986: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 2500 --adapt-swaps 0 --suffix-draft 0 --kv-resident 32768 -> ENV OK
+g19-s210hcrz-x-math   out 8b38d4d0 (g19-s210z 8b38d4d0) =  ms/round 34.84  prompt ms 542
+g19-s210hcrz-s-math   out 9e4668c8 (g19-s210z 9e4668c8) =  ms/round 32.49  prompt ms 551
+g19-s210hcrz-x-code   out a009184f (g19-s210z a009184f) =  ms/round 21.34  prompt ms 539
+g19-s210hcrz-s-code   out 368d6c1c (g19-s210z 368d6c1c) =  ms/round 22.35  prompt ms 591
+g19-s210hcrz-x-p2000  out 3e219376 (g19-s210z 3e219376) =  ms/round 39.34  prompt ms 1063
+g19-s210hcrz-x-32k    out 651f56c8 (g19-s210z 651f56c8) =  ms/round 41.93  prompt ms 7553
+g19-s210hcrz-x-112k   out a393ca0a (g19-s210z a393ca0a) =  ms/round 35.19  prompt ms 26601
+exact7 g19-s210hcrz: 7/7 identical to g19-s210z
+exact7-slots g19-s210hcrz: 3238+3300 slots (5080 + 4060 Ti); g19-s210z: 3238+3300 -> MATCHED
+ENV CHECK OK: 7 engine start(s) (e7), 36 env keys as configured, no other STRATA_*, harness args as expected
+=== 2026-11-04 13:21:43 4 optional steps (14 min to the deadline): GDN_TC alone, GDN_CONVL2 alone, PF_HC_REGION on the yardstick
+=== 2026-11-04 13:21:43 pf_yardstick long40 s210gdntc (s0210-h-gdntc.json)
+engine pid 315252: 36 env keys, STRATA_ROUTE_TAIL_SKIP=0, 2 GPU(s), --expert-cache 1 --pcie-frac 0 --kv fp16 --prefill auto --adapt-every 100000 --suffix-draft 0 --prompt-cache 0 -> ENV OK
+pfy s210gdntc: 40 prompts, 40 logit rows
+pfy s210gdntc: 2026-11-04T13:30:18 pfy19-s210gdntc exit=0 514s min_MemAvailable=37.9GiB@326s min_5080_free=7300MiB@132s max_tree_RSS=48.7GiB max_swap_used=3.38GiB min_4060Ti_free=1179MiB ok
+ENV CHECK OK: 1 engine start(s) (pfy), 36 env keys as configured, no other STRATA_*, harness args as expected
+=== 2026-11-04 13:30:18 skipped pf_yardstick s210gdncv (optional: 9 min do not fit before the deadline, or a kernel check failed)
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap19/pfy - bounds: top-1 >= 34 prompts, KL mean <= 0.401361, KL p90 <= 0.365952, rows KL > 1 <= 4
+unfused    top-1 35/40  KL mean 0.161958  p90 0.365952  rows > 1: 3  (max 2.4641, not judged)
+cpushare   top-1 35/40  KL mean 0.364874  p90 0.215046  rows > 1: 3  (max 9.7615, not judged)
+s210       top-1 37/40  KL mean 0.132306  p90 0.096319  rows > 1: 1  (max 4.1526, not judged)  -> PASS
+s210gdn    top-1 35/40  KL mean 0.507746  p90 0.966734  rows > 1: 4  (max 13.8261, not judged)  -> FAIL (mean, p90)
+s210gdntc  top-1 33/40  KL mean 0.667806  p90 0.733096  rows > 1: 4  (max 14.9043, not judged)  -> FAIL (top-1, mean, p90)
+p210       top-1 35/40  KL mean 0.085689  p90 0.193319  rows > 1: 0  (max 0.9993, not judged)  -> PASS
+p210gdn    top-1 35/40  KL mean 0.575080  p90 1.101426  rows > 1: 5  (max 13.6821, not judged)  -> FAIL (mean, p90, KL>1 rows)
+p210gdntc  top-1 33/40  KL mean 0.859140  p90 1.133460  rows > 1: 5  (max 14.4181, not judged)  -> FAIL (top-1, mean, p90, KL>1 rows)
+p210gdncv  top-1 36/40  KL mean 0.485822  p90 0.295464  rows > 1: 3  (max 14.1978, not judged)  -> FAIL (mean)
+reference ref in /home/USER/ai-speed-testing/strata-compare/results/r22/gap19/pfy (10-26 rule, 40 prompts, NLL on 36) - bounds: KL mean <= 0.401361, KL p90 <= 0.402547, rows KL > 1 <= 4, changed top-1 <= 5.5, NLL above ref's (4.1273) <= 0.0860
+unfused    KL mean 0.161958  p90 0.365952  rows > 1: 3  changed top-1 5/40  NLL 4.2055 (+0.0782)
+cpushare   KL mean 0.364874  p90 0.215046  rows > 1: 3  changed top-1 5/40  NLL 4.0883 (-0.0390)
+s210       KL mean 0.132306  p90 0.096319  rows > 1: 1  changed top-1 3/40  NLL 4.2453 (+0.1180)  -> FAIL (NLL)
+s210gdn    KL mean 0.507746  p90 0.966734  rows > 1: 4  changed top-1 5/40  NLL 3.9398 (-0.1875)  -> FAIL (mean, p90)
+s210gdntc  KL mean 0.667806  p90 0.733096  rows > 1: 4  changed top-1 7/40  NLL 4.3035 (+0.1762)  -> FAIL (mean, p90, top-1, NLL)
+p210       KL mean 0.085689  p90 0.193319  rows > 1: 0  changed top-1 5/40  NLL 4.1034 (-0.0239)  -> PASS
+p210gdn    KL mean 0.575080  p90 1.101426  rows > 1: 5  changed top-1 5/40  NLL 3.8475 (-0.2798)  -> FAIL (mean, p90, KL>1 rows)
+p210gdntc  KL mean 0.859140  p90 1.133460  rows > 1: 5  changed top-1 7/40  NLL 3.9716 (-0.1557)  -> FAIL (mean, p90, KL>1 rows, top-1)
+p210gdncv  KL mean 0.485822  p90 0.295464  rows > 1: 3  changed top-1 4/40  NLL 3.9052 (-0.2222)  -> FAIL (mean)
+  gate kl2_s210 PASS
+  gate kl3_s210 FAIL
+  gate kl2_sgdn FAIL
+  gate kl3_sgdn FAIL
+  gate kl2_sgdntc FAIL
+  gate kl3_sgdntc FAIL
+=== 2026-11-04 13:30:19 skipped pf_yardstick s210hcr (optional: 9 min do not fit before the deadline, or a kernel check failed)
+GAP 19 - a diagnostic on STOCK v0.2.10 (engine-v0210stock, ffa80d731) beside our port (engine-r22p0210, gap 17). Nothing switches.
+  config check: PASS the stock arms differ from s0210-h exactly as the port's arms from P0210x-h; s0210-h = stock, 14 pins, none of ours
+  stock engine: PASS engine-v0210stock c8fe72abe45a = stock v0.2.10 (ffa80d73133ea5c548aefe57889a16e8085a938f, detached worktree strata-v0210stock), none  [19 11-04 10:01]
+
+KL (pf_yardstick long40 against gap 8's ref; rounding references unfused / cpushare; gap 17's rule and bounds)
+  kernel_rule2 bounds: top-1 >= 34 prompts, KL mean <= 0.401361, KL p90 <= 0.365952, rows KL > 1 <= 4
+  kernel_rule3 bounds: KL mean <= 0.401361, KL p90 <= 0.402547, rows KL > 1 <= 4, changed top-1 <= 5.5, NLL above ref's (4.1273) <= 0.0860
+  arm                            build    KL mean       p90  KL>1  top-1    chg      NLL (vs ref)  kl2   kl3  
+  both GDN paths off             stock   0.132306  0.096319     1  37/40      3  4.2453 (+0.1180)  PASS  FAIL 
+  both GDN paths off             port    0.085689  0.193319     0  35/40      5  4.1034 (-0.0239)  PASS  PASS 
+  GDN stack (TC=1 + CONVL2=2)    stock   0.507746  0.966734     4  35/40      5  3.9398 (-0.1875)  FAIL  FAIL 
+  GDN stack (TC=1 + CONVL2=2)    port    0.575080  1.101426     5  35/40      5  3.8475 (-0.2798)  FAIL  FAIL 
+  GDN_TC alone (TC=1, CONVL2=0)  stock   0.667806  0.733096     4  33/40      7  4.3035 (+0.1762)  FAIL  FAIL 
+  GDN_TC alone (TC=1, CONVL2=0)  port    0.859140  1.133460     5  33/40      7  3.9716 (-0.1557)  FAIL  FAIL 
+  GDN_CONVL2 alone (TC=0, CONVL2=2) stock  (not run)
+  GDN_CONVL2 alone (TC=0, CONVL2=2) port    0.485822  0.295464     3  36/40      4  3.9052 (-0.2222)  FAIL  FAIL 
+  (the port's rows, rescored in this gap from gap 17's dirs: p210 = gap 17, p210gdn = gap 17, p210gdntc = gap 17, p210gdncv = gap 17)
+  same build, ON against OFF (INFO):
+    GDN stack (TC=1 + CONVL2=2)    stock  KL mean 0.648253  p90 1.031009  KL>1 4  changed top-1 4/40  NLL -0.3055
+    GDN stack (TC=1 + CONVL2=2)    port   KL mean 0.545174  p90 1.120731  KL>1 5  changed top-1 7/40  NLL -0.2558
+    GDN_TC alone (TC=1, CONVL2=0)  stock  KL mean 0.560787  p90 0.552924  KL>1 2  changed top-1 7/40  NLL +0.0582
+    GDN_TC alone (TC=1, CONVL2=0)  port   KL mean 0.664972  p90 1.082354  KL>1 5  changed top-1 6/40  NLL -0.1317
+    GDN_CONVL2 alone (TC=0, CONVL2=2) port   KL mean 0.499685  p90 0.276066  KL>1 2  changed top-1 8/40  NLL -0.1982
+  bitwise (INFO; logit files identical of 40):
+    stock s210 = port p210: 0 of 40
+    stock s210gdn = port p210gdn: 0 of 40
+    stock s210gdntc = port p210gdntc: 0 of 40
+
+exact7 at pin 2500 (--adapt-swaps 0 --suffix-draft 0): PF_HC_REGION on vs off
+  stock: g19-s210hcr vs g19-s210: 3/7 identical, slots MATCHED (3238+3300)
+  item     same   borrow off/on  CPU experts off/on (share)  resident off/on  chunk off/on
+  x-math   DIFF       260 / 252           3510 / 3514 (0.4)      1615 / 1627     256 / 256
+  s-math   DIFF       260 / 252           3510 / 3514 (0.4)      1615 / 1627     256 / 256
+  x-code   DIFF       260 / 252           3447 / 3456 (0.4)      1986 / 1986     256 / 256
+  s-code   DIFF       260 / 252           3447 / 3456 (0.4)      1986 / 1986     256 / 256
+  x-p2000  =        1201 / 1139                 0 / 0 (0.0)      2037 / 2099   2048 / 2048
+  x-32k    =        2909 / 2706                 0 / 0 (0.0)       987 / 1064 14336 / 16384
+  x-112k   =        2909 / 2706                 0 / 0 (0.0)      2632 / 3724 14336 / 16384
+    -> PLACEMENT: the differing items are exactly the prompts that ran with the CPU share and whose CPU-expert count moved with the smaller loan; the items without the share are identical (even where the chunk moved)
+  port (gap 17, e7_hcr FAIL exact7 g17-hcr: 3/7, slots MATCHED): g17-hcr vs g17-p210a: 3/7 identical, slots MATCHED (3238+3300)
+  item     same   borrow off/on  CPU experts off/on (share)  resident off/on  chunk off/on
+  x-math   DIFF       260 / 252           3510 / 3514 (0.4)      1615 / 1627     256 / 256
+  s-math   DIFF       260 / 252           3510 / 3514 (0.4)      1615 / 1627     256 / 256
+  x-code   DIFF       260 / 252           3447 / 3456 (0.4)      1986 / 1986     256 / 256
+  s-code   DIFF       260 / 252           3447 / 3456 (0.4)      1986 / 1986     256 / 256
+  x-p2000  =        1201 / 1139                 0 / 0 (0.0)      2037 / 2099   2048 / 2048
+  x-32k    =        2909 / 2706                 0 / 0 (0.0)       987 / 1064 14336 / 16384
+  x-112k   =        2909 / 2706                 0 / 0 (0.0)      2632 / 3724 14336 / 16384
+    -> PLACEMENT: the differing items are exactly the prompts that ran with the CPU share and whose CPU-expert count moved with the smaller loan; the items without the share are identical (even where the chunk moved)
+  stock OFF this gap vs gap 17's g17-s210 (the cross-gap repeat, INFO): 7/7, slots MATCHED
+  stock with STRATA_PREFILL_CPU_SHARE=0 (G19_HCR_SHARE0): g19-s210hcrz vs g19-s210z: 7/7 identical, slots MATCHED (3238+3300)
+  item     same   borrow off/on  CPU experts off/on (share)  resident off/on  chunk off/on
+  x-math   =          260 / 252                 0 / 0 (0.0)      1619 / 1624     256 / 256
+  s-math   =          260 / 252                 0 / 0 (0.0)      1619 / 1624     256 / 256
+  x-code   =          260 / 252                 0 / 0 (0.0)      1984 / 1989     256 / 256
+  s-code   =          260 / 252                 0 / 0 (0.0)      1984 / 1989     256 / 256
+  x-p2000  =        1157 / 1094                 0 / 0 (0.0)      2081 / 2144   2048 / 2048
+  x-32k    =        2909 / 2706                 0 / 0 (0.0)       987 / 1064 14336 / 16384
+  x-112k   =        2909 / 2706                 0 / 0 (0.0)      2632 / 3724 14336 / 16384
+
+VERDICTS (UPSTREAM = stock fails the same gate the port failed; OURS = stock passes where the port failed; UNCLEAR otherwise)
+(0) GDN stack (TC=1 + CONVL2=2): UNCLEAR - stock with both GDN paths OFF fails the rule itself (kl2_s210 PASS, kl3_s210 FAIL; the port's off arm passed): no clean base
+     stock KL mean 0.508 p90 0.967 KL>1 4 NLL -0.188 [mean, p90] / port 0.575 / 1.101 / 5 / -0.280 [mean, p90, KL>1 rows]; stock ON = port ON bit for bit on 0 of 40
+(0t) GDN_TC alone (TC=1, CONVL2=0): UNCLEAR - stock with both GDN paths OFF fails the rule itself (kl2_s210 PASS, kl3_s210 FAIL; the port's off arm passed): no clean base
+     stock KL mean 0.668 p90 0.733 KL>1 4 NLL +0.176 [top-1, mean, p90] / port 0.859 / 1.133 / 5 / -0.156 [top-1, mean, p90, KL>1 rows]; stock ON = port ON bit for bit on 0 of 40
+(0v) GDN_CONVL2 alone (TC=0, CONVL2=2): NOT RUN (optional; the deadline did not allow it)
+(3) PF_HC_REGION=1: UPSTREAM - stock HC on = off only 3/7 at MATCHED slots, as the port's 3/7 (the same items as the port's)
+     mechanism (stock): PLACEMENT: the differing items are exactly the prompts that ran with the CPU share and whose CPU-expert count moved with the smaller loan; the items without the share are identical (even where the chunk moved)
+     with the prompt CPU share off: 7/7 MATCHED - the HC region keeps the bits once the share is off: upstream's 'same bits' holds for the kernels; the smaller loan moves prompt experts between the CPU and the GPU
+
+Nothing switches (P028x stays served until item 7 is done). OURS -> the candidates are in results/r22/gap19/PATCH-OVERLAP.md; UPSTREAM -> it goes on the upstream list (Karl decides what is posted).
+=== 2026-11-04 13:30:19 P028x back on 8080 (port_gap4.sh end) - nothing switched
+2026-11-04 13:30:24 port_gap4: memory back: MemAvailable 87 GB, no engine left; starting P028x
+strata: Loading the model for phase 4 gap end (usually under a minute).
+2026-11-04 13:30:45 port_gap4: WARNING: 0 MB swapped out while P028x started
+2026-11-04 13:30:45 port_gap4: served build back (f4c4f654fb24), policy on, queue released
+=== 2026-11-04 13:30:45 gap 19 done (39 min with 8080 down)

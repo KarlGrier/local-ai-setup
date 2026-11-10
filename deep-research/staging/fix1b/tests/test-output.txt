@@ -1,0 +1,111 @@
+== b-f1-jan1024 (v0.2.4)
+  ok    b-f1-jan1024: same names as the replay (79)
+  b-f1-jan1024: evidence built in 4.27 s (old) / 9.35 s (new); prompt chars 95,723 -> 125,317 in 2 call(s); constants dropped: []; long forms: None
+== b-f1-full (v0.2.4)
+  ok    b-f1-full: same names as the replay (61)
+  b-f1-full: evidence built in 3.68 s (old) / 7.91 s (new); prompt chars 74,282 -> 88,253 in 2 call(s); constants dropped: []; long forms: None
+== b-f1-fixes (v0.2.4)
+  ok    b-f1-fixes: same names as the replay (66)
+  b-f1-fixes: evidence built in 3.44 s (old) / 6.93 s (new); prompt chars 84,219 -> 94,403 in 2 call(s); constants dropped: []; long forms: {'SLOT_KEEP': 'STRATA_DS4_SLOT_KEEP', 'ROUTE_TAIL_SKIP': 'STRATA_ROUTE_TAIL_SKIP', 'SLOT_CAP': 'STRATA_DS4_SLOT_CAP', 'SLOT_MIN': 'STRATA_DS4_SLOT_MIN'}
+== b-f1-p4s6o02-code (v0.2.6)
+  ok    b-f1-p4s6o02-code: same names as the replay (32)
+  b-f1-p4s6o02-code: evidence built in 2.08 s (old) / 6.34 s (new); prompt chars 55,945 -> 66,384 in 1 call(s); constants dropped: ['SMALLEST_CARD_GB', 'RESERVE_GB', 'ISTA_DENSE_ON_GPU_GB', 'REST_RAM_GB']; long forms: None
+== b-f1-p4s6o01-code (v0.2.6)
+  ok    b-f1-p4s6o01-code: same names as the replay (58)
+  b-f1-p4s6o01-code: evidence built in 4.36 s (old) / 6.26 s (new); prompt chars 103,911 -> 107,547 in 2 call(s); constants dropped: []; long forms: {'AUTO_PIN': 'STRATA_DS4_AUTO_PIN', 'IO_PREFETCH': 'STRATA_IO_PREFETCH'}
+== the 11 false marks: the new evidence has the pass-through / long form / CMake lines
+  ok    the 11 false marks are the ones listed
+  ok    b-f1-jan1024 gpu: has Launcher / server use, child_env(), env["CUDA_VISIBLE_DEVICES"], gpu_list()
+  ok    b-f1-jan1024 gpu_order: has Launcher / server use, ordered_gpus(), child_env(), env["CUDA_VISIBLE_DEVICES"]
+  ok    b-f1-full --model: has Launcher / server use, strata_cli/launch/cmd.py:85, the model size, catalog.resolve(a.model
+  ok    b-f1-full --plan: has Launcher / server use, strata_cli/launch/cmd.py:138, show what would happen
+  ok    b-f1-full --tune: has Launcher / server use, strata_cli/launch/cmd.py:111, tune_deepseek(), tools/dsv41/tune.py
+  ok    b-f1-full --set: has Launcher / server use, strata_cli/launch/cmd.py:113, kept in .extra, apply_to_argv
+  ok    b-f1-fixes --set: has Launcher / server use, strata_cli/launch/cmd.py:113, kept in .extra, apply_to_argv
+  ok    b-f1-full -DSTRATA_NATIVE_EXPERTS: has searched without the -D, Build files (CMake), option(STRATA_NATIVE_EXPERTS, strata-dsv41, src/dsv41/
+  ok    b-f1-fixes SLOT_KEEP: has Short form, `STRATA_DS4_SLOT_KEEP` (named in the report too), src/dsv41/ds4_main.cpp:348
+  ok    b-f1-fixes SLOT_CAP: has Short form, `STRATA_DS4_SLOT_CAP`, src/dsv41/ds4_main.cpp:350
+  ok    b-f1-fixes STRATA_DS4_AUTO_PIN: has Launcher / server use, deepseek_shared_start(), self.family == "deepseek41", DeepSeek-V4.1 only
+  ok    b-f1-full -DSTRATA_NATIVE_EXPERTS: hits in the engine's own folders now (7; was 0)
+== the right marks keep what made them right
+  ok    56 right marks (56)
+  ok    b-f1-jan1024 MULTI_GPU (other-engine): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_SPLIT_UNIFORM (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 --pcie-frac (launcher-only): every old evidence line kept + traced, says the engine's folders lack it
+  ok    b-f1-jan1024 --pcie (launcher-only): every old evidence line kept + traced, says the engine's folders lack it
+  ok    b-f1-jan1024 --chunk-prestage (not-found): every old evidence line kept
+  ok    b-f1-jan1024 --chunk-mmq (not-found): every old evidence line kept
+  ok    b-f1-jan1024 --host-core (launcher-only): every old evidence line kept + traced, says the engine's folders lack it
+  ok    b-f1-jan1024 --spec-type (other-project): every old evidence line kept
+  ok    b-f1-jan1024 --ple-io (launcher-only): every old evidence line kept + traced, says the engine's folders lack it
+  ok    b-f1-jan1024 --ple-row-cache (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 HOW_IT_WORKS (other-engine): every old evidence line kept
+  ok    b-f1-jan1024 VRAM_ELASTIC (other-engine): every old evidence line kept
+  ok    b-f1-jan1024 DISJOINT_EXPERT_CACHE (other-engine): every old evidence line kept
+  ok    b-f1-jan1024 BATCHED_DMA (other-engine): every old evidence line kept
+  ok    b-f1-jan1024 layer_split (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_HOST_CORE (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_IQ_MT_MIN (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 --ple-inflight (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 expert_profile_save (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 expert_profile_save_every (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_IO_PREFETCH (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_READ_AHEAD (other-engine): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_DMA_BATCH (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_IO_PREFETCH_DEPTH (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_IO_PF_THREADS (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_FILL_AHEAD (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 --pcie-mode (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_IO_PF_GATE (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_LOOKAHEAD_K (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 --adapt-every (launcher-only): every old evidence line kept + traced, says the engine's folders lack it
+  ok    b-f1-jan1024 --adapt-swaps (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 --adapt-decay (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_PREFILL_HELP (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_COLD_OVERLAP (launcher-only): every old evidence line kept
+  ok    b-f1-jan1024 --cpu-moe-draft (not-found): every old evidence line kept
+  ok    b-f1-jan1024 --swa-bounded-replay (not-found): every old evidence line kept
+  ok    b-f1-jan1024 STRATA_PLE_AUTO_MMAP (launcher-only): every old evidence line kept
+  ok    b-f1-full STRATA_SPLIT_UNIFORM (launcher-only): every old evidence line kept
+  ok    b-f1-full --prompt-cache (launcher-only): every old evidence line kept
+  ok    b-f1-full MULTI_GPU (other-engine): every old evidence line kept + traced, says the engine's folders lack it
+  ok    b-f1-full --layer-split (launcher-only): every old evidence line kept
+  ok    b-f1-fixes STRATA_DS4_SLOT_AUTO_PIN (not-found): every old evidence line kept
+  ok    b-f1-fixes STRATA_ROUTE_TAIL_SKIP (launcher-only): every old evidence line kept
+  ok    b-f1-fixes ROUTE_TAIL_SKIP: judged by its long form, still no hit in the engine's folders (0)
+  ok    b-f1-fixes STRATA_PREFILL_CPU_SHARE (launcher-only): every old evidence line kept
+  ok    b-f1-fixes STRATA_PREFILL_HELP (launcher-only): every old evidence line kept
+  ok    b-f1-fixes STRATA_SPLIT_OWN (launcher-only): every old evidence line kept
+  ok    b-f1-fixes --pcie-frac (launcher-only): every old evidence line kept + traced, says the engine's folders lack it
+  ok    b-f1-fixes --prompt-cache-tail (launcher-only): every old evidence line kept + traced, says the engine's folders lack it
+  ok    b-f1-fixes --prompt-cache (launcher-only): every old evidence line kept
+  ok    b-f1-fixes --prompt-cache-every (launcher-only): every old evidence line kept
+  ok    b-f1-fixes --moe-stream-io-threads (other-project): every old evidence line kept
+  ok    b-f1-fixes STRATA_STAGE_TRIM (launcher-only): every old evidence line kept
+  ok    b-f1-fixes --cache-type-v (other-project): every old evidence line kept
+  ok    b-f1-fixes --lazy-mode (other-project): every old evidence line kept
+  ok    b-f1-fixes --speed (other-version): every old evidence line kept
+  ok    b-f1-jan1024 layer_split: the passed --layer-split shown with the engine's '(void) val ... balances its own split'
+  ok    b-f1-jan1024 expert_profile_save: the passed --expert-profile-save has no hit in the engine's folders
+  ok    b-f1-jan1024 expert_profile_save_every: the passed --expert-profile-save-every has no hit in the engine's folders
+  ok    b-f1-jan1024: no right mark dropped as a constant (dropped: [])
+  ok    b-f1-full: no right mark dropped as a constant (dropped: [])
+  ok    b-f1-fixes: no right mark dropped as a constant (dropped: [])
+== p4s6 o02 / o01 (v0.2.6): the live Qwen / whole-project examples
+  ok    o02 gpu_order: traced to the engine's CUDA_VISIBLE_DEVICES
+  ok    o02 "args": traced into engine_args()
+  ok    o02: the planner constants are not sent (dropped: ['ISTA_DENSE_ON_GPU_GB', 'RESERVE_GB', 'REST_RAM_GB', 'SMALLEST_CARD_GB'])
+  ok    o02: src/program disputed, not shared
+  ok    o02 STRATA_SPLIT_UNIFORM: found in a disputed folder (unsure, not flagged)
+  ok    o01 AUTO_PIN: judged by STRATA_DS4_AUTO_PIN, traced
+  ok    o01: engine folders as before
+  ok    b-f1-jan1024: engine folders as before
+  ok    b-f1-full: engine folders as before
+  ok    b-f1-fixes: engine folders as before
+== the model's answers: config keys come back without quotes (the disputed-folder rule matches them now)
+  ok    _bare
+  ok    o02 answers: disputed -> unsure, constants listed, not flagged ({'STRATA_SPLIT_UNIFORM': 'unsure', 'gpu_order': 'this-version', '--chunk-mmq': 'not-found', 'SMALLEST_CARD_GB': 'not-a-setting', 'RESERVE_GB': 'not-a-setting', 'ISTA_DENSE_ON_GPU_GB': 'not-a-setting', 'REST_RAM_GB': 'not-a-setting'})
+  ok    o02 answers: only the not-found name is flagged (['--chunk-mmq'])
+  ok    version_section / version_marks still run
+
+ALL OK

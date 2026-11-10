@@ -1,0 +1,260 @@
+"""OpenAI-compatible chat client for local endpoints (Strata, llama.cpp's llama-server, vLLM, ...).
+
+Only 127.0.0.1 / localhost endpoints are accepted.  Requests stream (so a long thinking phase never hits a read timeout)
+and every answer records: content, reasoning, tool calls, finish reason, token counts (reasoning / answer split), wall
+time, time to first token and tok/s.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import socket
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+from .common import LOCAL_EFFORT, LOCAL_SAMPLING
+from . import tokcount
+
+
+class EndpointError(RuntimeError):
+    """The endpoint itself failed (down, HTTP error): stop the run instead of scoring the item as wrong."""
+
+    def __init__(self, msg, status=None):
+        super().__init__(msg)
+        self.status = status
+
+
+def normalize_base(url: str) -> str:
+    u = urllib.parse.urlsplit(url if "://" in url else "http://" + url)
+    host = (u.hostname or "").lower()
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        raise SystemExit(f"endpoint {url!r}: local endpoints must be on 127.0.0.1 (the only remote one allowed is "
+                         f"claude:<model-id>)")
+    path = u.path.rstrip("/")
+    if not path.endswith("/v1"):
+        path = path + "/v1"
+    return f"{u.scheme}://127.0.0.1:{u.port or 80}{path}" if host != "::1" else f"{u.scheme}://[::1]:{u.port or 80}{path}"
+
+
+def _get_json(url, timeout=15):
+    with urllib.request.urlopen(urllib.request.Request(url), timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+THINK_SPLIT = re.compile(r"^\s*<think>(.*?)</think>\s*", re.S)
+
+
+class OpenAIBackend:
+    kind = "openai"
+
+    def __init__(self, endpoint: str, model: str | None = None, max_tokens: int = 81920, ctx: int | None = None,
+                 tokenizer: str | None = None, extra_body: dict | None = None, sampling: dict | None = None,
+                 effort: str | None = LOCAL_EFFORT, idle_timeout_s: float = 900, total_timeout_s: float = 7200):
+        self.base = normalize_base(endpoint)
+        self.root = self.base[: -len("/v1")]
+        self.max_tokens = max_tokens
+        self.sampling = dict(LOCAL_SAMPLING if sampling is None else sampling)
+        self.effort = effort
+        self.extra_body = extra_body or {}
+        self.idle_timeout_s = idle_timeout_s
+        self.total_timeout_s = total_timeout_s
+        try:
+            models = _get_json(self.base + "/models")
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            raise SystemExit(f"endpoint {self.base}: /models did not answer ({e}); is the server up?")
+        data = models.get("data") or []
+        if not data and not model:
+            raise SystemExit(f"endpoint {self.base}: /models lists no model")
+        self.model = model or data[0]["id"]
+        meta = next((m.get("meta") or {} for m in data if m.get("id") == self.model), {})
+        self.ctx = ctx or meta.get("n_ctx") or meta.get("n_ctx_train") or self._props_ctx() or 131072
+        self.server_info = self._server_info()
+        self.counter = tokcount.local_counter(self.root, tokenizer)
+
+    def _props_ctx(self):
+        try:   # llama.cpp
+            p = _get_json(self.root + "/props", timeout=5)
+            return (p.get("default_generation_settings") or {}).get("n_ctx")
+        except Exception:
+            return None
+
+    def _server_info(self):
+        info = {}
+        try:
+            h = _get_json(self.root + "/health", timeout=5)
+            info = {k: h[k] for k in ("service", "model", "max_context") if k in h}
+        except Exception:
+            pass
+        try:
+            c = _get_json(self.root + "/config", timeout=5)
+            if isinstance(c, dict) and "file" in c:
+                info["config_file"] = c["file"]
+        except Exception:
+            pass
+        return info
+
+    def describe(self) -> dict:
+        return {"kind": "openai", "base": self.base, "model": self.model, "ctx": self.ctx,
+                "max_tokens_default": self.max_tokens, "sampling": self.sampling, "reasoning_effort": self.effort,
+                "extra_body": self.extra_body, "server": self.server_info, "token_count": self.counter.method}
+
+    def fit_max_tokens(self, prompt_tokens_est: int, want: int | None = None) -> int:
+        want = want or self.max_tokens
+        return max(256, min(want, self.ctx - prompt_tokens_est - 512))
+
+    # ------------------------------------------------------------------------------------------------ chat
+    def chat(self, messages: list, tools: list | None = None, max_tokens: int | None = None,
+             prompt_tokens_est: int = 0) -> dict:
+        mt = self.fit_max_tokens(prompt_tokens_est, max_tokens)
+        body = self._body(messages, tools, mt)
+        return self._exchange(body, mt)
+
+    def _body(self, messages, tools, mt) -> dict:
+        body = {"model": self.model, "messages": messages, "max_tokens": mt, "stream": True,
+                "stream_options": {"include_usage": True}, **self.sampling}
+        if self.effort:
+            body["reasoning_effort"] = self.effort
+        if tools:
+            body["tools"] = [{"type": "function", "function": t} for t in tools]
+        body.update(self.extra_body)
+        return body
+
+    def _headers(self) -> dict:
+        return {"Content-Type": "application/json", "Accept": "text/event-stream"}
+
+    def _exchange(self, body: dict, mt: int) -> dict:
+        """One streamed request -> one answer record."""
+        dump = os.environ.get("MSUITE_DUMP_REQUESTS")      # diagnostics: every request body, in order
+        if dump:
+            dd = Path(dump)
+            dd.mkdir(parents=True, exist_ok=True)
+            (dd / f"req-{len(list(dd.glob('req-*.json'))):04d}.json").write_text(json.dumps(body, ensure_ascii=False),
+                                                                          encoding="utf-8")
+        req = urllib.request.Request(self.base + "/chat/completions", data=json.dumps(body).encode("utf-8"),
+                                     headers=self._headers())
+        t0 = time.monotonic()
+        t_first = None
+        t_ans = None   # (10-26) the first answer token: content or a tool call, after any thinking
+        content, reasoning = [], []
+        calls: dict[int, dict] = {}
+        finish, usage, timings = None, None, None
+        meta: dict = {}
+        try:
+            resp = urllib.request.urlopen(req, timeout=self.idle_timeout_s)
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:1000]
+            raise EndpointError(f"HTTP {e.code} from {self.base}: {detail}", status=e.code)
+        except (urllib.error.URLError, OSError) as e:
+            raise EndpointError(f"{self.base}: {e}", status=0)
+        try:
+            for raw in resp:
+                if time.monotonic() - t0 > self.total_timeout_s:
+                    finish = finish or "timeout"
+                    break
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    ev = json.loads(data)
+                except ValueError:
+                    continue
+                if ev.get("error"):
+                    err = ev["error"]
+                    raise EndpointError(f"stream error: {json.dumps(err)[:500]}",
+                                        status=(err.get("code") if isinstance(err, dict) and isinstance(err.get("code"), int) else 0))
+                for k in ("provider", "model", "id", "system_fingerprint"):
+                    if ev.get(k) and k not in meta:
+                        meta[k] = ev[k]
+                if ev.get("usage"):
+                    usage = ev["usage"]
+                if ev.get("timings"):
+                    timings = ev["timings"]
+                for ch in ev.get("choices") or []:
+                    d = ch.get("delta") or {}
+                    piece_r = d.get("reasoning_content") or d.get("reasoning") or "".join(
+                        (x.get("text") or x.get("summary") or "") for x in (d.get("reasoning_details") or [])
+                        if isinstance(x, dict))
+                    piece_c = d.get("content") or ""
+                    if (piece_r or piece_c or d.get("tool_calls")) and t_first is None:
+                        t_first = time.monotonic()
+                    if (piece_c or d.get("tool_calls")) and t_ans is None:
+                        t_ans = time.monotonic()
+                    if piece_r:
+                        reasoning.append(piece_r)
+                    if piece_c:
+                        content.append(piece_c)
+                    for tc in d.get("tool_calls") or []:
+                        c = calls.setdefault(tc.get("index", len(calls)), {"id": None, "name": "", "arguments": ""})
+                        if tc.get("id"):
+                            c["id"] = tc["id"]
+                        f = tc.get("function") or {}
+                        if f.get("name"):
+                            c["name"] += f["name"]
+                        if f.get("arguments"):
+                            c["arguments"] += f["arguments"] if isinstance(f["arguments"], str) else json.dumps(f["arguments"])
+                    if ch.get("finish_reason"):
+                        finish = ch["finish_reason"]
+        except (socket.timeout, TimeoutError):
+            finish = finish or "timeout"
+        except (urllib.error.URLError, OSError, ConnectionError) as e:
+            raise EndpointError(f"stream broke: {e}", status=0)
+        finally:
+            resp.close()
+        t_end = time.monotonic()
+        text, think = "".join(content), "".join(reasoning)
+        if not think:                                   # servers that leave <think> in the content
+            m = THINK_SPLIT.match(text)
+            if m:
+                think, text = m.group(1), text[m.end():]
+            elif "</think>" in text and "<think>" not in text:
+                think, text = text.split("</think>", 1)
+        tool_calls = [calls[k] for k in sorted(calls)]
+        for i, c in enumerate(tool_calls):
+            c["id"] = c["id"] or f"call_{i}"
+        comp = (usage or {}).get("completion_tokens")
+        prompt = (usage or {}).get("prompt_tokens")
+        split = self.counter.split(comp, think, text + "".join(c["name"] + c["arguments"] for c in tool_calls),
+                                   (usage or {}).get("completion_tokens_details"))
+        wall = t_end - t0
+        decode_s = (t_end - t_first) if t_first else None
+        rec = {
+            "response": {"content": text, "reasoning": think, "tool_calls": tool_calls, "finish_reason": finish,
+                         "usage": usage, "timings": timings},
+            "cut_off": finish in ("length", "timeout"),
+            "tokens": {"prompt": prompt, "completion": split["completion"], "reasoning": split["reasoning"],
+                       "answer": split["answer"], "method": split["method"],
+                       "cached_prompt": ((usage or {}).get("prompt_tokens_details") or {}).get("cached_tokens")},
+            "timing": {"wall_s": round(wall, 2), "ttft_s": round(t_first - t0, 2) if t_first else None,
+                       "t_first_answer_s": round(t_ans - t0, 2) if t_ans else None,
+                       "e2e_tps": round(split["completion"] / wall, 1) if split["completion"] and wall > 0 else None,
+                       "decode_tps": round(split["completion"] / decode_s, 1)
+                       if split["completion"] and decode_s and decode_s > 0 else None,
+                       "server_decode_tps": (timings or {}).get("predicted_per_second")},
+            "request": {"max_tokens": mt},
+        }
+        if meta:
+            rec["response"]["meta"] = meta
+        return rec
+
+    @staticmethod
+    def assistant_message(rec: dict) -> dict:
+        """The assistant turn to append in a tool loop (reasoning kept, as the chat template expects)."""
+        r = rec["response"]
+        msg = {"role": "assistant", "content": r["content"] or ""}
+        if r["reasoning"]:
+            msg["reasoning_content"] = r["reasoning"]
+        if r["tool_calls"]:
+            msg["tool_calls"] = [{"id": c["id"], "type": "function",
+                                  "function": {"name": c["name"], "arguments": c["arguments"]}} for c in r["tool_calls"]]
+        return msg
+
+    @staticmethod
+    def tool_result_messages(results: list[tuple[str, str]]) -> list[dict]:
+        return [{"role": "tool", "tool_call_id": cid, "content": text} for cid, text in results]

@@ -1,0 +1,43 @@
+STRATA_PORT=8080 ./run-strata.sh stop
+work/r9/tagcheck.sh "phase B (v0.1.32 base): revisited results"
+work/r9/w1c.sh
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r9/run.sh bpf0-s-math configs/B-pf0.json math 1024 | tail -1
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r9/run.sh bpf02-s-math configs/B-pf02.json math 1024 | tail -1
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r9/run.sh bpf05-s-math configs/B-pf05.json math 1024 | tail -1
+PROF_SAMPLING='--seed 11 --temperature 1.0 --top-p 0.95 --top-k 20' work/r9/run.sh bpf1-s-math configs/B-pf1.json math 1024 | tail -1
+.venv/bin/python work/r9/p0_table.py bpf0-s-math bpf02-s-math bpf05-s-math bpf1-s-math
+grep -H -i 'pcie' logs/r9/prof/bpf0-s-math.err logs/r9/prof/bpf02-s-math.err logs/r9/prof/bpf05-s-math.err logs/r9/prof/bpf1-s-math.err | cut -c1-200
+work/r9/decscreen.sh Bpf0-a configs/B-pf0.json
+work/r9/decscreen.sh Bpf02-a configs/B-pf02.json
+work/r9/decscreen.sh Bpf05-a configs/B-pf05.json
+work/r9/decscreen.sh Bpf1-a configs/B-pf1.json
+work/r9/decscreen.sh Bpf1-b configs/B-pf1.json
+work/r9/decscreen.sh Bpf05-b configs/B-pf05.json
+work/r9/decscreen.sh Bpf02-b configs/B-pf02.json
+work/r9/decscreen.sh Bpf0-b configs/B-pf0.json
+.venv/bin/python work/r9/ab_table.py pf0=Bpf0-a,Bpf0-b pf02=Bpf02-a,Bpf02-b
+.venv/bin/python work/r9/ab_table.py pf0=Bpf0-a,Bpf0-b pf05=Bpf05-a,Bpf05-b
+.venv/bin/python work/r9/ab_table.py pf0=Bpf0-a,Bpf0-b pf1=Bpf1-a,Bpf1-b
+work/r9/tagcheck.sh "B1 pcie done"
+work/r9/decscreen.sh Bhon-a configs/B-pf0.json
+work/r9/decscreen.sh Bhoff-a configs/B-nohelper.json
+work/r9/decscreen.sh Bhoff-b configs/B-nohelper.json
+work/r9/decscreen.sh Bhon-b configs/B-pf0.json
+.venv/bin/python work/r9/ab_table.py helper=Bhon-a,Bhon-b nohelper=Bhoff-a,Bhoff-b
+work/r9/decscreen.sh Bae4-a configs/B-ae4.json
+work/r9/decscreen.sh Bae2-a configs/B-ae2.json
+work/r9/decscreen.sh Bae8-a configs/B-ae8.json
+work/r9/decscreen.sh Bae8-b configs/B-ae8.json
+work/r9/decscreen.sh Bae2-b configs/B-ae2.json
+work/r9/decscreen.sh Bae4-b configs/B-ae4.json
+.venv/bin/python work/r9/ab_table.py ae4=Bae4-a,Bae4-b ae2=Bae2-a,Bae2-b
+.venv/bin/python work/r9/ab_table.py ae4=Bae4-a,Bae4-b ae8=Bae8-a,Bae8-b
+.venv/bin/python work/r9/hits.py B-ae4 B-ae2 B-ae8
+work/r9/tagcheck.sh "B2 helper + B3 adapt done"
+work/r9/with_server.sh B-cc6a configs/B-cc6.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label B-cc6a --engine-log \$ELOG"
+work/r9/with_server.sh B-cc16a configs/B-cc16.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label B-cc16a --engine-log \$ELOG"
+work/r9/with_server.sh B-cc16b configs/B-cc16.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label B-cc16b --engine-log \$ELOG"
+work/r9/with_server.sh B-cc6b configs/B-cc6.json -- ".venv/bin/python work/r5/warmup.py http://127.0.0.1:8081; .venv/bin/python work/r8/chatsoak.py many --n-chats 16 --label B-cc6b --engine-log \$ELOG"
+work/r9/with_server.sh NB16 configs/B-cc16.json -- ".venv/bin/python work/r5/needle2.py ask --base http://127.0.0.1:8081 --label SB16 --temperature 1.0"
+work/r9/tagcheck.sh "B4 chat cache done"
+work/r9/phase_end.sh phaseB keep

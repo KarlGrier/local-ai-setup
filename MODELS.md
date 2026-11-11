@@ -9,8 +9,9 @@ Paths are relative to the workspace folder `strata-compare/` unless they say oth
 | Config | What | Packs used |
 |---|---|---|
 | `configs/P028x.json` (Qwen, port 8080) | The daily | A (IQ3_S, both shards), B (picture reader), C (MTP draft layer), D1 (pack), E (expert profile) |
-| `configs/P021m.json` | The Qwen rollback | The same files, with another engine |
-| `configs/Cstar18-single.json` | The one-GPU fallback | A, C, D2, E |
+| `configs/P028x.json` on `engine-r22p028x` | The first Qwen rollback: the switch back from the fetch build, `work/r23/afetch-adopt/served-afetch.sh p028x` | The same files as the daily |
+| `configs/P021m.json` | The older Qwen rollback config | The same files, with another engine |
+| `configs/Cstar18-single.json` | The one-GPU fallback | A, C, D2, E (its copy in `strata-v0115/data/`) |
 | `configs/DS41-daily.json` (DeepSeek, port 8086) | The DeepSeek daily (`./switch-model.sh deepseek`) | F1, F3 (converted drafter), F-pack-2, F5 |
 | `configs/DS41-daily.json.before-c2` | The DeepSeek rollback | F1, F2 (Q8_0 drafter), F-pack-1, F5 |
 
@@ -81,6 +82,8 @@ Rerunning `bringup/runbook.sh` with `bringup/out/r20a/run.env` does the same.
 
 `strata-cstar18/data/expert-profile.bin`: 196,632 bytes, `8f59b4aa8873209dff11c11e37bcda9529a1335b724a1afeea37bf6388975baf`. It is a file of the Strata repository and comes with the engine checkout.
 
+The one-GPU fallback reads its own copy, `strata-v0115/data/expert-profile.bin`. It is the same bytes, with the same sha256, from the `v0.1.15` checkout.
+
 ## F. DeepSeek-V4.1-Flash-1017 (the DeepSeek daily)
 
 **Folder:** `models/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF/`
@@ -120,6 +123,21 @@ python -I work/ds41/gate/check_converted.py ...
 **F4. The packs** are index folders a few MB in size. Their `ds4.txt` names the model folder by absolute path, so rebuild the packs after moving the models.
 - `pack-ist-das-2.00bpw/` is the rollback; `work/ds41/pack.sh` makes it with Strata v0.2.4's `tools/dsv41/pack_gguf.py`.
 - `pack-ist-das-2.00bpw-lucebox-q2k/` is the daily. It is the same command with `--dspark-gguf` set to the converted F3 file, run by `work/ds41/gate/gate.sh` step CP.
+
+The pack files, hashed 2026-11-10. Both packs are byte-identical except `tensors.txt`, which names their different drafters. `ds4.txt` holds this PC's absolute model path, so a rebuilt pack in another folder gets another hash there.
+
+| File | Bytes | sha256 |
+|---|---|---|
+| `ds4.txt` | 1,213 | `bd76e3533e41b9bcc50b00974e96e431d754b09bbe915882e729124638c94150` |
+| `engram.bin` | 517,980 | `08d55d6433f389b14aa115f4ea4eb31d6a2d63df1ae40821f03facf4c2d49142` |
+| `expert-profile.bin` (= F5) | 66,048 | `8db93e483b34b15dbf63a0826601f1db2107a8cfea73774e7d21d8559e0a9568` |
+| `tensors.txt` (rollback pack) | 3,662,269 | `eadac466b63d3eed596cef9c2fc98fefd675f06d698c0dc8d9d54b4f32775e0d` |
+| `tensors.txt` (daily pack) | 3,660,998 | `f38feaa78d9b975a5d43ce45cb71c1b5a255644bed93bd073b1b6656abc0ed82` |
+| `tokenizer/chat_template.jinja` | 7,423 | `6f9bd1f87d9dad376b4c79683934b4254396d826ae514ab0244efa904ce1d1a4` |
+| `tokenizer/merges.txt` | 1,504,833 | `547bace837acea98652eef5669c9b01cee1c73ad1d2a44d6fdce9e6a81c22147` |
+| `tokenizer/token_type.json` | 387,840 | `0a61021438e5ce6041133495f18fc360a6587aea748b17d953f552d2119ba51e` |
+| `tokenizer/tokenizer.json` | 80 | `5a47981b685b75154e29bfb0299584c9b3a4a28679585e86d524c34c065d037f` |
+| `tokenizer/vocab.json` | 2,730,577 | `2f0bf5b31f4aa191d5d0d78291927a4f28c9ceb498a5e345b97e926c4cb99c1a` |
 
 **F5. The DeepSeek expert profile:** `configs/DS41-daily-profile.seed.bin`, 66,048 bytes, `8db93e483b34b15dbf63a0826601f1db2107a8cfea73774e7d21d8559e0a9568`. It equals Strata v0.2.4's `data/dsv41/profile-2.00.bin`. The engine rewrites its profile file on exit, so the daily config copies this seed.
 

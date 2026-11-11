@@ -53,13 +53,27 @@ The engine source is the fork [KarlGrier/Strata](https://github.com/KarlGrier/St
 |---|---|---|---|
 | **Qwen, served** | `r23-adaptfetch` (`served-2026-11-09-afetch2`) | `work/r23/build-afetch.sh` | `engine-r23afetch/strata` |
 | Qwen server code | `r22-port028x` worktree `strata-r22p028x` | (Python, no build) | `strata-r22p028x/serve/server.py` |
-| Qwen rollback | `r22-port028x` at `served-2026-10-30-p028x` | `work/r22/build-port028x.sh` (it expects 28 commits: build at the tag, or set `PORT_COMMITS=29`) | `engine-r22p028x/strata` |
+| Qwen rollback (the switch back from the fetch build: `work/r23/afetch-adopt/served-afetch.sh p028x`) | `r22-port028x` at `served-2026-10-30-p028x` | `work/r22/build-port028x.sh` (it expects 28 commits: build at the tag, or set `PORT_COMMITS=29`) | `engine-r22p028x/strata` |
+| Older Qwen rollback config (`configs/P021m.json`) | `r22-port021-cont2` (`served-2026-10-23-p021m`) | `work/r22/build-port021m.sh` | `engine-r22p021m/strata` |
 | Picture reader | `r22-port021` | `cmake -S tools/vision -B build-vision -DLLAMA_DIR=<llama.cpp> -DSTRATA_VISION_CUDA=OFF -DSTRATA_PORTABLE=OFF`, target `strata-vision` | `engine-r22p021/strata-vision` |
 | One-GPU fallback | `r20-trial-v04441` | `work/r20/build-cstar18.sh` | `engine-cstar18/strata` |
 | **DeepSeek, daily** | `ds41-v026-daily` (`served-2026-10-27-ds41-daily`) | `work/ds41/after/build-variant.sh "p343+slotram"` (adds `-DSTRATA_BUILD_DSV41=ON`, target `strata-dsv41`, builds offline) | `engine-v026p343-slotram-ds41/strata-dsv41` |
 | DeepSeek server code | `ds41-v026-daily`, worktree `strata-v026` | (Python) | `strata-v026/serve/server.py` |
 
-Some served configs also read data trees: `strata-v0115` (tag `v0.1.15`: `mtp/rt`, `packs/iq3_s`) and `strata-cstar18` (`data/expert-profile.bin`).
+Each build's sha256, as recorded in its engine folder's `SHA256` file:
+
+| Engine | sha256 |
+|---|---|
+| `engine-r23afetch/strata` (Qwen, served) | `153ce47d3ef03e5c189dc8725d6f9165eecbb8868f3c088c2eada8460d739706` |
+| `engine-r22p028x/strata` (Qwen rollback) | `f4c4f654fb24e5e2c5d6ff92bcbe7ce0ac603c89e99b2930de9ff990f636801a` |
+| `engine-r22p021m/strata` (older rollback config) | `7b38796237f5073fbd6cad6041eb286e4dd6f60663833368377df7a31c5ae745` |
+| `engine-r22p021/strata-vision` (picture reader) | `4829c210f71d9e2ce2c74fce413784efa16b279434673e652389bdf333d4c9e9` |
+| `engine-cstar18/strata` (one-GPU fallback) | `e428a826c5fb017686fb00b24fdebec4858f085bd856d2197e418a4316642ae7` |
+| `engine-v026p343-slotram-ds41/strata-dsv41` (DeepSeek, daily) | `575de3a8df3ff378535378b7ec477bf146fe2ccbd77fef2310455886ee050323` |
+
+A rebuild with another compiler or CUDA version can give other hashes; the bit-exactness check in section 10 is the real test.
+
+Some served configs also read data trees: `strata-v0115` (tag `v0.1.15`: `mtp/rt`, `packs/iq3_s`, and the fallback's `data/expert-profile.bin`) and `strata-cstar18` (`data/expert-profile.bin`).
 
 The paid-search fallback in `serve/websearch.py` imports from `/home/USER/ai/deep-research/tools`; `localize.sh` fixes that path too.
 

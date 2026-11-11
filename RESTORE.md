@@ -142,7 +142,9 @@ Each `settings*.yml` here has `server.secret_key: "<generate: openssl rand -hex 
 | `~/.config/deep-research/tavily.key` | Tavily search fallback |
 | `~/.config/deep-research/semanticscholar.key` | Semantic Scholar (optional) |
 | `~/.config/model-suite/openrouter.key` | The model test suite only |
-| `~/.config/model-suite/anthropic.key` | The model test suite only |
+| `~/.config/deep-research/anthropic.key` | Deep research+ (the Anthropic API). Paste your own key into it; it stays empty until you do. |
+
+   No key file is ever backed up: the setup export refuses every `*.key` file and these key folders, even when its manifest names one, and both secret scanners look for the key values and their shapes before a push. The model test suite's old `~/.config/model-suite/anthropic.key` is gone (deleted 11-11).
 
    The paid-search limits: at most 30 per LDR test run and 100 per research run, keeping 25 % of the month for chat.
 

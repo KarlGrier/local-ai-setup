@@ -1,0 +1,259 @@
+**The strongest remaining directions are cost-aware expert placement, a few specific CUDA paths absent from your tried list, and single-chain block verification.** The local report contains useful leads, but its largest claimed opportunities mostly disappear when checked against your current build.
+
+I read both supplied files, checked relevant Strata code and your helper-aware fetch PR, and used **17 search queries**, plus direct reads of papers and source code. Below, “new” means either absent from your tried list or a specific extension beyond something you already adopted.
+
+All gain ranges are **my estimates of incremental whole-decode throughput on your current setup**, not measurements or transplanted paper results. Zero gain—and regression during testing—remains possible. The ranges overlap and should not be added.
+
+## The baseline that changes the ranking
+
+Your [profile pack](https://raw.githubusercontent.com/KarlGrier/local-ai-setup/main/research/engine-speed-1111/PROFILE-PACK.md) describes **v0.2.8 + 31 commits**, with helper-aware `ADAPT_FETCH=2`, cost-gated MTP, cumulative draft length, and maximum spec 7. Its current timing pass is:
+
+| Component | Time/window | Share |
+|---|---:|---:|
+| GPU-reach wait: dense work **and GPU MoE branch**, host-measured | 9.10 ms | 41.9% |
+| CPU experts | 8.62 ms | 39.7% |
+| Host planning and other per-layer work | 0.86 ms | 4.0% |
+| MTP drafting | 2.33 ms | 10.7% |
+| Head, sampling and tail | 0.77 ms | 3.5% |
+| **Total** | **21.71 ms** | |
+
+This remains a memory-constrained system, but **CPU expert bandwidth is no longer the only substantial opportunity**. The GPU-reach bucket is slightly larger, although it is not an isolated measurement of dense kernels.
+
+For scale, making the entire CPU-expert component **20% faster** would improve overall throughput by approximately **7%**, using that timing split. That is why I favor several targeted improvements over any paper’s headline multiplier.
+
+## Audit of the local report
+
+Some problems below are already flagged in the report’s own appended checks; its recommendations do not consistently incorporate those corrections.
+
+| Report idea or claim | Verdict for your actual setup |
+|---|---|
+| **Recover substantial capacity through exact-sized expert slots** | **Already implemented.** The native main cache builds layer-sized slots; the helper does likewise. The report’s 68 GB expert store and 10.27 MB experts belong to a different configuration. Your routed expert arena is 46.84 GiB. See Strata’s [main-cache allocation](https://github.com/Niko1221/Strata/blob/v0.2.8/src/program/generate.cpp) and [helper allocation](https://github.com/Niko1221/Strata/blob/v0.2.8/src/core/remote_experts.cpp). |
+| **Adopt CUDA graphs to remove the CPU flag-wait gap** | **Already covered, and the proposed saving is overstated.** Verification already uses graphs. A dependency on unfinished CPU experts remains a dependency. Your profile also bounds the known planner/draft-launch projects at small fractions of a millisecond. |
+| **Try `--pipeline-windows` with the helper** | **Existing implementation does not apply.** The [v0.2.8 startup checks](https://github.com/Niko1221/Strata/blob/v0.2.8/src/program/generate.cpp) require a model layer split and explicitly reject helper caches. Two visible GPUs do not satisfy that requirement. |
+| **Fix `gather_batch` rejecting outstanding speculative PLE prefetches** | **Incorrect code reading.** The `pending` guard belongs to the single-token issue/collect API. Speculative prefetch uses separate tickets that `gather_batch` explicitly matches and collects. See [ngram.cpp](https://github.com/Niko1221/Strata/blob/v0.2.8/src/kernels/ngram.cpp). |
+| **Raise PLE cache size; expect roughly 43% → 85% hits** | **Valid experiment, unsupported prediction.** The quoted curves mix different models and workloads. SlackTier’s own Qwen results differ substantially from its DeepSeek curves. Cache size should follow your miss curve and *exposed* I/O time. This survives as #10, at much lower priority. [arxiv.org](https://arxiv.org/html/2611.13413v1) |
+| **Try `PCIE_BALANCE` / `PCIE_MIN1`** | **Survives as a cheap test.** However, `PCIE_BALANCE` already models CPU/PCIe contention for DRAM. `MIN1` applies when there are at least two misses and the selected PCIe count would otherwise be zero. These controls concern the main GPU’s miss path; helper hits do not reload expert weights over its x4 link every invocation. |
+| **Replace LRU with frequency scoring; fetch the most-used misses** | **Mostly already covered.** You have frequency-seeded placement, adaptation, and fetch admission. Your current PR already chooses the **most-routed misses while excluding helper-held experts**. The new opportunity must go beyond frequency. [GitHub](https://github.com/Niko1221/Strata/pull/5813) |
+| **Price `PF_AHEAD`, `POOL_ONE_BATCH`, helper late launch, HC upmix** | **Stale.** The first three have been measured and rejected; HC upmix is adopted. Tail splitting is already parked with a prefix-checkpoint tradeoff. The stack-miss PLE optimization is already in your parked v0.2.13 port. |
+| **Drafting consumes 70%; revisit trees or spec 4 on that basis** | **Wrong baseline.** Your measured drafting share is 10.7%, and you already use spec 7 with adaptive controls. A different acceptance algorithm for the existing single chain remains interesting; another tree proposal needs a much stronger case. |
+| **AcceptMoE and MoE-Spec are lossless** | **Wrong.** AcceptMoE restricts target-expert eligibility; MoE-Spec omits/substitutes target experts. Both violate your requirement. Conversely, ExpertFlow’s predictive placement with correction is not inherently lossy; the report conflates it with routing bias. [arxiv.org](https://arxiv.org/abs/2608.02989) |
+| **Three projection-transfer streams offer a large easy gain** | **Principle valid; local case weak.** They share the same PCIe/DRAM bandwidth, and you already have pinned asynchronous staging. Also, 10.27 MB ÷ 57.8 GB/s is about **178 μs**, not 11 μs. Your known “PCIe groups beside resident hits” project is already backlog, not a new discovery. |
+
+The report’s exclusions of lower-precision substitutions, router bias and expert deferral are otherwise appropriate. KTransformers’ AMX/dual-socket results are not directly portable to this Ryzen, while its expert deferral explicitly permits changed behavior. [LMSYS Org](https://www.lmsys.org/blog/2025-10-22-KTransformers/)
+
+## Ranked top 10
+
+The ranking balances likely benefit, novelty beyond your patches, and Qwen4 carryover. **#8 is deliberately a capacity project:** it offers little current decode speed, but could matter greatly when the larger model arrives.
+
+| Rank | Idea | Estimated current decode gain | Rough effort |
+|---:|---|---:|---|
+| **1** | Allocate cache bytes and helper placement by time saved | **0–8%** | 1–2 weeks |
+| **2** | Refine miss execution costs beyond frequency and aggregate counts | **0–5%** | 1–2 weeks; cheap preliminary tests |
+| **3** | Persistent hyper-connection read against `GR_FORK` | **0–5%** | Half-day screen; days to tune |
+| **4** | Exact single-chain Block Verification | **0–6%** sampled; likely little in greedy | About 1 week |
+| **5** | IQ3_XXS singleton CPU repacking and SIMD path | **0–4%** | 1–2 weeks |
+| **6** | Fuse activation quantization/layout formation | **0–1%** for QIL; **0–3%** with further fusion | Hours, then 2–5 days |
+| **7** | Distinguish committed and speculative cache demand | **0–3%**, low confidence | 3–7 days |
+| **8** | Exclusive residency for permanently GPU-held experts | **Approximately 0% today**; future capacity benefit | 1–3 weeks |
+| **9** | Cost-weight CPU row tasks and active worker count | **0–2%** | 2–5 days |
+| **10** | Bounded PLE row-cache expansion | **0–2%**, workload dependent | A few hours |
+
+### 1. Allocate expert-cache bytes by *exposed time saved*, across layers and GPUs
+
+**What:** Generate an offline placement that values an expert by the marginal layer-completion time its residency avoids, divided by its byte cost. Optimize the main-cache layer budgets and the static helper assignment together.
+
+The important delta is that your current placement already has unequal layer allocations and global frequency ranking. I am proposing a **different objective**, not introducing unequal allocation for the first time.
+
+**Why here:** Two equally frequent experts need not have equal value. Their layer quant formats, CPU cost, within-window reuse and competing GPU work differ. An expert placed on the helper can remove a CPU miss yet make the helper the last finisher. Your rejected learned profile—slower because it overloaded the helper—is direct evidence that hit rate alone is insufficient.
+
+Start with trace replay and a fixed placement. Model the helper’s elapsed execution and activation/result transfers; do not treat every helper hit as an expert-weight transfer over x4. Keep a constraint on helper completion time per layer.
+
+**Gain and effort:** **0–8%** whole decode; **2–6% would be a good positive outcome**. About **1–2 weeks**, with an early stop if replay finds little improvement.
+
+**Losslessness:** Same selected experts, weights and coefficients. Placement changes are **rounding-level**, since CPU and CUDA arithmetic need not match bitwise.
+
+**Qwen4:** **Strong carryover.** A similar VRAM budget covering a smaller fraction of a larger expert pool makes each resident byte more consequential.
+
+**Sources:** The 2025 layer-aware cache work supports accounting for layer differences; FreeToken supplies related memory-allocation and shared-bandwidth considerations. The two-device, time-saved objective is my adaptation to your topology. [extended version](https://arxiv.org/html/2509.02408v1)
+
+### 2. Extend the current miss-placement model with measured workload costs
+
+**What:** Refine the choice of how many misses to run on the CPU versus transfer to the 5080 using:
+
+- Expert byte size and quant-specific CPU cost.
+- Number of token columns sharing each expert.
+- Main-GPU resident work already queued.
+- Helper completion time.
+- CPU/PCIe interference measured under concurrent operation.
+
+**Why here:** Your current patch already fetches the most-routed misses. `PCIE_BALANCE` already includes a DRAM-contention term. The remaining hypothesis is that **route count and aggregate expert count are imperfect proxies for time**.
+
+This is distinct from #1: #1 changes persistent residency; #2 decides how to execute the remaining misses in a particular window. Apex’s basic highest-load ordering substantially overlaps your current patch, while AdaOffload’s distinction between unique experts and token load helps define the useful extension. [arxiv.org](https://arxiv.org/abs/2610.23006)
+
+**Gain and effort:** **0–5%**, with **1–3% a reasonable positive target**; **1–2 weeks** for the full extension. First screen the existing `PCIE_BALANCE` and `PCIE_MIN1` separately. The source itself reports no improvement from the former on a 5090/9950X3D with 16 workers, so this is not a high-confidence toggle win.
+
+**Losslessness:** **Rounding-level placement change**, with every original expert evaluated.
+
+**Qwen4:** **Strong carryover**, especially if expert dimensions or quant mixtures change. Fit the costs again; do not reuse today’s coefficients blindly.
+
+**Sources:** [Strata’s existing model and controls](https://github.com/Niko1221/Strata/blob/v0.2.8/include/strata/core/expert_source.hpp), [your fetch patch](https://github.com/Niko1221/Strata/pull/5813), Apex and AdaOffload above.
+
+### 3. Test the persistent HC read against your custom `GR_FORK`
+
+**What:** Test **`STRATA_HC_PERSIST=1`**. Upstream v0.2.8 has a CUDA implementation that performs the verifier’s hyper-connection read in one persistent kernel, with 80 resident blocks and two grid barriers.
+
+This is separate from your adopted `HC_UPMIX` prompt optimization.
+
+**Why here:** It attacks actual repeated GPU work in the 41.9% GPU-reach bucket. It could improve work distribution and eliminate intermediate launches without extra expert traffic, helper pressure or a different weight format.
+
+The crucial unknown is how your custom `GR_FORK` dispatch interacts with it. The upstream call precedes the ordinary HC read, but your complete custom kernel insertion is not established by the profile. **Confirm which path runs before timing it.**
+
+**Gain and effort:** **0–5%**, with a real possibility that your tuned fork wins. **Half a day** for activation checks and a controlled screen; several days for width-specific dispatch if useful.
+
+**Losslessness:** **Rounding-level, not bit-exact.** It retains the BF16 weights and FP32 arithmetic but changes summation order. Its startup numerical check is useful, but does not replace your long-context/state checks.
+
+**Qwen4:** The approach carries over; the present implementation hardcodes Flash-Next geometry and will need adjustment if dimensions change.
+
+**Sources:** [Persistent HC implementation](https://github.com/Niko1221/Strata/blob/v0.2.8/src/kernels/cuda/fused_gr.cu), [verifier dispatch](https://github.com/Niko1221/Strata/blob/v0.2.8/src/core/verify.cpp).
+
+### 4. Use exact Block Verification on the existing single draft chain
+
+**What:** Replace ordinary token-by-token speculative acceptance with a correct **block-verification acceptance and residual-sampling algorithm**, retaining a single draft chain.
+
+**Why here:** It seeks more committed tokens from target work you already perform. It does not require returning to your rejected tree drafting, expanding the target expert set, or adding another drafter.
+
+The ICLR 2025 Block Verification paper reports gains from this approach. SGLang subsequently merged a linear-chain implementation. Its PR’s Qwen3.8-27B example shows only about **0.7% throughput improvement**, which is a useful restraint on expectations for your already-tuned MTP. [proceedings.iclr.cc](https://proceedings.iclr.cc/paper_files/paper/2025/file/3e710b42b1a9ed898f607ec0f4fcc971-Paper-Conference.pdf)
+
+**Gain and effort:** **0–6% sampled decode**, probably little or none for greedy; approximately **one week**.
+
+**Losslessness:** **Distribution-preserving**, provided the entire acceptance/residual algorithm is implemented correctly. Important integration details include the reduced draft vocabulary, all sampling filters, and committing exactly the accepted prefix’s GDN/PLE state.
+
+Your token-dependent draft stopping rule also needs care. For an initial implementation, choose block length from committed history before drawing that block, or explicitly establish correctness for the adaptive stopping law.
+
+**Qwen4:** **Strong algorithmic carryover**, if a useful draft chain/MTP path exists.
+
+A correct implementation need not reproduce the old verifier’s output for the same random seed. It must preserve the target distribution and be reproducible under its own defined RNG behavior.
+
+### 5. Optimize the remaining singleton IQ3_XXS CPU work
+
+**What:** Borrow an **R4-style row layout and singleton AVX-512/VNNI kernel** from ik_llama, preserving every codebook index and scale.
+
+This goes beyond “enable AVX-512,” which you already have, and beyond multi-token weight reuse, which Strata already implements.
+
+**Why here:** IQ3_XXS supplies gate/up weights in **17 of your 48 layers**. The aggregate profile also suggests the remaining CPU-miss experts usually serve approximately one token each: roughly 4.1 CPU-routed entries divided by 3.90 distinct CPU experts per layer-window. That inference makes a singleton path more relevant than it first appears for an MTP workload.
+
+ik_llama’s relevant PR measured **+2.4% at 16 threads** on a 7950X, versus much larger gains with fewer threads. That diminishing return is consistent with your RAM-bandwidth limit and argues for a modest estimate.
+
+**Gain and effort:** **0–4% whole decode**; **1–2 weeks**.
+
+**Losslessness:** The storage transformation is **bit-exact** if it only permutes codes/scales. Arithmetic is **rounding-level** unless the current reduction order is retained. No requantization.
+
+**Qwen4:** Conditional on its quant mix. Avoid a second full host copy: use a compatible authoritative layout, conversion during transfers, or a small bounded prototype.
+
+**Sources:** [ik_llama PR #2633, merged October 2026](https://github.com/ikawrakow/ik_llama.cpp/pull/2633), [Strata native expert kernels](https://github.com/Niko1221/Strata/blob/v0.2.8/src/kernels/cpu/native_expert.cpp).
+
+### 6. Fuse identical activation quantization and layout formation
+
+**What:** Start with **`STRATA_QIL=1`**. In upstream v0.2.8, it produces Q8_1 activations and their interleaved layout in one launch for widths **2–4**, when `MMVQ_IL` is enabled. Its default activation is limited to Turing, but it can be forced on.
+
+A second step is targeted producer fusion: have HC/GDN producers emit the exact Q8_1 blocks their consumers already require.
+
+**Why here:** You already use `MMVQ_IL`. This removes a separate preparation pass without changing its mathematical inputs or increasing RAM traffic. Check width coverage: your mean window width is 4.4, and this existing QIL path does not cover every width.
+
+**Gain and effort:** **0–1%** for the QIL toggle, testable in hours; **0–3%** for a successful broader fusion, taking **2–5 days**.
+
+**Losslessness:** **Bit-exact by design** if both quantized bytes and layout match. This retains the existing activation precision; it is not a new quantization compromise.
+
+For broader `QFUSE` work, preserve the T1 self-commit fast path. The generic implementation can disable it, and HC-side QFUSE currently conflicts with persistent HC. **QIL itself does not have those two drawbacks.** QFUSE also had real correctness bugs fixed before v0.2.8. [GitHub](https://github.com/Niko1221/Strata/issues/3948)
+
+**Qwen4:** Good conceptual carryover; regenerate shape-specific mappings.
+
+**Sources:** [Verifier’s `quant_in` path](https://github.com/Niko1221/Strata/blob/v0.2.8/src/core/verify.cpp), [HC producer implementation](https://github.com/Niko1221/Strata/blob/v0.2.8/src/kernels/cuda/fused_gr.cu).
+
+### 7. Distinguish committed-prefix demand from speculative-only cache demand
+
+**What:** Maintain separate usage statistics for experts used by committed tokens and experts touched only in speculative suffixes. Use those statistics for cache retention or probationary admission.
+
+**Why here:** A speculative window can generate many cache observations that never become committed history. Frequency counting can therefore favor experts useful mainly to repeatedly rejected suffixes. Your current adaptive admission is effective, but that does not establish that all speculative observations deserve equal retention weight.
+
+Do **not** simply discard rejected-token observations: those experts may predict future draft demand. First replay traces with several weightings and compare the resulting exposed miss cost.
+
+**Gain and effort:** **0–3%**, low confidence; **3–7 days**, starting with offline analysis.
+
+**Losslessness:** All target experts still execute. Only residency statistics change, making this a **rounding-level placement optimization**.
+
+**Qwen4:** Potentially useful as the cache fraction shrinks.
+
+**Source and distinction:** AcceptMoE motivates considering commitment probability, but its actual target-expert restriction is lossy. This is **my cache-only adaptation of that observation**, not a recommendation to implement AcceptMoE. [arxiv.org](https://arxiv.org/abs/2608.02989)
+
+### 8. Remove host duplicates of guaranteed permanently resident GPU experts
+
+**What:** Make selected experts **exclusively resident on a GPU**, releasing their duplicate host storage. Start with the helper’s fixed resident set; consider a guaranteed main-GPU core only afterward.
+
+**Why here:** Your GPUs hold approximately **14.96 GiB of expert weights**, while the full expert arena remains in RAM. The helper’s **6.21 GiB** static set is the cleanest first target.
+
+This does not create another 6 GiB of GPU cache or eliminate today’s CPU miss reads. It creates RAM headroom for a larger expert arena, buffers or lookup cache.
+
+**Gain and effort:** **Approximately 0% current decode gain**. For Qwen4, it may avoid crossing into SSD-backed expert execution; a throughput forecast is impossible without the actual file. **1–3 weeks**.
+
+**Losslessness:** **Bit-exact storage management**, provided every execution path can obtain the original bytes. Prefill must either execute those experts on their owning GPU or restore an exact bounded host copy. Eviction and ownership transitions must be explicit.
+
+Also, merely unpinning memory is insufficient: the backing pages must actually become reclaimable.
+
+**Qwen4:** **Very strong capacity relevance.** The full 14.96 GiB is an upper bound on duplicate storage, not a promised reclaim amount.
+
+**Source:** llama.cpp [PR #31469](https://github.com/ggml-org/llama.cpp/pull/31469) describes exclusive GPU residency and a RAM victim cache. It is a **closed RFC/reference implementation**, not a merged feature to turn on. [GitHub](https://github.com/ggml-org/llama.cpp/pull/31469)
+
+### 9. Partition CPU row work by cost, retaining the same arithmetic
+
+**What:** Refine the pool’s existing row-task partitioning using estimated cost per expert row and token count, with cache-line-aligned boundaries and workload-dependent active workers.
+
+**Why here:** The pool currently divides flattened rows approximately equally, with about three tasks per worker. It already has dynamic work claiming, so this is a small refinement, not a replacement of a naive static scheduler.
+
+With only **3.90 distinct CPU experts per layer-window** and 15 workers, the last few tasks can matter. However, the mostly-singleton workload also limits how much token-count weighting can improve. Measure phase tails first; if they are already short, stop.
+
+**Gain and effort:** **0–2%**; **2–5 days**.
+
+**Losslessness:** **Bit-exact in principle**: preserve each row’s dot-product reduction and the final expert accumulation order. Compare first with fixed placement so timing-driven cache adaptation does not obscure the result.
+
+**Qwen4:** Good carryover, with new cost tables.
+
+**Sources:** [Strata CPU pool](https://github.com/Niko1221/Strata/blob/v0.2.8/src/kernels/cpu/pool.cpp). ik_llama’s November 2026 work redistribution provides a recent example of a small output-preserving scheduling win, although its benchmark is not a Strata prediction. [GitHub](https://github.com/ikawrakow/ik_llama.cpp/pull/2829)
+
+### 10. Increase the PLE row cache modestly, guided by exposed stalls
+
+**What:** Test the existing cache at **1,048,576 → 4,194,304 → 8,388,608 rows**, holding other PLE settings fixed.
+
+**Why here:** This is a valid survivor from the local report. It is cheap and exact, but its value depends on whether the avoided SSD reads were actually delaying the verifier.
+
+The real memory cost includes keys and replacement metadata: approximately **94.125 bytes/row**, not just the 90-byte payload. Going from 1 Mi rows to 8 Mi rows therefore costs roughly **659 MiB extra**.
+
+**Gain and effort:** **0–2% decode**, a few hours. A larger gain would require demonstrating substantial exposed PLE stalls first. Measure blocked time and end-to-end decode alongside hit rate.
+
+**Losslessness:** **Bit-exact**; the cache returns the same table rows.
+
+**Qwen4:** Conditional. Reserve RAM for its expert arena first, and revisit this only if it retains a similar lookup table.
+
+**Sources:** [Strata row-cache implementation](https://github.com/Niko1221/Strata/blob/v0.2.8/src/kernels/ngram.cpp), SlackTier’s deadline-based analysis. Its useful lesson is to optimize exposed lookup latency, not import another workload’s hit-rate curve. [arxiv.org](https://arxiv.org/html/2611.13413v1)
+
+## What I would try first
+
+**My execution order would be #3, #6, then #1.** That differs from the potential-gain ranking because the first two are inexpensive to reject.
+
+1. **Persistent HC read:** confirm that it executes in your patched binary, then compare against `GR_FORK` across actual window widths. Keep only widths where both timing and numerical checks hold.
+2. **`STRATA_QIL=1`:** verify byte equality and activation coverage for widths 2–4, then measure. This is the smallest concrete unlisted experiment I found.
+3. **Cost-weighted cache-placement replay:** use the current helper-aware fetch build as the baseline. Look for improvements in layer budgets and helper ownership before building another online adaptation mechanism.
+
+**Block Verification would be my next substantive project**, particularly if you want an algorithmic improvement with broad model carryover rather than another hardware-specific tuning pass.
+
+For evaluation, reuse your existing gates, but distinguish the contracts: byte equality for QIL/storage changes; long-context numerical/state checks for reordered arithmetic; distribution preservation for the new verifier. Your profile’s roughly 3.3% screen variability means the smaller candidates need controlled, paired timing. It also records unresolved seeded-repeatability differences with timing enabled, so timing instrumentation should not silently become part of the reference behavior. [Source: profile pack, sections 9–10](https://raw.githubusercontent.com/KarlGrier/local-ai-setup/main/research/engine-speed-1111/PROFILE-PACK.md)
+
+## What changes for Qwen4 Flash
+
+I treated **240–300B total / approximately 12B active** as your planning scenario, not a confirmed architecture.
+
+At your current average **3.33 bits/weight**, 240–300B parameters would occupy about **93–116 GiB** if all were stored in that format, before runtime buffers. That arithmetic is not a fit prediction: some parameters could belong to an SSD-resident lookup table, as they do now. The decisive quantities will be **routed-expert bytes, active expert bytes, and the non-expert working set**.
+
+That favors **#1, #2 and #8** for preparation: better use of scarce GPU residency, better handling of remaining misses, and eliminating avoidable host duplication. Exact block verification and activation fusion should also transfer conceptually. The persistent HC implementation and IQ3-specific CPU work need the actual dimensions and formats.
+
+I would keep TensorFold as a kernel-design reference rather than assume a drop-in speed upgrade: its published CUDA qualifications distinguish historical and current implementations, and transferring a kernel still requires preserving your format and numerical contract. [GitHub](https://github.com/ashhart/TensorFold/blob/main/docs/recipes/cuda.md) The most defensible next gains are incremental changes to your existing engine, whose biggest generic optimizations are already in place.

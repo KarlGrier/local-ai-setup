@@ -1,0 +1,140 @@
+**Yes—I’d use this as the working plan, with a few targeted revisions.** The strongest parts are separating fixed-work timing from free-running generation, testing adaptation and rejected drafts explicitly, and using replay to decide which larger changes deserve implementation.
+
+I would **move the measurements earlier, tighten two of the proposed patch prerequisites, and define the replay threshold in actual time saved.** Those changes could save several gaps.
+
+## 1. Keep the testing rule—and make “fixed work” precise
+
+This is the most important improvement in the plan.
+
+**Generating the same number of output tokens is not necessarily fixed work.** Different tokens, acceptance lengths and cache histories can produce different expert traffic.
+
+I would maintain two separate measurements:
+
+| Measurement | Hold constant | What it establishes |
+|---|---|---|
+| **Fixed-work replay** | Token/input sequence, context positions, window widths and initial cache state. For kernel comparisons, also hold execution placement constant. | Whether the implementation performs the same work faster. |
+| **Free-running generation** | Workloads, sampling settings, startup/warm-up procedure and evaluation rules. | Whether the complete serving system becomes faster, including acceptance and adaptation effects. |
+
+For **cache-policy experiments**, replay the same demand and initial state but allow the candidate to make its own placement decisions. Freezing placement there would remove the mechanism being tested.
+
+There is also one concrete instrumentation gap: **your profile says `STRATA_SPEC_DEPTH=1` reports positions 1–5, while you serve with spec 7.** Confirm the current implementation and extend it through depths 6–7 before calling the coverage complete. The down-projection formats are already known—**39 IQ4_NL layers and nine Q2_0 layers**—so the new measurement is their association with misses and elapsed time. [Source: PROFILE-PACK, sections 2 and 6](https://raw.githubusercontent.com/KarlGrier/local-ai-setup/main/research/engine-speed-1111/PROFILE-PACK.md)
+
+For correctness, distinguish two tests:
+
+- **Forced-path state tests:** exercise rejection at each depth, full acceptance and the bonus-token path; compare subsequent state/logits against a reference consuming the same committed sequence. Include admission, eviction and in-flight copy cases.
+- **Distribution tests:** use the real acceptance logic and normal random draws. Forced rejection is useful for testing rollback, but cannot establish unbiased sampling.
+
+That makes the new rule materially stronger than repeating `exact7` with adaptation disabled.
+
+## 2. Trim Phase A’s queue before spending gaps
+
+I would retain the proposed experiments, but classify them more carefully:
+
+| Item | How I would handle it |
+|---|---|
+| **QIL** | First cheap kernel test: confirm widths 2–4 actually take the path, and compare both ordinary and interleaved activation bytes. |
+| **HC_PERSIST** | Separate test against the actual `GR_FORK` dispatch, across real widths. Its numerical contract is rounding-level; QIL’s is byte equality. |
+| **One worker per physical core** | Verify the baseline first. That is already upstream’s default behavior; explicit worker counts and CCD placement are the distinct experiments. |
+| **8/12/15 workers and CCD placement** | Worth screening. Record the host thread’s placement and participation too, so “15 workers” does not obscure how many cores actually compute. |
+| **Spin versus sleep** | Inspect the existing wait policy and actual wakeup tails first. Upstream already uses a hybrid spin-then-sleep policy. |
+| **Governor/C-state changes** | Change separately, after recording current frequency and idle behavior. Avoid a bundle that makes attribution difficult. |
+| **hugetlbfs** | Move later, behind evidence of translation/page-walk overhead. It is distinct from THP, but your rejected THP result gives it a weak starting case. |
+| **PCIE_MIN1 / PCIE_BALANCE** | Keep separate, as proposed; verify that configuration and dispatch actually enable them. |
+| **SPEC_COST** | Compare it against your existing `COST_GATE` + `DRAFT_CUM`. Check precedence so this is a meaningful policy comparison. |
+| **PCIE_START** | Put in a cold-start/short-session test. Its direct effect is the initial share; your live share already settles during the first request. |
+| **GR_R2** | Do not give it a normal current-build timing gap while `GR_FORK` masks it. Treat it as an upstream-path comparison or a Qwen4 fallback test. |
+| **PLE cache sweep** | Keep it, measuring exposed wait alongside hit rate and memory cost. |
+
+The profile explicitly records **THP at approximately +0.01% with bimodal CPU timing**, `PCIE_START` as a startup change, and `GR_R2` as acting where the fork is disabled. Those distinctions should appear directly in the gap schedule. [Source: PROFILE-PACK, section 9](https://raw.githubusercontent.com/KarlGrier/local-ai-setup/main/research/engine-speed-1111/PROFILE-PACK.md) Upstream’s physical-core and wait-policy behavior is in the [CPU pool implementation](https://github.com/Niko1221/Strata/blob/v0.2.8/src/kernels/cpu/pool.cpp).
+
+Also, **“44 or 65 of 77 GB/s” needs consistent accounting.** CPU-consumed weight bytes and combined CPU-plus-DMA reads are different quantities; both estimates could be reasonable while describing different traffic. Log unique CPU expert bytes and transfer bytes separately, and use their actual time intervals. Multiplying weight bytes by token multiplicity would overcount where the kernel reuses weights.
+
+## 3. Make Phase B’s build threshold about throughput
+
+The replay harness is probably the most valuable larger investment in this plan.
+
+I would change:
+
+> “Build only those worth about +3 points or more.”
+
+to:
+
+> **“For substantial new patches, require roughly 3% predicted end-to-end throughput improvement after movement and scheduling costs; report GPU hit-share changes as supporting evidence.”**
+
+If Opus already meant throughput percentage, just make that explicit.
+
+Three percentage points of GPU hit share do not have a fixed value. An expert serving several speculative columns contributes several routed-entry hits but may require only one CPU weight read. Moving work between the main GPU and helper can also improve—or worsen—completion time without changing their combined hit share.
+
+The proposed routing tuple is a good start. To evaluate all eight policies, it also needs:
+
+- **Request/window IDs, context length, width, accepted prefix and draft origin**—MTP versus suffix lookup.
+- **Expert byte size/format, initial residency and per-layer budgets.**
+- **Admission/eviction events and timing intervals** for CPU work, copies and helper completion.
+- **Prompt boundaries and cache borrowing/reseeding events.**
+- **KV residency/access information** if runtime KV/expert allocation stays in scope.
+
+Two particularly important charges:
+
+**Admitting a CPU-served miss requires a new copy.** Today’s `ADAPT_FETCH` admission reuses an expert already transferred to the main GPU. An adaptive helper likewise adds traffic over its slower link. These cannot be priced as free cache improvements. Your PR makes the already-fetched nature of current admission explicit. [GitHub](https://github.com/Niko1221/Strata/pull/5813)
+
+And replay must be **causal**: a policy can use observed history, not future requests. A hindsight placement is useful as an explicitly labelled upper bound. Let each simulated policy evolve its own cache state rather than inheriting the baseline’s eviction decisions.
+
+## 4. Make C1 prove it changes anything before writing it
+
+This is the biggest potential duplicate hiding in the plan:
+
+> “PCIe miss selection by CPU time saved, keeping today’s count.”
+
+Your current selector already takes the most-routed misses and excludes helper-held experts. [GitHub](https://github.com/Niko1221/Strata/pull/5813) Within a layer, the experts share their dimensions and quantization layout. **If estimated CPU cost is simply a monotonic function of token multiplicity, the proposed ranking is identical to today’s ranking.**
+
+That does not rule the idea out. Kernel dispatch discontinuities, batching interactions or effects on the competing GPU path could change the ordering.
+
+But C1 should have this prerequisite:
+
+> **Show actual selection differences on replay, and show why those differences reduce completion time while keeping the transfer count fixed.**
+
+If it selects the same experts, close that particular experiment. The broader cost model that changes counts or residency remains a separate opportunity.
+
+## 5. Turn the block-verification parenthetical into a hard prerequisite
+
+**I should tighten my earlier recommendation here:** I assigned a potential gain before establishing the actual proposal law used by your draft path.
+
+For a deterministic argmax or suffix-lookup proposal, the proposal distribution is **one-hot**: \(q(y)=1\) for the chosen token. The drafter’s softmax confidence is not its sampling probability in that case.
+
+For an unchanged, fixed deterministic chain, ordinary exact token verification already achieves the target probability of retaining each prefix. **Block verification cannot increase accepted-prefix length merely by changing the verification algorithm.** This follows by specializing the standard acceptance rule to a point-mass proposal. [proceedings.iclr.cc](https://proceedings.iclr.cc/paper_files/paper/2025/file/3e710b42b1a9ed898f607ec0f4fcc971-Paper-Conference.pdf)
+
+Therefore:
+
+- **Actually sampled MTP proposals:** investigate Block Verification, with the correct probabilities and adaptive stopping treatment.
+- **Deterministic proposals:** expect **zero acceptance improvement for the same chain**; any implementation-overhead improvement is a separate claim.
+
+For suffix trees, “one-hot exact rule” also needs a precise implementation. A straightforward exact approach samples **once from the target at the current node**, follows the matching child if present, and otherwise emits that sampled token and ends traversal. Independently accepting multiple branches against the unchanged target distribution would not implement that rule.
+
+Opus already identified the right question. I would resolve it during the desk checks, before reserving a patching gap.
+
+## 6. Keep Phase D exploratory, with fuller cost models
+
+All three desk projects belong there.
+
+**Two-group overlap:** the “fixed part below two-thirds” threshold is a preliminary heuristic. Window width alone does not determine CPU time: distinct misses, multiplicity, format, cache state and concurrent copies matter. Your GPU-reach counter is host-observed waiting, not pure GPU execution. The model needs to subtract duplicated weight reads, lost cross-token reuse, additional launches, state handling and pipeline fill/drain costs from the proposed overlap.
+
+**Exclusive residency:** start with genuinely fixed helper experts. Keep its value classified as **Qwen4 capacity/headroom**, with little current decode benefit. Dynamic main-cache entries need a correct eviction/refetch mechanism before their host backing can disappear.
+
+**Compression:** sampling actual packed experts is the right first step. Add decompression throughput and scratch traffic to the report. Decompressing into a RAM buffer and then reading that buffer for the matvec can erase the original bandwidth saving. Separate “helps the larger model fit” from “makes today’s model faster.”
+
+## The gap order I would hand back
+
+This preserves Opus’s phases while putting measurements and inexpensive rejection criteria first.
+
+| Order | Work | Decision produced |
+|---|---|---|
+| **Desk A0** | Verify switch presence and dispatch, worker placement, current wait/power policy, proposal sampling law and depth-counter coverage. | Remove inactive or duplicate experiments; identify any small instrumentation changes. |
+| **Gap A1** | Controlled baseline diagnostic pass: widths, acceptance through depth 7, CPU/transfer bytes, phase tails and exposed PLE wait. | Establish where time is going and validate measurement overhead. |
+| **Gap A2** | QIL and HC_PERSIST, individually against baseline. | Keep only active paths with useful fixed-work results and the appropriate correctness checks. |
+| **Gap A3** | PCIE_MIN1 and PCIE_BALANCE separately; bounded PLE sweep. | Identify simple scheduling/cache wins. |
+| **Gap A4** | Small worker-count/CCD screen; follow with targeted wait/power experiments only if the diagnostics justify them. | Avoid a large host-tuning matrix without evidence. |
+| **Gap A5** | Existing draft-policy comparison; separate cold-start work for PCIE_START. | Distinguish steady-state, acceptance and startup effects. |
+| **Gap B1** | One buffered routing-trace capture with known initial state and measured logging overhead. | Replay policies offline; rank by predicted time saved. |
+| **Phase C** | Implement only candidates that clear their prerequisites and replay threshold. | Apply the usual adoption gates, including interactions between surviving changes. |
+
+**I’d keep the plan, with these amendments.** The two checks most likely to save unnecessary work are proving that C1 differs from your current selection and resolving whether Block Verification has any acceptance headroom on the actual draft path. The replay harness is the part most likely to remain useful when Qwen4 changes the model’s size and geometry.

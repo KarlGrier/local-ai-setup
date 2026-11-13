@@ -1,0 +1,121 @@
+**My strongest bets are better selection of PCIe-served misses, cross-layer cache allocation, and joint block verification of your existing MTP chain.** These have a concrete advantage over what you already run and should remain useful with a larger model.
+
+I read both files and checked relevant upstream code, papers, and engine implementations using **15 search queries**, plus direct source reads. Code-level findings below refer to Strata’s v0.2.8 base, reconciled with your documented patches; I did not benchmark your machine.
+
+Your [profile](https://raw.githubusercontent.com/KarlGrier/local-ai-setup/main/research/engine-speed-1111/PROFILE-PACK.md) is essential to the ranking:
+
+- The caches already handle **84.6% of routed expert entries**; CPU execution handles 9.4%, and PCIe fetches 6%.
+- The measured **21.71 ms window** contains **9.10 ms GPU-reach wait, 8.62 ms CPU expert work, and 2.33 ms drafting**.
+- Consequently, cutting CPU-pool time by 20% would improve overall window throughput by about **8.6%**, assuming unchanged acceptance. A paper’s 2× offloading result is not a credible estimate against this baseline.
+
+**The local report needs substantial correction.**
+
+| Report recommendation or claim | Assessment |
+|---|---|
+| v0.2.6, 40-layer model, 4060 Ti holding eight layers | **Wrong baseline.** You have patched v0.2.8 and a helper expert cache. Several conclusions come from the other configuration. |
+| Exact-size slots recover approximately 13 GB | **Already implemented.** Main and helper caches use sized slots; the arena is packed by layer. The report also substitutes approximately 10 MB DeepSeek experts for your approximately 2 MB Qwen experts. |
+| Fixed PCIe share ignores the asymmetric links | **Outdated.** You already use adaptive `pcie-frac auto`. The useful remaining change is choosing *which* misses to transfer, discussed below. Helper hits do not upload their entire weights every token. |
+| `--pipeline-windows` is a promising untested switch | **Inapplicable as implemented.** [The code](https://github.com/Niko1221/Strata/blob/v0.2.8/src/program/generate.cpp#L4937) requires a layer split and explicitly excludes helper caches. |
+| PLE `gather_batch` stalls because speculative prefetch sets `pending` | **Incorrect source interpretation.** [Prefetch tickets are separate](https://github.com/Niko1221/Strata/blob/v0.2.8/src/kernels/ngram.cpp#L478); batch gathering already collects matching tickets. Removing the guard is not a justified fix. |
+| Larger PLE row cache | **Valid inexpensive experiment.** The predicted hit-rate jump is unsupported. Inflight 256 and putting the entire table in RAM are already rejected. |
+| `PF_AHEAD`, `ONE_BATCH`, late helper launch, larger chunks | **Already tested.** `PF_AHEAD` was noise; the pool/launch changes lost; 16K chunks are adopted. Tail splitting remains parked because of checkpoint reuse costs. |
+| CUDA graphs recover approximately 16% of flag waits | **Wrong mechanism.** Verification is already graphed. Graph capture cannot remove required CPU expert computation; your serial GPU regions were already 98–99% busy. |
+| Drafting dominates 70% of this machine’s round; spec4 is exhausted | **Wrong.** Drafting is 10.7%; spec7 plus cumulative drafting is adopted. |
+| Every draft requires full GDN state snapshots | **Wrong for current Strata.** It verifies without committing state, then replays accepted rows in an already batched, asynchronous commit. |
+| Three transfer streams make expert movement effectively free | **Overstated.** Streams share PCIe and host DRAM bandwidth. The report confuses GPU memory bandwidth with PCIe bandwidth. Your existing P1 overlap backlog remains plausible, but is not a new discovery. |
+
+The report’s losslessness classification also needs tightening. **MoE-Spec explicitly drops long-tail experts**, and KTransformers’ Expert Deferral changes model behavior. Neither qualifies. Arbitrary verification reordering is not automatically exact; the acceptance and residual-sampling construction must establish that. [arxiv.org](https://arxiv.org/abs/2602.16052)
+
+Below is my ranked ten. **Gain ranges are incremental engineering estimates over your daily build, not measurements or additive promises.** Zero means a plausible no-win outcome.
+
+1. **Choose PCIe misses by saved execution time — new, concrete change**
+
+   Strata’s [base planner](https://github.com/Niko1221/Strata/blob/v0.2.8/src/core/expert_source.cpp#L4930) selects a **count** of PCIe experts, then takes the last qualifying misses in routing order. Instead, rank them by estimated CPU time avoided minus transfer/GPU cost, accounting for how many verify-window tokens use each expert.
+
+   Start with the existing count unchanged. This isolates selection quality from share tuning. Preserve helper exclusions and use calibrated tables with deterministic ties. Apto supplies the relevant residency/token-multiplicity scheduling idea; its duplicate CPU/GPU tail racing would be a poor fit for your shared DRAM bandwidth and repeatability requirement. [arxiv.org](https://arxiv.org/abs/2611.01859)
+
+   **Gain:** 0–5% decode. **Effort:** roughly 2–5 days. **Lossless:** same experts and weights; backend changes require rounding-level validation and stable final reduction. **Qwen4:** strong carryover as CPU misses become more expensive.
+
+2. **Allow cache capacity to move between layers, priced by time saved per byte — new extension**
+
+   Your initial allocation already follows a profile, but subsequent [adaptive swaps](https://github.com/Niko1221/Strata/blob/v0.2.8/src/program/generate.cpp#L11387) exchange experts within a layer. A layer cannot readily lend excess capacity to another layer with more expensive misses.
+
+   Add compatible-size cross-layer lending, initially at request boundaries. Score residency by expected exposed CPU/transfer time avoided per byte, with a separate helper-work ceiling. That last constraint matters: your alternative profile already demonstrated that increasing helper work can hurt.
+
+   llama.cpp’s multi-GPU cache implementation supports sharing compatible slots across layers; its author reports improved hit rate, although that is not a Strata speed measurement. [GitHub](https://github.com/ggml-org/llama.cpp/pull/30112)
+
+   **Gain:** 0–8% decode. **Effort:** 1–2 weeks. **Lossless:** unchanged expert selection and stored values; device movement is potentially rounding-level. **Qwen4:** particularly promising when the same VRAM covers a smaller fraction of experts.
+
+3. **Single-chain Block Verification — a better version of the report’s verification idea**
+
+   Keep your existing MTP chain and target forward pass, but jointly verify the block using the published acceptance/residual algorithm. This can retain more tokens from work already performed without introducing branches or enlarging the expert union.
+
+   That directly addresses your bandwidth constraint. It is distinct from the rejected tree drafter. Google’s Block Verification work establishes distribution preservation and improved acceptance; vLLM also exposes a block-verification option. [research.google](https://research.google/pubs/block-level-verification-accelerates-speculative-decoding/)
+
+   **Gain:** 0–8% sampled decode; approximately zero benefit for greedy decoding. **Effort:** 3–7 days plus correctness validation. **Lossless:** distribution-preserving with the complete correction rule and actual filtered proposal/target probabilities. Start with draft length chosen before sampling; integrate cumulative stopping only after checking its probability accounting. **Qwen4:** strong, because each additional accepted token amortizes a more expensive verification pass.
+
+4. **Optimize the CPU down-projection kernels actually used by this GGUF — new target**
+
+   The [v0.2.8 native path](https://github.com/Niko1221/Strata/blob/v0.2.8/src/kernels/cpu/native_expert.cpp#L519) uses an AVX2 IQ4_NL down-projection path for multi-token groups. That format covers **39 of your 48 down matrices**. The AVX-512 IQ2/IQ3 gate/up work you already examined does not cover this target.
+
+   Prototype a packed-weight AVX-512 implementation for small verification groups, reducing unpack/setup overhead without expanding weights in RAM. ik_llama’s recent IQ4_NL setup work and Q2_0_R8 repacking provide implementation ideas, not transferable speed claims. [GitHub](https://github.com/ikawrakow/ik_llama.cpp/pull/2807)
+
+   **Gain:** 0–4% overall decode; likely much less for Q2_0-only changes. **Effort:** 1–2 weeks. **Lossless:** preserve codes, scales, activation quantization and accumulation precision; only rounding-level reassociation allowed. **Qwen4:** useful if its quant mix retains these formats. Avoid importing a larger Q8 working representation into the expert pool.
+
+5. **Make short-prefill placement depend on residency and expert multiplicity — retain, but narrow the report’s idea**
+
+   Your existing short-prefill rule assigns a fixed 40% CPU share below 1,792 tokens. A more specific policy would use resident experts on their current GPUs and decide cold-expert placement from actual row counts and transfer cost.
+
+   Preserve the decode working set and reusable prompt checkpoints. This targets tool-result and edited-prompt latency, rather than repeating the rejected large-chunk/tail-split experiments. Ostinato demonstrates why keeping resident experts useful across both phases matters, but its four-4090D results cannot be applied directly here. [arxiv.org](https://arxiv.org/abs/2611.11533)
+
+   **Gain:** 0–15% lower short/tool-turn prefill latency; little steady-state decode benefit. **Effort:** 1–2 weeks. **Lossless:** compute all selected experts with existing precision; placement differences need rounding checks. **Qwen4:** strong for agent workloads, especially if uploading a cold expert becomes more expensive.
+
+6. **Sweep the PLE row-cache size against exposed wait time — the report’s cheapest surviving experiment**
+
+   Try **1M → 4M → 8M rows**, rather than jumping straight to 32M. Eight million rows require roughly **0.75 GB including basic cache metadata**, so this is feasible within the profile’s measured headroom.
+
+   Measure time actually waiting for PLE data, not just hit rate. A larger cache can improve hits without changing throughput when reads are already hidden. SlackTier supports deadline-aware lookup caching, but its DeepSeek/multiple-drive results do not establish the report’s predicted Qwen hit-rate jump. [arxiv.org](https://arxiv.org/abs/2611.13413)
+
+   **Gain:** 0–2% decode; potentially workload-specific TTFT improvement. **Effort:** hours. **Lossless:** cached rows reproduce the same bytes. **Qwen4:** conditional on its lookup-table design and available RAM; do not consume memory needed to keep experts resident.
+
+7. **Fuse accepted GDN replay into the next verification pass — new remaining delta**
+
+   Strata already avoids speculative state mutation and batches/overlaps accepted-row commit. The remaining idea is to apply those accepted updates while loading state for the next recurrence, avoiding a separate state traversal.
+
+   Mia’s TensorFold recipe implements deferred accepted-row handling through `TF_FLASHNEXT_KEEP_LATE`. Its reported benefit is from a different multi-stream Spark workload; your already-overlapped commit substantially limits the available gain. [GitHub](https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Single-DGX-Spark-TensorFold/blob/main/CHANGELOG.md)
+
+   **Gain:** 0–3% decode. **Effort:** 1–3 weeks. **Lossless:** potentially bit-identical if recurrence order and precision remain unchanged. Pending updates must be materialized before cache saves, session switches and other state consumers. **Qwen4:** potentially useful with larger recurrent state, but architecture-dependent.
+
+8. **Use a draft-only persisting L2 window — new, small experiment**
+
+   Retain a fitting subset of repeatedly used MTP attention/dense weights in the 5080’s L2 during drafting, then release the policy for verification. Do not attempt to retain the full 837 MiB draft layer.
+
+   This differs from your rejected CPU L3 hot set and next-layer RAM warming: it targets repeated GPU reads within the draft phase. qengine reports a 7% reduction in drafting time from this technique on another model/GPU. Applied to your 10.7% draft share, that would mean only about **0.75% overall**. [GitHub](https://github.com/manaspros/qengine)
+
+   **Gain:** 0–1% decode. **Effort:** 1–3 days. **Lossless:** cache hints change no arithmetic. **Qwen4:** modest carryover if a useful MTP subset still fits; verify that retaining it does not penalize target kernels.
+
+9. **Losslessly compress the host-to-GPU expert transport tier — new, conditional research bet**
+
+   Compress existing quantized bytes offline and reconstruct the exact original bytes on the 5080 before execution. Keep CPU-executed experts on the normal path; CPU entropy decoding would compete with your expert pool.
+
+   There is relevant CUDA evidence: Colibri experiments measured byte-exact GPU decompression and faster transfers on real INT4 experts. The same work reports failed CPU paths, and ZipMoE’s BF16/UMA results are not evidence that your IQ mixture will compress profitably. [GitHub](https://github.com/JustVugg/colibri/issues/594)
+
+   **Gain:** 0–3% decode today; higher only if future PCIe traffic becomes a larger bottleneck. **Effort:** 1–2 days to reject/validate with actual expert samples; weeks to integrate. **Lossless:** byte-for-byte reconstruction. **Qwen4:** potentially useful, but first test compression ratio and transfer-plus-decompression at your approximately 2 MB expert granularity—not large synthetic batches.
+
+10. **Make selected GPU-resident weights exclusive of the RAM arena — new, primarily a Qwen4 capacity option**
+
+   Your GPU caches duplicate weights held in pinned RAM. A future memory-constrained configuration could omit host copies of a stable GPU-resident subset, with explicit reconstruction/demotion when needed.
+
+   Start conceptually with the static helper subset. Today that represents approximately **6.21 GiB**; broader exclusivity has a larger ceiling but requires more complex migration. Prefill must be included in the economics: repeatedly recovering those weights over the helper’s ×4 link could erase the benefit. A closed llama.cpp RFC provides an exclusive RAM/VRAM-cache reference implementation, not a ready Strata patch. [GitHub](https://github.com/ggml-org/llama.cpp/pull/31469)
+
+   **Gain:** approximately **0% today**, because the arena fits. For Qwen4, a conditional example is **5–18% throughput improvement** if this removes half of a measured 10–30% disk-stall budget; that is scenario arithmetic, not a forecast. **Effort:** several weeks. **Lossless:** storage ownership changes only; all original weights remain recoverable. **Qwen4:** potentially more important than small kernel wins if it prevents expert spill.
+
+The named engines mainly supply components to borrow. SGLang/KTransformers’ AMX and dual-socket NUMA gains do not transfer to your Ryzen, and their graph-capture benefits largely duplicate existing Strata work. TensorFold supplies a useful state-fusion idea, but its recipe uses different weight formats. vLLM’s relaxed FLy verifier explicitly fails your distribution-preserving requirement. [LMSYS Org](https://www.lmsys.org/blog/2025-10-22-KTransformers/)
+
+**I would try these three first:**
+
+1. **Miss-selection patch:** keep today’s PCIe count, change only which misses receive those slots. It is the smallest substantive change with a clear source-level opportunity.
+2. **Cross-layer cache replay:** use routing traces to estimate avoidable misses and saved time before implementing allocation changes. Proceed only if it improves over your current profile plus adaptation without overloading the helper.
+3. **Single-chain Block Verification:** the strongest algorithmic option for sampled research output, with no additional expert traffic.
+
+For validation, separate fixed-work timing from free-running generation: rounding changes can alter text, acceptance and measured tok/s. Keep distribution-preserving sampler tests separate from bitwise tests, and exercise adaptation and rejection at every draft depth—your adaptation-disabled `exact7` check alone cannot cover those paths.

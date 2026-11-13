@@ -1,0 +1,151 @@
+I'll read your profile pack and what's on file about the Strata setup first, then research across the fields you named.
+
+Your pack points at one wall: the miss path runs at about the memory bus's limit for 40% of every window, while the bus, the PCIe link and the main GPU each sit idle for much of the rest. The three ideas I'd try first all go at that: guess the next layer's misses during the stall and upload them early (1), give the misses a second memory bus on the other PC (2), and, when two streams run, fit one stream's GPU phase into the other's stall (3).
+
+## What your numbers say first
+
+This is my arithmetic from S1, S162, S204, S210 and S213. I read the pack through extraction passes over every section, so where a figure disagrees with the file, the file wins.
+
+- **The miss path looks bus-bound.** Per layer-window, 3.90 CPU + 1.92 PCIe experts × 1.95 MiB ≈ 11.4 MiB in 179.7 µs ≈ 66 GB/s, against the ~77 GB/s you measured. The CPU side alone holds 41–50 GB/s across a 2.6× range of miss counts. That matches how CPU token generation behaves in llama.cpp generally, by one of its developers' account: speed follows RAM frequency once the channels are saturated.
+- **The same bus is idle for ~13 of 21.7 ms.** Even at half the Gen5 link's raw ~63 GB/s, that idle time could carry ~200 experts; a window has ~280 misses.
+- **Columns are expensive because of misses.** From the two request rows, about 5.4 ms of GPU work per window is fixed, and a column adds about 0.8 ms of GPU and 2 ms of misses (rough; the rows differ in context length).
+- **Consequence.** There are three exits from a bus wall: fewer bytes (your compression item), another bus (idea 2), another time (idea 1). If the check below confirms it, faster CPU kernels and more threads will not move the stall. Any background transfer, including your "admit CPU misses" item, should run only in bus-idle phases.
+- **One-hour check.** Run the pool at 8 vs 15 workers on a decode fixture; if CPU ms per window barely moves, the bus is the wall. Your kernel's perf can read the memory controller's own counters; the UMC events went into mainline in 6.7, with a derived read-bandwidth metric. I'd expect ~26 GB/s average read if my accounting is right; check that the amd_umc PMUs appear on a Zen 5 part.
+
+## Ranking
+
+◆ marks the crazy-but-plausible ones I'd try first. All upside and chance figures are guesses.
+
+| # | Idea | Borrowed from | Upside if it works | Chance | Qwen4 Flash |
+|---|---|---|---|---|---|
+| 1 ◆ | Runahead routing, staged over the idle bus | CPU runahead execution | +10–30% decode | 40% | more |
+| 2 ◆ | Expert-compute server on the second PC | RDMA services, Fiddler | +10–20% | 30% | much more |
+| 3 ◆ | Anti-phase interleave of two streams | pipeline scheduling | +40–70% total, two streams only | 35% | less |
+| 4 | Working-set prepaging | OS prepaging | +3–10% after long prompts or switches | 50% | more |
+| 5 | SSD tier inside the stall | async I/O, buffer pools | none today (ranked on Qwen4) | 60% | Qwen4 only |
+| 6 | Block-float packing of BF16 hyper-connections | column-store encodings | +1–3% | 45% | same |
+| 7 | TLB and IOTLB walls | 200 GbE networking | +1–5% | 30% | slightly more |
+| 8 | q-expected miss-cost gate | 2026 MoE speculation papers | +1–3% | 35% | more |
+| 9 | Online draft calibration | online learning | +1–5% | 25% | same |
+| 10 | Tier-invariant arithmetic | reproducible BLAS | no speed (enabler) | 70% | more |
+
+One instrumented screen pass (routes, residency, layer-L MoE inputs, per-position p and q) feeds the kill tests for 1, 3, 4, 8 and 9.
+
+## The ideas
+
+### 1 ◆ Runahead routing
+
+- **What.** While the pool serves layer L's misses, predict layer L+1's routes and upload the predicted non-resident experts into a small VRAM ring, so they are hits when L+1 arrives. CPU architects' answer to the same shape of problem is runahead: a core stuck on a long cache miss keeps executing speculatively, discards the results and keeps the prefetches it triggered.
+- **Predictors, cheapest first.** A miss-follows-miss table; layer L+1's router applied on a spare core to layer L's MoE input (a 2.5 MiB matrix per column); true runahead, where the idle GPU runs L+1's mixer and router on the partial residual and keeps only the route list.
+- **Why here.** An upload needs the expert's identity, not its input, so unlike a CPU miss it can happen early. You have ~190 µs of idle bus before each layer, room for 3–5 experts against ~5.8 misses.
+- **Evidence.** Handing layer L's gate input to layer L+1's gate predicted the next layer's experts with 97.15% prefetch accuracy in Fate, at no extra GPU cost. The ceiling looks higher still: 99.94% when OD-MoE let a faster quantized copy of the model run ahead and read off its routes. A distilled route predictor is enough to land most prefetches (86–88% hit rate in DraftExpert, July 2026).
+- **Why it might fail.** Your misses are the cold tail, near the top-10 cut-off, where prediction is worst. The shallow layers were Fate's weak spot. Those figures come from routers that pick two of eight up to six of 64 experts; I found nothing for ten of 512. Your round-12 next-layer warming lost 6.5%; if it issued reads during the stall it was competing for a saturated bus, which this must never do.
+- **Lossless.** Predictions only decide what is pre-staged; every expert still runs on exact inputs. Same rounding-level class as ADAPT_FETCH.
+- **Kill test.** With no behaviour change, log true routes, residency and the top 14 of router L+1 on layer-L input. Compute recall on non-resident experts, split first-touch vs re-touch. Dead if recall of next-layer misses is under ~35% at ≤3 uploads per layer.
+- **Upside.** Every 10% of miss bytes pre-staged is about 0.86 ms per window (+4%). Re-fit the cost gate afterwards, since columns get cheaper.
+- **Qwen4.** More: misses take a bigger share, and an SSD-resident expert needs the lead time even more.
+
+### 2 ◆ Expert-compute server on the second PC
+
+- **What.** A daemon on the i7-14700 holds the CPU-tier experts in its own RAM. For part of each layer's misses the main PC sends the quantized activation rows (a few KB) and gets output vectors back. The principle is Fiddler's: move the activations, leave the weights where they sit.
+- **Why here.** That box has its own memory bus and 20 cores. RDMA makes the wire nearly free at this message size: 2.5 µs per round trip in one tuned library, roughly 4.5–9.5 µs for RoCE ping-pong on much older ConnectX cards. A remote that sustains 40 GB/s with a 10 µs round trip cuts the stall from 180 to ~116 µs per layer.
+- **Why it might fail.** No AVX-512 and twelve E-cores, so the IQ kernels may run far below that box's bus limit. About 2,200 round trips a second put every C-state exit and IRQ on the critical path. 32 GB holds ~85% of the CPU tier.
+- **Lossless.** Same weights, same Q8 activations, same integer kernels; rounding-level unless idea 10 aligns the float tail across AVX2 and AVX-512.
+- **Kill test.** On PC #2 alone, time the AVX2 kernel on ~2,000 cold experts and measure p50/p99.9 round trip with `ib_send_lat` on your ConnectX-4 pair. Plug into T = (M + rtt·B_r)/(B_l + B_r). Not worth it below ~20 GB/s effective or above ~100 µs p99.9.
+- **Qwen4.** Much more: if experts overflow RAM, this is the one place the overflow can still be computed at RAM speed. If that board takes DDR4, your 16 GB sticks bring it to 64 GB.
+
+### 3 ◆ Anti-phase interleave of two streams
+
+- **What.** With two requests active, never put them in one window. Run them half a layer out of phase so A's GPU phase lands in B's stall.
+- **Why here.** One stream needs 12.2 ms of GPU and 8.6 ms of bus per window, alternating. Two anti-phased streams need 24.4 and 17.2 ms per pair, which fits in ~26 ms: about 270 tok/s total against 162. In-phase batching (`--batch 4`, two requests per window) stacks both requests' misses into one bus-bound stall.
+- **Precedent.** The closest published relative is Klotski, which lines up several batches so that computing covers loading; the same paper flags expert-set growth as the cost of adding batches.
+- **Why it might fail.** The second stream's KV and scratch must come out of `--kv-resident`, not expert slots (batch 4 fell to 2,781). Two conversations share one cache. Stalls vary per layer, so the phase lock drifts.
+- **Lossless.** Scheduling only.
+- **Kill test.** Replay logged per-layer GPU and stall durations for two requests through a two-stream schedule, with slot loss priced in. Dead under 1.25× single-stream throughput.
+- **Upside.** Nothing for one stream; each stream runs ~10–20% slower than alone.
+- **Qwen4.** Less by itself: when the stall dominates, the bus is the scarce resource and interleaving creates none.
+
+### 4 Working-set prepaging
+
+- **What.** At the prefill-to-decode boundary, refill the 3,231 borrowed slots from the prompt's own routing histogram, blended with the static profile. Save each conversation's resident-expert list with its chat-cache entry and restore it on switch.
+- **Why here.** CPU experts per layer-window were 6.20 on the 27K continuation against 2.36 on the short request. MoE-Infinity's traces point the same way: a model-wide profile averages away the skew that a single request has.
+- **Why it might fail.** At ~84 admissions a window the cache may re-converge within a second anyway. The 27K gap may be content, not cache state.
+- **Lossless.** Placement only.
+- **Kill test.** Offline replay of main-cache share over the first 100 windows after a ≥16K prompt: today's refill vs prompt histogram vs blend. Dead under +2 points.
+- **Qwen4.** More: the same histogram says which experts to pull from SSD into RAM before decode starts.
+
+### 5 SSD tier inside the stall
+
+- **What.** For experts that don't fit RAM, issue one O_DIRECT read per expert through io_uring the instant routes are known (earlier when idea 1 predicts). Spill chat-cache snapshots to NVMe before any expert.
+- **Why here.** A drive rated ~14 GB/s reads 2 MiB in ~150 µs, less than the per-layer stall you already pay. One SSD expert per layer-window is close to free if it overlaps the pool; a page-fault path pays ~500 faults for the same expert.
+- **Why it might fail.** Strata's stock design already has an SSD tier, and its arena file path may do most of this. The read lands in DRAM first, so those bytes cross the bus twice. Past about one SSD expert per layer-window it becomes the critical path.
+- **Lossless.** I/O path only.
+- **Kill test.** `fio` 2 MiB O_DIRECT random reads at QD1–4 for p50/p99. Then cap the arena to force a few GiB onto SSD and compare the current path with a small io_uring reader.
+- **Qwen4.** It decides whether an overflow costs a few percent or tens.
+
+### 6 Block-float packing of the BF16 hyper-connection tensors
+
+- **What.** Re-encode the 1.20 GiB of BF16 hyper-connection tensors at fixed width: one shared exponent per small block, per value a sign, 7-bit mantissa and 3–4-bit exponent offset, plus a patch list for outliers. The kernel rebuilds the identical BF16 value.
+- **Why here.** These tensors are read in full every window. Basalt priced the BF16 read at ~0.31 ms per token over an int8 copy, and the Q8 route is not lossless for you.
+- **Evidence.** Entropy-coding the exponent alone gets BF16 down to about 11 bits per weight with bit-identical outputs in DFloat11, the exponent byte being mostly redundant (about 2.6 bits of content in 8). Their decoder leans on large batches to hide its cost, which is why I'd use fixed width at a 4-column window.
+- **Why it might fail.** Exponent spread per block may be wide. Unpack arithmetic may eat the gain. It overlaps your persistent-HC-kernel item.
+- **Lossless.** Bit-for-bit reconstruction, same summation order.
+- **Kill test.** A script over the GGUF: exponent-spread histogram per 32-value block across the 290 tensors. Minutes.
+- **Upside.** 25–31% fewer bytes on that slice and ~150–190 slots back.
+
+### 7 TLB and IOTLB walls
+
+- **What.** Put the arena on reserved 1 GiB hugetlbfs pages (not THP), boot with `iommu=pt`, and try `pci=pcie_bus_perf`.
+- **Why here.** A cold expert upload touches ~500 distinct 4 KiB pages of a 47 GiB pinned arena. Network engineers hit this wall at 200 Gbps, losing up to 20% of throughput to IOTLB misses under the default IOMMU setup and getting it back with hugepage-backed buffers. Your THP trial went bimodal, which is how opportunistic huge pages behave; reserved ones are all-or-nothing.
+- **How to check.** The line to look for on AMD is "Default domain type: Translated". `pci=pcie_bus_perf` asks the kernel for the largest payload and read-request sizes the path supports.
+- **Why it might fail.** The IOMMU may already be off on your board. I found no clear statement that `cudaHostRegister` keeps huge mappings end to end. With the miss phase bus-bound, a faster link mostly shifts the PCIe/CPU split.
+- **Lossless.** No numeric change; `iommu=pt` does give up DMA isolation.
+- **Kill test.** Boot-flag A/B with the PCIe probe changed to walk cold pages rather than one hot buffer, plus one decode screen. Under an hour.
+- **Upside.** Larger under idea 1, where upload rate becomes the limiter.
+
+### 8 q-expected miss-cost gate
+
+- **What.** Add a per-token table of expected cold-expert misses to the cost gate. At draft step c, price the step by the expectation of that table under q_c, weighted by the chance the column is wasted.
+- **Why here.** About 0.9 columns per window are thrown away and a column is mostly miss cost. Three 2026 papers (EVICT, EcoSpec, DraftExpert) price MoE verification by the set of experts a draft wakes, not by its token count; a predicted per-candidate expert cost inside draft selection bought EcoSpec up to 1.62×.
+- **Why it might fail.** For a chain the win is second-order: an accepted token pays its misses in whichever window it lands, so only wasted columns save anything.
+- **Lossless.** Only if the decision uses the draft distribution and earlier tokens. Cutting an already-drawn token because it looks expensive biases the sampler: with p = (0.5, 0.5), q = (0.9, 0.1) and "drop b", the output is (0.55, 0.45). Selecting drafts by their own cost is safe under greedy verification, not under your exact sampler.
+- **Kill test.** Regress per-column CPU-miss count on the q-expected table value from logs. Dead if it explains under ~10% of the variance.
+
+### 9 Online draft calibration
+
+- **What.** A per-depth temperature plus per-token bias on the MTP draft logits, updated at deterministic points from the exact target distributions that verification already computes.
+- **Why here.** Acceptance is 66% on your served long-research log against 73% on the screen. Updating the drafter online from the target's corrections raised acceptance by 0.1–0.65 in OSD, and a March 2026 paper (OnlineSpec) ties the achievable speedup to the online learner's dynamic regret.
+- **Why it might fail.** Your static drafter adapter was worth ~0.4%. An MTP head fed the trunk's state is already well aligned.
+- **Lossless.** Any proposal is valid if the same q samples and verifies.
+- **Kill test.** One screen with STRATA_SPEC_DEPTH=1 logging p and q; fit temperatures offline and recompute Σ min(p, q). Dead under +1.5 points.
+
+### 10 Tier-invariant arithmetic
+
+- **What.** Make an expert return identical bits on the pool, both GPUs and any remote box by fixing the order of the float scale-and-accumulate tail (the integer block sums already agree). Drive placement from logical counters, not wall-clock.
+- **Why here.** Your repeatability issue is open and the desk check points at timing-dependent placement; ideas 1–3 add more of it. Order-independent floating-point sums are available off the shelf from HPC (ReproBLAS, about 7 additions per element) if a fixed tree isn't enough.
+- **Why it might fail.** A canonical order can cost a few percent in GPU kernels.
+- **Kill test.** Same expert, same Q8 input, each kernel, compare bits; then seeded repeats with the timing switch on.
+- **Upside.** No speed. It turns "rounding-level" into bit-exact for everything dynamic.
+
+## Looked at and dropped
+
+- **NVMe straight into VRAM.** The direct NVMe-to-VRAM route is closed on this card: NVIDIA's P2PDMA list is all data-center parts, and its design guide restricts GPUDirect to Quadro and data-center GPUs.
+- **The iGPU.** Two compute units on the same saturated bus.
+- **A whole-model shadow predictor (OD-MoE's method).** Its authors' testbed gave the shadow model two RTX 3090s of its own; nothing here can host a copy that runs ahead of 160 tok/s.
+- **A decode-free CPU expert format.** It adds ~25% bytes to a bus-bound path.
+- **A bound-certified two-stage output head.** Cauchy–Schwarz slack in 2,560 dimensions is ~50× the typical error, so the candidate set stays small only when the sketch is nearly full precision.
+- **Drafting during verification.** The MTP head needs the trunk's final state, and the column, not the draft, is what costs.
+
+The extended-research service failed to connect this turn, so I ran the searches directly; it may work if you ask again in a minute. Want this as a Markdown file for the repo?
+
+Sources:
+- [Your profile pack](https://raw.githubusercontent.com/KarlGrier/local-ai-setup/main/research/engine-speed-1111/PROFILE-PACK.md)
+- [Fate: cross-layer gate](https://arxiv.org/html/2502.12224v2) · [OD-MoE](https://arxiv.org/abs/2512.03927v1) · [DraftExpert](https://arxiv.org/pdf/2607.24434) · [SP-MoE](https://arxiv.org/html/2510.10302v2)
+- [Runahead execution, Mutlu et al.](https://utw10235.utweb.utexas.edu/pub/mutlu_isca05.pdf)
+- [Fiddler](https://arxiv.org/pdf/2402.07033) · [Klotski](https://arxiv.org/html/2502.06888v1) · [MoE-Infinity](https://arxiv.org/html/2401.14361v3)
+- [EcoSpec](https://www.alphaxiv.org/abs/2607.12696) · [EVICT](https://www.emergentmind.com/papers/2605.00342)
+- [Online Speculative Decoding](https://www.emergentmind.com/papers/2310.07177) · [OnlineSpec](https://arxiv.org/html/2603.12617v1)
+- [DFloat11](https://arxiv.org/html/2504.11651v3) · [ReproBLAS](https://www2.eecs.berkeley.edu/Pubs/TechRpts/2016/EECS-2016-121.html)
+- [IOTLB wall](https://peerj.com/articles/cs-1385) · [Linux x86 IOMMU docs](https://kernel.org/doc/html/v6.1/x86/iommu.html) · [PCIe MPS/MRRS options](https://blog.linuxplumbersconf.org/2017/ocw/system/presentations/4737/original/mps.pdf)
+- [NVIDIA GDS P2PDMA supported GPUs](https://docs.nvidia.com/gpudirect-storage/troubleshooting-guide/nvme-p2pdma-troubleshooting.html) · [GDS design guide](https://docs.nvidia.com/gpudirect-storage/design-guide/)
+- [perf UMC events](https://lwn.net/Articles/946708/) · [RDMA latency thesis](https://db.in.tum.de/~fent/papers/Thesis%20Optimizing%20Network%20Latency%20for%20Transactions.pdf) · [RAM speed and local LLMs](https://www.popularai.org/p/ram-speed-local-llms)

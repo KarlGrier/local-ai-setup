@@ -1,0 +1,333 @@
+**I would use this plan after a few targeted corrections.** The scope is controlled, the X1→X8 exception is clear, and X14 now asks the right preliminary question: whether the i7 can execute a small expert job quickly enough to justify considering a network connection.
+
+The most important corrections are:
+
+1. **X9 must trace Strata’s GPU-based fetch kernels, not just CUDA copy operations.**
+2. **X6 needs a more complete trace format, and some of its workloads must also appear in X9.**
+3. **X11 can kill a particular next-layer staging design—not the entire cache/prefetch family.**
+4. **X13 must distinguish unchanged target computation from identical seeded output across different drafters.**
+5. **X7’s 5% zero-block threshold currently tests a narrower opportunity than the original zero-skipping idea.**
+6. **X14 needs explicit job, worker-topology, memory-residency, and bandwidth definitions.**
+
+These are mostly changes to what the experiments measure and what their results are allowed to conclude. I would keep the overall track.
+
+## 1. Fix X9 first: “PCIe copy” is not necessarily a copy-engine operation
+
+This is the most concrete implementation issue I found.
+
+In upstream v0.2.8, the documented base of your daily build:
+
+- The default PCIe mode is `auto`.
+- `auto` selects a **GPU copy-kernel path**.
+- That path calls `fetch_blobs(...)` to read the pinned host expert bytes into GPU staging.
+- The separate DMA mode uses `cudaMemcpyAsync`.
+
+You can see the dispatch in [generate.cpp](https://github.com/Niko1221/Strata/blob/v0.2.8/src/program/generate.cpp) and the two implementations in [verify.cpp](https://github.com/Niko1221/Strata/blob/v0.2.8/src/core/verify.cpp). Your private build’s actual selected path should be confirmed, but **an empty CUDA memcpy lane would not establish an idle PCIe link**.
+
+I would replace X9’s transfer clause with:
+
+> Identify the build’s actual PCIe mode and timestamp every operation that reads expert bytes from host memory: fetch kernels, mapped-host expert kernels if used, and DMA copies. Include relevant helper transfers, cache-admission traffic, and streamed KV traffic when identifying available transfer intervals.
+
+Two further qualifications matter.
+
+**CPU timestamps and CUDA events need a correlated timeline.** Separate durations cannot establish that a CPU interval overlapped a particular GPU interval. Record their alignment uncertainty, and avoid adding per-layer synchronization merely to collect timestamps. CUDA’s documentation also warns that event intervals can include intervening work from other streams. [docs.nvidia.com](https://docs.nvidia.com/cuda/cuda-runtime-api/cuda_runtime_api/group__CUDART__EVENT.html)
+
+**Available UMC counters do not guarantee sufficient sampling resolution.** If their measurements integrate over several milliseconds, they cannot tell you whether a particular approximately 190 µs layer interval had idle DRAM. Report the actual sampling interval and counter limitations. Without sufficient evidence, call these **candidate low-traffic intervals**, rather than verified idle RAM.
+
+Keep the 3% instrumentation-overhead check, but also compare window widths, placement decisions, slot counts, and phase distributions. A trace could add less than 3% overall while substantially distorting one short interval that X11 intends to exploit.
+
+## 2. Expand X6’s data contract before spending its capture gap
+
+The listed fields are useful, but they do not yet support every promised analysis. Adding a small amount of metadata now is cheaper than discovering later that another capture is required.
+
+| Downstream use | Additional information needed |
+|---|---|
+| **All analyses** | Build/configuration identity; request, window, layer and column IDs; window width; draft source; token position; accepted-prefix length |
+| **Cache-policy replay** | Initial main/helper residency and subsequent admissions/evictions; the policy state needed to reproduce relevant decisions |
+| **X10 suffix replay** | Tokenized prompt/history, chronological availability of source text, lookup configuration and tie-breaking |
+| **X11 near-miss predictors** | Actual router candidates beyond the selected top-10, with ranks and preferably scores |
+| **X12 expected-cost feature** | Token identity, current gate state, and enough proposal information to calculate the expectation under \(q\) |
+| **Cost accounting** | Expert byte size/format, unique expert groups, and token multiplicity per group |
+
+Two details deserve explicit wording.
+
+### Label input rows and predicted tokens separately
+
+The experts executed for a verification input row and the token predicted by that row are offset in the autoregressive computation. “Accepted versus rejected column” can become an off-by-one labeling error if this distinction is implicit.
+
+Record both:
+
+- The input-token position whose expert work ran.
+- The output/draft position whose acceptance decision the row supports.
+
+### Top-14 overall may be insufficient for a three-upload policy
+
+If all fourteen predicted experts are already resident, that trace says little about the best three **nonresident** predictions. For the cheap prefetch test, also retain the top few nonresident predicted candidates under the recorded residency snapshot.
+
+Similarly, router L+1 applied to layer-L input does **not** supply the true router’s near-miss list needed by the separate near-miss readahead experiment.
+
+There is also a workload mismatch: **X6 captures coding and long research, while X9 times a fixed decode fixture.** Those cannot simply be combined into an accurate scheduling oracle. Add a short common slice with matching window IDs, or fit a conditional timing model and validate it on a matching coding/research slice.
+
+Finally, “behavior unchanged, timing ignored” needs qualification. Computing the extra router prediction can affect timing-dependent PCIe sharing and placement. Log those decisions and preserve cache sizing. The target calculation can remain unchanged while the observed serving-tier distribution changes.
+
+## 3. Narrow X11’s bound and strengthen its rejection logic
+
+Starting with a hindsight bound is a good use of desk time. **Its scope needs to be precise.**
+
+Knowing layer L+1’s misses during layer L, and allowing transfers only in specified idle intervals, bounds a particular **one-layer-ahead staging scheme**. It does not bound:
+
+- Accepted-only admission or speculative-frequency weighting.
+- Same-layer next-token or next-window readahead.
+- Longer-horizon eviction and residency decisions.
+- A different schedule that creates additional overlap.
+
+Accepted-only admission was already part of the main plan’s committed-versus-speculative weighting. Fold it there and reuse the capture. Do not put it behind X11’s next-layer-prefetch kill gate.
+
+I would change the rule to:
+
+> Kill this one-layer-ahead staging branch if an optimistic, uncertainty-qualified upper bound under its stated release times, deadlines, bandwidth and slot budget is below 3% of window time. Evaluate admission and longer-horizon cache policies separately in the main replay harness.
+
+### Perfect knowledge does not automatically produce an upper bound
+
+A greedy scheduler with perfect future information is still just one scheduler. If it saves 2%, another schedule might save more. That result cannot justify a 3% upper-bound rejection.
+
+For a strong kill decision, either:
+
+- Solve the defined scheduling problem sufficiently well to bound its optimum; or
+- Use deliberately optimistic relaxations whose maximum saving is safely above what a real implementation could achieve.
+
+Also distinguish a **fixed-baseline-gap estimate** from a rescheduled system. Shortening CPU phases changes later deadlines and available gaps. Changing cache residency changes future misses. Combining new residency with unchanged baseline timings can double-count benefits.
+
+Your “cheap predictor must achieve half the bound” rule is reasonable as an **effort-allocation rule**. Keep it if that is intentional. It does not prove that full runahead cannot work when cheap prediction fails, and passing it does not establish that full runahead beats the cheaper predictor after paying for speculative GPU work.
+
+A full-runahead proposal should therefore estimate its **incremental benefit over the best cheap predictor**, not merely compare itself with today’s baseline.
+
+## 4. X13 is now authorized—but its parity gate needs the right meaning
+
+Your explicit draft-only exception resolves the earlier scope issue. Fewer draft experts and lower-precision draft weights are now eligible, while the target remains unchanged.
+
+The mathematical requirement is correct: verification must use the **actual normalized proposal distribution that generated each draft**, including its sampling transformations and vocabulary mapping. Exact speculative sampling can preserve the target distribution with a different proposal model. [proceedings.mlr.press](https://proceedings.mlr.press/v202/leviathan23a/leviathan23a.pdf)
+
+However:
+
+> **A different proposal \(q\) can produce a different seeded transcript while preserving the same target distribution.**
+
+If `exact7` is interpreted as “this new drafter must generate exactly the old drafter’s sampled text under the same seed,” a valid draft-only optimization can fail for the wrong reason.
+
+I would add this specific exception to the interpretation of the gates:
+
+> For X13, require target parity on identical supplied token histories and matched placement, correct restoration of target state after every accepted prefix, and sampled-distribution agreement with the unchanged target sampler. Run exact7/long40 for the invariants they cover, but do not require identical free-running sampled transcripts between different drafters. Require repeatability within each configuration from the same initial state.
+
+This preserves your lossless requirement. It does not weaken target checks.
+
+Also make explicit that a quantized draft copy of a shared embedding or head must not replace or mutate the target’s copy.
+
+### Keep the all-depth rejection coverage
+
+This part of the plan is important. Your [profile](https://raw.githubusercontent.com/KarlGrier/local-ai-setup/main/research/engine-speed-1111/PROFILE-PACK.md) says `exact7` runs without adaptation, and the existing `STRATA_SPEC_DEPTH` counters cover positions 1–5, not all seven draft positions.
+
+Coverage should include:
+
+- First-draft rejection and rejection at every supported depth.
+- Full acceptance and the bonus-token path.
+- Adaptive stopping at each supported prefix.
+- Continuation after rejection.
+- Adaptation/admissions enabled in the relevant integration tests.
+- The single-column path.
+
+Use deterministic branch fixtures for state comparisons and keep those separate from the statistical sampled-distribution runs. Merely observing that a depth was attempted does not prove that its rejection and recovery path ran.
+
+## 5. Change X2’s “exactness problem versus bug” distinction
+
+A bug can cause a real exactness problem. The current distinction is not actionable.
+
+The useful question is **which invariant failed**:
+
+- The proposal law did not match the draft-selection method.
+- Acceptance/residual sampling was wrong.
+- Stopping depended improperly on the sampled token.
+- Rejected work contaminated recurrent or other state.
+- The wider numerical path changed target results beyond the accepted tolerance.
+- The test or reference was wrong.
+
+Deterministic copied-token proposals are compatible with exact sampling: for candidate \(d\), the proposal is a point mass, acceptance is \(p(d)\), and rejection uses the corresponding residual distribution. Therefore, an old 12-wide failure does not by itself show that wide copy verification is mathematically impossible. [proceedings.mlr.press](https://proceedings.mlr.press/v202/leviathan23a/leviathan23a.pdf)
+
+Suggested wording:
+
+> X2 identifies the violated invariant and reports explained, repaired, or unresolved. An unresolved failure blocks wider-verifier implementation or performance approval. It does not by itself invalidate X10’s desk opportunity analysis.
+
+That last sentence is a proposed change to your dependency: **causal suffix analysis can still be useful while implementation correctness remains unresolved**. If you prefer to save even that desk effort until X2 clears, keep the dependency as a prioritization choice.
+
+For X10 itself, “price with real window costs” must mean widths actually measured. Current widths 1–8 do not provide measured costs for 16-, 32-, or 64-column verification. Report wider costs as unknown or as sensitivity ranges until the relevant implementation is authorized and measured.
+
+## 6. X7 needs to measure removable work, not just zero blocks
+
+The proposed census is cheap and worthwhile, but the 5% cutoff currently tests something narrower than the original idea.
+
+For ordinary finite inputs with representable scales, a nonzero Q8 quantization block contains a maximum-magnitude value that maps to a nonzero code. **Many small values rounding to zero does not normally make the entire parent quantization block zero.**
+
+Consequently, whole-block sparsity can be tiny even when there are many individual zero coordinates that a different layout might exploit.
+
+In the same capture, report:
+
+1. Individual zero codes.
+2. Whole zero-contribution quantization blocks.
+3. Zero subblocks or runs within the original quantization blocks.
+4. Zeros shared by **all rows grouped into the same expert call**.
+5. Estimated weight bytes or memory transactions that could actually be avoided.
+
+Use “zero contribution under the actual dot-product expression,” including scales and any correction metadata. Zero integer codes alone are not a universal criterion across every quantized format.
+
+The grouping matters because a weight block used by two rows cannot be skipped if only one row has zeros. The layout matters because skipping an 18-byte block may still leave its cache line fetched for adjacent blocks.
+
+I would retain the 5% threshold only as:
+
+> Kill the current-layout whole-block-skipping variant if its byte-weighted removable-work opportunity is below the chosen threshold. Report column/repacking opportunity separately; do not kill it solely because whole parent blocks are rarely zero.
+
+Conversely, a 5% result is not automatically attractive. As an illustrative **CPU-only** calculation, removing 5% of all down-projection bytes would save approximately
+
+\[
+0.397\times0.41\times0.05 \approx 0.8\%
+\]
+
+of whole-window time under ideal bandwidth scaling, before overhead. That calculation excludes GPU and gate/up benefits. The census should identify which of those it can actually support.
+
+## 7. X14 is useful; tighten the benchmark so its pass means something
+
+This is now a sensible first step for the second PC. Keep the explicit stop before any network work.
+
+### Define the job
+
+Use:
+
+> One job is a bundle of one, two, or three distinct experts, each processing one or two token rows, executed by one shared worker pool. Time from submission until all required outputs are ready.
+
+Do not create a full worker pool per expert and accidentally measure oversubscription.
+
+The timed unit should reproduce the expert work the remote process would perform, including pool overhead and the relevant gate/up, activation, hidden quantization, and down stages. If the main engine supplies an already-quantized input, represent that accurately rather than adding a nonexistent input-quantization cost.
+
+### Define bandwidth
+
+Report:
+
+\[
+B_{\mathrm{effective}}
+=\frac{\text{unique expert weight bytes required by the job}}
+{\text{complete job latency}}.
+\]
+
+Count each expert’s weights once per job, not once per token row. Label this **effective expert bandwidth**, since it is not a memory-controller measurement.
+
+At the profile’s approximately 1.95 MiB average expert size, 20 GB/s corresponds to about **102 µs**. Apply the criterion to single-expert job completion, preferably stating explicitly whether the pass uses median latency. Report p99 separately and use it in any subsequent network proposal.
+
+A high bulk-sweep throughput is not a substitute for a fast single job.
+
+### Make “cold” mean outside cache, already in RAM
+
+Preload and prefault the sample before timing. Rotate through it without immediate reuse. Exclude USB reads, page-in, and filesystem warm-up from the timed region, and report evidence of timed faults or swapping.
+
+At the profile’s average size, 2,000 experts imply approximately **3.8 GiB of weight data**, plus fixtures, metadata, and the binary. That is an estimate for planning; the actual folder size must be measured after creation.
+
+Preserve actual gate/up–down pairings. Do not independently sample formats and create combinations absent from the model. Report per-format results, and where possible weight the headline by **CPU-served workload**, rather than merely the global layer mix.
+
+### Name the CPU configurations
+
+The i7-14700 has **8 P cores, 12 E cores, and 28 logical threads**. “P-only” and “all cores” are ambiguous unless you specify physical workers versus SMT threads. [intel.com](https://www.intel.com/content/www/us/en/products/sku/236781/intel-core-i7-processor-14700-33m-cache-up-to-5-40-ghz/specifications.html)
+
+Record explicit worker counts and affinity masks. For example, distinguish:
+
+- Eight P-core workers.
+- Sixteen P-core SMT threads, if tested.
+- Twenty physical-core workers.
+- Twenty-eight logical threads, if tested.
+
+You need not test every combination initially. You do need unambiguous labels.
+
+Under WSL, do not infer P/E topology from CPU numbering. If it cannot be verified, report the P-only arm as unavailable. The Ryzen reference should likewise report its actual worker layout; “P-only” has no equivalent meaning there.
+
+### Add a correctness preflight and enforce AVX2
+
+The single text output should include build/fixture hashes, format coverage, selected ISA path, per-format correctness results, sample counts, and latency summaries.
+
+A static binary can still contain or dispatch to AVX-512 code. Avoid host-native compilation and ensure dependencies cannot select an AVX-512 path.
+
+The same-binary Ryzen run is a useful harness and portability reference. **Its AVX2 throughput is not your daily AVX-512 production baseline**, so its ratio to the i7 cannot directly predict decode gains.
+
+A pass means “worth considering a separate network experiment.” It does not yet mean the LAN worker speeds up inference.
+
+## 8. Smaller amendments to the remaining items
+
+| Item | Amendment |
+|---|---|
+| **X1** | Define net saving as persistent decode VRAM actually freed after metadata, alignment, allocation rounding, and required scratch. Scan blocks in the physical layout X8 will consume. |
+| **X1 copy inventory** | Distinguish originals that must remain resident during decode from temporary BF16 materialization during prefill. Price the latter’s peak memory and restoration cost separately. |
+| **X3** | Distinguish “not exposed or readable in this environment” from “unsupported by the CPU.” A default IOMMU-domain message does not establish every GPU’s effective DMA mapping. |
+| **X4** | Audit the actual v0.2.13 port’s configuration pins and memory-budget decisions, not just upstream capabilities. Report which short-of-RAM branch its configuration selects. |
+| **X5** | Define fixed work by token histories, window widths, expert groups and placement—not just prompt, seed, or generated-token count. Record worker-to-core/CCD mapping. |
+| **X8** | Compare against the actual served HC implementation, including GR_FORK’s arithmetic. Require weight round-trip equality and output equality at every claimed width and shape. |
+| **X12** | Add the expected marginal cost feature to the current gate, using held-out chronological requests. Keep decision-making before the next token is drawn unless a new proposal law is explicitly derived. |
+
+### X5’s clock experiment needs two precise additions
+
+Record **actual memory and SM clocks during scored windows**, along with power/thermal state. A before/after setting alone does not establish what clocks the work ran at.
+
+Also restrict it to **runtime-modifiable memory clocks**. NVIDIA distinguishes runtime changes from deferred changes requiring GPU reinitialization or driver unload/reload. The latter is outside your ground rules even if it avoids a full reboot. Restore the previous clock policy in cleanup and verify it before the gap is released. [docs.nvidia.com](https://docs.nvidia.com/deploy/nvidia-smi/index.html)
+
+A memory-clock sensitivity result supports GPU memory traffic being important. It does not specifically attribute the opportunity to HC; GPU expert and other memory traffic may contribute.
+
+### X8’s authorization is clear
+
+If X1 passes, the one-kernel prototype can proceed under your stated exception. Full engine integration and promotion still require the later proposal and approval.
+
+Its speed measurement should include exception handling, indexing, scratch, register pressure, and any occupancy loss. If it materializes a full BF16 matrix before multiplication, report that as a different implementation with the extra writes and reads included.
+
+### X12 has a counterfactual-data limit
+
+Baseline traces show only the candidates the current gate generated. They do not reveal longer continuations it never drafted. Shortening a recorded window also changes subsequent boundaries and potentially cache state.
+
+Therefore, an offline pass can show that the feature appears useful on observed decisions. It cannot establish a complete free-running speedup without a later implementation test.
+
+## 9. Keep the thresholds, but give each result the correct status
+
+Your numerical thresholds are reasonable **work-budget choices**. They should not be presented as universal impossibility results.
+
+I would distinguish:
+
+- **Screen pass:** Enough evidence to justify the one-page proposal or the explicitly authorized next step.
+- **Kill for this round:** Below the effort threshold, or insufficient evidence within the allocated budget.
+- **Validated win:** Implemented, timed, and through the applicable exactness and distribution gates.
+
+For diagnostic items such as X3, X4, and X9, completion is a usable read-out or a documented measurement limitation. They do not themselves constitute speed wins.
+
+If you want every line to remain binary, use **PASS / KILL THIS ROUND**, with a reason such as *insufficient measurement resolution* or *unresolved correctness*. That avoids turning missing evidence into a false claim that an idea cannot work.
+
+The one-page proposal should contain:
+
+- What passed, with measured numbers and uncertainty.
+- Expected whole-request or decode benefit, with assumptions.
+- Implementation and exactness risks.
+- The smallest next change requiring approval.
+
+## Suggested order and main-plan deduplication
+
+I would preserve your main-plan priority and share work as follows:
+
+| Work | Where it belongs |
+|---|---|
+| **X1–X4, X14 package preparation** | Desk work, subject to existing build/resource rules |
+| **X5 worker sweep and phase measurements** | Fold into main-plan A2/A4; add the temporary clock arm only if supported |
+| **X6 route capture** | Extend the main-plan B capture instead of creating a second independent harness |
+| **X7 zero census** | Collect during the untimed capture where practical |
+| **X9 deadline trace** | A separately qualified, lightweight timing pass on matching work; also useful for the main overlap analysis |
+| **X8** | First suitable short gap after X1 passes |
+| **X10–X12** | Desk analysis after their required data is qualified |
+| **X14 Ryzen reference** | Its CPU-only gap, as specified |
+| **X13** | Last, retaining its lowest priority |
+
+Accepted-only admission, prompt reseeding, and reserved hugepages should remain folded into the main plan.
+
+One operational detail: **`nice 19` does not isolate RAM bandwidth.** Builds, sample extraction, and large desk scans should not overlap the scored X5/X9 measurements, even though they use no GPU.
+
+**The plan is ready to become an executable track once the trace contract, X9 coverage, X11 rejection scope, and X13 gate semantics are corrected.** X1/X8 and X14 are already close to well-specified experiments. The greatest risk in the current wording is spending the capture gaps and then making a confident pass/kill decision from data that cannot answer the intended question.
+
+This was a plan audit; I did not run the save-first step, build anything, or execute an experiment.

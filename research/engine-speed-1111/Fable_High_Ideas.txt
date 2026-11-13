@@ -1,0 +1,109 @@
+I'll read your profile pack and yesterday's report first, then check the report's ideas and search for new ones.
+
+**Bottom line:** the biggest untouched lever is the helper card. Your decode window is 21.7 ms, with 9.1 ms waiting on the GPU and 8.6 ms in the CPU pool, run back to back. ADAPT_FETCH=2 bought +12.7% decode by lifting main-cache share from 62.6% to 67.3%, so each point of GPU hit rate is worth roughly 2.7%. The 4060 Ti's 3,300 slots are still filled once at start and never changed.
+
+Caveats: both files are larger than my fetch tool returns whole, so I worked from targeted extracts, not a line-by-line read. Three arXiv papers (Ostinato, Speculating Experts, Adaptive Expert Assignment) were rate-limited, so I have abstracts or snippets only. All gain ranges are my estimates, not measurements.
+
+## The local report
+
+Its baseline is off. It reasons about v0.2.6 code, while your daily is v0.2.8 plus 31 commits. Its own citation check marked none of the 53 checked claims as fully supported.
+
+| Verdict | Items |
+|---|---|
+| Holds up, still open, small | `SPEC_COST` (never run); `PCIE_BALANCE`/`PCIE_MIN1` (1.026× combined, on a single 3090); `GR_R2`; PLE row-cache bump (exact, prompt-side only). The SP-MoE prefetch and verification-order papers point the right way but in the wrong variants (see #3, #4). |
+| Already covered by your tried list | 16K chunk; unforced pcie-frac; PF_AHEAD (you measured +0.2% and +0.6% against the report's +7–19% estimate); PF_TAIL_SPLIT; ple-inflight; draft-length tuning; MTP on a second stream; page-locking; affinity retention; score-based eviction. |
+| Wrong or not applicable | CUDA-graph capture (your launch gaps are already 1.5–3 µs per layer). Exact-size slots (its 7.76–10.27 MB sizes are DeepSeek's; your slots average 1.95 MiB, the mean expert size). Three-stream transfer (its "free" claim used GPU memory bandwidth, not PCIe). PIN_BY_NEED; pipeline-windows; per-layer PLE split; MADV hints. Multi-draft verification (tree drafting measured −10%). |
+
+## Top 10
+
+**1. Make the helper card adaptive (a victim cache for the main card)**: +5–15%, medium effort
+- **What:** The main cache admits about 82 experts per window, so it evicts about as many recently useful ones. Let the helper take the best of those, replacing its coldest static entries. Throttle to 10–20 swaps a window over its x4 link, timed while the CPU pool is idle.
+- **Why here:** the helper is the only static tier left, and switching adaptation off cost the main cache 18%.
+- **Lossless:** placement only; same experts, same weights. Rounding-level, the same class as ADAPT_FETCH.
+- **Source:** a write-up of KTransformers' benchmarks has dynamic placement at 70.2 tok/s against 58.6 for a static frequency ranking. llama.cpp's cache, merged in October, is LRU on every GPU it is split across.
+- **Qwen4:** carries over, and matters more when the cached fraction halves.
+
+**2. Refill and re-seed the caches from the prompt pass**: +2–6% on turns after a prompt, low–medium effort
+- **What:** the prompt pass has just routed every prompt token, so it has a free session-specific frequency table. Use it to choose what returns to the borrowed slots, to seed the adaptive counters and, with #1, to re-rank the helper.
+- **Why here:** prompt chunks borrow 3,231 main-cache slots, and decode after a long prompt runs 1.5–2.3% slower. How those slots come back isn't described in the pack, so check that first.
+- **Lossless:** placement only.
+- **Source:** Ostinato. A stable, GPU-sized set of experts absorbed 84% of the routes of short prefills in its agent sessions.
+- **Qwen4:** yes.
+
+**3. Lookahead uploads timed into DRAM-idle gaps**: +3–10%, high effort
+- **What:** draft tokens are known before verify starts, and the CPU pool idles through every GPU dense phase and the draft phase. Predict the window's misses and upload them only in those gaps. Use a per-layer token→expert table for early layers and the next layer's router on the current hidden state for the rest.
+- **Why here:** your next-layer warming lost 6.5% because its reads competed with the CPU pool for DRAM; gap scheduling avoids that.
+- **Lossless:** the router still picks; a wrong guess only wastes link time.
+- **Source:** SP-MoE pairs draft-model outputs with the target's gating network to prefetch experts ahead of verification. SpecPrefetch keeps the native router for the final selection and reports up to 20% more decode throughput on a phone. Sem-MoE builds a token-to-expert table from token identity alone.
+- **Qwen4:** yes. Replay your routing logs first; drop it if the predictor rarely catches CPU-served experts.
+
+**4. Block verification**: +1–4% when sampling, 0 at greedy, low effort
+- **What:** swap the token-by-token accept rule for the block rule. It uses the same p and q along the drafted path.
+- **Why here:** your exact sampler is described as accept / residual / bonus, with no block rule mentioned.
+- **Lossless:** distribution-preserving by proof. The proof assumes a fixed block length, so rerun your distribution check with your confidence-gated draft lengths.
+- **Source:** Sun et al. Their measured wall-clock gain over token verification was 5–8%, and the block rule provably never accepts fewer tokens in expectation. Expect less here, since min-p 0.5 already drops shaky drafts.
+- **Qwen4:** unchanged.
+
+**5. CPU-pool latency hygiene**: 0–5% plus less run-to-run spread, an afternoon, no code
+- **What:** pin workers one per physical core and keep the GPU-driving threads on their own cores. Sweep 8/12/15 workers and V-cache versus frequency CCD. Hold `/dev/cpu_dma_latency` at 0 while serving and set the performance governor.
+- **Why here:** the pool runs 48 short bursts per window with idle gaps between, the pattern where cores drop into idle states. Governor, C-states, affinity and the reason for 15 workers are all absent from the pack. Fresh starts vary from 21.07 to 22.55 ms per window, which looks like thread placement.
+- **Lossless:** exact; confirm with your 7-prompt identity test after changing thread counts.
+- **Source:** Red Hat's low-latency guide: deep sleep states stay off for as long as a process holds that file open. Lower idle CPU overhead is among the changes KTransformers 0.5.3 shipped.
+- **Qwen4:** yes; the CPU share grows.
+
+**6. Live, miss-aware draft-length gate**: +1–3% at long context, low effort
+- **What:** replace the static fit with a running estimate of ms per extra verified position, and log per-position acceptance. Run upstream's `SPEC_COST` first.
+- **Why here:** the fitted cost gate gains 3.4–4.2% but loses 2.0% after 120K prompts. CPU experts per layer-window rise from 2.36 to 6.20 as context grows.
+- **Lossless:** distribution-preserving, because the gate reads only draft-side probabilities and timings. It costs seeded repeatability, so keep a switch.
+- **Qwen4:** yes.
+
+**7. Slim the drafter**: +1–4%, medium effort
+- **What:** profile the draft step, then try a lower-precision or shortlisted draft head and a fused chain.
+- **Why here:** drafting takes 2.33 ms per window, 10.7%, for one layer plus a 40,525-token head.
+- **Lossless:** distribution-preserving. Any drafter change is safe if verification uses the q the drafter sampled from. This differs from the rejected two-stage verify head.
+- **Qwen4:** method yes.
+
+**8. Re-encode the RAM-tier experts**: 0–4% now, capacity for Qwen4, high effort
+- **What:** first find out whether the pool is compute- or bandwidth-bound. By my arithmetic it streams about 44 GB/s against your measured 77 GB/s. If compute-bound, store CPU experts pre-expanded in a SIMD-friendly integer layout. If bandwidth-bound, entropy-code them and decode in cache.
+- **Lossless:** bit-exact against the quant file either way. I have not checked your tree's IQ3_S kernel.
+- **Source:** MINE's lossless coding ran a 2.1-bit checkpoint 2.52× and 1.48× faster than the fastest baseline on a 4060 Ti and a 5090, though on a small all-in-VRAM model. EntroLLM's Huffman-coded weights gave 31.9–146.6% faster inference on a bandwidth-limited Jetson.
+- **Qwen4:** the entropy-coded direction matters most, since 240–300B will not fit 96 GB at this bitrate. Measure the entropy of your code streams first.
+
+**9. Retrain the MTP head for acceptance length**: 0–6%, high effort
+- **Why here:** low confidence, because Basalt's tuned draft layer was a wash on your engine.
+- **Lossless:** distribution-preserving.
+- **Source:** LK losses raised average acceptance length by up to 8–10%, DeepSeek's MTP module included. D-REAL added up to 0.23 tokens and 9.4% serving throughput.
+- **Qwen4:** the pipeline carries over; the weights do not.
+
+**10. Unpriced exact switches plus a row-aware miss pick**: 0–3%, low effort
+- **What:** price `PCIE_BALANCE`/`MIN1`, `PCIE_START`, `GR_R2` and `strata tune auto`. Then test one new rule: send experts used by several positions in a window to PCIe, since upload cost is per expert while CPU cost grows with rows.
+- **Lossless:** exact.
+- **Source:** The adaptive-assignment paper treats the same exact choice: which GPU-missed experts to transfer and which to leave on the CPU.
+
+Left out: dual-batch attention–MoE overlap gave 1.56–1.61× throughput at batch 2–6, but it needs two streams; worth a look if you go multi-agent. TensorFold's recipes target unified-memory DGX Sparks, so they had nothing on offloading.
+
+## What I'd try first
+
+1. **#5, pool hygiene.** No code, and less spread makes every later A/B easier to read.
+2. **#4, block verification.** Small patch, proof-backed, carries straight to Qwen4.
+3. **A routing-trace replay for #1.** Log (layer, expert, position, device) per window and simulate an adaptive helper; the same harness prices #2 and #3. Build #1 if it shows about 3 or more points of extra GPU hit share.
+
+I can save this as a .md for your research folder if you want it there.
+
+Sources:
+- [Block Verification Accelerates Speculative Decoding](https://arxiv.org/pdf/2403.10444)
+- [Ostinato](https://arxiv.org/abs/2611.11533)
+- [SP-MoE](https://arxiv.org/html/2510.10302v2)
+- [SpecPrefetch](https://arxiv.org/html/2607.24787v2)
+- [Sem-MoE](https://arxiv.org/pdf/2503.04398)
+- [Adaptive Expert Assignment](https://arxiv.org/html/2610.23006)
+- [OSDI '26 CPU–GPU hybrid MoE](https://arxiv.org/pdf/2606.10493)
+- [MINE](https://arxiv.org/abs/2611.09424)
+- [EntroLLM](https://arxiv.org/html/2505.02380)
+- [LK Losses](https://arxiv.org/html/2602.23881)
+- [D-REAL](https://arxiv.org/abs/2611.10432)
+- [KTransformers write-up](https://juejin.cn/post/7664427110100680723)
+- [KTransformers 0.5.3](https://www.phoronix.com/news/KTransformers-0.5.3)
+- [llama.cpp multi-GPU MoE cache](https://github.com/ggml-org/llama.cpp/commit/c811cb8f0ac91b8ac72a32f970bdd45037f20da7)
+- [llama.cpp MoE cache explainer](https://www.developersdigest.tech/blog/llama-cpp-moe-offload-n-cpu-moe-vs-moe-cache-2026)
+- [Red Hat: power management transitions](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux_for_real_time/8/html/optimizing_rhel_8_for_real_time_for_low_latency_operation/assembly_controlling-power-management-transitions_optimizing-rhel8-for-real-time-for-low-latency-operation)

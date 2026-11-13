@@ -1,0 +1,200 @@
+Strata decode speed: new lossless ideas
+Nov 13, 2026
+Bottom line
+Try these three first: pin and spin the CPU expert pool (#7), admit CPU-served misses to the main cache on the idle PCIe lane (#2), and block verification for MTP drafts (#3). Together I would expect roughly +5–15% decode, all within your lossless rule.
+The largest remaining gain is structural (#1). Each layer runs the GPU for about 190 µs, then the CPU pool for about 180 µs while the GPU waits. Offsetting the verify window into two column groups lets those phases overlap. It is the most work, so gate it with a free regression on the 7,320 windows you already logged.
+Most of the local report is already in your tried list or does not apply to this build. Four of its items survive in some form (see the report check below).
+What limits decode on this rig
+Decode is two serial waits per layer, and the CPU one already runs at about 85% of what RAM bandwidth allows. Of a 21.71 ms window, GPU-reach takes 9.10 ms, the CPU pool 8.62 ms and MTP drafting 2.33 ms.
+• Misses are expensive. The CPU serves 9.4% of expert entries and takes 39.7% of the window. ADAPT_FETCH cut the CPU share by 5 points for +12.7% decode, so each point moved off the CPU is worth about 2.5%.
+• The CPU phase is near its floor. Per layer-window, 3.90 CPU experts and 1.92 PCIe experts are read from RAM: 5.8 × about 2.0 MB ≈ 11.6 MB. At 77 GB/s that is about 150 µs against 180 µs measured. Kernel and thread work can recover at most those 30 µs, about 7% of the window.
+• Half of every layer is idle somewhere. The RAM bus and the PCIe lane idle during the GPU phase and during drafting. The GPU mostly waits during the CPU phase.
+• Tokens per window count for more here than on a GPU-only rig. A window costs roughly 9.8 ms fixed plus 2.7 ms per column. That fit uses 21.7 ms at 4.4 columns and the report's 12.5 ms at width 1, which the report's own check only partly supports.
+The ranking below therefore favours fewer misses, use of idle time and more tokens per window, and puts kernel tweaks low. The expert size is my arithmetic: 46.84 GiB over 24,576 experts.
+Check of the local report
+Four items hold up, most are covered by your tried list, and three rest on a wrong premise for this build. The report's own audit found 11 of 53 checked claims fully supported.
+Report item
+Verdict
+Why
+Single-path block verification (Tier 4)
+Holds up
+Not in your tried list; idea #3
+STRATA_PCIE_MIN1
+Holds up, small
+Unpriced; matters most in width-1 windows; idea #9
+Two-window overlap (--pipeline-windows)
+Right target, wrong vehicle
+The report could not confirm the flag engages on two cards. The mechanism itself is idea #1
+PLE row cache 1M to 8–32M rows
+Holds up, at most ~1% on decode
+Exact, and the RAM is there. But PLE time does not show outside the 0.86 ms host line, and the hit-rate claim failed its citation check
+Exact-size store slots
+Probably already true
+The report used DeepSeek's 10.27 MB experts. Here 4,585 padded slots would need about 11.4 GiB by my estimate, which leaves almost no room for the dense weights on the 5080. Confirm with cache bytes ÷ slots
+STRATA_PCIE_BALANCE
+Covered
+--pcie-frac auto already re-prices the share while serving
+STRATA_PF_AHEAD
+Covered; report is wrong
+Report says unmeasured, +7–19%. Your pack has +0.2% and +0.6%, rejected
+PF_TAIL_SPLIT, chunk size, layered prefill, page-locking
+Covered
+Parked; 16,384 adopted; not exact; arena already pinned
+Score-based eviction (HybriMoE)
+Mostly covered
+Its 6–8% is against LRU. Your cache admits by routing frequency and adapts
+ExFlow affinity prior
+Covered
+Your affinity A/B showed no effect
+Multi-path verification (GBV K=3, traversal)
+Covered
+Tree drafting measured about −10%
+PLE inflight sweep, kStackMisses
+Covered
+256 inflight gave nothing; the v0.2.13 port is parked at −1.7%
+CUDA-graph capture
+Wrong for this build
+Launch gaps are 1.5–3 µs per layer and the GPU serial part is 98–99% busy. The wait is real work, not launch overhead
+PreScope three-stream and other predictive prefetch
+Wrong for this regime
+Your next-layer warming lost 6.5%. Bevy and WiSP report the same effect. The report's own check corrects its ~11 µs transfer figure to ~178 µs
+MoE-aware verification (MoE-Spec, SP-MoE and others)
+Likely not lossless
+As far as I know MoE-Spec caps experts at verify time and SP-MoE is prefetch. I did not open these papers
+STRATA_PIN_BY_NEED
+Closed
+Blocked by the two-card guard
+Ranked top 10
+Ranked by expected decode gain on this rig. Gains are my estimates from your profile numbers, not measurements.
+#
+Idea
+Expected gain
+Effort
+Lossless class
+1
+Offset two column groups so GPU and CPU phases overlap
++8–20% single stream, up to ~+30% with drafting hidden; ~1.4–1.6× total for two requests
+High
+Rounding-level
+2
+Admit CPU-served misses on the idle lane
++3–8%
+Medium
+Placement
+3
+Block verification for MTP drafts
++1–4% sampled, 0 greedy
+Low
+Distribution-preserving
+4
+Adaptive helper cache
++2–5%
+Medium
+Placement
+5
+Suffix-tree drafting with exact wide windows
+0 on new prose; +30–60% inside copied spans
+Medium
+Distribution-preserving
+6
+Choose which misses ride PCIe by load and reuse
++1–3%
+Low
+Placement
+7
+CPU pool and host hygiene
++1–4%
+Low (hours)
+Bit-exact
+8
+Runtime VRAM split between KV and expert slots
++1–3% at short context
+Medium
+Placement
+9
+Narrow-window fast path
++1–3% sampled
+Low
+Same bits / placement
+10
+Log acceptance by draft depth, then price every depth
++1–2%
+Low
+Exact
+"Placement" means the idea changes which device computes an expert. CPU and GPU expert kernels are not bit-identical, so these are lossless in the same rounding-level sense as the PCIe share you already run.
+1. Offset the window into two column groups
+What. Split each verify window into a lead group and a trail group, half a layer apart. While the CPU pool and PCIe lane serve the lead group's misses, the GPU runs the trail group's dense part, and the reverse. A second step starts the certain first column straight after sampling and runs MTP drafting in the GPU's gaps, so drafting leaves the critical path.
+Each group's misses are served while the GPU runs the other group's dense part, so neither side waits.
+Why here. The two phases are almost equal in length, which is the best case for overlap. The cost is a second GPU pass per layer, so the gain depends on how much of GPU-reach is fixed per pass. Regress GPU-reach and CPU time on window width first, and drop the single-stream form if the fixed part is above roughly two thirds. The same scheduler also serves two requests at once, where --batch 4 gave you nothing.
+Lossless. A column never depends on later columns, so every column sees the same inputs. Kernels run at other batch widths, so expect rounding-level differences.
+Source. An OSDI '26 hybrid-inference paper overlaps GPU attention with CPU MoE across two microbatches and measured 1.56× throughput at batch 2. Bevy lets ready requests run ahead while others wait on fetches, and warns that separate passes repeat reads of shared weights.
+2. Admit CPU-served misses on the idle lane
+What. ADAPT_FETCH keeps an expert only when the GPU read it over PCIe, about 82–86 times per window. The roughly 187 experts per window that the CPU computes are never kept, apart from the adaptive tier's 0.6 swaps. Upload the best-scored of them in the background during GPU phases and drafting, and commit them at a window boundary under the ADAPT_LAG rule.
+Why here. Your data makes admissions the strongest lever: no adaptation costs 18%, and ADAPT_FETCH gave +12.7%. About nine in ten PCIe-read misses already pass the admission test, so many CPU-served ones should too. The traffic fits: all 187 would take about 6.5 ms of lane time per window, against about 11 ms idle.
+Lossless. Placement only. Committing at window boundaries, not by wall-clock, keeps seeded runs repeatable, which the async tier could not.
+Source. Your profile pack. The llama.cpp multi-GPU MoE cache thread discusses the same trade: CPU-computed misses with admission by frequency. WiSP argues for cache-and-reuse over prediction.
+3. Block verification for MTP drafts
+What. Replace the per-token accept or reject with a joint decision on the whole draft block. It uses the per-position target and draft probabilities that STRATA_SPEC_EXACT already computes.
+Why here. Every extra committed token spreads a window's fixed cost. At 72.9% acceptance on the screen workloads there is room; greedy fixtures gain nothing. It only helps if drafts are sampled from the draft head's distribution. If Strata drafts by argmax, block verification reduces to what you have.
+Lossless. Proven to keep the target distribution, and never worse than token verification.
+Source. Block Verification (ICLR 2025) reports 5–8% wall-clock gains. Hierarchical Speculative Decoding is a later lossless method that claims more accepted tokens; try it second.
+4. Make the helper cache adaptive
+What. The 4060 Ti's 3,300 experts are fixed at start. Let the best-scored experts evicted from the main cache, and hot CPU-served misses, replace the helper's coldest entries. Upload over the helper's own link in the background and commit at window boundaries.
+Why here. All adaptivity sits on the 5080, where it was worth 18% and then 12.7%. Alternative static expert profiles were within noise or worse, which suggests static content is the limit. The x4 link is nearly idle; at the report's 6.4 GB/s it could move about 70 experts per window.
+Lossless. Placement only.
+Source. AdaOffload adapts multi-GPU expert offloading to each card's capability and to observed cache residency. I read only its abstract and excerpts.
+5. Suffix-tree drafting with exact wide windows
+What. Extend --suffix-draft from a 3-token prompt lookup to a suffix tree over the prompt and all earlier outputs, with draft length scaled to match length. Verify each lookup token with the exact rule, treating the draft as a one-hot proposal: accept with the target's probability for it, else sample the residual.
+Why here. Tool-call JSON, code edits and quoted sources repeat long spans. A 16-column window at 95–98% acceptance yields about 11–14 tokens for about 53 ms. The one-hot rule may also be what your --lookup-max-t 12 distribution failure was missing.
+Lossless. Yes with the one-hot exact rule, at any temperature.
+Source. SuffixDecoding (NeurIPS 2025). Snowflake's vLLM integration reports 1.96–3.12× on an edit benchmark and 1.0–1.28× on general chat, at 20–30 µs of CPU per drafted token.
+6. Choose which misses ride PCIe by load and reuse
+What. The auto share sets how many misses per layer go to the GPU. Also choose which: send misses that serve two or more columns, and those with the highest admission score, over PCIe. Leave single-token cold ones to the CPU.
+Why here. A PCIe read pays twice, because ADAPT_FETCH can keep the copy. A CPU compute pays once. The change lives inside the 15.65 µs plan step.
+Lossless. Placement only.
+Source. Apto assigns each expert a path from cache status, token count and activation frequency. Apex sends low-load experts to the CPU and balances both paths to finish together. Strata may already order misses this way; I could not read the planner.
+7. CPU pool and host hygiene
+What. Your pack has no entries for thread count, pinning, SMT, idle states or explicit hugepages. Test four things: workers that spin on the doorbell between layers; one pinned worker per physical core at 8, 12 and 15 workers; idle states capped at C1 with the performance governor; and the arena on explicit hugetlbfs pages.
+Why here. The pool is handed work about 2,200 times a second, and the CPU phase runs about 30 µs over its bandwidth floor. THP was bimodal run to run; explicit pages are the deterministic version of that test.
+Lossless. Bit-exact; nothing numeric changes.
+Source. KTransformers keeps decode in one CUDA graph by spinning on the GPU side to avoid sync overhead. The OSDI '26 paper uses per-expert barriers with two global barriers per MoE layer.
+8. Split VRAM between KV and expert slots at runtime
+What. 32,768 KV cells per attention layer stay resident at every context length. At short context most are empty. Give those bytes to expert slots and take them back as context grows.
+Why here. Your static --kv-resident 16384 test gave +1.2%, within spread. A live split gets that at short context without paying at long context.
+Lossless. Placement only.
+Source. WiSP divides one VRAM budget between resident experts and KV by marginal latency per byte. Its README reports 1.19× on an agent trace with byte-identical output, on an unquantized model.
+9. Narrow-window fast path
+What. Two tweaks for windows of one or two columns. Run the shared expert on a second CUDA stream beside the routed experts. Set STRATA_PCIE_MIN1 so one or two misses in a layer do not leave the PCIe lane idle.
+Why here. By the report's partly supported figure, 29% of windows at T=1 carry one token. Those windows cost about twice the average per token.
+Lossless. The side stream gives the same bits; MIN1 is placement.
+Source. Mia's AI Lab's GLM-5.3-Flash TensorFold recipe lists the side stream at 281 → 263 µs per MoE layer at one row, about even at 4–16 rows. I saw this in a search excerpt only. STRATA_SIDE_MIXER=2 may already cover it.
+10. Log acceptance by draft depth, then price every depth
+What. STRATA_SPEC_DEPTH=1 has never run. The cost gate prices draft steps 1–3, while windows carry up to 7. Log acceptance by depth, then extend the cost table to all depths.
+Why here. An extra column costs about 2.7 ms and pays only above roughly 44% acceptance. Depths 4–7 are steered by one cumulative threshold. The log is also needed to judge #3 and #5.
+Lossless. Yes; it only changes draft length.
+Source. Your profile pack lists this as unmeasured.
+Carry-over to Qwen4 Flash
+All ten carry over, and the miss-reducing ones (#2, #4, #8) and the tokens-per-window ones (#3, #5) gain value. At today's roughly 3.3 bits per weight, 240–300B of experts would be about 100–125 GB. That is at or beyond your 96 GB of RAM plus 24 GB of VRAM.
+So Qwen4 Flash will run at a lower bit rate or with an SSD tier. Either way the caches hold a smaller fraction of the experts, and misses become the larger part of each window. #1 still helps, but it then hides the GPU phase behind the CPU phase instead of the reverse. #7 and #10 are per-model measurements and need redoing. The 3.3 figure is my estimate from the 46.84 GiB arena and the 125B parameter count.
+What I could not verify
+I could not read Strata's source or its HOW_IT_WORKS.md, so four ideas start with a code check.
+• Strata internals. Unknown: whether pool workers spin or sleep (#7), whether drafts are sampled or argmax (#3), how the planner orders misses (#6), whether slots are exact-size, and whether SIDE_MIXER already covers the side stream (#9).
+• Your two files. They came through a summarising fetch, in parts. Numbers are as extracted; I did not see the raw tables.
+• Papers. I read the OSDI '26 paper, the block-verification abstract, the Bevy abstract, the WiSP README and the Snowflake post. AdaOffload, Apto, Apex, HSD, KTransformers and the TensorFold recipe I saw only as abstracts or search excerpts.
+• Borrowed figures. The 12.5 ms width-1 window, the 29% share of width-1 windows and the helper link's 6.4 GB/s come from the local report, which marks them partly supported.
+• Repeatability. Placement that follows wall-clock timing, such as the auto PCIe share, could explain why seeded runs differed with the timing switch on. That is a guess, not a finding.
+Sources
+Opened and read:
+• Profile pack and local report
+• Achieving Cloud-Grade SLOs for Local MoE Inference through CPU-GPU Hybrid Design (OSDI '26)
+• Bevy: Accelerating Offloading-Based MoE Inference by Interleaving Concurrent Requests (abstract)
+• Block Verification Accelerates Speculative Decoding (abstract)
+• WiSP README
+• SuffixDecoding at Production Scale (Snowflake)
+• Strata repository page
+Seen as abstracts or search excerpts only:
+• AdaOffload, Apto, Apex
+• Hierarchical Speculative Decoding, SuffixDecoding (NeurIPS 2025)
+• KTransformers (SOSP '25)
+• llama.cpp PR #30112, ik_llama.cpp PR #2883
+• GLM-5.3-Flash TensorFold recipe (Mia's AI Lab)

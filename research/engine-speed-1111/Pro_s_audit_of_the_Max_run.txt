@@ -1,0 +1,225 @@
+There are useful experiments here, but I would change its first three picks to BF16 HC packing, a complete LAN expert-job benchmark, and a carefully instrumented runahead-prediction test. The two-stream scheduler belongs in a separate throughput experiment if you regularly have simultaneous requests.
+
+The response’s main weakness is that it turns a plausible bandwidth diagnosis into an established schedule: “the CPU pool is idle” does not establish “DRAM is idle,” and unused aggregate bandwidth does not establish that a predicted expert can arrive before its deadline. Several paper figures also need correction.
+Verdict on all ten
+#	Idea	Audit verdict
+1	Runahead routing	Keep as a conditional experiment. The transfer schedule is unproved, and all three supporting prediction results are less directly applicable than presented.
+2	LAN expert-compute server	Keep. It adds an independent memory controller. The network assumptions and proposed benchmark underestimate the complete job.
+3	Anti-phase streams	Plausible throughput project. Distinct from the batching you rejected, but no benefit to one active generation. The 270 tok/s estimate is an optimistic scheduling model.
+4	Working-set prepaging	Mostly already on your plan. Prompt reseeding is a repeat; conversation-specific warm-start metadata is a narrower extension.
+5	SSD tier inside the stall	Largely existing machinery. Strata already has asynchronous direct expert reads and staging. “One SSD expert is nearly free” is not established.
+6	Lossless BF16 HC packing	Promote. A well-defined, cheap-to-screen experiment. Compression and speed estimates still need accounting for metadata, unpacking, and retained copies.
+7	TLB/IOTLB tuning	Fold into existing host tuning. It mixes three different mechanisms, and the hugepage work was already planned.
+8	Expected miss-cost gate	Useful refinement of the current gate. Its bias example is correct; its blanket claim that cost-based selection cannot be exact under sampling is wrong.
+9	Online draft calibration	Narrow optional refinement. Real research supports adaptation, but this overlaps your adapter/retraining work, and the proposed logging switch cannot supply the required data.
+10	Tier-invariant arithmetic	Substantial determinism project, incorrectly described. Fixing the floating-point tail cannot reconcile different activation quantizers.
+
+
+The requested gain ranges were explicitly supposed to be guesses, so guessing is appropriate. The problem is that some guesses rest on incorrect premises, and the ranking mixes single-generation speed, concurrent throughput, future capacity, and debugging infrastructure.
+1. The opening bandwidth argument: reasonable accounting, excessive certainty
+The arithmetic itself checks out:
+\[
+\frac{(3.90+1.92)\times1.95\ \mathrm{MiB}}{179.7\ \mu s}
+\approx66.2\ \mathrm{GB/s}.
+\]
+Counting both CPU-served weights and PCIe-served weights is a reasonable way to investigate shared DRAM pressure. The corresponding whole-window estimate is approximately 26.3 GB/s. These are calculations from the figures in your PROFILE-PACK, sections 5–8.
+
+But they are estimated logical weight traffic, not measured memory-controller traffic. They assume the average expert size is appropriate, weight reads are counted correctly, and the CPU and PCIe bytes belong in that same timing interval. Cache reuse, rereads, other traffic, and phase overlap can change the result.
+
+Three conclusions do not follow:
+- “DRAM is idle for the remaining 13 ms.” Your profile labels the 189.6 µs interval as GPU-reach wait, including dense work and the GPU’s MoE branch. It is not a DRAM-idleness measurement.
+- “Eight workers matching fifteen proves a bandwidth wall.” That result would support the hypothesis, but limited parallel work, synchronization, scheduling, or cache topology can also produce a plateau.
+- “Faster CPU kernels cannot help.” Even a bandwidth-constrained phase can contain compute, dispatch, and tail costs. Kernel changes can also alter memory access efficiency. A plateau does not rule those out.
+The fitted fixed/per-column costs are similarly tentative. Two requests with different contexts, contents, routes, and widths cannot isolate a reliable intercept and slope.
+
+The UMC suggestion is useful, with its own qualification: Linux having a UMC driver does not prove that this particular Ryzen exposes the required counters. The upstream driver checks advertised hardware capabilities and counter counts. Check availability and event definitions; do not assume either support or lack of support on the 9950X3D.
+2. Idea-by-idea audit
+#1 — Runahead routing: worth investigating, but the evidence is overstated
+The mechanism is legitimate. Predicting which weight bytes to copy can preserve your target computation: actual routing still runs normally, every selected expert executes, and wrong predictions merely waste transfers. A partial-residual predictor must keep all speculative GDN/KV/other state isolated.
+
+The paper claims need three corrections:
+- Fate: Its direct previous-gate-input predictor achieves 78.79% decoding accuracy. The 97.15% figure comes after expanding the prefetched set to experts above the 75th percentile of predicted scores. That is a much larger candidate set—not evidence for that accuracy with three uploads. Mechanically applying the same percentile to 512 experts would select roughly 128 candidates; this illustrates the budget mismatch, rather than recommending that policy. arxiv.org
+- OD-MoE: The 99.94% result uses an FP16 shadow of an FP32 target. INT8 and NF4 shadows score 97.34% and 95.67%. This is a complete shadow model with alignment machinery, not a next-layer computation with unfinished CPU contributions omitted. It does not establish a ceiling for the proposed predictor. arxiv.org
+- DraftExpert: The 86–88% results are real, but its system trains an extra draft expert at every MoE layer and uses a shared-plus-top-1-plus-draft-expert path, with router-agreement distillation. That is substantially different from adding a small route predictor beside your existing MTP head. arxiv.org
+The timing proposal also needs to distinguish prediction from transfer. A potentially workable schedule is:
+1. Predict layer L+1’s candidates during layer L’s CPU phase.
+2. Wait for an observed low-DRAM interval.
+3. Transfer only candidates that can finish before layer L+1 needs them.
+Uploading during the already saturated CPU phase would reproduce the contention that made your earlier warming attempt lose 6.5%. Predicting during that phase and copying later could be different—but the available interval must be demonstrated.
+
+The proposed cold-miss recall measurement is directionally right. Replace the arbitrary 35% recall cutoff with net exposed time saved, including prediction, wrong uploads, additional GPU computation, staging capacity, and missed deadlines.
+
+Also, “10% of miss bytes saves 0.86 ms” assumes a proportional reduction in the CPU phase. It conflates CPU misses with the combined CPU/PCIe miss population and assumes the new GPU work is hidden.
+
+Verdict: A credible research hypothesis, with +10–30% still highly speculative. First establish timely coverage of actual cold misses. Do not begin with a full runahead implementation.
+#2 — LAN expert server: one of the strongest directions, with a better test
+This proposal has a sound hardware reason: the second PC contributes a separate memory controller and RAM capacity. Moving activations instead of repeatedly moving expert weights is the relevant principle in Fiddler, although Fiddler’s local CPU–GPU results do not establish LAN performance. arxiv.org
+
+The network treatment is too optimistic.
+
+A tiny-message RDMA latency is not the latency of sending the activation rows, executing experts, and returning output vectors. For illustration, 31 KiB of dependent request-plus-response payload alone requires about 25.4 µs of serialization on a 10 Gb/s link, before protocol, processing, and compute costs. Your actual payload depends on how many experts and token rows are assigned remotely, and whether outputs are combined remotely.
+
+There is also a concrete benchmark trap: ib_send_lat reports half the measured round trip as one-way latency, and its default latency message size is only two bytes. The suggested experiment must explicitly choose representative payload sizes and interpret its output correctly. GitHub
+
+The fluid model
+\[
+T=\frac{M+\mathrm{RTT}\,B_r}{B_l+B_r}
+\]
+is a reasonable optimistic model for a continuously divisible workload. It can reproduce approximately 116 µs under the report’s assumptions. But you have a handful of indivisible expert jobs, different formats, unequal token multiplicities, and a deadline. The relevant measurement is:
+\[
+T_{\mathrm{new}}
+=\max(T_{\mathrm{local\ remaining}},
+T_{\mathrm{send}}+T_{\mathrm{remote\ compute}}+T_{\mathrm{return}})
++T_{\mathrm{join}}.
+\]
+The cheapest useful test is a complete joint job: replay a real layer’s work, send one or two selected experts to the other PC, and measure when the layer can continue. The suggested 2,000-expert working set is sensible for avoiding an accidentally cache-resident kernel benchmark.
+
+Two hardware assumptions also need verification:
+- The supplied prompt/profile does not establish a ConnectX-4 pair.
+- “32 GB holds 85% of the CPU tier” is not a reliable service-coverage estimate. Available RAM is smaller than installed RAM, and the set of CPU misses changes with GPU residency.
+The DDR4 upgrade aside likewise needs the actual motherboard and DIMMs confirmed.
+
+Verdict: Keep near the top. +10–20% is conceivable, not demonstrated. Its capacity benefit could matter more for Qwen4 even if its present speed benefit is modest.
+#3 — Anti-phase streams: valid throughput research, different objective
+The calculation is internally consistent:
+\[
+\frac{2\times3.52}{0.026}\approx271\ \text{tok/s total}.
+\]
+That is approximately 135 tok/s per stream, about 16.5% below the single-stream 162 tok/s reference.
+
+What is unproved is fitting the pair into 26 ms. The reported 12.2 ms of “GPU work” combines GPU-reach wait, drafting, and tail time. Those host-measured categories are not a clean GPU-occupancy trace.
+
+A schedule must account for independent recurrent/KV state, graph and scratch-buffer concurrency, CPU planning, cache interference, and transfers. Reducing resident KV to fund another stream can itself increase DDR/PCIe traffic.
+
+Do not reject this merely because same-window batching failed. Keeping separate speculative windows could preserve advantages that the previous batching implementation lost. Klotski supports the general compute/loading-overlap principle, although not this particular speed estimate. arxiv.org
+
+Verdict: Worth a schedule simulation if your agent workflow often has two simultaneous requests. It should not be among the first three experiments for making one generation faster. “Single user” can include multiple requests, but the objectives should remain explicit.
+#4 — Working-set prepaging: mostly a repeat, with confounded supporting data
+Prompt histogram reseeding was already in Phase B of your earlier plan. Saving conversation-specific hotness/residency metadata is a narrower extension.
+
+The 6.20 versus 2.36 CPU experts per layer-window comparison does not demonstrate a cache warm-up problem. Those requests differ in window width as well as context and content; the profile explicitly associates the larger CPU workload with wider windows. More distinct experts per window can occur with equally effective caching.
+
+MoE-Infinity supports request-dependent expert locality. It does not establish the claimed local gain or diagnose your post-prefill cache. arxiv.org
+
+Restoring thousands of slots also has a transfer cost. If the existing path already refills them, compare the incremental cost of changing the selection. If conversation switching adds new restoration traffic, charge that traffic against the ensuing savings.
+
+Verdict: Keep within the existing replay harness. Evaluate total request time, including refill cost, rather than adopting on “+2 points main-cache share.”
+#5 — SSD tier: more of this already exists than the response acknowledges
+I checked upstream v0.2.8, your documented base. Its FileExpertSource already includes:
+- Direct expert reads using O_DIRECT.
+- Batched asynchronous Linux reads through io_submit.
+- Staging buffers and read-ahead machinery.
+- A cold-read overlap path that can compute ready experts while other reads complete.
+The interface and implementation notes also describe whole-blob reads and pinned staging where supported. This does not prove which path your private build would select under RAM pressure, but it does establish that asynchronous expert I/O is existing machinery. Replacing its submission API with io_uring needs a demonstrated overhead problem.
+
+The “nearly free SSD expert” argument is incomplete:
+\[
+T_{\mathrm{expert}}
+=T_{\mathrm{SSD\ read}}+T_{\mathrm{dependent\ compute/transfer}}.
+\]
+A 150 µs read completing inside a 180 µs CPU interval leaves only 30 µs for subsequent work. Meanwhile, the SSD’s DMA writes consume host-memory bandwidth during the supposedly saturated phase. Rated sequential bandwidth is also not a QD1 random-read latency measurement.
+
+And 512 pages does not imply 512 page faults or SSD operations. Linux readahead and mapping behavior invalidate that shortcut. The Linux Kernel documentation
+
+Verdict: Important Qwen4 capacity work, but first measure the existing file tier. The report has not established a new near-zero-cost overflow mechanism.
+#6 — BF16 HC packing: the best cheap experiment in this response
+This is specific enough to test cheaply and potentially useful on both sides: fewer GPU weight bytes and more space for cached experts.
+
+DFloat11 genuinely demonstrates low BF16 exponent entropy and lossless compression. However, its implementation decompresses matrices back to BF16 before multiplication. Its official repository reports approximately 2× slower batch-one inference than resident BF16, with overhead better amortized at larger batches. The proposed fused fixed-width HC reader is a different implementation whose economics remain to be measured. arxiv.org
+
+The storage estimate needs a small correction. With one eight-bit base exponent per 32 values:
+- Sign + seven mantissa bits + three exponent-offset bits + header = 11.25 bits/value.
+- With four offset bits, that becomes 12.25 bits/value.
+That gives approximately 29.7% or 23.4% savings before outlier patches, indexes, and alignment, rather than an assured 25–31%.
+
+Two practical conditions matter:
+1. The original resident BF16 copy must be removable. Keeping it for prefill while adding a compressed decode copy does not free expert slots.
+2. Reconstructing identical weights must preserve the existing arithmetic. A fused reader can do this, but exact reconstruction alone does not prove identical multiply/reduction behavior.
+The exponent histogram is a good compression-feasibility test. It cannot establish speed. Follow it with one representative fused HC kernel at actual window widths, including scratch and occupancy costs.
+
+Verdict: Promote. The +1–3% guess is plausible as a hypothesis, and the proposed slot savings are a reasonable gross estimate if the copies can truly be removed. This is distinct from merely rerunning persistent HC.
+#7 — TLB/IOTLB tuning: separate the mechanisms and fold it into existing work
+This combines three different things:
+Mechanism	What must be established
+CPU TLB pressure	CPU mapping sizes and actual translation overhead
+IOTLB pressure	The GPU’s effective DMA mappings and translation overhead
+PCIe MPS/MRRS	Existing transaction-size settings and whether changing them improves transfers
+
+
+A huge CPU mapping does not prove that cudaHostRegister preserves a similarly large IOMMU mapping. The report acknowledges that uncertainty, correctly.
+
+Also, iommu=pt bypasses DMA translation by default. Its IOTLB benefit is therefore not additive with larger IOMMU pages for the same bypassed traffic. CPU hugepage benefits remain separate. The description of pci=pcie_bus_perf is substantially correct. The Linux Kernel documentation
+
+Reserved hugetlb pages are technically different from THP, but they were already in your host-tuning plan. THP’s bimodal result does not by itself identify opportunistic allocation as the cause.
+
+Verdict: A reasonable diagnostic branch, with little novelty here. Inspect current mappings and transaction settings first. “Boot flags plus one screen, under an hour” understates the work if the arena allocator also needs changes.
+#8 — Expected miss-cost gate: useful idea, partly incorrect exactness discussion
+The bias example is correct for the particular flawed implementation:
+- Draw from \(q=(0.9,0.1)\).
+- Verify retained \(a\) using the original \(q\).
+- Discard \(b\) and fall back to a fresh target sample.
+Then:
+\[
+P(a)=0.9\frac{0.5}{0.9}+0.1(0.5)=0.55.
+\]
+That closely matches the kind of drawn-token gating bias already documented in your profile.
+
+But “selecting drafts by their own cost is safe under greedy verification, not exact sampling” is too broad. It can remain exact if verification uses the actual conditioned/reweighted proposal law. A selected candidate can alternatively be treated as a point-mass proposal with the corresponding exact residual rule. What fails is changing selection while continuing to use the old \(q\).
+
+The papers also support different mechanisms:
+- EVICT uses a measured average cost table \(C(k)\), indexed by retained tree size. It explicitly says this is not an exact prediction of the current expert set. arxiv.org
+- EcoSpec does predict marginal expert cost, but uses a trained predictor and tree selection. Its table’s 1.62× figure is relative to autoregressive decoding, not a 62% incremental improvement over an already speculative baseline. For example, its sampled Qwen mean is 1.38× versus EAGLE’s 1.28×. arxiv.org
+- DraftExpert is relevant motivation, but its different drafter and candidate-truncation procedure are not a correctness proof for a new Strata sampling gate.
+The statement that only rejected columns can save work is also incorrect. Accepted columns can share expert reads, amortize dense work, and change subsequent cache state. Window grouping affects cost even when every draft is accepted.
+
+Verdict: Treat this as adding a better marginal-cost feature to your existing gate. Predict additional unique work and whole-window time per committed token. A global 10% variance-explained threshold is arbitrary; test whether it improves held-out stopping decisions beyond your current gate.
+#9 — Online calibration: real literature, weak local diagnosis
+OSD does report acceptance gains of 0.1–0.65, but it studies draft-model distillation, including substantial adaptation. That is not evidence for those gains from a few temperatures and token biases on your MTP head. OnlineSpec is indeed a March 2026 paper connecting online learning with acceleration, and it evaluates richer head-update and ensemble methods. arxiv.org
+
+Your profile explicitly says the 66% served-log acceptance and 73% screen acceptance are not comparable workloads. Their difference does not diagnose calibration drift.
+
+Novelty is limited:
+- Per-depth temperature tuning is a narrow experiment.
+- A learned per-token bias is a logit adapter, overlapping the adapter you already tried.
+- Larger updates overlap the excluded MTP retraining direction.
+The proposed logging test is not available as written. STRATA_SPEC_DEPTH=1 reports accepted/tested counts for positions 1–5. It does not log the full \(p,q\) distributions or cover all seven draft depths.
+
+A defensible screen requires sufficiently complete draft logits to recompute transformed proposals, actual target distributions, and later held-out requests. Computing \(\sum_x\min(p(x),q(x))\) gives local acceptance opportunity on recorded histories; changed proposals create different future draft histories.
+
+For exactness, freeze or version the calibrator so verification uses the \(q\) that actually generated each candidate. For repeatability, define its reset/checkpoint behavior.
+
+Verdict: Optional small refinement, with the prior adapter result lowering expectations. The arbitrary +1.5-point acceptance cutoff should become an estimated time benefit by depth, minus update cost.
+#10 — Tier-invariant arithmetic: the proposed shortcut is wrong
+The core claim—“the integer block sums already agree”—does not hold generally across your tiers.
+
+Your profile enables CPU Q8_K activation rows. Upstream CPU expert code and GPU expert code use different activation representations in relevant paths; the GPU uses Q8_1. Hidden activation quantization and nonlinear arithmetic also need consideration.
+
+A fixed floating-point reduction cannot reconcile different quantized operands.
+
+ReproBLAS solves order dependence when summing the same terms. It does not make differently quantized computations equal, and its operation count is not evidence that this whole-engine change costs only a few percent. EECS at UC Berkeley
+
+A same-Q8-input test is useful for isolating a dot kernel, but deliberately removes part of the cross-tier problem.
+
+Driving placement from logical counters is a separate, potentially smaller determinism strategy. It should not be bundled with redesigning all expert arithmetic.
+
+Verdict: Keep repeatability investigation in the existing desk work. Do not count this as a speed idea or assume it cheaply turns every dynamic policy into bit-exact execution.
+3. The dismissals also need calibration
+Native GDS: Correctly deprioritized. NVIDIA’s current support matrix restricts native GDS to supported Data Center/Quadro cards; other cards have compatibility mode. The P2PDMA list does not include either of your GeForces. GPUDirect Storage Release Notes
+
+The iGPU and a full shadow model: Sensible low priorities. Sharing DDR weakens the iGPU’s case, and OD-MoE’s dedicated shadow resources do not resemble your available hardware. Those are practical judgments, not impossibility proofs.
+
+“A decode-free expert format adds 25%”: Too categorical without naming the format. The storage expansion, compute saved, and cache effects depend on what is predecoded. It may still be a poor trade, but one percentage does not dispose of the whole category.
+
+Certified two-stage head: The “50× Cauchy–Schwarz slack” is a heuristic based on roughly isotropic, independent vectors, since \(\sqrt{2560}\approx50.6\). It is not a theorem about your actual errors. The relevant screen is certified interval widths versus actual top-20 gaps and the fraction of rows needing refinement. Your prior small head gains make it low priority, but this argument has not disproved it.
+
+Drafting during verification: The hidden-state dependency is real. It rules out an uncomplicated early launch for the correct future prefix, not every possible overlap. Your draft stage is 10.7% of window time; eliminating it entirely would yield about 12% speedup with everything else fixed. Practical overlap would recover only part of that.
+What I would take forward
+From this response, my first three probes would be:
+1. #6: Scan the actual HC tensors and inventory every resident copy. Determine the achievable packed size including metadata, and whether the BF16 originals can be removed. This can cheaply reject the idea before kernel work.
+2. #2: Benchmark complete remote expert jobs while local work runs. Use real formats, representative token multiplicity, a working set larger than cache, and actual network payloads. Judge the layer’s completion time.
+3. #1: Measure cold-miss prediction and transfer deadlines. Start with the inexpensive predictor. A useful result needs both accurate candidates and an observed interval in which their bytes can arrive profitably.
+I would put #4 and #7 into the already planned work, keep #8 as a cost-gate refinement, and reserve #3 for concurrent-request throughput. For #5, inspect and price Strata’s existing file tier before writing another reader.
+
+Finally, “one instrumented screen feeds five kill tests” promises too much. You can share a capture, but the tests require different information: device-phase timing for scheduling, cold-expert deadlines for prefetch, raw logits for calibration, and restoration costs for cache policies. Your timing switch already has a repeatability question, so instrumentation itself needs care.
+
+Any surviving experiment should follow your stated rule: time fixed work separately from free-running generation, and exercise adaptation plus rejection paths at every supported draft depth. This audit involved source inspection and arithmetic only; no benchmarks or configuration changes were run.

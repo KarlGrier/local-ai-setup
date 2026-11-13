@@ -1,0 +1,140 @@
+I'll read your profile pack and what's on file about the Strata setup first, then research recent work across OS, database, architecture and HPC before ranking ideas.
+
+**Bottom line:** #1 is the best bet. The three I'd try first as craziest-but-plausible are #2, #3 and #7 (★), because each can be disproved in hours with little or no engine code.
+
+## What your numbers say
+
+- **CPU misses:** the CPU pool takes 8.62 ms of each 21.71 ms window while serving 9.4% of routed entries. If that is linear, each point of routed share moved off the CPU is worth about 4% decode.
+- **Floor:** with the CPU slice at zero, a window is about 13 ms, or roughly 270 tok/s.
+- **Window shape (my inference):** from the breakdown and your cost-gate thresholds, a window looks like 10–13 ms fixed plus 2–3 ms per column. Tokens per window and the dense pass matter as much as misses.
+- **Bytes:** 3.90 CPU experts per layer-window in 179.7 µs is about 42 GB/s against roughly 77 GB/s measured, so the pool looks at least half memory-bound. The GPU side may be similar, but that is an unmeasured guess.
+
+Three safe diagnostics, about 30 minutes each, re-rank the list:
+
+- Run DDR5 at 5200 instead of 6000 and see whether CPU-pool time scales.
+- Apply a negative GPU memory-clock offset and see whether GPU-reach scales.
+- Cap the 5080 link at Gen4 and see whether anything moves.
+
+If the pool ignores DDR speed, your kernel items outrank #2 and #7. If GPU-reach follows memory clock, #4 rises.
+
+One trace feeds the offline tests for #1, #6, #8 and #9. Log, per window, layer and column: top-30 router ids, serving tier, and accepted or rejected.
+
+## Ranked ideas
+
+### 1. Future-aware eviction plus idle-PCIe prefetch
+- **What:** score each resident expert by forecast demand over the next ~8 windows and evict the lowest. Upload forecast non-residents during GPU-dense phases, when PCIe and DRAM are idle. A small Mamba2 sequence model handles the forecasting in SeqMoE, with one-step recall around 86–91% on four other MoE models and under 4 points lost over an 8-step rollout. Yours could run on the second CCD.
+- **Why here:** both GPUs together hold 32.1% of experts and serve 84.6% of routed entries. That operating point sits almost on SeqMoE's reported LRU curve (84.5% at 35% capacity), where its forecast-driven policy reaches 95.1%. A NeurIPS 2026 paper got 2.1× fewer transfers than LRU from eviction alone, though 96% of that gain needed 16 tokens of future demand and past-only frequency recovered 27%.
+- **Why it might fail:** a linear next-use predictor did worse than plain LFRU in an August 2026 replication study. The published wins come from models with 128–256 experts per layer and 4–8 active; yours has 512 with 10 active, plus speculative windows. The forecaster needs training on your traces and must run in a few ms.
+- **Lossless:** routing is untouched; a wrong forecast only costs time.
+- **Cheapest disproof:** replay the trace offline at 4,585 + 3,300 slots, comparing current policy, LFRU, Belady and Belady-8. Use per-layer-step accounting: the same study found per-access replay flatters recency policies by 27–29%. If Belady-8 doesn't cut CPU and PCIe entries by 30% or more, stop.
+- **Upside (guess):** +0–5% from better heuristics; +10–30% if a forecaster gets near Belady-8.
+- **Qwen4 Flash:** more. The published gap widens as capacity shrinks (60% versus 85% hit rate at 15% capacity).
+
+### 2. Second PC as a LAN expert worker ★
+- **What:** mirror cold experts in the i7-14700's RAM and compute them there. The host sends quantized activation rows and expert ids (about 11 KB); the worker returns 2,560-wide outputs. Expert bytes never cross the wire, and timeouts fall back to the local pool.
+- **Why here:** it adds a second memory controller and 20 cores to the tier costing 8.62 ms. The payload is latency-bound: published ballparks put a small-message round trip near 2 µs over RDMA and 20–60 µs through kernel TCP, against a 180 µs CPU phase. You own ConnectX-4 and 10GbE pairs, and 32 GB mirrors about 14,000 experts. Worker machines executing experts for a main node over a LAN are already published (OD-MoE), with a ten-node testbed keeping about 75% of fully-cached decode speed. Unlike the layer-split RPC you tried, nothing heavy moves.
+- **Why it might fail:** there are 48 synchronous round trips per window, so one 1 ms stall erases the gain. The 14700 has no AVX-512, so it needs AVX2 kernels with the same reduction order. A second box must run during every session.
+- **Lossless:** same integer kernels on the same quantized inputs, rounding-level identical; fallback is the exact local path.
+- **Cheapest disproof:** a busy-polled ping-pong (11 KB out, 20 KB back) over the direct link, TCP then RDMA, a million round trips; p99.9 must stay under ~40 µs. Then time Strata's CPU expert kernel on the P-cores. If round trip plus one or two experts exceeds ~150 µs, it's dead.
+- **Upside (guess):** +5–15% today.
+- **Qwen4 Flash:** much more. Overflow experts can be computed in place there instead of pulled from SSD at 150 µs or more each. If that board takes DDR4, your spare 16 GB sticks could raise it to 64 GB.
+
+### 3. Slow-start copy windows ★
+- **What:** for deterministic drafts (suffix matches), grow the verify window like TCP slow start, 8 → 16 → 32 → 64 columns per fully accepted window, and collapse on a rejection. Past a few hundred predicted tokens, verify the run as a speculative prompt chunk and keep the accepted prefix.
+- **Why here:** windows are capped at 8 tokens, so the fixed cost caps copy-heavy output near 230 tok/s on your struct workload. My cost model puts 32–64 columns at roughly 320–450 tok/s, and the prompt path already runs 1,650–2,700 tok/s on 1.4–2.7K-token chunks. Coding-harness edits that re-emit file contents are this case.
+- **Why it might fail:** at T=1.0 each copied token is accepted only with its target probability, so runs break. Wider windows need kernels at new shapes. The prompt path borrows 3,231 main-cache slots, so each crossover disturbs the decode cache. Your 12-wide lookup test failed distribution checks, which needs a root cause first.
+- **Lossless:** the same exact accept/residual rule with a point-mass proposal.
+- **Cheapest disproof:** no engine code. On saved coding transcripts, measure the share of output tokens in exact-match runs of 64+ tokens; under ~5% kills it. Then time 128/256/512-token appended prompts on a live context, and the decode dip afterwards.
+- **Upside (guess):** 0% on prose; 1.3–1.8× on qualifying spans from wider windows, more via the prompt path; perhaps +10–30% on edit-heavy sessions.
+- **Qwen4 Flash:** more, since fixed cost and misses both grow.
+
+### 4. Byte diet for the fixed dense pass (conditional)
+- **What:** if GPU-reach follows memory clock, make bytes read per window the metric. Keep dense tensors in VRAM no wider than in the GGUF and dequantize in-kernel. For BF16 tensors, try fixed-width per-block bit-packing of the exponent field, as columnar databases do.
+- **Why here:** GPU-reach is 9.10 ms, 42% of the window, and launch gaps were only 1.5–3 µs per layer in the 11-05 profile, so the time is inside kernels. Freed VRAM also buys about 51 cache slots per 100 MiB.
+- **Why it might fail:** I can't see the native pack format, and it may already be minimal. In-kernel unpacking can cost more than it saves. Trust a measurement over my reasoning here.
+- **Lossless:** bit-packing is exactly invertible.
+- **Cheapest disproof:** the memory-clock diagnostic, then per-tensor VRAM versus GGUF sizes and one exponent histogram.
+- **Upside (guess):** +0–10%.
+- **Qwen4 Flash:** more.
+
+### 5. The drafter is exempt from the hard rule
+- **What:** exact speculative sampling holds for any proposal, as long as the accept test uses the distribution the draft was really sampled from. So inside the draft path you may skip non-resident draft experts, cut draft top-k, shrink the resident set, and fit per-depth temperature and truncation to the target sampler.
+- **Why here:** Strata already does versions of this (a 40,525-token draft head, an 837 MiB MTP layer). Your exchange rates: 1 point of acceptance ≈ 1% speed, 0.2 ms of draft time ≈ 1%, 100 MiB ≈ 51 slots.
+- **Why it might fail:** acceptance is the expensive currency; a cheaper drafter that loses 3 points is a net loss.
+- **Lossless:** provably distribution-preserving, by the theorem you already rely on. Seeded outputs change.
+- **Cheapest disproof:** a coverage curve of draft-expert usage (1 hour), then an A/B of draft top-k 10/6/4 logging acceptance and draft ms.
+- **Upside (guess):** +1–5%.
+- **Qwen4 Flash:** more.
+
+### 6. Commit-time cache admission
+- **What:** CPUs avoid training caches on wrong-path work. Windows are 4.40 columns wide but commit 3.52 tokens, so about 20% of columns are rejected drafts that still drive admissions. Defer admission and frequency updates to window end and apply them only for accepted columns.
+- **Why here:** about 82 fetch admissions happen per window, so churn is high.
+- **Why it might fail:** rejected columns are plausible continuations and may act as free prefetch. Only 3–16% of the offline-optimal gap traced to admission in that caching study.
+- **Lossless:** placement only.
+- **Cheapest disproof:** from the trace, compare reuse within 8 windows for experts first touched by rejected versus accepted columns. A ratio above ~0.8 kills it.
+- **Upside (guess):** +1–4%.
+- **Qwen4 Flash:** similar or more.
+
+### 7. Exact zero-skip and dead-unit elimination ★
+- **What:** if the 640-wide expert intermediate is quantized to int8 before the down projection, small values become exact zeros and contribute nothing. Store down matrices column-major and never read those columns. Sum integers per 32-column block, then apply block scales in the original order. Offline, delete hidden units whose scales are exactly zero.
+- **Why here:** both tiers look byte-bound, and down is IQ4_NL on 39 of 48 layers, roughly 45% of expert bytes.
+- **Why it might fail:** if the intermediate stays in float there are no exact zeros, and the idea is dead. The zero share may be under 5%. It needs transposed matrices and new kernels on both sides.
+- **Lossless:** integer sums are order-free and float steps keep their order, so results are bit-identical.
+- **Cheapest disproof:** dump ~10,000 quantized intermediates and count zeros (1 hour); scan GGUF block scales for zeros (15 minutes).
+- **Upside (guess):** most likely 0%; +3–6% if zeros exceed ~20%.
+- **Qwen4 Flash:** same or more.
+
+### 8. Runahead on the stalled GPU (only if two-group overlap disappoints)
+- **What:** the GPU mostly waits while the CPU pool computes a layer's misses. Let it run the next layer's dense part and router on the partial MoE sum, only to learn likely misses ~180 µs early and start their uploads. Then discard that state and redo the layer exactly.
+- **Why here:** it hides PCIe latency, so more misses can leave the CPU. Routing predictions stayed 95–97% accurate under INT8 and NF4 shadow copies in OD-MoE.
+- **Why it might fail:** it competes with two-group overlap for the same idle GPU time. Next-layer warming already cost you 6.5%.
+- **Lossless:** speculative state never commits.
+- **Cheapest disproof:** offline, recompute next-layer routing with CPU-tier contributions zeroed; you need 85–90% top-10 overlap.
+- **Upside (guess):** +2–6%.
+- **Qwen4 Flash:** more.
+
+### 9. Router-margin readahead
+- **What:** the router scores 512 experts and uses 10. Ranks 11–30 are free near-miss hints for the next tokens at that layer. Upload non-resident near-misses into a small staging buffer, so wrong guesses evict nothing.
+- **Why here:** PCIe and DRAM are idle during GPU-dense phases, and this signal differs from the prefetches you tried.
+- **Why it might fail:** your earlier prefetch variants showed no gain, and precision on cold experts may be only 5–10%.
+- **Lossless:** placement only.
+- **Cheapest disproof:** from the trace, P(top-10 within 4 windows | rank 11–30 now and not resident) against the base rate.
+- **Upside (guess):** +0–3% today.
+- **Qwen4 Flash:** more. With an SSD tier, readahead is the only way to hide a fetch.
+
+### 10. SSD tier as a database buffer manager, plus an NVMe-to-VRAM probe
+- **What:** if Qwen4 Flash overflows RAM, use an engine-managed expert pool: O_DIRECT io_uring reads straight into pinned slots, expert-aligned extents, no mmap. Separately, probe NVMe-to-VRAM DMA.
+- **Why here:** at ~14 GB/s a 2 MiB expert takes about 150 µs, the same scale as a layer-window.
+- **Why it might fail:** NVIDIA's driver documentation scopes nvidia-fs to data-center-class GPUs, though newer GDS releases added an upstream-kernel P2PDMA mode (kernel 6.2+). The one consumer-hardware hack I found still routes data through host RAM, lists true NVMe-to-VRAM as unimplemented, and reports a link crash that needed a power cycle. Strata's DeepSeek path may already cover the buffer-manager part.
+- **Lossless:** I/O path only.
+- **Cheapest disproof:** fio with io_uring, O_DIRECT, 2 MiB random reads at QD 1/4/8; then `gdscheck -p`.
+- **Upside (guess):** about 0% today, since available RAM never fell below 29.8 GiB.
+- **Qwen4 Flash:** decisive.
+
+## Two enablers (not speedups)
+
+- **In-run A/B:** flip a switch every ~16 windows inside one request and compare paired ms per window. That should resolve about 1% and reopen sub-noise results such as GR_V3_PF=133 at +2.06% against 5.6% noise.
+- **Bit-identical kernels across CPU, GPU and helper:** output then cannot depend on placement. That targets your open repeatability question and turns placement experiments into hash checks. For drafter changes, Gumbel-coupled verification makes seeded output independent of the drafter, at lower acceptance, so use it as a test mode only.
+
+## Considered and dropped
+
+- **iGPU:** tiny, and it shares the DDR channels; its value (display off the NVIDIA cards) is already banked.
+- **Lossy twin as self-drafter:** the GPU floor makes it at most 1.7× faster than exact decode.
+- **Draft-ahead during verification:** published schemes prepare the next round while verification runs, but MTP needs the verifier's final hidden state. I estimate 2% at most.
+- **Deep stagger for early squash in two-group overlap:** a wash near 73% acceptance; keep the stagger minimal.
+- **Partial-expert residency:** same value per VRAM byte as whole experts.
+- **Second CCD:** no big new job beyond hosting #1's forecaster and #2's polling thread.
+
+The long-running research tool wasn't reachable this session, so this comes from a direct search pass; I read only the first three quarters of the caching-evaluation paper. Want this as a .md for your research folder?
+
+Sources:
+- [SeqMoE](https://arxiv.org/abs/2609.12978)
+- [Reproducible Evaluation of MoE Expert Caching](https://arxiv.org/abs/2608.07911)
+- [Fewer Expert Transfers Without Changing Routing (NeurIPS 2026)](https://neurips.cc/virtual/2026/156996)
+- [OD-MoE](https://arxiv.org/abs/2512.03927)
+- [Speculative Speculative Decoding](https://arxiv.org/abs/2603.03251)
+- [Drafter-Invariant Speculative Decoding](https://arxiv.org/abs/2408.07978)
+- [NVIDIA nvidia-fs documentation](https://docs.nvidia.com/gpudirect-storage/nvidia_fs/index.html)
+- [GPUDirect Storage release notes](https://docs.nvidia.com/gpudirect-storage/pdf/release-notes.pdf)
+- [GPU-NVMe-Direct preprint](https://xaskasdf.github.io/gpu-nvme-direct/gpu-nvme-direct-paper.pdf)
+- [Latency Dissection in an AI Cluster Network](https://kentino.com/pages/latency-dissection-where-every-microsecond-goes-in-an-ai-cluster-network)

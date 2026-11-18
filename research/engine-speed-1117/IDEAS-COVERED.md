@@ -1,6 +1,6 @@
-# Engine-speed ideas already tried, measured, planned or backlogged (2026-11-17)
+# Engine-speed ideas already tried, measured, planned or backlogged (2026-11-17; final statuses 2026-11-18)
 
-The companion of `ROUND-RESULTS.md` in this folder. Before suggesting a decode-speed idea for this setup, check it is not
+The companion of `ROUND-RESULTS.md` and `ROUND-FINAL.md` in this folder (the round closed 2026-11-18). Before suggesting a decode-speed idea for this setup, check it is not
 here; if it is, say what is new about your version.
 
 Setup these ideas were judged on: the Strata MoE engine serving Qwen3.8-Flash-Next (IQ3_S GSQ-RCO) on one desktop PC.
@@ -21,7 +21,8 @@ Source keys:
 - **Astra / Fable High / Fable xhigh / Fable Max / Fable moonshot / Pro plan #n** = the outside model reports, by
   idea number. "Fable moonshot" is the run the round plan cites as "xhigh #n".
 - **Pro audits** = the audits of the plan and of the outside runs.
-- **r24** = this round, 2026-11-13..17. It covers A0 (desk), the gaps (A1-A5, A3c/A3p, GBAL, B1, X9, C256), the
+- **Astra 6.2 #n** = the outside report on this round's results (`Astra62_Ideas.pdf` in this folder), by experiment number.
+- **r24** = this round, 2026-11-13..18. It covers A0 (desk), the gaps (A1-A5, A3c/A3p, GBAL, B1, X9, C256, BV, X11S, FE), the
   experimental items X1-X14, and phases C and D.
 - **backlog X** = item X of the standing backlog.
 - **upstream** = upstream Strata releases and notes.
@@ -33,27 +34,27 @@ Source keys:
 - **Helper slot count** - adopted - 3,300 best; 2,400 -3.9 %, 1,500 -7.3 %, 3,500 within noise (r11; tried)
 - **Helper variants: per-layer cap, upstream remote-expert-opt, peer tier, selective use by layer or window size, helper set following the conversation** - dropped - -6 to -18 %, or noise (r6, r10, r11; tried)
 - **Layer split across both GPUs, or a fork's per-layer second-GPU mode, instead of a helper cache** - dropped - would not fit / 35-40 ms of x4 round trips per window, 3x slower (r5, r10)
-- **Adaptive helper cache (victim cache for main-cache evictions and hot CPU misses)** - planned - in the trace-replay policy set, not replayed yet; must charge uploads over the x4 link (Fable High #1; Fable xhigh #4; Pro audit of plan; r24 B1)
+- **Adaptive helper cache (victim cache for main-cache evictions and hot CPU misses)** - backlog - the trace-replay policy set was not run this round (B1's trace holds the inputs); must charge uploads over the x4 link (Fable High #1; Fable xhigh #4; Pro audit of plan; r24 B1)
 - **Main cache never pulls experts the helper already holds (disjoint, helper-aware adaptive tier)** - adopted - +5.3-5.4 % (r10, r14; tried: ADAPT_LAG=2 + DISJOINT_ADAPT)
 - **Adaptive-tier tuning (decay 0.8/0.9, adapt-every 2/8, 48 swaps) and no adaptation at all** - dropped - noise; no adaptation -18 % (r1, r2, r10; tried)
 - **Deterministic swap landing** - adopted - repeatability at no measurable cost; upstream's equivalent used since (r9, r14)
 - **Asynchronous / overlapped adaptive tier (upstream adaptive overlap, STRATA_ADAPT_ASYNC)** - dropped - the overlap cost -11.4 % on the research screen; the async tier is pinned off (not bit-exact run to run, never priced on two cards) (r19; tried; 11-11)
 - **Admit PCIe-fetched misses into the main cache with a helper-aware pick list (STRATA_ADAPT_FETCH=2)** - adopted - +12.7 % screen decode; main-cache share 62.6 -> 67.3 % (backlog I; tried)
 - **ADAPT_FETCH=1 (tier's own swaps kept in every layer)** - dropped - +10.2 %, =2 a further +2.3 %; =1 kept as fallback (tried)
-- **Admit CPU-served misses too, uploaded in idle link time** - planned - the trace replay must charge the new uploads; not replayed yet (Fable xhigh #2; Pro audit of plan; r24 B1)
+- **Admit CPU-served misses too, uploaded in idle link time** - backlog - not replayed this round; the replay must charge the new uploads, and extra link copies cut the CPU pool's DRAM rate ~12 % in X11S (Fable xhigh #2; Pro audit of plan; r24 B1, X11S)
 - **Exact-size (per-expert) cache slots** - adopted - already in the engine: 0 bytes of padding; max-size slots would hold 1,053 fewer experts (r12; 11-11; Astra, Fable xhigh and Pro plan audits)
 - **Per-quant-type frame pools (engine I)** - dropped - desk check: no extra experts on this file (backlog F1; tried)
 - **Score-based eviction (HybriMoE-style) instead of recency** - dropped - covered: the tier already ranks by routing frequency (11-11; Fable xhigh and Pro plan audits)
 - **Inter-layer expert affinity as a retention prior (ExFlow-style)** - dropped - an affinity A/B showed no measurable effect (11-11; Fable xhigh audit)
 - **Alternative expert profiles (learned profile, make_profile)** - dropped - learned -4.2 % (helper overloaded); make_profile noise (r10; tried)
-- **Cache budgets across layers and devices priced by exposed time saved per byte (cross-layer slot lending, joint helper assignment)** - planned - re-proposed for the trace replay; a round-6 per-layer budget replay was noise (+1.1 / +1.4 / -0.6 % held-out) (Astra #2; Pro plan #1; engine I; r6)
-- **Future-aware eviction with a learned demand forecaster, bounded by a Belady-style oracle** - planned - folded into the trace replay; oracle bound first (Fable moonshot #1; Pro audit of moonshot)
-- **Commit-time admission: separate committed and speculative-only demand** - planned - trace replay, not run yet (Pro plan #7; Fable moonshot #6)
-- **Re-seed borrowed slots from the prompt's own routing; save residency per conversation** - planned - trace replay; round 12 put a better starting cache near 0 % (Fable High #2; Fable Max #4; r2; r12)
+- **Cache budgets across layers and devices priced by exposed time saved per byte (cross-layer slot lending, joint helper assignment)** - backlog - not replayed this round; a round-6 per-layer budget replay was noise (+1.1 / +1.4 / -0.6 % held-out) (Astra #2; Pro plan #1; engine I; r6)
+- **Future-aware eviction with a learned demand forecaster, bounded by a Belady-style oracle** - backlog - not replayed this round; oracle bound first (Fable moonshot #1; Pro audit of moonshot)
+- **Commit-time admission: separate committed and speculative-only demand** - backlog - trace replay, not run this round (Pro plan #7; Fable moonshot #6)
+- **Re-seed borrowed slots from the prompt's own routing; save residency per conversation** - backlog - trace replay not run this round; round 12 put a better starting cache near 0 % (Fable High #2; Fable Max #4; r2; r12)
 - **Runtime split of VRAM between KV cells and expert slots** - dropped - round 12 found experts-vs-KV dead; a static --kv-resident 16384 was +1.2 %, within spread (Fable xhigh #8; r12; tried)
-- **One-layer-ahead staging: router L+1 on layer L's input names non-resident experts, copied ahead into staging slots (X11)** - in progress - bound 13.6-15.6 %, realistic ~5 % decode, stage-1 cost gap prepared; a round-7 oracle on the adaptive tier of that time found 0-3 % (Fable Max #1; Fable moonshot #1/#8/#9; Fable High #3; 11-11; r6, r7; r24 X11)
+- **One-layer-ahead staging: router L+1 on layer L's input names non-resident experts, copied ahead into staging slots (X11)** - dropped - stage 1 measured the costs: router pass +0.74 %, shadow copies +11.95 % (the CPU pool's DRAM rate 54.8 -> 47.8 GB/s, ~12 %); realistic -3.1 % end-to-end against a 13.6-15.6 % bound; a round-7 oracle on the adaptive tier of that time found 0-3 % (Fable Max #1; Fable moonshot #1/#8/#9; Fable High #3; 11-11; r6, r7; r24 X11, X11S)
 - **Other staging predictors: near-miss readahead from router ranks 11-32, miss-follows-miss table** - dropped - 10-13 % recall vs the router predictor's 26-31 % (Fable moonshot #9; Fable Max #1; r24 X11)
-- **Full runahead (the GPU runs layer L+1 on the partial residual to learn routes early)** - backlog - only after X11's cheap predictor is measured (Fable Max #1; Fable moonshot #8; r24 X11)
+- **Full runahead (the GPU runs layer L+1 on the partial residual to learn routes early)** - backlog - X11's stage 1 stopped on the copies' DRAM cost, which runahead's copies would pay too (Fable Max #1; Fable moonshot #8; r24 X11S)
 - **Whole-model shadow copy running ahead to predict routes (OD-MoE-style)** - dropped - no spare hardware can run a copy ahead of the target (Fable Max; Pro audit of Max)
 - **Next-layer CPU-cache warming of expert weights** - dropped - exact but -6.5 % served: its reads compete with the pool for DRAM (r6, r7, r12; tried)
 - **Draft-round warming; L3 hot set for CPU experts** - dropped - oracle <= 1.5 %; 0.9 % (r12; tried)
@@ -62,7 +63,7 @@ Source keys:
 - **Lossy miss handling: expert deferral, low-precision or low-rank stand-ins, capped target expert sets (MoE-Spec, AcceptMoE)** - dropped - they change the output (11-11; Astra and Pro audits)
 - **Pin experts by need (STRATA_PIN_BY_NEED)** - dropped - single-GPU only; refused with a helper cache (11-11; Fable High audit)
 - **Partial-expert residency / expert splitting** - dropped - same value per VRAM byte as whole experts (Fable moonshot; r12)
-- **Exclusive GPU residency: drop host copies of permanently GPU-held experts** - planned - Phase D desk; frees ~6.2 GiB of RAM for a larger model, ~0 % speed today (Astra #10; Pro plan #8; r24 D)
+- **Exclusive GPU residency: drop host copies of permanently GPU-held experts** - backlog - Phase D: the helper's 3,300 experts are fixed for a session; 6.2 GiB freeable with a compacted arena (1.0 GiB in place, one CUDA-registered range); decode ~0 %; parked until Qwen4 Flash's size is known, revisit if its experts miss the ~58 GiB arena limit by less than ~6 GiB (Astra #10; Pro plan #8; r24 D2)
 - **Smaller VRAM reserve for more slots (512 MiB)** - dropped - +108 slots but decode -5.0 %, free VRAM under the floor (r21; tried)
 - **Upstream ForesightSwap (per-layer swap slots, STRATA_FS_SLOTS)** - dropped - dropped upstream: the smaller cache cost more than it returned on every box measured (upstream)
 
@@ -79,10 +80,13 @@ Source keys:
 - **Gate/up/down transfers on three streams (PreScope-style)** - dropped - the streams share PCIe and DRAM; the gain estimate used GPU memory bandwidth (11-11; Astra, Fable xhigh and Pro audits)
 - **PCIe expert groups computed beside the VRAM hits (P1)** - backlog - not measured; 0.44 ms of PCIe groups per window (tried)
 - **DMA copy-engine mode instead of the copy kernel** - dropped - no measurable difference, measured at share 0 (r4)
+- **Start the PCIe share's copy right after the plan, on a branch stream beside the VRAM groups (FE)** - backlog - parked: byte-identical; +1.3 % adjusted (+2.6 % at an 84-block grid, where a guard tripped), under +3 %; the copy takes SMs from the VRAM groups and costs the CPU pool 3-4 % (Astra 6.2 #01; r24 FE)
+- **The same early copy on the copy engine at publish** - backlog - the PCIe share controller reads only the start-up link probe and the CPU pool's speed, so a hidden copy cannot move the share (Astra 6.2 #01; r24 FE desk)
+- **A PCIe share rule that sees exposed time (the GPU's wait for CPU rows)** - backlog - about +2.5 % at most with today's copy (r24 FE desk)
 - **GPU writes the CPU pool's quantized input rows (only what the CPU experts need)** - adopted - mapped copy 6.3 -> 3.4 us per layer; verify rounds 1.3 % shorter (r3, r11, r14)
 - **Whole expert arena pinned for DMA** - adopted - needed for the helper and for DMA prompt streaming; upstream pins on Linux since (r6, r8; 11-11)
 - **Upstream pinned stage buffers; upstream batched uploads** - dropped - stage buffers corrupted IQ3_S decode upstream; batched uploads cannot act with a helper (r14, r16)
-- **Lossless compression of transferred or RAM-tier experts (GPU-side or in-cache decode)** - planned - Phase D desk on real expert samples, decompression cost included (Astra #9; Fable High #8; r24 D)
+- **Lossless compression of transferred or RAM-tier experts (GPU-side or in-cache decode)** - dropped - for today's speed: 400 real blobs in 6 formats, zstd 1.01x, entropy bound 1.04x (the codes are ~8 bits a byte); CPU decode 2.3 GB/s a core; even free GPU decoding +0.07 %; a re-check on Qwen4's files is on the day-one list (Astra #9; Fable High #8; r24 D3)
 - **IOMMU passthrough, larger PCIe payload / read-request sizes** - backlog - boot-flag changes excluded this round; the IOMMU reads as translated (Fable Max #7; r24 X3)
 - **Reserved hugetlbfs pages for the arena** - backlog - needs root; no evidence of page-walk cost yet (Fable Max #7; Fable xhigh #7; A0)
 - **Transparent huge pages for the arena** - dropped - +0.01 %; CPU-pool time bimodal run to run (r1, r11; tried)
@@ -94,7 +98,7 @@ Source keys:
 - **One pinned worker per physical core, spin then sleep after 20 ms, host thread computes too** - adopted - already the default; workers never sleep inside a request (A0; r1, r4; Fable High #5; Fable xhigh #7)
 - **Worker count 12 / 8, one CCD only, 4+4 across CCDs, --aux-cpus auto / host-thread affinity** - dropped - no gain, or slower (r24 A4; r2, r8)
 - **Governor, C-state caps, cpu_dma_latency, spin-policy changes** - dropped - already the performance governor and EPP; no in-request sleeps (Fable High #5; Fable xhigh #7; A0)
-- **Faster CPU expert kernels (IQ3_XXS singleton repack, AVX-512 IQ4_NL down for small groups)** - dropped - for now: the exposed CPU wait caps them at 3.6 %, 2.7-2.9 % at most; revisit after X11 (Pro plan #5; Astra #4; r24 Phase C)
+- **Faster CPU expert kernels (IQ3_XXS singleton repack, AVX-512 IQ4_NL down for small groups)** - dropped - the exposed CPU wait caps them at 3.6 %, 2.7-2.9 % at most; X11, which would have raised that, stopped (Pro plan #5; Astra #4; r24 Phase C, X11S)
 - **Cost-weighted row partitioning, workload-dependent active worker count** - backlog - not scheduled; 95 % of CPU jobs are single-row and cost is per expert (Pro plan #9; r24 C1)
 - **One pool batch per layer; helper launched after the pool starts** - dropped - exact; -0.33 % and -1.03 % (tried)
 - **IQ gather / IQ prefetch switches** - dropped - no gain (r11; tried)
@@ -105,6 +109,8 @@ Source keys:
 - **Exact-zero census and zero-skipping in expert kernels (X7)** - backlog - needs its own logging switch and a gap; 5 % of CPU down bytes is worth ~0.8 % of a window (Fable moonshot #7; Pro audit of moonshot; backlog S)
 - **Second PC as a remote CPU expert worker (send activations, return outputs)** - backlog - step 1 (X14, a CPU-only AVX2 kernel benchmark) is built and harness-checked here; the second-PC run is pending (Fable Max #2; Fable moonshot #2; backlog M)
 - **Bit-identical expert arithmetic across tiers (fixed reductions, 16-bit-activation integer math)** - backlog - not a speed item; CPU and GPU quantize activations differently (Fable Max #10; Fable moonshot; engine I; backlog F1)
+- **Give an outstanding GPU copy a short head start on DDR (stagger the CPU tile release)** - backlog - a 0-32 us delay sweep with a reverse-order control first; kill below 0.687 ms a window (Astra 6.2 #07)
+- **Split one missed expert: gate/up on the CPU, the down projection on the GPU** - backlog - fit per-projection CPU and copy costs first; never expose a partly filled slot (Astra 6.2 #11)
 - **AMX and dual-socket NUMA techniques** - dropped - no AMX; one NUMA node (Astra)
 - **iGPU as a compute tier** - dropped - it shares the saturated DDR bus (Fable Max; Fable moonshot)
 - **Second CCD for a predictor or polling thread** - dropped - the pool already spans both CCDs (Fable moonshot; Pro audit of moonshot)
@@ -117,6 +123,8 @@ Source keys:
 - **Upstream v3 HC read (STRATA_GR_V3)** - adopted - +1.6-2.7 % (r9; tried)
 - **GR_V3_PF=133** - backlog - identity 7/7, +2.06 % within 5.6 % noise; parked (tried)
 - **Exact-T 5-8-token HC kernels (STRATA_GR_R2)** - planned - masked by GR_FORK here; Qwen4 day-one list (A0; tried; 11-11)
+- **Certified two-pass sparse-attention index selector (STRATA_SELECT_TWO_PASS, upstream v0.2.12)** - planned - Qwen4 day-one list: its check mode first (identical ordered ids), then cold 128K / 256K reads (Astra 6.2 #02; upstream)
+- **Row-wise QSA block scores (STRATA_QSA_ROWS) on the 5080** - backlog - expected <= ~1 %; its bench faults below 32,768 cells of context (Niko1221/Strata#6209) and is not run again without a fix (Astra 6.2 #05; r24 FE)
 - **GR_FORK generalised to other model shapes** - backlog - compiled out at new shapes until a gain warrants it (tried)
 - **Persistent one-kernel HC read (STRATA_HC_PERSIST)** - dropped - fails the long-context KL check and is +2.9 % slower; a re-test at Qwen4 shapes is listed (Pro plan #3; r24 A2)
 - **Fused Q8_1 quantize + interleave (STRATA_QIL)** - dropped - not faster at byte-identical output (Pro plan #6; r24 A2)
@@ -151,14 +159,15 @@ Source keys:
 - **Upstream SPEC_PROB (also with GATE=top); upstream coupled drafting** - dropped - biased by min-p gating on the drawn token's q; slower (r8, r19; tried)
 - **Upstream cost-aware window (STRATA_SPEC_COST), live miss-aware gate** - dropped - within noise (-0.48 %); incoherent stacked on COST_GATE + DRAFT_CUM (Fable High #6; 11-11; r24 A5)
 - **Expected-miss feature in the cost gate (X12); pricing every draft depth** - dropped - feature -0.03 %, re-tuned per-depth stop +0.17 % on held-out requests (Fable Max #8; Fable xhigh #10; r24 X12)
-- **Block verification of the single MTP chain** - in progress - drafts are sampled at T > 0; per-depth acceptance 0.80-0.91; logging gap prepared to size it (Astra #3; Fable xhigh #3; Fable High #4; Pro plan #4; 11-11)
+- **Block verification of the single MTP chain** - dropped - +0.175 % committed tokens per window (95 %: +0.11 to +0.22 %), from a capture of the drafter's exact q and the target's top-64 rows; the prediction matched observed acceptance within 0.5 points at every depth (Astra #3; Fable xhigh #3; Fable High #4; Pro plan #4; 11-11; r24 BV)
+- **Token recycling: the target's past distributions at the same recent ids as the first draft** - dropped - an oracle replay gains +0.062 commits a window, under the 0.12 hurdle; MTP's first draft already overlaps the target 80 % (Astra 6.2 #03; r24 BV capture)
 - **Multi-draft / tree verification (GBV with K>1, traversal, OT multi-draft)** - dropped - tree drafting measured -10 %; wider expert unions per window (r12; 11-11; audits)
 - **Relaxed verifiers that accept near-misses** - dropped - not distribution-preserving (Astra)
 - **Prompt-lookup drafter (--suffix-draft 3)** - adopted - served default; longer matches (8, 16) gained nothing (r1, r10; tried)
 - **Lookup windows up to 12 rows (--lookup-max-t)** - dropped - +0.96 % within noise and failed distribution checks; later traced to window numerics, wide lookup draws untested (tried; r24 X2)
 - **Suffix-tree drafting, wider or slow-start copy windows, long copies verified as a prompt chunk (X10)** - dropped - best causal policy +0.3 %, hindsight ceiling ~5 %; each wrong copy row costs ~3 ms (Fable xhigh #5; Fable moonshot #3; r24 X10)
 - **Copy drafts only where MTP's own first drafts agree** - backlog - offline test first; build only at ~+3 % (backlog R)
-- **Cheaper draft-only drafter (fewer or lower-precision draft experts, smaller draft top-k, profiled draft step) (X13)** - planned - lowest priority; verification must use the drafter's actual q (Fable High #7; Fable moonshot #5; r24 X13)
+- **Cheaper draft-only drafter (fewer or lower-precision draft experts, smaller draft top-k, profiled draft step) (X13)** - dropped - ceiling 2.1 % central (3.1 % in the most optimistic corner) before any acceptance loss: drafting 2.33 of 21.7 ms, 205 MiB read a draft step, 3.31 drafts a window; fewer experts alone ~0.2 % (Fable High #7; Fable moonshot #5; r24 X13)
 - **Engine B's tuned MTP draft layer** - dropped - a wash (tried)
 - **Retrain the MTP head for acceptance length** - dropped - outside this round's lossless brief; low expectation after the tuned-layer wash (Fable High #9; Pro audit of Max)
 - **Drafter adapter** - dropped - ~0.4 % (r12; tried)
@@ -175,6 +184,7 @@ Source keys:
 - **Faster draft sampler** - dropped - 0.8 % (r12)
 - **Two token groups in one window (--spec-split)** - dropped - the GPU does the dense and HC work twice; spec 8 + split -3.6 % (r3, r4, r7; tried)
 - **Gumbel-coupled drafter-invariant verification as a test mode** - backlog - not scheduled (Fable moonshot; Pro audit of moonshot)
+- **A schema / edit-syntax drafter for tool calls** - backlog - needs ~30 % coverage on held-out agent sessions, scored against both lookup and MTP (Astra 6.2 #12)
 
 ## Prompt path (prefill)
 
@@ -199,6 +209,8 @@ Source keys:
 - **Stream prompt experts from the helper's VRAM (PREFILL_HELPER_SOURCE)** - dropped - +0.2-2.2 % TTFT: the x4 link is the wrong pipe (r19; 11-11)
 - **Draft-layer prompt pass on a second stream (MTP_ASYNC)** - dropped - exact but +2.2 % slower (r9; 11-11)
 - **Residency- and multiplicity-aware short-prefill placement; no hot-set eviction between chunks (Ostinato-style)** - backlog - not scheduled (Astra #5; 11-11)
+- **A restart checkpoint inside the fast prompt chunk (keeps the tail split's gain)** - backlog - count usable prefix boundaries on real edits first (Astra 6.2 #06)
+- **Cancel unissued prompt uploads once the exact router runs** - backlog - count the bytes still cancellable at that point first (Astra 6.2 #09)
 - **Strata's own prompt kernels without MMQ + equal-chunk cut (v0.2.14)** - backlog - not ported; would re-gate the passed baseline (upstream notes)
 
 ## PLE n-gram table
@@ -232,6 +244,10 @@ Source keys:
 - **New io_uring SSD expert reader / buffer manager; chat-cache spill to NVMe** - backlog - only if the existing O_DIRECT tier proves the bottleneck (Fable Max #5; Fable moonshot #10; r24 X4)
 - **Lower swappiness for long-prompt swap-outs (DeepSeek)** - backlog - needs root (backlog D8)
 - **Vision tower kept in RAM between pictures (DeepSeek, upstream v0.2.10)** - backlog - ~320 MiB more VRAM for experts; next DeepSeek round (backlog F2)
+- **Share VRAM between scratch buffers with disjoint lifetimes** - backlog - a lifetime simulation over the worst legal schedule first; kill below 0.687 ms a window (Astra 6.2 #04)
+- **Gather only the old KV pages a short warm suffix selects** - planned - Qwen4 day-one list; size it first by the warm-continuation staging cost at 128K / 200K (Astra 6.2 #08)
+- **S3-FIFO-style protection of revisited sparse-attention KV pages** - backlog - matters only if sparse pages spill to host; log page sets and replay first (Astra 6.2 #10)
+- **Lay cold SSD experts out in co-request order** - backlog - only if Qwen4 spills experts to the SSD (Astra 6.2 #13)
 
 ## Measurement and harness
 
@@ -241,6 +257,7 @@ Source keys:
 - **Routing trace v2 + causal replay, with hindsight labelled as bounds** - adopted - 102,190 windows captured; dump-routing fixed to accepted rows earlier (r6; r24 B1)
 - **GPU-clock phase stamps per layer-step (deadline map)** - adopted - distortion within noise (r24 X9)
 - **Correctness gates: exact7, long40, sampled-distribution test, KL bands** - adopted - every speed change passes its contract first (tried; r24 plan)
+- **Live admission read-back as part of a byte contract** - adopted - exact7 runs with the adaptive tier off, so a change that writes admitted slots also needs the live read-back (241 M slots read back in FE, 0 differ) (r24 FE)
 - **Forced-path state fixtures (rejection at every depth, bonus token, admissions)** - adopted - built and run in A1; the state check against today's width-to-width differences failed narrowly, so no wider verifier is built (Pro audit of plan; r24 A1)
 - **About +3 % predicted end-to-end gain before any build** - adopted - this round's build threshold (Pro audit of plan; r24 plan)
 - **Bandwidth-wall probes: fewer workers, DDR / GPU memory clock steps, link cap, memory-controller counters (X5)** - dropped - the worker sweep ran (A4); the clock and counter arms need root or BIOS, recorded as limits (Fable Max; Fable moonshot; r24 X5)
@@ -252,7 +269,7 @@ Source keys:
 ## Other (concurrency, models, ports, serving)
 
 - **Two requests in one verify window; --batch 4** - dropped - pairs finish 20 % later; batch slots cut the cache from 4,585 to 2,781 slots (r7, r12; tried)
-- **Two column groups offset half a layer so GPU and CPU phases overlap (drafting hidden too)** - planned - Phase D desk cost model; the earlier --spec-split lost (Fable xhigh #1; r24 D)
+- **Two column groups offset half a layer so GPU and CPU phases overlap (drafting hidden too)** - dropped - Phase D cost model: central +0.1 %; the GPU is ~95 % busy in a window and a second group adds a 101-112 us dense pass per layer; +3.0-4.2 % only with a PCIe copy that costs the GPU ~no compute; the earlier --spec-split lost (Fable xhigh #1; r24 D1)
 - **Anti-phase interleave of two concurrent requests** - backlog - helps only with two requests at once; r7 estimated +28 % total at best (Fable Max #3; Fable High; r7)
 - **Display on the iGPU, not the helper card** - adopted - desktop redraws on the helper cost up to ~17 % on research traffic (r11)
 - **Reasoning effort medium by default** - adopted - suite 94.5 vs 90.7 for xhigh, in about 1/3 the time (r21; tried)
